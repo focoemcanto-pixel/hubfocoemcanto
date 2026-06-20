@@ -9,7 +9,7 @@ type Props = {
   referenceEmbedUrl?: string | null;
 };
 
-type Step = 'intro' | 'countdown' | 'recording' | 'review' | 'caption' | 'posted';
+type Step = 'intro' | 'loading' | 'countdown' | 'recording' | 'review' | 'caption' | 'posted';
 
 function driveFileId(url?: string | null) {
   if (!url) return null;
@@ -41,6 +41,36 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
   const canRecord = useMemo(() => typeof window !== 'undefined' && !!navigator.mediaDevices?.getUserMedia, []);
   const referenceSource = proxiedVideoUrl(referenceUrl);
 
+  function waitForReferenceVideo() {
+    return new Promise<void>((resolve, reject) => {
+      const video = referenceVideoRef.current;
+      if (!video || !referenceSource) {
+        reject(new Error('missing_reference'));
+        return;
+      }
+      if (video.readyState >= 2 && video.videoWidth > 0) {
+        resolve();
+        return;
+      }
+
+      const timeout = window.setTimeout(() => cleanup(() => reject(new Error('timeout'))), 12000);
+      const onReady = () => cleanup(resolve);
+      const onError = () => cleanup(() => reject(new Error('load_error')));
+      const cleanup = (done: () => void) => {
+        window.clearTimeout(timeout);
+        video.removeEventListener('loadeddata', onReady);
+        video.removeEventListener('canplay', onReady);
+        video.removeEventListener('error', onError);
+        done();
+      };
+
+      video.addEventListener('loadeddata', onReady);
+      video.addEventListener('canplay', onReady);
+      video.addEventListener('error', onError);
+      video.load();
+    });
+  }
+
   async function startCountdown() {
     setError('');
     setRecordedUrl(null);
@@ -48,8 +78,14 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
       setError('Seu navegador não liberou gravação por câmera/microfone. Tente pelo Chrome ou Safari atualizado.');
       return;
     }
+    if (!referenceSource) {
+      setError('Essa atividade ainda não tem vídeo de referência vinculado.');
+      return;
+    }
 
+    setStep('loading');
     try {
+      await waitForReferenceVideo();
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       cameraStreamRef.current = stream;
       if (cameraRef.current) cameraRef.current.srcObject = stream;
@@ -66,7 +102,8 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
         }
       }, 1000);
     } catch {
-      setError('Não consegui acessar câmera/microfone. Libere a permissão do navegador e tente novamente.');
+      setStep('intro');
+      setError('O vídeo de referência não carregou. Refaça a conexão com o Google Drive ou importe novamente esse arquivo no módulo.');
     }
   }
 
@@ -97,7 +134,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
     ctx.fillStyle = '#050505';
     ctx.fillRect(0, 0, width, height);
 
-    if (reference.readyState >= 2) drawCover(ctx, reference, 0, 0, half, height);
+    if (reference.readyState >= 2 && reference.videoWidth > 0) drawCover(ctx, reference, 0, 0, half, height);
     if (camera.readyState >= 2) drawCover(ctx, camera, half, 0, half, height);
 
     ctx.fillStyle = 'rgba(0,0,0,.55)';
@@ -122,15 +159,16 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
     const canvas = canvasRef.current;
     const reference = referenceVideoRef.current;
 
-    if (!canvas || !reference) {
-      setError('Não consegui preparar o dueto. Recarregue a página e tente novamente.');
+    if (!canvas || !reference || reference.readyState < 2 || reference.videoWidth === 0) {
+      setError('A referência ainda não está pronta. Tente iniciar novamente.');
+      setStep('intro');
       return;
     }
 
     canvas.width = 1280;
     canvas.height = 720;
     reference.currentTime = 0;
-    await reference.play().catch(() => undefined);
+    await reference.play();
 
     drawDuetFrame();
 
@@ -205,6 +243,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
         )}
 
         {step === 'intro' ? <div className="duet-stage-overlay"><button className="button" onClick={startCountdown}>Iniciar dueto</button></div> : null}
+        {step === 'loading' ? <div className="duet-stage-overlay"><span className="recording-dot">Carregando referência...</span></div> : null}
         {step === 'countdown' ? <div className="countdown overlay-countdown">{count}</div> : null}
       </section>
 
