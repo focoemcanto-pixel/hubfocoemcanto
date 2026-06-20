@@ -12,16 +12,23 @@ export default async function TracksPage() {
 
   return (
     <AppShell>
-      <main className="page">
-        <p className="eyebrow">Biblioteca</p>
-        <h1 className="hero-title">Trilhas de treino</h1>
-        <section className="grid">
-          {(modules || []).map((module) => (
-            <article className="card" key={module.id}>
+      <main className="page tracks-page">
+        <section className="tracks-hero">
+          <p className="eyebrow">Biblioteca VIP</p>
+          <h1>Areas de estudo</h1>
+          <p className="muted">Escolha uma trilha, pratique com video ou audio e envie sua resposta para avaliacao.</p>
+        </section>
+        <section className="tracks-grid">
+          {(modules || []).map((module, index) => (
+            <a className="track-card" key={module.id} href={`/aluno/trilhas/${module.slug}`}>
+              <span>Modulo {index + 1}</span>
               <h2>{module.title}</h2>
-              <p className="muted">{module.description}</p>
-              <a className="button" href={`/aluno/trilhas/${module.slug}`}>Ver exercícios</a>
-            </article>
+              <p>{module.description}</p>
+              <div className="track-footer">
+                <small>Videos e audios</small>
+                <strong>Abrir</strong>
+              </div>
+            </a>
           ))}
         </section>
       </main>
