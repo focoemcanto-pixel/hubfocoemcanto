@@ -1,19 +1,23 @@
+import { cookies } from 'next/headers';
 import { AppShell } from '@/components/app-shell';
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 
 export default async function StudentPage() {
-  const supabase = await createClient();
-  const { data: modules } = await supabase
-    .from('modules')
-    .select('id,title,slug,description,icon,sort_order')
-    .order('sort_order');
+  const cookieStore = await cookies();
+  const email = cookieStore.get('hub_access_email')?.value;
+  const supabase = createAdminClient();
+
+  const [{ data: modules }, { data: profile }] = await Promise.all([
+    supabase.from('modules').select('id,title,slug,description,icon,sort_order').order('sort_order'),
+    email ? supabase.from('profiles').select('name,email').eq('email', email).maybeSingle() : { data: null },
+  ]);
 
   return (
     <AppShell>
       <main className="page">
         <section className="card">
           <p className="eyebrow">Grupo VIP</p>
-          <h1 className="hero-title">Sua jornada vocal começa aqui</h1>
+          <h1 className="hero-title">Bem-vindo ao seu Hub{profile?.name ? `, ${profile.name.split(' ')[0]}` : ''}</h1>
           <p className="muted">Treine harmonia, envie atividades e acompanhe sua evolução.</p>
           <div className="split" style={{ marginTop: 18 }}>
             <a className="button" href="/aluno/trilhas">Continuar treino</a>
