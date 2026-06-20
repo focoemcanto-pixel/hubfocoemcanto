@@ -16,16 +16,30 @@ export default async function AdminModulePage({ params }: { params: Promise<{ id
         <div>
           <p className="eyebrow">Modulo</p>
           <h1>{module?.title || 'Modulo'}</h1>
-          <p className="muted">Gerencie aulas, exercicios, ordem e arquivos vinculados.</p>
+          <p className="muted">Crie aulas manualmente ou importe videos e audios do Drive direto para este modulo.</p>
         </div>
         <a className="button secondary" href="/admin/biblioteca">Voltar</a>
       </section>
 
       <nav className="admin-tabs">
         <a href="/admin/biblioteca">Biblioteca</a>
-        <a href="/admin/drive">Importar Drive</a>
+        <a href={`/admin/conteudos/selecionar-drive?module=${id}`}>Importar do Drive</a>
         <a href={`/aluno/biblioteca/${module?.slug || ''}`}>Ver como aluno</a>
       </nav>
+
+      <section className="admin-grid admin-section">
+        <article className="admin-stat">
+          <span>Importacao inteligente</span>
+          <strong>Drive</strong>
+          <p className="muted">Escolha uma pasta ou arquivo especifico. Nada de puxar o Drive inteiro.</p>
+          <a className="button" href={`/admin/conteudos/selecionar-drive?module=${id}`}>Selecionar arquivo ou pasta</a>
+        </article>
+        <article className="admin-stat">
+          <span>Conteudos</span>
+          <strong>{exercises?.length || 0}</strong>
+          <p className="muted">Aulas, audios e duetos dentro deste modulo.</p>
+        </article>
+      </section>
 
       <section className="content-board admin-section">
         <article className="content-card">
@@ -40,11 +54,11 @@ export default async function AdminModulePage({ params }: { params: Promise<{ id
         </article>
 
         <article className="content-card">
-          <p className="eyebrow">Nova aula ou exercicio</p>
+          <p className="eyebrow">Nova aula manual</p>
           <h2>Adicionar conteudo</h2>
           <form className="admin-form" action="/admin/conteudos/criar" method="post">
             <input type="hidden" name="module_id" value={id} />
-            <label>Titulo<input name="title" required placeholder="Ex: Aula 01 - Encontrando a segunda voz" /></label>
+            <label>Titulo<input name="title" required placeholder="Ex: Aula 01 - Segunda voz" /></label>
             <div className="admin-form-grid">
               <label>Tipo
                 <select name="media_type" defaultValue="video">
@@ -70,7 +84,7 @@ export default async function AdminModulePage({ params }: { params: Promise<{ id
       <section className="card admin-section">
         <div className="section-heading">
           <div><p className="eyebrow">Conteudos</p><h2>Aulas e exercicios</h2></div>
-          <a href="/admin/drive">Importar do Drive</a>
+          <a href={`/admin/conteudos/selecionar-drive?module=${id}`}>Importar do Drive</a>
         </div>
         <div className="admin-list">
           {(exercises || []).map((exercise: any, index: number) => (
@@ -80,7 +94,10 @@ export default async function AdminModulePage({ params }: { params: Promise<{ id
                 <h3>{exercise.title}</h3>
                 <p className="muted">{exercise.description || 'Sem descricao'}</p>
               </div>
-              <a className="button secondary" href={`/admin/conteudos/exercicios/${exercise.id}/editar`}>Editar</a>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <a className="button secondary" href={`/aluno/aula/${exercise.slug}`}>Ver aula</a>
+                <a className="button secondary" href={`/admin/conteudos/exercicios/${exercise.id}/editar`}>Editar</a>
+              </div>
             </div>
           ))}
         </div>
