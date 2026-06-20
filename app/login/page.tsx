@@ -2,18 +2,16 @@ export default function LoginPage() {
   return (
     <main className="page auth-page">
       <section className="card auth-card">
-        <p className="eyebrow">Hub Foco em Canto</p>
-        <h1 className="hero-title">Entre no seu treino vocal</h1>
-        <p className="muted">Acesse o VIP, envie atividades e acompanhe suas avaliações em uma área exclusiva.</p>
+        <p className="eyebrow">Acesso VIP</p>
+        <h1 className="hero-title">Entre com seu e-mail de compra</h1>
+        <p className="muted">Sem senha. Informe o mesmo e-mail usado na Kiwify e receba um link seguro para acessar o Hub.</p>
         <form className="stack" action="/auth/login" method="post">
-          <label>Email<input name="email" type="email" required placeholder="seuemail@gmail.com" /></label>
-          <label>Senha<input name="password" type="password" required placeholder="Sua senha" /></label>
-          <button className="button" type="submit">Entrar no Hub</button>
+          <label>Email de compra<input name="email" type="email" required placeholder="seuemail@gmail.com" /></label>
+          <button className="button" type="submit">Receber link de acesso</button>
         </form>
         <div className="card" style={{ marginTop: 18 }}>
-          <strong>Primeiro acesso?</strong>
-          <p className="muted">Crie sua conta usando o mesmo email da compra na Kiwify. O sistema verifica sua assinatura para liberar o conteúdo.</p>
-          <a className="button secondary" href="/cadastro">Criar minha conta</a>
+          <strong>Como funciona?</strong>
+          <p className="muted">O acesso é liberado automaticamente quando seu pagamento ou renovação está ativo na Kiwify.</p>
         </div>
       </section>
     </main>
