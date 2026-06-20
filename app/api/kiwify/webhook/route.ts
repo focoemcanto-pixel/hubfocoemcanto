@@ -27,6 +27,14 @@ function isAuthorized(request: Request) {
   return headerSecret === secret || querySecret === secret;
 }
 
+export async function GET() {
+  return NextResponse.json({
+    ok: true,
+    service: 'Hub Foco em Canto Kiwify Webhook',
+    message: 'Esta rota recebe eventos POST da Kiwify.',
+  });
+}
+
 export async function POST(request: Request) {
   if (!isAuthorized(request)) {
     return NextResponse.json({ error: 'unauthorized webhook' }, { status: 401 });
