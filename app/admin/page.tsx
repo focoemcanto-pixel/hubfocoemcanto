@@ -1,9 +1,10 @@
 import { createClient } from '@/lib/supabase/server';
 
-type RelatedItem = { title?: string; name?: string; email?: string } | { title?: string; name?: string; email?: string }[] | null;
+type Related = { title?: string; name?: string; email?: string } | null;
 
-function firstRelated<T extends RelatedItem>(value: T) {
-  return Array.isArray(value) ? value[0] : value;
+function related(value: unknown): Related {
+  if (Array.isArray(value)) return (value[0] || null) as Related;
+  return (value || null) as Related;
 }
 
 export default async function AdminPage() {
@@ -27,8 +28,8 @@ export default async function AdminPage() {
       <section className="card" style={{ marginTop: 16 }}>
         <h2>Fila de avaliação</h2>
         {(submissions || []).map((item) => {
-          const exercise = firstRelated(item.exercises);
-          const profile = firstRelated(item.profiles);
+          const exercise = related(item.exercises);
+          const profile = related(item.profiles);
           return (
             <div className="card" key={item.id} style={{ marginTop: 12 }}>
               <p className="eyebrow">{item.status}</p>
