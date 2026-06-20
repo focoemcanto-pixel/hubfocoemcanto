@@ -1,48 +1,98 @@
-import { AppShell } from '@/components/app-shell';
 import { ContentPlayer } from '@/components/content-player';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 export const dynamic = 'force-dynamic';
+
+function driveFileId(url?: string | null) {
+  if (!url) return null;
+  const match = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || url.match(/id=([a-zA-Z0-9_-]+)/);
+  return match?.[1] || null;
+}
+
+function driveThumb(url?: string | null) {
+  const id = driveFileId(url);
+  return id ? `https://drive.google.com/thumbnail?id=${id}&sz=w320` : '';
+}
 
 export default async function StudentLessonPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const supabase = createAdminClient();
   const { data: lesson } = await supabase
     .from('exercises')
-    .select('id,title,slug,description,objective,media_type,difficulty,drive_url,media_url,audio_url,modules(title,slug)')
+    .select('id,title,slug,description,objective,media_type,difficulty,drive_url,media_url,audio_url,module_id,modules(title,slug)')
     .eq('slug', slug)
     .single();
+
   const module = Array.isArray(lesson?.modules) ? lesson?.modules[0] : lesson?.modules;
 
+  const [{ data: modules }, { data: currentModuleLessons }] = await Promise.all([
+    supabase.from('modules').select('id,title,slug,sort_order,exercises(id,title,slug,drive_url,media_url,thumbnail_url,sort_order)').eq('is_active', true).order('sort_order'),
+    lesson?.module_id ? supabase.from('exercises').select('id,title,slug,drive_url,media_url,thumbnail_url,sort_order').eq('module_id', lesson.module_id).order('sort_order') : { data: [] },
+  ]);
+
+  const currentIndex = (currentModuleLessons || []).findIndex((item: any) => item.slug === lesson?.slug);
+  const previousLesson = currentIndex > 0 ? currentModuleLessons?.[currentIndex - 1] : null;
+  const nextLesson = currentIndex >= 0 && currentModuleLessons && currentIndex < currentModuleLessons.length - 1 ? currentModuleLessons[currentIndex + 1] : null;
+
   return (
-    <AppShell>
-      <main className="page">
-        <section className="library-hero">
-          <p className="eyebrow">{module?.title || 'Aula'}</p>
-          <h1>{lesson?.title || 'Aula'}</h1>
-          <p className="muted">{lesson?.description}</p>
-          <div className="library-actions">
-            <a className="button secondary" href={module?.slug ? `/aluno/biblioteca/${module.slug}` : '/aluno/biblioteca'}>Voltar ao modulo</a>
+    <main className="course-watch-page">
+      <section className="course-main">
+        <header className="course-topbar">
+          <a href={module?.slug ? `/aluno/biblioteca/${module.slug}` : '/aluno/biblioteca'}>← Voltar para módulo</a>
+          <strong>{module?.title || 'Biblioteca VIP'}</strong>
+        </header>
+
+        <div className="course-player-wrap">
+          <ContentPlayer title={lesson?.title || 'Conteudo'} mediaType={lesson?.media_type} mediaUrl={lesson?.media_url || lesson?.audio_url} driveUrl={lesson?.drive_url} />
+        </div>
+
+        <section className="course-details">
+          <div>
+            <p className="course-breadcrumb">Início › {module?.title || 'Módulo'}</p>
+            <h1>{lesson?.title || 'Aula'}</h1>
+            <p>{lesson?.description}</p>
+            <p className="muted">{lesson?.objective || 'Assista, pratique e envie sua resposta para avaliação.'}</p>
             <a className="button" href={`/aluno/enviar?exercise=${lesson?.id || ''}`}>Enviar minha resposta</a>
           </div>
+          <div className="course-nav-buttons">
+            {previousLesson ? <a className="course-square" href={`/aluno/aula/${previousLesson.slug}`}>‹</a> : <span className="course-square disabled">‹</span>}
+            {nextLesson ? <a className="course-square" href={`/aluno/aula/${nextLesson.slug}`}>›</a> : <span className="course-square disabled">›</span>}
+          </div>
         </section>
+      </section>
 
-        <section className="lesson-layout admin-section">
-          <ContentPlayer title={lesson?.title || 'Conteudo'} mediaType={lesson?.media_type} mediaUrl={lesson?.media_url || lesson?.audio_url} driveUrl={lesson?.drive_url} />
-          <aside className="lesson-sidebar">
-            <article className="card">
-              <p className="eyebrow">Objetivo</p>
-              <h2>O que praticar</h2>
-              <p className="muted">{lesson?.objective || 'Assista ao material, pratique sua parte e envie sua execucao para avaliacao.'}</p>
-            </article>
-            <article className="card">
-              <p className="eyebrow">Nivel</p>
-              <h2>{lesson?.difficulty || 1}</h2>
-              <p className="muted">Repita quantas vezes precisar antes de enviar.</p>
-            </article>
-          </aside>
-        </section>
-      </main>
-    </AppShell>
+      <aside className="course-sidebar">
+        <div className="course-sidebar-header">
+          <a href="/aluno/biblioteca">← Ver todos os módulos</a>
+          <a href="/aluno">×</a>
+        </div>
+        <div className="course-module-list">
+          {(modules || []).map((mod: any) => {
+            const lessons = mod.exercises || [];
+            return (
+              <section className="course-module-group" key={mod.id}>
+                <div className="course-module-title">
+                  <strong>{mod.title}</strong>
+                  <span>{lessons.length} aulas</span>
+                </div>
+                <div className="course-lessons-list">
+                  {lessons.map((item: any) => {
+                    const thumb = item.thumbnail_url || driveThumb(item.drive_url || item.media_url);
+                    const active = item.slug === lesson?.slug;
+                    return (
+                      <a className={active ? 'course-lesson-item active' : 'course-lesson-item'} href={`/aluno/aula/${item.slug}`} key={item.id}>
+                        <span className="course-check">{active ? '✓' : ''}</span>
+                        <span className="course-thumb">{thumb ? <img src={thumb} alt="" /> : null}</span>
+                        <span>{item.title}</span>
+                      </a>
+                    );
+                  })}
+                </div>
+              </section>
+            );
+          })}
+        </div>
+      </aside>
+    </main>
   );
 }
