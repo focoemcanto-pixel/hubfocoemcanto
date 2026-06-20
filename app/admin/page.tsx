@@ -25,14 +25,15 @@ export default async function AdminPage() {
         <div>
           <p className="eyebrow">Admin Hub</p>
           <h1>Painel do professor</h1>
-          <p className="muted">Gerencie conteudos, alunos, assinaturas e avaliacoes.</p>
+          <p className="muted">Gerencie a biblioteca, alunos, assinaturas e avaliacoes.</p>
         </div>
-        <a className="button" href="/admin/conteudos">Cadastrar exercicio</a>
+        <a className="button" href="/admin/biblioteca">Abrir biblioteca</a>
       </section>
 
       <nav className="admin-tabs">
         <a href="/admin">Resumo</a>
-        <a href="/admin/conteudos">Conteudos</a>
+        <a href="/admin/biblioteca">Biblioteca</a>
+        <a href="/admin/drive">Drive</a>
         <a href="/admin/alunos">Alunos</a>
         <a href="/admin/avaliacoes">Avaliacoes</a>
       </nav>
@@ -41,15 +42,27 @@ export default async function AdminPage() {
         <article className="admin-stat"><span>Alunos</span><strong>{students || 0}</strong></article>
         <article className="admin-stat"><span>Pendentes</span><strong>{pending || 0}</strong></article>
         <article className="admin-stat"><span>Modulos</span><strong>{modules || 0}</strong></article>
-        <article className="admin-stat"><span>Exercicios</span><strong>{exercises || 0}</strong></article>
+        <article className="admin-stat"><span>Aulas e exercicios</span><strong>{exercises || 0}</strong></article>
+      </section>
+
+      <section className="admin-grid admin-section">
+        <article className="admin-stat">
+          <span>Plataforma</span>
+          <strong>Biblioteca</strong>
+          <p className="muted">Organize modulos, aulas, audios e duetos como uma area premium de estudos.</p>
+          <a className="button secondary" href="/admin/biblioteca">Gerenciar</a>
+        </article>
+        <article className="admin-stat">
+          <span>Arquivos</span>
+          <strong>Google Drive</strong>
+          <p className="muted">Use o Drive como fonte dos arquivos, sem tirar o aluno do Hub.</p>
+          <a className="button secondary" href="/admin/drive">Importar</a>
+        </article>
       </section>
 
       <section className="card admin-section">
         <div className="section-heading">
-          <div>
-            <p className="eyebrow">Fila</p>
-            <h2>Avaliacoes pendentes</h2>
-          </div>
+          <div><p className="eyebrow">Fila</p><h2>Avaliacoes pendentes</h2></div>
           <a href="/admin/avaliacoes">Ver todas</a>
         </div>
         <div className="admin-list">
