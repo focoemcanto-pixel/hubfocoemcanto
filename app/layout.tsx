@@ -1,4 +1,5 @@
 import './globals.css';
+import './premium-ui.css';
 
 export default function RootLayout(props: { children: React.ReactNode }) {
   return (
