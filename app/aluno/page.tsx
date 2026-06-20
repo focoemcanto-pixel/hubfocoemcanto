@@ -2,6 +2,8 @@ import { cookies } from 'next/headers';
 import { AppShell } from '@/components/app-shell';
 import { createAdminClient } from '@/lib/supabase/admin';
 
+export const dynamic = 'force-dynamic';
+
 export default async function StudentPage() {
   const cookieStore = await cookies();
   const email = cookieStore.get('hub_access_email')?.value;
