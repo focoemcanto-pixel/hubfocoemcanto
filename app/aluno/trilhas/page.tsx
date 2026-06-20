@@ -1,6 +1,8 @@
 import { AppShell } from '@/components/app-shell';
 import { createAdminClient } from '@/lib/supabase/admin';
 
+export const dynamic = 'force-dynamic';
+
 export default async function TracksPage() {
   const supabase = createAdminClient();
   const { data: modules } = await supabase
