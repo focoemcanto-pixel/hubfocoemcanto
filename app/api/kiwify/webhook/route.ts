@@ -12,7 +12,26 @@ function getAdminClient() {
   );
 }
 
+function isAuthorized(request: Request) {
+  const secret = process.env.KIWIFY_WEBHOOK_SECRET;
+  if (!secret) return true;
+
+  const headerSecret =
+    request.headers.get('x-webhook-secret') ||
+    request.headers.get('x-kiwify-secret') ||
+    request.headers.get('authorization')?.replace('Bearer ', '');
+
+  const url = new URL(request.url);
+  const querySecret = url.searchParams.get('secret');
+
+  return headerSecret === secret || querySecret === secret;
+}
+
 export async function POST(request: Request) {
+  if (!isAuthorized(request)) {
+    return NextResponse.json({ error: 'unauthorized webhook' }, { status: 401 });
+  }
+
   const payload = (await request.json()) as KiwifyPayload;
   const eventName = getKiwifyEventName(payload);
   const status = mapKiwifyStatus(eventName);
