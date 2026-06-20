@@ -22,7 +22,7 @@ export default async function EditExercisePage({ params }: { params: Promise<{ i
       </section>
 
       <section className="content-card admin-section">
-        <form className="admin-form" action={`/admin/conteudos/exercicios/${id}/editar`} method="post">
+        <form className="admin-form" action={`/admin/conteudos/exercicios/${id}/editar/salvar`} method="post">
           <label>Titulo<input name="title" defaultValue={exercise?.title || ''} required /></label>
           <label>Modulo
             <select name="module_id" defaultValue={exercise?.module_id || ''} required>
