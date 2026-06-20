@@ -2,6 +2,13 @@ import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { driveFileLink, driveFolderId, mediaTypeFromFile, slugify } from '@/lib/google/drive-utils';
 
+const MEDIA_BUCKET = 'lesson-media';
+
+function extensionFromName(name: string) {
+  const match = name.match(/\.([a-zA-Z0-9]+)$/);
+  return match?.[1]?.toLowerCase() || 'mp4';
+}
+
 async function getAccessToken() {
   const supabase = createAdminClient();
   const { data } = await supabase
@@ -48,6 +55,46 @@ async function getAccessToken() {
   return tokens.access_token as string;
 }
 
+async function cacheDriveFile(params: {
+  accessToken: string;
+  file: { id: string; name: string; mimeType: string; webViewLink?: string };
+  moduleId: string;
+  index: number;
+}) {
+  const { accessToken, file, moduleId, index } = params;
+  const mediaType = mediaTypeFromFile(file.name, file.mimeType);
+
+  if (!['video', 'audio'].includes(mediaType)) {
+    return file.webViewLink || driveFileLink(file.id);
+  }
+
+  const supabase = createAdminClient();
+  const fileResponse = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media&supportsAllDrives=true`, {
+    headers: { authorization: `Bearer ${accessToken}` },
+  });
+
+  if (!fileResponse.ok) {
+    return file.webViewLink || driveFileLink(file.id);
+  }
+
+  const contentType = fileResponse.headers.get('content-type') || file.mimeType || (mediaType === 'audio' ? 'audio/mpeg' : 'video/mp4');
+  const buffer = await fileResponse.arrayBuffer();
+  const ext = extensionFromName(file.name);
+  const safeTitle = slugify(file.name.replace(/\.[^/.]+$/, '')) || 'aula';
+  const storagePath = `${moduleId}/${String(index + 1).padStart(3, '0')}-${safeTitle}-${file.id}.${ext}`;
+
+  const { error } = await supabase.storage
+    .from(MEDIA_BUCKET)
+    .upload(storagePath, buffer, { contentType, upsert: true });
+
+  if (error) {
+    return file.webViewLink || driveFileLink(file.id);
+  }
+
+  const { data } = supabase.storage.from(MEDIA_BUCKET).getPublicUrl(storagePath);
+  return data.publicUrl;
+}
+
 export async function POST(request: Request) {
   const formData = await request.formData();
   const moduleId = String(formData.get('module_id') || '');
@@ -81,23 +128,29 @@ export async function POST(request: Request) {
 
   const data = await driveResponse.json() as { files?: Array<{ id: string; name: string; mimeType: string; webViewLink?: string }> };
   const files = (data.files || []).filter((file) => !file.mimeType.includes('folder'));
+  const supabase = createAdminClient();
+  const rows = [];
 
-  const rows = files.map((file, index) => ({
-    module_id: moduleId,
-    title: file.name.replace(/\.[^/.]+$/, ''),
-    slug: `${slugify(file.name.replace(/\.[^/.]+$/, ''))}-${Date.now().toString(36)}-${index}`,
-    description: 'Material importado do Google Drive.',
-    objective: 'Assista ou ouca o material e envie sua pratica para avaliacao.',
-    media_type: mediaTypeFromFile(file.name, file.mimeType),
-    difficulty,
-    drive_url: file.webViewLink || driveFileLink(file.id),
-    media_url: file.webViewLink || driveFileLink(file.id),
-    is_active: true,
-    sort_order: index + 1,
-  }));
+  for (let index = 0; index < files.length; index += 1) {
+    const file = files[index];
+    const title = file.name.replace(/\.[^/.]+$/, '');
+    const cachedUrl = await cacheDriveFile({ accessToken, file, moduleId, index });
+    rows.push({
+      module_id: moduleId,
+      title,
+      slug: `${slugify(title)}-${Date.now().toString(36)}-${index}`,
+      description: '',
+      objective: 'Assista ao material e envie sua pratica para avaliacao.',
+      media_type: mediaTypeFromFile(file.name, file.mimeType),
+      difficulty,
+      drive_url: file.webViewLink || driveFileLink(file.id),
+      media_url: cachedUrl,
+      is_active: true,
+      sort_order: index + 1,
+    });
+  }
 
   if (rows.length > 0) {
-    const supabase = createAdminClient();
     await supabase.from('exercises').insert(rows);
   }
 
