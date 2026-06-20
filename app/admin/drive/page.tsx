@@ -7,7 +7,7 @@ export default function AdminDriveShortcutPage() {
         <div>
           <p className="eyebrow">Google Drive Sync</p>
           <h1>Central do Drive</h1>
-          <p className="muted">Use esta area para conectar o Google Drive e importar sua biblioteca completa.</p>
+          <p className="muted">Conecte, navegue pelas suas pastas e importe a biblioteca completa do VIP.</p>
         </div>
         <a className="button secondary" href="/admin/conteudos">Voltar</a>
       </section>
@@ -28,9 +28,16 @@ export default function AdminDriveShortcutPage() {
 
         <article className="admin-stat">
           <span>Passo 2</span>
-          <strong>Sincronizar</strong>
-          <p className="muted">Cole a pasta mae. Cada subpasta vira modulo e cada arquivo vira exercicio.</p>
-          <a className="button" href="/admin/conteudos/sincronizar-biblioteca">Sincronizar biblioteca</a>
+          <strong>Selecionar pasta</strong>
+          <p className="muted">Navegue pelo Drive dentro do Hub e escolha a pasta mae para sincronizar.</p>
+          <a className="button" href="/admin/conteudos/selecionar-drive">Abrir seletor do Drive</a>
+        </article>
+
+        <article className="admin-stat">
+          <span>Alternativo</span>
+          <strong>Colar link</strong>
+          <p className="muted">Use apenas quando quiser importar uma pasta especifica pelo link.</p>
+          <a className="button secondary" href="/admin/conteudos/sincronizar-biblioteca">Colar link da pasta</a>
         </article>
       </section>
     </main>
