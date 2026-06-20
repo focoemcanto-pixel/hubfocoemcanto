@@ -1,5 +1,11 @@
 import { createClient } from '@/lib/supabase/server';
 
+type RelatedItem = { title?: string; name?: string; email?: string } | { title?: string; name?: string; email?: string }[] | null;
+
+function firstRelated<T extends RelatedItem>(value: T) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
 export default async function AdminPage() {
   const supabase = await createClient();
   const [{ count: students }, { count: pending }, { data: submissions }] = await Promise.all([
@@ -20,15 +26,19 @@ export default async function AdminPage() {
       </section>
       <section className="card" style={{ marginTop: 16 }}>
         <h2>Fila de avaliação</h2>
-        {(submissions || []).map((item) => (
-          <div className="card" key={item.id} style={{ marginTop: 12 }}>
-            <p className="eyebrow">{item.status}</p>
-            <h3>{item.exercises?.title || 'Atividade'}</h3>
-            <p className="muted">{item.profiles?.name || item.profiles?.email}</p>
-            <p>{item.note}</p>
-            {item.file_url ? <a className="button secondary" href={item.file_url}>Abrir envio</a> : null}
-          </div>
-        ))}
+        {(submissions || []).map((item) => {
+          const exercise = firstRelated(item.exercises);
+          const profile = firstRelated(item.profiles);
+          return (
+            <div className="card" key={item.id} style={{ marginTop: 12 }}>
+              <p className="eyebrow">{item.status}</p>
+              <h3>{exercise?.title || 'Atividade'}</h3>
+              <p className="muted">{profile?.name || profile?.email}</p>
+              <p>{item.note}</p>
+              {item.file_url ? <a className="button secondary" href={item.file_url}>Abrir envio</a> : null}
+            </div>
+          );
+        })}
       </section>
     </main>
   );
