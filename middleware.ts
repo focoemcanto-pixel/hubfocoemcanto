@@ -10,7 +10,7 @@ export async function middleware(request: NextRequest) {
       cookies: {
         getAll: () => request.cookies.getAll(),
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => request.cookies.set(name, value));
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
           response = NextResponse.next({ request });
           cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
         },
@@ -25,6 +25,23 @@ export async function middleware(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
     return NextResponse.redirect(url);
+  }
+
+  if (user?.email && path.startsWith('/aluno')) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('id, subscriptions(status)')
+      .eq('email', user.email.toLowerCase())
+      .maybeSingle();
+
+    const subscriptions = Array.isArray(profile?.subscriptions) ? profile?.subscriptions : [];
+    const isActive = subscriptions.some((subscription) => subscription.status === 'active');
+
+    if (!isActive) {
+      const url = request.nextUrl.clone();
+      url.pathname = '/acesso-bloqueado';
+      return NextResponse.redirect(url);
+    }
   }
 
   return response;
