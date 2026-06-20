@@ -2,8 +2,6 @@ import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { driveFileLink, mediaTypeFromFile, slugify } from '@/lib/google/drive-utils';
 
-const MEDIA_BUCKET = 'lesson-media';
-
 type DriveConnection = {
   id: string;
   access_token?: string | null;
@@ -21,10 +19,8 @@ type DriveFile = {
   thumbnailLink?: string;
 };
 
-function extensionFromName(name: string, mediaType: string) {
-  const match = name.match(/\.([a-zA-Z0-9]+)$/);
-  if (match?.[1]) return match[1].toLowerCase();
-  return mediaType === 'audio' ? 'mp3' : 'mp4';
+function hubMediaUrl(fileId: string) {
+  return `/api/drive/video/${fileId}`;
 }
 
 async function getAccessToken() {
@@ -93,75 +89,49 @@ function isAllowedContent(file: { name: string; mimeType: string }) {
   return file.mimeType.includes('video') || file.mimeType.includes('audio') || name.endsWith('.mp4') || name.endsWith('.mp3') || name.endsWith('.wav');
 }
 
-async function cacheDriveFile(file: DriveFile, token: string, moduleId: string, index: number) {
-  const mediaType = mediaTypeFromFile(file.name, file.mimeType);
-  const driveUrl = file.webViewLink || driveFileLink(file.id);
-  if (!['video', 'audio'].includes(mediaType)) return driveUrl;
-
-  const response = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media&supportsAllDrives=true`, {
-    headers: { authorization: `Bearer ${token}` },
-  });
-
-  if (!response.ok) return driveUrl;
-
-  const supabase = createAdminClient();
-  const buffer = await response.arrayBuffer();
-  const contentType = response.headers.get('content-type') || file.mimeType || (mediaType === 'audio' ? 'audio/mpeg' : 'video/mp4');
-  const title = file.name.replace(/\.[^/.]+$/, '');
-  const safeTitle = slugify(title) || 'aula';
-  const ext = extensionFromName(file.name, mediaType);
-  const storagePath = `${moduleId}/${String(index + 1).padStart(3, '0')}-${safeTitle}-${file.id}.${ext}`;
-
-  const { error } = await supabase.storage.from(MEDIA_BUCKET).upload(storagePath, buffer, {
-    contentType,
-    upsert: true,
-  });
-
-  if (error) return driveUrl;
-  const { data } = supabase.storage.from(MEDIA_BUCKET).getPublicUrl(storagePath);
-  return data.publicUrl;
-}
-
 export async function POST(request: Request) {
-  const formData = await request.formData();
-  const moduleId = String(formData.get('module_id') || '');
-  const folderId = String(formData.get('folder_id') || '');
-  const token = await getAccessToken();
+  try {
+    const formData = await request.formData();
+    const moduleId = String(formData.get('module_id') || '');
+    const folderId = String(formData.get('folder_id') || '');
+    const token = await getAccessToken();
 
-  if (!moduleId || !folderId || !token) {
-    return NextResponse.redirect(new URL('/admin/biblioteca?erro=drive', request.url));
+    if (!moduleId || !folderId || !token) {
+      return NextResponse.redirect(new URL('/admin/biblioteca?erro=drive', request.url));
+    }
+
+    const supabase = createAdminClient();
+    const files = (await listFolderFiles(folderId, token)).filter(isAllowedContent);
+    const { count } = await supabase.from('exercises').select('*', { count: 'exact', head: true }).eq('module_id', moduleId);
+    let imported = 0;
+
+    for (let index = 0; index < files.length; index++) {
+      const file = files[index];
+      const cleanTitle = file.name.replace(/\.[^/.]+$/, '');
+      const driveUrl = file.webViewLink || driveFileLink(file.id);
+      const { data: existing } = await supabase.from('exercises').select('id').eq('module_id', moduleId).eq('drive_url', driveUrl).maybeSingle();
+      if (existing?.id) continue;
+
+      const { error } = await supabase.from('exercises').insert({
+        module_id: moduleId,
+        title: cleanTitle,
+        slug: `${slugify(cleanTitle)}-${file.id.slice(0, 6)}-${index}`,
+        description: '',
+        objective: 'Assista, pratique e envie sua resposta para avaliacao.',
+        media_type: mediaTypeFromFile(file.name, file.mimeType),
+        difficulty: 1,
+        drive_url: driveUrl,
+        media_url: hubMediaUrl(file.id),
+        thumbnail_url: file.thumbnailLink || null,
+        is_active: true,
+        sort_order: (count || 0) + index + 1,
+      });
+      if (!error) imported++;
+    }
+
+    return NextResponse.redirect(new URL(`/admin/biblioteca/${moduleId}?sucesso=pasta&importados=${imported}`, request.url));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'erro-importacao';
+    return NextResponse.redirect(new URL(`/admin/biblioteca?erro=${encodeURIComponent(message)}`, request.url));
   }
-
-  const supabase = createAdminClient();
-  const files = (await listFolderFiles(folderId, token)).filter(isAllowedContent);
-  const { count } = await supabase.from('exercises').select('*', { count: 'exact', head: true }).eq('module_id', moduleId);
-  let imported = 0;
-
-  for (let index = 0; index < files.length; index++) {
-    const file = files[index];
-    const cleanTitle = file.name.replace(/\.[^/.]+$/, '');
-    const driveUrl = file.webViewLink || driveFileLink(file.id);
-    const { data: existing } = await supabase.from('exercises').select('id').eq('module_id', moduleId).eq('drive_url', driveUrl).maybeSingle();
-    if (existing?.id) continue;
-
-    const cachedUrl = await cacheDriveFile(file, token, moduleId, index);
-
-    const { error } = await supabase.from('exercises').insert({
-      module_id: moduleId,
-      title: cleanTitle,
-      slug: `${slugify(cleanTitle)}-${file.id.slice(0, 6)}-${index}`,
-      description: '',
-      objective: 'Assista, pratique e envie sua resposta para avaliacao.',
-      media_type: mediaTypeFromFile(file.name, file.mimeType),
-      difficulty: 1,
-      drive_url: driveUrl,
-      media_url: cachedUrl,
-      thumbnail_url: file.thumbnailLink || null,
-      is_active: true,
-      sort_order: (count || 0) + index + 1,
-    });
-    if (!error) imported++;
-  }
-
-  return NextResponse.redirect(new URL(`/admin/biblioteca/${moduleId}?sucesso=pasta&importados=${imported}`, request.url));
 }
