@@ -3,7 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { driveFileLink, mediaTypeFromFile, slugify } from '@/lib/google/drive-utils';
 
 function hubMediaUrl(fileId: string) {
-  return `/api/drive/video/${fileId}`;
+  return `/api/media/drive/${fileId}`;
 }
 
 export async function POST(request: Request) {
