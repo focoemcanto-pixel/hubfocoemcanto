@@ -23,8 +23,6 @@ async function ensureBucket() {
 
   const { error: createError } = await supabase.storage.createBucket(BUCKET, {
     public: true,
-    fileSizeLimit: 524288000,
-    allowedMimeTypes: ['video/webm', 'video/mp4', 'video/quicktime', 'application/octet-stream'],
   });
 
   if (createError) {
