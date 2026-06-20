@@ -14,45 +14,62 @@ function driveThumb(url?: string | null) {
   return id ? `https://drive.google.com/thumbnail?id=${id}&sz=w320` : '';
 }
 
+function isRealModule(module: any) {
+  const description = String(module.description || '').toLowerCase();
+  const title = String(module.title || '').toLowerCase();
+  return description.indexOf('importados da pasta') === -1 && title !== 'biblioteca geral';
+}
+
+function cleanDescription(text?: string | null) {
+  const value = String(text || '').trim();
+  if (!value) return '';
+  if (value.toLowerCase().includes('material importado do google drive')) return '';
+  return value;
+}
+
 export default async function StudentLessonPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const supabase = createAdminClient();
   const { data: lesson } = await supabase
     .from('exercises')
-    .select('id,title,slug,description,objective,media_type,difficulty,drive_url,media_url,audio_url,module_id,modules(title,slug)')
+    .select('id,title,slug,description,objective,media_type,difficulty,drive_url,media_url,audio_url,module_id,modules(title,slug,description)')
     .eq('slug', slug)
     .single();
 
   const module = Array.isArray(lesson?.modules) ? lesson?.modules[0] : lesson?.modules;
 
-  const [{ data: modules }, { data: currentModuleLessons }] = await Promise.all([
-    supabase.from('modules').select('id,title,slug,sort_order,exercises(id,title,slug,drive_url,media_url,thumbnail_url,sort_order)').eq('is_active', true).order('sort_order'),
+  const [{ data: rawModules }, { data: currentModuleLessons }] = await Promise.all([
+    supabase.from('modules').select('id,title,slug,description,sort_order,exercises(id,title,slug,drive_url,media_url,thumbnail_url,sort_order)').eq('is_active', true).order('sort_order'),
     lesson?.module_id ? supabase.from('exercises').select('id,title,slug,drive_url,media_url,thumbnail_url,sort_order').eq('module_id', lesson.module_id).order('sort_order') : { data: [] },
   ]);
 
+  const modules = (rawModules || []).filter(isRealModule);
   const currentIndex = (currentModuleLessons || []).findIndex((item: any) => item.slug === lesson?.slug);
   const previousLesson = currentIndex > 0 ? currentModuleLessons?.[currentIndex - 1] : null;
   const nextLesson = currentIndex >= 0 && currentModuleLessons && currentIndex < currentModuleLessons.length - 1 ? currentModuleLessons[currentIndex + 1] : null;
+  const description = cleanDescription(lesson?.description) || cleanDescription(module?.description) || 'Assista à referência e pratique junto. Quando estiver pronto, grave sua resposta para avaliação.';
 
   return (
-    <main className="course-watch-page">
+    <main className="course-watch-page hub-watch-page">
       <section className="course-main">
-        <header className="course-topbar">
-          <a href={module?.slug ? `/aluno/biblioteca/${module.slug}` : '/aluno/biblioteca'}>← Voltar para módulo</a>
+        <header className="course-topbar hub-topbar">
+          <a href={module?.slug ? `/aluno/biblioteca/${module.slug}` : '/aluno/biblioteca'}>← Voltar ao módulo</a>
           <strong>{module?.title || 'Biblioteca VIP'}</strong>
         </header>
 
-        <div className="course-player-wrap">
+        <div className="course-player-wrap hub-player-wrap">
           <ContentPlayer title={lesson?.title || 'Conteudo'} mediaType={lesson?.media_type} mediaUrl={lesson?.media_url || lesson?.audio_url} driveUrl={lesson?.drive_url} />
         </div>
 
-        <section className="course-details">
+        <section className="course-details hub-lesson-details">
           <div>
-            <p className="course-breadcrumb">Início › {module?.title || 'Módulo'}</p>
+            <p className="course-breadcrumb">Hub VIP › {module?.title || 'Módulo'}</p>
             <h1>{lesson?.title || 'Aula'}</h1>
-            <p>{lesson?.description}</p>
-            <p className="muted">{lesson?.objective || 'Assista, pratique e envie sua resposta para avaliação.'}</p>
-            <a className="button" href={`/aluno/enviar?exercise=${lesson?.id || ''}`}>Enviar minha resposta</a>
+            <p>{description}</p>
+            <div className="lesson-action-row">
+              <a className="button" href={`/aluno/atividade/${lesson?.slug || ''}`}>Realizar atividade</a>
+              <span className="muted">Use fone para ouvir a referência e captar melhor sua voz.</span>
+            </div>
           </div>
           <div className="course-nav-buttons">
             {previousLesson ? <a className="course-square" href={`/aluno/aula/${previousLesson.slug}`}>‹</a> : <span className="course-square disabled">‹</span>}
@@ -61,14 +78,14 @@ export default async function StudentLessonPage({ params }: { params: Promise<{ 
         </section>
       </section>
 
-      <aside className="course-sidebar">
+      <aside className="course-sidebar hub-sidebar">
         <div className="course-sidebar-header">
-          <a href="/aluno/biblioteca">← Ver todos os módulos</a>
+          <a href="/aluno/biblioteca">← Módulos</a>
           <a href="/aluno">×</a>
         </div>
         <div className="course-module-list">
-          {(modules || []).map((mod: any) => {
-            const lessons = mod.exercises || [];
+          {modules.map((mod: any) => {
+            const lessons = (mod.exercises || []).sort((a: any, b: any) => (a.sort_order || 0) - (b.sort_order || 0));
             return (
               <section className="course-module-group" key={mod.id}>
                 <div className="course-module-title">
