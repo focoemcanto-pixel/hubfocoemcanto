@@ -54,13 +54,13 @@ export async function POST(request: Request) {
     const file = files[index];
     const cleanTitle = file.name.replace(/\.[^/.]+$/, '');
     const driveUrl = file.webViewLink || driveFileLink(file.id);
-    const { data: existing } = await supabase.from('exercises').select('id').eq('drive_url', driveUrl).maybeSingle();
+    const { data: existing } = await supabase.from('exercises').select('id').eq('module_id', moduleId).eq('drive_url', driveUrl).maybeSingle();
     if (existing?.id) continue;
 
-    await supabase.from('exercises').insert({
+    const { error } = await supabase.from('exercises').insert({
       module_id: moduleId,
       title: cleanTitle,
-      slug: `${slugify(cleanTitle)}-${file.id.slice(0, 6)}`,
+      slug: `${slugify(cleanTitle)}-${file.id.slice(0, 6)}-${index}`,
       description: 'Material importado do Google Drive.',
       objective: 'Assista, pratique e envie sua resposta para avaliacao.',
       media_type: mediaTypeFromFile(file.name, file.mimeType),
@@ -70,7 +70,7 @@ export async function POST(request: Request) {
       is_active: true,
       sort_order: (count || 0) + index + 1,
     });
-    imported++;
+    if (!error) imported++;
   }
 
   return NextResponse.redirect(new URL(`/admin/biblioteca/${moduleId}?sucesso=pasta&importados=${imported}`, request.url));
