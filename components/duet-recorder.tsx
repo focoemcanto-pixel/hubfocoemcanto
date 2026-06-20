@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useRef, useState } from 'react';
+import { CheckCircle2, Download, Headphones, Mic, RefreshCcw, Send, Sparkles, UploadCloud, Video } from 'lucide-react';
 
 type Props = {
   lessonTitle: string;
@@ -151,7 +152,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
     ctx.fillText('Referência', 24, 35);
     ctx.fillText('Aluno', half + 24, 35);
 
-    ctx.strokeStyle = 'rgba(255,255,255,.35)';
+    ctx.strokeStyle = 'rgba(245,199,107,.55)';
     ctx.lineWidth = 4;
     ctx.beginPath();
     ctx.moveTo(half, 0);
@@ -275,75 +276,59 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
   }
 
   return (
-    <div className="duet-remix-studio real-duet-studio">
-      <section className="duet-remix-header">
+    <div className="duet-remix-studio real-duet-studio premium-duet-studio">
+      <section className="duet-remix-header premium-duet-header">
         <div>
           <p className="eyebrow">Atividade prática</p>
           <h1>Grave seu dueto</h1>
           <p className="muted">Aula: {lessonTitle}</p>
+          <div className="premium-duet-steps">
+            <span><Video size={16} /> Assista</span>
+            <span><Mic size={16} /> Grave</span>
+            <span><Send size={16} /> Envie</span>
+          </div>
         </div>
-        <div className="duet-instruction compact">
-          <strong>Use fone de ouvido</strong>
-          <p>O vídeo da atividade e sua câmera entram no mesmo quadro. No final, o arquivo gerado já sai como dueto com os dois áudios.</p>
+        <div className="duet-instruction compact premium-duet-instruction">
+          <Headphones size={24} />
+          <div>
+            <strong>Use fone de ouvido</strong>
+            <p>O vídeo da atividade e sua câmera entram no mesmo quadro. No final, o arquivo gerado já sai como dueto com os dois áudios.</p>
+          </div>
         </div>
       </section>
 
-      {error ? <p className="duet-error">{error}</p> : null}
+      {error ? <p className="duet-error premium-duet-error">{error}</p> : null}
 
-      <section className="real-duet-stage">
+      <section className="real-duet-stage premium-duet-stage">
         <video ref={referenceVideoRef} className="hidden-duet-source" src={referenceSource} crossOrigin="anonymous" playsInline preload="auto" />
         <video ref={cameraRef} className="hidden-duet-source" autoPlay muted playsInline />
 
-        {recordedUrl ? (
-          <video className="duet-final-video" src={recordedUrl} controls />
-        ) : (
-          <canvas ref={canvasRef} className="duet-canvas" width={1280} height={720} />
-        )}
+        {recordedUrl ? <video className="duet-final-video" src={recordedUrl} controls /> : <canvas ref={canvasRef} className="duet-canvas" width={1280} height={720} />}
 
-        {step === 'intro' ? <div className="duet-stage-overlay"><button className="button" onClick={startCountdown}>Iniciar dueto</button></div> : null}
-        {step === 'loading' ? <div className="duet-stage-overlay"><span className="recording-dot">Carregando referência...</span></div> : null}
+        {step === 'intro' ? (
+          <div className="duet-stage-overlay premium-duet-overlay">
+            <div className="premium-duet-start-card">
+              <span><Sparkles size={20} /> Pronto para praticar?</span>
+              <h2>Grave sua segunda voz junto com a referência.</h2>
+              <p>Prepare o fone, posicione a câmera e clique para iniciar a contagem.</p>
+              <button className="button premium-primary-button" onClick={startCountdown}><Mic size={18} /> Iniciar dueto</button>
+            </div>
+          </div>
+        ) : null}
+        {step === 'loading' ? <div className="duet-stage-overlay premium-duet-overlay"><span className="recording-dot">Carregando referência...</span></div> : null}
         {step === 'countdown' ? <div className="countdown overlay-countdown">{count}</div> : null}
       </section>
 
-      <section className="duet-control-bar">
-        {step === 'recording' ? (
-          <>
-            <span className="recording-dot">● Gravando dueto real</span>
-            <button className="button danger" onClick={stopRecording}>Finalizar gravação</button>
-          </>
-        ) : null}
-        {step === 'review' ? (
-          <>
-            <button className="button secondary" onClick={reset}>Regravar</button>
-            {recordedUrl ? <a className="button secondary" href={recordedUrl} download={`${lessonSlug}-dueto.webm`}>Baixar prévia</a> : null}
-            <button className="button" onClick={publish} disabled={isSubmitting}>{isSubmitting ? 'Enviando...' : 'Enviar para avaliação'}</button>
-            <label className="community-toggle"><input type="checkbox" checked={postCommunity} onChange={(event) => setPostCommunity(event.target.checked)} /> Postar também na comunidade</label>
-          </>
-        ) : null}
+      <section className="duet-control-bar premium-duet-control-bar">
+        {step === 'recording' ? <><span className="recording-dot">● Gravando dueto real</span><button className="button danger" onClick={stopRecording}>Finalizar gravação</button></> : null}
+        {step === 'review' ? <><button className="button secondary" onClick={reset}><RefreshCcw size={16} /> Regravar</button>{recordedUrl ? <a className="button secondary" href={recordedUrl} download={`${lessonSlug}-dueto.webm`}><Download size={16} /> Baixar prévia</a> : null}<button className="button" onClick={publish} disabled={isSubmitting}><UploadCloud size={16} /> {isSubmitting ? 'Enviando...' : 'Enviar para avaliação'}</button><label className="community-toggle"><input type="checkbox" checked={postCommunity} onChange={(event) => setPostCommunity(event.target.checked)} /> Postar também na comunidade</label></> : null}
       </section>
 
-      {step === 'review' ? (
-        <section className="duet-review-note">
-          <h2>Dueto gerado</h2>
-          <p>A referência e o aluno foram gravados no mesmo vídeo. Envie para entrar na fila de avaliação do professor.</p>
-        </section>
-      ) : null}
+      {step === 'review' ? <section className="duet-review-note premium-duet-note"><CheckCircle2 size={24} /><div><h2>Dueto gerado</h2><p>A referência e o aluno foram gravados no mesmo vídeo. Envie para entrar na fila de avaliação do professor.</p></div></section> : null}
 
-      {step === 'caption' ? (
-        <section className="caption-box duet-caption-box">
-          <h2>Legenda da comunidade</h2>
-          <textarea value={caption} onChange={(event) => setCaption(event.target.value)} placeholder="Escreva uma legenda como no Instagram..." />
-          <button className="button" onClick={finishPost} disabled={isSubmitting}>{isSubmitting ? 'Publicando...' : 'Publicar e enviar'}</button>
-        </section>
-      ) : null}
+      {step === 'caption' ? <section className="caption-box duet-caption-box premium-duet-note"><h2>Legenda da comunidade</h2><textarea value={caption} onChange={(event) => setCaption(event.target.value)} placeholder="Escreva uma legenda como no Instagram..." /><button className="button" onClick={finishPost} disabled={isSubmitting}>{isSubmitting ? 'Publicando...' : 'Publicar e enviar'}</button></section> : null}
 
-      {step === 'posted' ? (
-        <section className="posted-box duet-posted-box">
-          <h2>Atividade enviada</h2>
-          <p>Sua gravação entrou na fila de avaliação do professor.</p>
-          <a className="button secondary" href={`/aluno/aula/${lessonSlug}`}>Voltar para aula</a>
-        </section>
-      ) : null}
+      {step === 'posted' ? <section className="posted-box duet-posted-box premium-duet-note"><CheckCircle2 size={28} /><div><h2>Atividade enviada</h2><p>Sua gravação entrou na fila de avaliação do professor.</p><a className="button secondary" href={`/aluno/aula/${lessonSlug}`}>Voltar para aula</a></div></section> : null}
     </div>
   );
 }
