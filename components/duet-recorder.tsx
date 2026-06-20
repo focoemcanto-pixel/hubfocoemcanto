@@ -33,6 +33,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const cameraStreamRef = useRef<MediaStream | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
   const cameraRef = useRef<HTMLVideoElement | null>(null);
   const referenceVideoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -53,7 +54,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
         return;
       }
 
-      const timeout = window.setTimeout(() => cleanup(() => reject(new Error('timeout'))), 12000);
+      const timeout = window.setTimeout(() => cleanup(() => reject(new Error('timeout'))), 15000);
       const onReady = () => cleanup(resolve);
       const onError = () => cleanup(() => reject(new Error('load_error')));
       const cleanup = (done: () => void) => {
@@ -103,7 +104,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
       }, 1000);
     } catch {
       setStep('intro');
-      setError('O vídeo de referência não carregou. Refaça a conexão com o Google Drive ou importe novamente esse arquivo no módulo.');
+      setError('O vídeo de referência não carregou. Reimporte essa aula para salvar o vídeo no storage do Hub.');
     }
   }
 
@@ -154,6 +155,32 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
     drawLoopRef.current = requestAnimationFrame(drawDuetFrame);
   }
 
+  function buildMixedAudioStream(reference: HTMLVideoElement, micStream: MediaStream) {
+    const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioCtx) return micStream.getAudioTracks();
+
+    const audioContext = new AudioCtx();
+    audioContextRef.current = audioContext;
+    const destination = audioContext.createMediaStreamDestination();
+
+    try {
+      const micSource = audioContext.createMediaStreamSource(micStream);
+      micSource.connect(destination);
+    } catch {
+      // keep recording video even if mic routing fails
+    }
+
+    try {
+      const referenceSourceNode = audioContext.createMediaElementSource(reference);
+      referenceSourceNode.connect(destination);
+      referenceSourceNode.connect(audioContext.destination);
+    } catch {
+      // createMediaElementSource can only be attached once; fallback is mic-only
+    }
+
+    return destination.stream.getAudioTracks();
+  }
+
   async function beginDuetRecording(stream: MediaStream) {
     chunksRef.current = [];
     const canvas = canvasRef.current;
@@ -168,13 +195,14 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
     canvas.width = 1280;
     canvas.height = 720;
     reference.currentTime = 0;
+    reference.muted = false;
     await reference.play();
 
     drawDuetFrame();
 
     const canvasStream = canvas.captureStream(30);
-    const audioTracks = stream.getAudioTracks();
-    const mixedStream = new MediaStream([...canvasStream.getVideoTracks(), ...audioTracks]);
+    const mixedAudioTracks = buildMixedAudioStream(reference, stream);
+    const mixedStream = new MediaStream([...canvasStream.getVideoTracks(), ...mixedAudioTracks]);
     const recorder = new MediaRecorder(mixedStream, { mimeType: MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus') ? 'video/webm;codecs=vp9,opus' : 'video/webm' });
 
     mediaRecorderRef.current = recorder;
@@ -184,6 +212,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
     recorder.onstop = () => {
       if (drawLoopRef.current) cancelAnimationFrame(drawLoopRef.current);
       reference.pause();
+      audioContextRef.current?.close().catch(() => undefined);
       const blob = new Blob(chunksRef.current, { type: 'video/webm' });
       setRecordedUrl(URL.createObjectURL(blob));
       stream.getTracks().forEach((track) => track.stop());
@@ -201,6 +230,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
   function reset() {
     if (drawLoopRef.current) cancelAnimationFrame(drawLoopRef.current);
     cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+    audioContextRef.current?.close().catch(() => undefined);
     setRecordedUrl(null);
     setCaption('');
     setPostCommunity(false);
@@ -226,7 +256,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
         </div>
         <div className="duet-instruction compact">
           <strong>Use fone de ouvido</strong>
-          <p>O vídeo da atividade e sua câmera entram no mesmo quadro. No final, o arquivo gerado já sai como dueto para avaliação.</p>
+          <p>O vídeo da atividade e sua câmera entram no mesmo quadro. No final, o arquivo gerado já sai como dueto com os dois áudios.</p>
         </div>
       </section>
 
@@ -267,7 +297,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
       {step === 'review' ? (
         <section className="duet-review-note">
           <h2>Dueto gerado</h2>
-          <p>Agora sim: a referência e o aluno estão no mesmo vídeo. O próximo passo é salvar esse arquivo no storage e enviar para a fila de avaliação.</p>
+          <p>A referência e o aluno foram gravados no mesmo vídeo. Agora falta salvar o arquivo no storage e enviar para avaliação.</p>
         </section>
       ) : null}
 
