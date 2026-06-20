@@ -1,9 +1,11 @@
 import { AppShell } from '@/components/app-shell';
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
+
+export const dynamic = 'force-dynamic';
 
 export default async function ExercisePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const { data: exercise } = await supabase
     .from('exercises')
     .select('id,title,description,objective,media_type,difficulty,media_url,audio_url,drive_url')
