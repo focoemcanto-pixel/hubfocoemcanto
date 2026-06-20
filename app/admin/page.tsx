@@ -25,9 +25,9 @@ export default async function AdminPage() {
         <div>
           <p className="eyebrow">Admin Hub</p>
           <h1>Painel do professor</h1>
-          <p className="muted">Gerencie a biblioteca, alunos, assinaturas e avaliacoes.</p>
+          <p className="muted">Gerencie biblioteca, alunos, assinaturas, comunidade e avaliacoes.</p>
         </div>
-        <a className="button" href="/admin/biblioteca">Abrir biblioteca</a>
+        <a className="button" href="/admin/biblioteca">Abrir Biblioteca</a>
       </section>
 
       <nav className="admin-tabs">
@@ -45,24 +45,27 @@ export default async function AdminPage() {
         <article className="admin-stat"><span>Aulas e exercicios</span><strong>{exercises || 0}</strong></article>
       </section>
 
-      <section className="admin-grid admin-section">
+      <section className="admin-kicker-grid">
         <article className="admin-stat">
-          <span>Plataforma</span>
-          <strong>Biblioteca</strong>
-          <p className="muted">Organize modulos, aulas, audios e duetos como uma area premium de estudos.</p>
-          <a className="button secondary" href="/admin/biblioteca">Gerenciar</a>
+          <span>Conteudo</span>
+          <strong>Biblioteca VIP</strong>
+          <p className="muted">Organize modulos, aulas, audios e exercicios do jeito que o aluno vai consumir.</p>
+          <a className="button secondary" href="/admin/biblioteca">Gerenciar biblioteca</a>
         </article>
         <article className="admin-stat">
-          <span>Arquivos</span>
+          <span>Fonte</span>
           <strong>Google Drive</strong>
-          <p className="muted">Use o Drive como fonte dos arquivos, sem tirar o aluno do Hub.</p>
-          <a className="button secondary" href="/admin/drive">Importar</a>
+          <p className="muted">Use o Drive como origem dos arquivos, mas mantenha a experiencia premium dentro do Hub.</p>
+          <a className="button secondary" href="/admin/drive">Importar do Drive</a>
         </article>
       </section>
 
       <section className="card admin-section">
         <div className="section-heading">
-          <div><p className="eyebrow">Fila</p><h2>Avaliacoes pendentes</h2></div>
+          <div>
+            <p className="eyebrow">Fila</p>
+            <h2>Avaliacoes pendentes</h2>
+          </div>
           <a href="/admin/avaliacoes">Ver todas</a>
         </div>
         <div className="admin-list">
