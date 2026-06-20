@@ -1,0 +1,225 @@
+.premium-thumb img {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.premium-thumb img + svg {
+  opacity: 0;
+  transform: scale(0.92);
+  transition: 180ms ease;
+}
+
+.premium-lesson-item:hover .premium-thumb img + svg,
+.premium-lesson-item.active .premium-thumb img + svg {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.premium-thumb:has(img)::after {
+  background: linear-gradient(180deg, transparent 20%, rgba(0, 0, 0, 0.58));
+}
+
+.activity-page {
+  background:
+    radial-gradient(circle at 68% 7%, rgba(245, 199, 107, 0.18), transparent 34%),
+    radial-gradient(circle at 12% 28%, rgba(255, 255, 255, 0.05), transparent 30%),
+    linear-gradient(135deg, #030303 0%, #09090f 48%, #030303 100%) !important;
+}
+
+.activity-topbar {
+  height: 78px !important;
+  padding: 0 28px !important;
+  background: rgba(3, 3, 3, 0.78) !important;
+  backdrop-filter: blur(24px);
+}
+
+.activity-topbar a,
+.activity-topbar strong {
+  font-weight: 900;
+}
+
+.premium-duet-studio {
+  max-width: 1360px;
+  padding: 42px 24px 96px;
+}
+
+.premium-duet-header {
+  align-items: center;
+  gap: 24px;
+  margin-bottom: 28px;
+}
+
+.premium-duet-header h1 {
+  max-width: 760px;
+  margin: 10px 0;
+  font-size: clamp(56px, 8vw, 116px);
+  letter-spacing: -0.08em;
+  line-height: 0.86;
+  text-wrap: balance;
+}
+
+.premium-duet-steps {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 22px;
+}
+
+.premium-duet-steps span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid rgba(245, 199, 107, 0.22);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(255, 255, 255, 0.82);
+  font-weight: 900;
+}
+
+.premium-duet-steps svg {
+  color: #f5c76b;
+}
+
+.premium-duet-instruction {
+  display: flex;
+  gap: 16px;
+  max-width: 430px;
+  border-color: rgba(245, 199, 107, 0.34) !important;
+  border-radius: 24px !important;
+  background: linear-gradient(135deg, rgba(245, 199, 107, 0.14), rgba(255, 255, 255, 0.045)) !important;
+  box-shadow: 0 24px 90px rgba(0, 0, 0, 0.32);
+}
+
+.premium-duet-instruction svg,
+.premium-duet-instruction strong {
+  color: #f5c76b;
+}
+
+.premium-duet-stage {
+  max-width: 1220px;
+  border-radius: 34px;
+  border-color: rgba(245, 199, 107, 0.28);
+  background:
+    radial-gradient(circle at center, rgba(245, 199, 107, 0.08), transparent 30%),
+    #000;
+  box-shadow: 0 40px 150px rgba(0, 0, 0, 0.58), 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+}
+
+.premium-duet-stage::before {
+  content: '';
+  position: absolute;
+  inset: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 24px;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.premium-duet-overlay {
+  background:
+    radial-gradient(circle, rgba(245, 199, 107, 0.16), rgba(0, 0, 0, 0.76) 58%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0));
+  z-index: 4;
+}
+
+.premium-duet-start-card {
+  width: min(520px, calc(100% - 32px));
+  padding: 28px;
+  border: 1px solid rgba(245, 199, 107, 0.28);
+  border-radius: 28px;
+  text-align: center;
+  background: rgba(8, 8, 10, 0.82);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 30px 120px rgba(0, 0, 0, 0.45);
+}
+
+.premium-duet-start-card span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #f5c76b;
+  font-weight: 1000;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 12px;
+}
+
+.premium-duet-start-card h2 {
+  margin: 12px 0;
+  font-size: clamp(28px, 4vw, 44px);
+  line-height: 0.95;
+  letter-spacing: -0.04em;
+}
+
+.premium-duet-start-card p {
+  margin: 0 auto 22px;
+  max-width: 380px;
+  color: rgba(255, 255, 255, 0.76);
+  line-height: 1.55;
+}
+
+.premium-duet-control-bar {
+  width: fit-content;
+  max-width: 100%;
+  margin: 22px auto 0;
+  border-color: rgba(245, 199, 107, 0.22);
+  background: rgba(255, 255, 255, 0.055);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 24px 90px rgba(0, 0, 0, 0.32);
+}
+
+.premium-duet-note {
+  max-width: 1220px;
+  margin: 20px auto 0;
+  display: flex;
+  gap: 14px;
+  border-color: rgba(245, 199, 107, 0.28) !important;
+  background: linear-gradient(135deg, rgba(245, 199, 107, 0.10), rgba(255, 255, 255, 0.045)) !important;
+}
+
+.premium-duet-note svg,
+.premium-duet-note h2 {
+  color: #f5c76b;
+}
+
+.premium-duet-error {
+  max-width: 1220px;
+  margin: 0 auto 18px;
+  border: 1px solid rgba(248, 113, 113, 0.32);
+  border-radius: 18px;
+  padding: 14px 16px;
+  background: rgba(248, 113, 113, 0.12);
+}
+
+.overlay-countdown {
+  color: #f5c76b;
+  text-shadow: 0 0 42px rgba(245, 199, 107, 0.55);
+}
+
+@media (max-width: 900px) {
+  .premium-duet-studio {
+    padding: 28px 14px 72px;
+  }
+
+  .premium-duet-header {
+    grid-template-columns: 1fr;
+  }
+
+  .premium-duet-header h1 {
+    font-size: clamp(48px, 16vw, 76px);
+  }
+
+  .premium-duet-stage {
+    border-radius: 24px;
+  }
+
+  .premium-duet-stage::before {
+    inset: 10px;
+    border-radius: 18px;
+  }
+}
