@@ -20,7 +20,7 @@ type DriveFile = {
 };
 
 function hubMediaUrl(fileId: string) {
-  return `/api/drive/video/${fileId}`;
+  return `/api/media/drive/${fileId}`;
 }
 
 async function getAccessToken() {
