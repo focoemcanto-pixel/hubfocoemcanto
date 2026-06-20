@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 
-export const runtime = 'edge';
+export const dynamic = 'force-dynamic';
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -42,12 +42,14 @@ async function refreshAccessToken(connection: DriveConnection) {
 
 async function getAccessToken() {
   const supabase = createAdminClient();
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('google_drive_connections')
-    .select('id,access_token,refresh_token,expires_at')
+    .select('id,access_token,refresh_token,expires_at,updated_at')
     .order('updated_at', { ascending: false })
     .limit(1)
     .maybeSingle();
+
+  if (error) throw new Error(`drive_connection_query_failed:${error.message}`);
 
   const connection = data as DriveConnection | null;
   if (!connection) return undefined;
@@ -59,42 +61,40 @@ async function getAccessToken() {
   return connection.access_token || undefined;
 }
 
-async function fetchDriveFile(id: string, token: string, range?: string) {
+async function fetchDriveFile(id: string, token: string) {
   return fetch(`https://www.googleapis.com/drive/v3/files/${id}?alt=media&supportsAllDrives=true`, {
-    headers: {
-      authorization: `Bearer ${token}`,
-      ...(range ? { range } : {}),
-    },
+    headers: { authorization: `Bearer ${token}` },
   });
 }
 
-export async function GET(request: Request, { params }: Params) {
-  const { id } = await params;
-  const token = await getAccessToken();
+export async function GET(_request: Request, { params }: Params) {
+  try {
+    const { id } = await params;
+    const token = await getAccessToken();
 
-  if (!token || !id) {
-    return NextResponse.json({ error: 'drive_not_connected' }, { status: 401 });
+    if (!token || !id) {
+      return NextResponse.json({ error: 'drive_not_connected' }, { status: 401 });
+    }
+
+    const response = await fetchDriveFile(id, token);
+    const contentType = response.headers.get('content-type') || 'video/mp4';
+
+    if (!response.ok) {
+      const details = await response.text().catch(() => '');
+      return NextResponse.json({ error: 'drive_video_unavailable', status: response.status, details: details.slice(0, 500) }, { status: response.status || 500 });
+    }
+
+    const buffer = await response.arrayBuffer();
+    return new Response(buffer, {
+      status: 200,
+      headers: {
+        'content-type': contentType,
+        'content-length': String(buffer.byteLength),
+        'accept-ranges': 'bytes',
+        'cache-control': 'private, max-age=120',
+      },
+    });
+  } catch (error) {
+    return NextResponse.json({ error: 'drive_proxy_failed', message: error instanceof Error ? error.message : 'unknown_error' }, { status: 500 });
   }
-
-  const range = request.headers.get('range') || undefined;
-  const response = await fetchDriveFile(id, token, range);
-
-  if (!response.ok || !response.body) {
-    return NextResponse.json({ error: 'drive_video_unavailable', status: response.status }, { status: response.status || 500 });
-  }
-
-  const headers = new Headers();
-  headers.set('content-type', response.headers.get('content-type') || 'video/mp4');
-  headers.set('accept-ranges', response.headers.get('accept-ranges') || 'bytes');
-  headers.set('cache-control', 'private, max-age=120');
-  headers.set('cross-origin-resource-policy', 'same-origin');
-  const contentLength = response.headers.get('content-length');
-  const contentRange = response.headers.get('content-range');
-  if (contentLength) headers.set('content-length', contentLength);
-  if (contentRange) headers.set('content-range', contentRange);
-
-  return new Response(response.body, {
-    status: response.status,
-    headers,
-  });
 }
