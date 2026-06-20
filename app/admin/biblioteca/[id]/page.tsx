@@ -2,6 +2,17 @@ import { createAdminClient } from '@/lib/supabase/admin';
 
 export const dynamic = 'force-dynamic';
 
+function driveFileId(url?: string | null) {
+  if (!url) return null;
+  const match = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || url.match(/id=([a-zA-Z0-9_-]+)/);
+  return match?.[1] || null;
+}
+
+function driveThumb(url?: string | null) {
+  const id = driveFileId(url);
+  return id ? `https://drive.google.com/thumbnail?id=${id}&sz=w320` : '';
+}
+
 export default async function AdminModulePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = createAdminClient();
@@ -16,7 +27,7 @@ export default async function AdminModulePage({ params }: { params: Promise<{ id
         <div>
           <p className="eyebrow">Modulo</p>
           <h1>{module?.title || 'Modulo'}</h1>
-          <p className="muted">Admin limpo: organize titulo, capa, ordem e selecione aulas importadas. As thumbs aparecem para o aluno.</p>
+          <p className="muted">Edite os titulos direto na lista, exclua em massa e envie aulas do Drive para este modulo.</p>
           <p className="muted">Capas recomendadas: modulo 320x480, thumbnail de aula 1280x720.</p>
         </div>
         <a className="button secondary" href="/admin/biblioteca">Voltar</a>
@@ -98,21 +109,29 @@ export default async function AdminModulePage({ params }: { params: Promise<{ id
             <span>Selecione aulas importadas por engano</span>
             <button className="button secondary danger" type="submit">Excluir selecionadas</button>
           </div>
-          <div className="admin-list admin-compact-lessons">
-            {(exercises || []).map((exercise: any, index: number) => (
-              <div className="admin-row" key={exercise.id}>
-                <label className="lesson-check"><input type="checkbox" name="lesson_id" value={exercise.id} /></label>
-                <div className="lesson-info">
-                  <span className="pill">{index + 1} - {exercise.media_type} - nivel {exercise.difficulty}</span>
-                  <h3>{exercise.title}</h3>
-                  <p className="muted">{exercise.description || 'Sem descricao'}</p>
+          <div className="admin-list lesson-manager-list">
+            {(exercises || []).map((exercise: any, index: number) => {
+              const thumb = exercise.thumbnail_url || driveThumb(exercise.drive_url || exercise.media_url);
+              return (
+                <div className="lesson-manager-row compact" key={exercise.id}>
+                  <label className="lesson-check"><input type="checkbox" name="lesson_id" value={exercise.id} /></label>
+                  <div className="lesson-thumb small">{thumb ? <img src={thumb} alt="" /> : <span>{exercise.media_type || 'video'}</span>}</div>
+                  <div className="lesson-info">
+                    <span className="pill">{index + 1} - {exercise.media_type} - nivel {exercise.difficulty}</span>
+                    <form className="inline-title-form" action={`/admin/biblioteca/${id}/aulas/renomear`} method="post">
+                      <input type="hidden" name="lesson_id" value={exercise.id} />
+                      <input name="title" defaultValue={exercise.title} aria-label="Titulo da aula" />
+                      <button type="submit">Salvar</button>
+                    </form>
+                    <p className="muted">{exercise.description || 'Sem descricao'}</p>
+                  </div>
+                  <div className="lesson-actions">
+                    <a className="button secondary" href={`/aluno/aula/${exercise.slug}`}>Ver aula</a>
+                    <a className="button secondary" href={`/admin/conteudos/exercicios/${exercise.id}/editar`}>Editar</a>
+                  </div>
                 </div>
-                <div className="lesson-actions">
-                  <a className="button secondary" href={`/aluno/aula/${exercise.slug}`}>Ver aula</a>
-                  <a className="button secondary" href={`/admin/conteudos/exercicios/${exercise.id}/editar`}>Editar</a>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </form>
       </section>
