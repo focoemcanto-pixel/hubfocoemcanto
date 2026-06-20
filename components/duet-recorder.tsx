@@ -5,11 +5,29 @@ import { useMemo, useRef, useState } from 'react';
 type Props = {
   lessonTitle: string;
   lessonSlug: string;
+  referenceUrl?: string | null;
+  referenceEmbedUrl?: string | null;
 };
 
 type Step = 'intro' | 'countdown' | 'recording' | 'review' | 'caption' | 'posted';
 
-export function DuetRecorder({ lessonTitle, lessonSlug }: Props) {
+function driveFileId(url?: string | null) {
+  if (!url) return null;
+  const match = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || url.match(/id=([a-zA-Z0-9_-]+)/);
+  return match?.[1] || null;
+}
+
+function toDrivePreview(url?: string | null) {
+  const id = driveFileId(url);
+  return id ? `https://drive.google.com/file/d/${id}/preview` : url || '';
+}
+
+function isDirectVideo(url?: string | null) {
+  if (!url) return false;
+  return /\.(mp4|webm|mov)(\?|$)/i.test(url);
+}
+
+export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl, referenceEmbedUrl }: Props) {
   const [step, setStep] = useState<Step>('intro');
   const [count, setCount] = useState(3);
   const [recordedUrl, setRecordedUrl] = useState<string | null>(null);
@@ -19,9 +37,12 @@ export function DuetRecorder({ lessonTitle, lessonSlug }: Props) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
-  const previewRef = useRef<HTMLVideoElement | null>(null);
+  const cameraRef = useRef<HTMLVideoElement | null>(null);
+  const referenceVideoRef = useRef<HTMLVideoElement | null>(null);
 
   const canRecord = useMemo(() => typeof window !== 'undefined' && !!navigator.mediaDevices?.getUserMedia, []);
+  const referencePreview = referenceEmbedUrl || toDrivePreview(referenceUrl);
+  const useNativeReferenceVideo = isDirectVideo(referenceUrl);
 
   async function startCountdown() {
     setError('');
@@ -33,7 +54,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug }: Props) {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       streamRef.current = stream;
-      if (previewRef.current) previewRef.current.srcObject = stream;
+      if (cameraRef.current) cameraRef.current.srcObject = stream;
       setStep('countdown');
       let next = 3;
       setCount(next);
@@ -51,8 +72,13 @@ export function DuetRecorder({ lessonTitle, lessonSlug }: Props) {
     }
   }
 
-  function beginRecording(stream: MediaStream) {
+  async function beginRecording(stream: MediaStream) {
     chunksRef.current = [];
+    if (referenceVideoRef.current) {
+      referenceVideoRef.current.currentTime = 0;
+      await referenceVideoRef.current.play().catch(() => undefined);
+    }
+
     const recorder = new MediaRecorder(stream);
     mediaRecorderRef.current = recorder;
     recorder.ondataavailable = (event) => {
@@ -62,6 +88,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug }: Props) {
       const blob = new Blob(chunksRef.current, { type: 'video/webm' });
       setRecordedUrl(URL.createObjectURL(blob));
       stream.getTracks().forEach((track) => track.stop());
+      referenceVideoRef.current?.pause();
       setStep('review');
     };
     recorder.start();
@@ -89,65 +116,79 @@ export function DuetRecorder({ lessonTitle, lessonSlug }: Props) {
   }
 
   return (
-    <div className="duet-studio">
-      <section className="duet-panel">
-        <p className="eyebrow">Atividade prática</p>
-        <h1>Grave seu dueto</h1>
-        <p className="muted">Aula: {lessonTitle}</p>
-        <div className="duet-instruction">
-          <strong>Antes de gravar</strong>
-          <p>Use fone de ouvido para ouvir a referência e captar melhor sua voz. Cante junto com o vídeo da aula e envie sua resposta para avaliação.</p>
+    <div className="duet-remix-studio">
+      <section className="duet-remix-header">
+        <div>
+          <p className="eyebrow">Atividade prática</p>
+          <h1>Grave seu dueto</h1>
+          <p className="muted">Aula: {lessonTitle}</p>
         </div>
-        {error ? <p className="duet-error">{error}</p> : null}
+        <div className="duet-instruction compact">
+          <strong>Use fone de ouvido</strong>
+          <p>O vídeo da atividade toca junto com sua gravação. Assim o professor avalia tempo, entrada, sustentação e voz correta.</p>
+        </div>
+      </section>
 
-        {step === 'intro' ? (
-          <button className="button" onClick={startCountdown}>Começar gravação</button>
-        ) : null}
+      {error ? <p className="duet-error">{error}</p> : null}
 
-        {step === 'countdown' ? <div className="countdown">{count}</div> : null}
+      <section className="duet-remix-grid">
+        <article className="duet-reference-screen">
+          <span className="duet-screen-label">Vídeo da atividade</span>
+          {useNativeReferenceVideo ? (
+            <video ref={referenceVideoRef} src={referenceUrl || ''} playsInline controls={step !== 'recording'} />
+          ) : referencePreview ? (
+            <iframe src={referencePreview} allow="autoplay; fullscreen" allowFullScreen />
+          ) : (
+            <div className="duet-empty-reference">Nenhum vídeo de referência vinculado.</div>
+          )}
+        </article>
 
+        <article className="duet-camera-screen">
+          <span className="duet-screen-label">Aluno</span>
+          {recordedUrl ? <video src={recordedUrl} controls /> : <video ref={cameraRef} autoPlay muted playsInline />}
+          {step === 'countdown' ? <div className="countdown overlay-countdown">{count}</div> : null}
+        </article>
+      </section>
+
+      <section className="duet-control-bar">
+        {step === 'intro' ? <button className="button" onClick={startCountdown}>Iniciar dueto</button> : null}
         {step === 'recording' ? (
-          <div className="recording-actions">
-            <span className="recording-dot">● Gravando</span>
-            <button className="button danger" onClick={stopRecording}>Finalizar</button>
-          </div>
+          <>
+            <span className="recording-dot">● Gravando com a referência</span>
+            <button className="button danger" onClick={stopRecording}>Finalizar gravação</button>
+          </>
         ) : null}
-
         {step === 'review' ? (
-          <div className="review-actions">
+          <>
             <button className="button secondary" onClick={reset}>Regravar</button>
-            <button className="button" onClick={publish}>Postar atividade</button>
+            <button className="button" onClick={publish}>Enviar para avaliação</button>
             <label className="community-toggle"><input type="checkbox" checked={postCommunity} onChange={(event) => setPostCommunity(event.target.checked)} /> Postar também na comunidade</label>
-          </div>
-        ) : null}
-
-        {step === 'caption' ? (
-          <div className="caption-box">
-            <h2>Legenda da comunidade</h2>
-            <textarea value={caption} onChange={(event) => setCaption(event.target.value)} placeholder="Escreva uma legenda como no Instagram..." />
-            <button className="button" onClick={finishPost}>Publicar na comunidade</button>
-          </div>
-        ) : null}
-
-        {step === 'posted' ? (
-          <div className="posted-box">
-            <h2>Atividade enviada</h2>
-            <p>Sua gravação entrou na fila de avaliação do professor.</p>
-            <a className="button secondary" href={`/aluno/aula/${lessonSlug}`}>Voltar para aula</a>
-          </div>
+          </>
         ) : null}
       </section>
 
-      <section className="duet-preview">
-        <div className="duet-video-card">
-          {recordedUrl ? <video src={recordedUrl} controls /> : <video ref={previewRef} autoPlay muted playsInline />}
-          {!recordedUrl ? <span className="duet-watermark">Sua câmera</span> : null}
-        </div>
-        <div className="duet-reference-card">
-          <strong>Referência</strong>
-          <p>Deixe o vídeo da aula aberto ao lado e grave sua resposta ouvindo pelo fone.</p>
-        </div>
-      </section>
+      {step === 'review' ? (
+        <section className="duet-review-note">
+          <h2>Prévia do dueto</h2>
+          <p>A referência e sua gravação ficam lado a lado para avaliação. Na próxima etapa técnica, o backend renderiza os dois em um único arquivo final.</p>
+        </section>
+      ) : null}
+
+      {step === 'caption' ? (
+        <section className="caption-box duet-caption-box">
+          <h2>Legenda da comunidade</h2>
+          <textarea value={caption} onChange={(event) => setCaption(event.target.value)} placeholder="Escreva uma legenda como no Instagram..." />
+          <button className="button" onClick={finishPost}>Publicar na comunidade</button>
+        </section>
+      ) : null}
+
+      {step === 'posted' ? (
+        <section className="posted-box duet-posted-box">
+          <h2>Atividade enviada</h2>
+          <p>Sua gravação entrou na fila de avaliação do professor.</p>
+          <a className="button secondary" href={`/aluno/aula/${lessonSlug}`}>Voltar para aula</a>
+        </section>
+      ) : null}
     </div>
   );
 }
