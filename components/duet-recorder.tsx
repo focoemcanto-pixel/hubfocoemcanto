@@ -18,9 +18,12 @@ function driveFileId(url?: string | null) {
 }
 
 function proxiedVideoUrl(url?: string | null) {
+  if (!url) return '';
+  if (url.startsWith('/api/media/drive/')) return url;
+  if (url.startsWith('/api/drive/video/')) return url.replace('/api/drive/video/', '/api/media/drive/');
   const id = driveFileId(url);
-  if (id) return `/api/drive/video/${id}`;
-  return url || '';
+  if (id) return `/api/media/drive/${id}`;
+  return url;
 }
 
 export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
@@ -30,8 +33,10 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
   const [postCommunity, setPostCommunity] = useState(false);
   const [caption, setCaption] = useState('');
   const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const recordedBlobRef = useRef<Blob | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const cameraRef = useRef<HTMLVideoElement | null>(null);
@@ -75,6 +80,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
   async function startCountdown() {
     setError('');
     setRecordedUrl(null);
+    recordedBlobRef.current = null;
     if (!canRecord) {
       setError('Seu navegador não liberou gravação por câmera/microfone. Tente pelo Chrome ou Safari atualizado.');
       return;
@@ -104,7 +110,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
       }, 1000);
     } catch {
       setStep('intro');
-      setError('O vídeo de referência não carregou. Reimporte essa aula para salvar o vídeo no storage do Hub.');
+      setError('O vídeo de referência não carregou. Reimporte essa aula ou reconecte o Drive.');
     }
   }
 
@@ -166,17 +172,13 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
     try {
       const micSource = audioContext.createMediaStreamSource(micStream);
       micSource.connect(destination);
-    } catch {
-      // keep recording video even if mic routing fails
-    }
+    } catch {}
 
     try {
       const referenceSourceNode = audioContext.createMediaElementSource(reference);
       referenceSourceNode.connect(destination);
       referenceSourceNode.connect(audioContext.destination);
-    } catch {
-      // createMediaElementSource can only be attached once; fallback is mic-only
-    }
+    } catch {}
 
     return destination.stream.getAudioTracks();
   }
@@ -214,6 +216,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
       reference.pause();
       audioContextRef.current?.close().catch(() => undefined);
       const blob = new Blob(chunksRef.current, { type: 'video/webm' });
+      recordedBlobRef.current = blob;
       setRecordedUrl(URL.createObjectURL(blob));
       stream.getTracks().forEach((track) => track.stop());
       setStep('review');
@@ -232,18 +235,43 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
     cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
     audioContextRef.current?.close().catch(() => undefined);
     setRecordedUrl(null);
+    recordedBlobRef.current = null;
     setCaption('');
     setPostCommunity(false);
     setStep('intro');
   }
 
+  async function submitDuet(finalCaption: string) {
+    if (!recordedBlobRef.current) {
+      setError('Grave o dueto antes de enviar.');
+      return;
+    }
+    setIsSubmitting(true);
+    setError('');
+    const data = new FormData();
+    data.set('lesson_slug', lessonSlug);
+    data.set('caption', finalCaption);
+    data.set('visibility', postCommunity ? 'community' : 'private');
+    data.set('file', new File([recordedBlobRef.current], `${lessonSlug}-dueto.webm`, { type: 'video/webm' }));
+
+    const response = await fetch('/api/submissions/duet', { method: 'POST', body: data });
+    if (!response.ok) {
+      const json = await response.json().catch(() => null);
+      setError(json?.detail || json?.message || 'Não consegui enviar sua atividade.');
+      setIsSubmitting(false);
+      return;
+    }
+    setIsSubmitting(false);
+    setStep('posted');
+  }
+
   function publish() {
     if (postCommunity) setStep('caption');
-    else setStep('posted');
+    else submitDuet('');
   }
 
   function finishPost() {
-    setStep('posted');
+    submitDuet(caption);
   }
 
   return (
@@ -288,7 +316,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
           <>
             <button className="button secondary" onClick={reset}>Regravar</button>
             {recordedUrl ? <a className="button secondary" href={recordedUrl} download={`${lessonSlug}-dueto.webm`}>Baixar prévia</a> : null}
-            <button className="button" onClick={publish}>Enviar para avaliação</button>
+            <button className="button" onClick={publish} disabled={isSubmitting}>{isSubmitting ? 'Enviando...' : 'Enviar para avaliação'}</button>
             <label className="community-toggle"><input type="checkbox" checked={postCommunity} onChange={(event) => setPostCommunity(event.target.checked)} /> Postar também na comunidade</label>
           </>
         ) : null}
@@ -297,7 +325,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
       {step === 'review' ? (
         <section className="duet-review-note">
           <h2>Dueto gerado</h2>
-          <p>A referência e o aluno foram gravados no mesmo vídeo. Agora falta salvar o arquivo no storage e enviar para avaliação.</p>
+          <p>A referência e o aluno foram gravados no mesmo vídeo. Envie para entrar na fila de avaliação do professor.</p>
         </section>
       ) : null}
 
@@ -305,7 +333,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
         <section className="caption-box duet-caption-box">
           <h2>Legenda da comunidade</h2>
           <textarea value={caption} onChange={(event) => setCaption(event.target.value)} placeholder="Escreva uma legenda como no Instagram..." />
-          <button className="button" onClick={finishPost}>Publicar na comunidade</button>
+          <button className="button" onClick={finishPost} disabled={isSubmitting}>{isSubmitting ? 'Publicando...' : 'Publicar e enviar'}</button>
         </section>
       ) : null}
 
