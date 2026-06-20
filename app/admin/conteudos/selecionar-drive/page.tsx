@@ -37,16 +37,45 @@ function isContent(file: DriveItem) {
 
 export default async function SelectDriveFolderPage({ searchParams }: { searchParams: Promise<{ folder?: string; name?: string; module?: string }> }) {
   const params = await searchParams;
+  const selectedModuleId = params.module || '';
+  const supabase = createAdminClient();
+
+  if (!selectedModuleId) {
+    const { data: modules } = await supabase.from('modules').select('id,title,description').order('sort_order');
+    const visibleModules = (modules || []).filter((module: any) => String(module.description || '').toLowerCase().indexOf('importados da pasta') === -1);
+    return (
+      <main className="page admin-shell">
+        <section className="admin-hero">
+          <div>
+            <p className="eyebrow">Drive bloqueado</p>
+            <h1>Escolha um modulo primeiro</h1>
+            <p className="muted">O Drive nao cria modulos. Ele apenas anexa aulas dentro de um modulo que voce criou.</p>
+          </div>
+          <a className="button secondary" href="/admin/biblioteca">Voltar</a>
+        </section>
+        <section className="card admin-section">
+          <p className="eyebrow">Modulos</p>
+          <h2>Selecione onde deseja importar</h2>
+          <div className="admin-list">
+            {visibleModules.map((module: any) => (
+              <div className="admin-row" key={module.id}>
+                <div><h3>{module.title}</h3><p className="muted">Importar arquivos para este modulo.</p></div>
+                <a className="button secondary" href={`/admin/conteudos/selecionar-drive?module=${module.id}`}>Selecionar Drive</a>
+              </div>
+            ))}
+          </div>
+        </section>
+      </main>
+    );
+  }
+
   const folderId = params.folder || 'root';
   const folderName = params.name || 'Meu Drive';
-  const selectedModuleId = params.module || '';
   const token = await getAccessToken();
-  const supabase = createAdminClient();
-  const [{ data: modules }, items] = await Promise.all([
-    supabase.from('modules').select('id,title').order('sort_order'),
+  const [{ data: module }, items] = await Promise.all([
+    supabase.from('modules').select('id,title').eq('id', selectedModuleId).single(),
     token ? listChildren(folderId, token) : Promise.resolve([] as DriveItem[]),
   ]);
-  const activeModuleId = selectedModuleId || modules?.[0]?.id || '';
   const folders = items.filter((item) => item.mimeType === 'application/vnd.google-apps.folder');
   const files = items.filter((item) => item.mimeType !== 'application/vnd.google-apps.folder' && isContent(item));
 
@@ -54,16 +83,16 @@ export default async function SelectDriveFolderPage({ searchParams }: { searchPa
     <main className="page admin-shell">
       <section className="admin-hero">
         <div>
-          <p className="eyebrow">Selecionar arquivo do Drive</p>
+          <p className="eyebrow">Importar para: {module?.title || 'Modulo'}</p>
           <h1>{folderName}</h1>
-          <p className="muted">Escolha o modulo, abra a pasta certa e importe apenas os arquivos que pertencem a ele.</p>
+          <p className="muted">Abra a pasta certa e importe somente o que pertence a este modulo.</p>
         </div>
-        <a className="button secondary" href={activeModuleId ? `/admin/biblioteca/${activeModuleId}` : '/admin/biblioteca'}>Voltar</a>
+        <a className="button secondary" href={`/admin/biblioteca/${selectedModuleId}`}>Voltar</a>
       </section>
 
       <nav className="admin-tabs">
-        <a href="/admin/biblioteca">Biblioteca</a>
-        <a href={`/admin/conteudos/selecionar-drive?module=${activeModuleId}`}>Meu Drive</a>
+        <a href={`/admin/biblioteca/${selectedModuleId}`}>Modulo</a>
+        <a href={`/admin/conteudos/selecionar-drive?module=${selectedModuleId}`}>Meu Drive</a>
         <a href="/admin/conteudos/google-drive">Conexao</a>
       </nav>
 
@@ -76,16 +105,11 @@ export default async function SelectDriveFolderPage({ searchParams }: { searchPa
       ) : (
         <section className="content-board admin-section">
           <article className="content-card">
-            <p className="eyebrow">Destino</p>
-            <h2>Modulo que recebera as aulas</h2>
-            <label>Modulo
-              <select defaultValue={activeModuleId} onChange={undefined}>
-                {(modules || []).map((module) => <option value={module.id} key={module.id}>{module.title}</option>)}
-              </select>
-            </label>
-            <p className="muted">Para trocar o modulo, volte ao modulo desejado e clique em Importar do Drive.</p>
+            <p className="eyebrow">Destino fixo</p>
+            <h2>{module?.title || 'Modulo'}</h2>
+            <p className="muted">Tudo que voce importar aqui sera postado neste modulo.</p>
             <form action="/admin/drive/importar-pasta" method="post" className="admin-form">
-              <input type="hidden" name="module_id" value={activeModuleId} />
+              <input type="hidden" name="module_id" value={selectedModuleId} />
               <input type="hidden" name="folder_id" value={folderId} />
               <button className="button" type="submit">Importar pasta atual como aulas</button>
             </form>
@@ -93,12 +117,12 @@ export default async function SelectDriveFolderPage({ searchParams }: { searchPa
 
           <article className="content-card">
             <p className="eyebrow">Pastas</p>
-            <h2>Navegue ate a pasta do modulo</h2>
+            <h2>Navegue ate a pasta certa</h2>
             <div className="admin-list">
               {folders.map((folder) => (
                 <div className="admin-row" key={folder.id}>
-                  <div><span className="pill">Pasta</span><h3>{folder.name}</h3><p className="muted">Abrir pasta</p></div>
-                  <a className="button secondary" href={`/admin/conteudos/selecionar-drive?module=${activeModuleId}&folder=${folder.id}&name=${encodeURIComponent(folder.name)}`}>Abrir</a>
+                  <div><span className="pill">Pasta</span><h3>{folder.name}</h3></div>
+                  <a className="button secondary" href={`/admin/conteudos/selecionar-drive?module=${selectedModuleId}&folder=${folder.id}&name=${encodeURIComponent(folder.name)}`}>Abrir</a>
                 </div>
               ))}
               {folders.length === 0 ? <p className="muted">Nenhuma pasta encontrada aqui.</p> : null}
@@ -109,13 +133,13 @@ export default async function SelectDriveFolderPage({ searchParams }: { searchPa
 
       {token ? (
         <section className="card admin-section">
-          <div className="section-heading"><div><p className="eyebrow">Arquivos</p><h2>Importar arquivos para este modulo</h2></div></div>
+          <div className="section-heading"><div><p className="eyebrow">Arquivos</p><h2>Importar para {module?.title}</h2></div></div>
           <div className="admin-list">
             {files.map((file) => (
               <div className="admin-row" key={file.id}>
-                <div><span className="pill">{file.mimeType.includes('audio') ? 'Audio' : 'Video'}</span><h3>{file.name}</h3><p className="muted">Sera criado como aula/exercicio dentro do modulo selecionado.</p></div>
+                <div><span className="pill">{file.mimeType.includes('audio') ? 'Audio' : 'Video'}</span><h3>{file.name}</h3><p className="muted">Sera criado como aula deste modulo.</p></div>
                 <form action="/admin/drive/importar-arquivo" method="post">
-                  <input type="hidden" name="module_id" value={activeModuleId} />
+                  <input type="hidden" name="module_id" value={selectedModuleId} />
                   <input type="hidden" name="file_id" value={file.id} />
                   <input type="hidden" name="name" value={file.name} />
                   <input type="hidden" name="mime_type" value={file.mimeType} />
