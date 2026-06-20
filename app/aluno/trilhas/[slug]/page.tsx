@@ -1,9 +1,11 @@
 import { AppShell } from '@/components/app-shell';
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
+
+export const dynamic = 'force-dynamic';
 
 export default async function TrackDetailPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const { data: module } = await supabase
     .from('modules')
     .select('id,title,description')
