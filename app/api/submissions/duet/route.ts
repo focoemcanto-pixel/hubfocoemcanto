@@ -10,6 +10,27 @@ function pathPart(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9._-]+/g, '-');
 }
 
+async function ensureSubmissionBucket() {
+  const supabase = createAdminClient();
+  const { data: buckets, error: listError } = await supabase.storage.listBuckets();
+
+  if (listError) {
+    return { ok: false, error: listError.message };
+  }
+
+  const exists = buckets?.some((bucket) => bucket.id === BUCKET || bucket.name === BUCKET);
+  if (exists) return { ok: true };
+
+  const { error: createError } = await supabase.storage.createBucket(BUCKET, {
+    public: true,
+    fileSizeLimit: 524288000,
+    allowedMimeTypes: ['video/webm', 'video/mp4', 'video/quicktime'],
+  });
+
+  if (createError) return { ok: false, error: createError.message };
+  return { ok: true };
+}
+
 export async function POST(request: Request) {
   try {
     const data = await request.formData();
@@ -23,10 +44,18 @@ export async function POST(request: Request) {
     if (!(file instanceof File) || !lessonSlug) return NextResponse.json({ error: 'missing_payload' }, { status: 400 });
 
     const supabase = createAdminClient();
-    const { data: exercise } = await supabase.from('exercises').select('id,slug').eq('slug', lessonSlug).maybeSingle();
+    const bucket = await ensureSubmissionBucket();
+    if (!bucket.ok) {
+      return NextResponse.json({ error: 'bucket_failed', detail: bucket.error }, { status: 500 });
+    }
+
+    const { data: exercise, error: exerciseError } = await supabase.from('exercises').select('id,slug').eq('slug', lessonSlug).maybeSingle();
+    if (exerciseError) return NextResponse.json({ error: 'exercise_query_failed', detail: exerciseError.message }, { status: 500 });
     if (!exercise?.id) return NextResponse.json({ error: 'exercise_not_found' }, { status: 404 });
 
-    let { data: profile } = await supabase.from('profiles').select('id,email').eq('email', email).maybeSingle();
+    let { data: profile, error: profileQueryError } = await supabase.from('profiles').select('id,email').eq('email', email).maybeSingle();
+    if (profileQueryError) return NextResponse.json({ error: 'profile_query_failed', detail: profileQueryError.message }, { status: 500 });
+
     if (!profile?.id) {
       const { data: created, error: profileError } = await supabase
         .from('profiles')
