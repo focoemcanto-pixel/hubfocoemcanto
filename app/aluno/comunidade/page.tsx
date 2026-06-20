@@ -1,10 +1,11 @@
 import { AppShell } from '@/components/app-shell';
 import { createClient } from '@/lib/supabase/server';
 
-type RelatedItem = { title?: string; name?: string } | { title?: string; name?: string }[] | null;
+type Related = { title?: string; name?: string } | null;
 
-function firstRelated<T extends RelatedItem>(value: T) {
-  return Array.isArray(value) ? value[0] : value;
+function related(value: unknown): Related {
+  if (Array.isArray(value)) return (value[0] || null) as Related;
+  return (value || null) as Related;
 }
 
 export default async function CommunityPage() {
@@ -23,7 +24,7 @@ export default async function CommunityPage() {
         <p className="muted">Veja atividades publicadas pelos alunos e acompanhe a evolução do grupo.</p>
         <section className="grid" style={{ marginTop: 20 }}>
           {(posts || []).map((post) => {
-            const exercise = firstRelated(post.exercises);
+            const exercise = related(post.exercises);
             return (
               <article className="card" key={post.id}>
                 <p className="eyebrow">Atividade publicada</p>
