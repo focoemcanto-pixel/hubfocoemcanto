@@ -1,0 +1,36 @@
+import { NextResponse } from 'next/server';
+import { createAdminClient } from '@/lib/supabase/admin';
+import { slugify } from '@/lib/google/drive-utils';
+
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const formData = await request.formData();
+  const supabase = createAdminClient();
+
+  const title = String(formData.get('title') || '').trim();
+  const module_id = String(formData.get('module_id') || '');
+  const media_type = String(formData.get('media_type') || 'video');
+  const difficulty = Number(formData.get('difficulty') || 1);
+  const drive_url = String(formData.get('drive_url') || '').trim();
+  const description = String(formData.get('description') || '').trim();
+  const objective = String(formData.get('objective') || '').trim();
+
+  if (!title || !module_id) {
+    return NextResponse.redirect(new URL(`/admin/conteudos/exercicios/${id}/editar?erro=dados`, request.url));
+  }
+
+  await supabase.from('exercises').update({
+    title,
+    slug: `${slugify(title)}-${id.slice(0, 6)}`,
+    module_id,
+    media_type,
+    difficulty,
+    drive_url,
+    media_url: drive_url,
+    description,
+    objective,
+    updated_at: new Date().toISOString(),
+  }).eq('id', id);
+
+  return NextResponse.redirect(new URL('/admin/conteudos/sincronizar-biblioteca?sucesso=editado', request.url));
+}
