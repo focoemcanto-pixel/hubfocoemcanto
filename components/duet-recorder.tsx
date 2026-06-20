@@ -17,17 +17,13 @@ function driveFileId(url?: string | null) {
   return match?.[1] || null;
 }
 
-function toDrivePreview(url?: string | null) {
+function proxiedVideoUrl(url?: string | null) {
   const id = driveFileId(url);
-  return id ? `https://drive.google.com/file/d/${id}/preview` : url || '';
+  if (id) return `/api/drive/video/${id}`;
+  return url || '';
 }
 
-function isDirectVideo(url?: string | null) {
-  if (!url) return false;
-  return /\.(mp4|webm|mov)(\?|$)/i.test(url);
-}
-
-export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl, referenceEmbedUrl }: Props) {
+export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
   const [step, setStep] = useState<Step>('intro');
   const [count, setCount] = useState(3);
   const [recordedUrl, setRecordedUrl] = useState<string | null>(null);
@@ -36,16 +32,18 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl, referenceE
   const [error, setError] = useState('');
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
-  const streamRef = useRef<MediaStream | null>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
   const cameraRef = useRef<HTMLVideoElement | null>(null);
   const referenceVideoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const drawLoopRef = useRef<number | null>(null);
 
   const canRecord = useMemo(() => typeof window !== 'undefined' && !!navigator.mediaDevices?.getUserMedia, []);
-  const referencePreview = referenceEmbedUrl || toDrivePreview(referenceUrl);
-  const useNativeReferenceVideo = isDirectVideo(referenceUrl);
+  const referenceSource = proxiedVideoUrl(referenceUrl);
 
   async function startCountdown() {
     setError('');
+    setRecordedUrl(null);
     if (!canRecord) {
       setError('Seu navegador não liberou gravação por câmera/microfone. Tente pelo Chrome ou Safari atualizado.');
       return;
@@ -53,7 +51,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl, referenceE
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      streamRef.current = stream;
+      cameraStreamRef.current = stream;
       if (cameraRef.current) cameraRef.current.srcObject = stream;
       setStep('countdown');
       let next = 3;
@@ -62,7 +60,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl, referenceE
         next -= 1;
         if (next <= 0) {
           window.clearInterval(timer);
-          beginRecording(stream);
+          beginDuetRecording(stream);
         } else {
           setCount(next);
         }
@@ -72,25 +70,88 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl, referenceE
     }
   }
 
-  async function beginRecording(stream: MediaStream) {
+  function drawCover(ctx: CanvasRenderingContext2D, media: HTMLVideoElement, x: number, y: number, width: number, height: number) {
+    const videoWidth = media.videoWidth || width;
+    const videoHeight = media.videoHeight || height;
+    const scale = Math.max(width / videoWidth, height / videoHeight);
+    const sw = width / scale;
+    const sh = height / scale;
+    const sx = (videoWidth - sw) / 2;
+    const sy = (videoHeight - sh) / 2;
+    ctx.drawImage(media, sx, sy, sw, sh, x, y, width, height);
+  }
+
+  function drawDuetFrame() {
+    const canvas = canvasRef.current;
+    const camera = cameraRef.current;
+    const reference = referenceVideoRef.current;
+    if (!canvas || !camera || !reference) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const width = canvas.width;
+    const height = canvas.height;
+    const half = width / 2;
+
+    ctx.fillStyle = '#050505';
+    ctx.fillRect(0, 0, width, height);
+
+    if (reference.readyState >= 2) drawCover(ctx, reference, 0, 0, half, height);
+    if (camera.readyState >= 2) drawCover(ctx, camera, half, 0, half, height);
+
+    ctx.fillStyle = 'rgba(0,0,0,.55)';
+    ctx.fillRect(0, 0, width, 54);
+    ctx.fillStyle = '#fff';
+    ctx.font = '700 22px Arial';
+    ctx.fillText('Referência', 24, 35);
+    ctx.fillText('Aluno', half + 24, 35);
+
+    ctx.strokeStyle = 'rgba(255,255,255,.35)';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(half, 0);
+    ctx.lineTo(half, height);
+    ctx.stroke();
+
+    drawLoopRef.current = requestAnimationFrame(drawDuetFrame);
+  }
+
+  async function beginDuetRecording(stream: MediaStream) {
     chunksRef.current = [];
-    if (referenceVideoRef.current) {
-      referenceVideoRef.current.currentTime = 0;
-      await referenceVideoRef.current.play().catch(() => undefined);
+    const canvas = canvasRef.current;
+    const reference = referenceVideoRef.current;
+
+    if (!canvas || !reference) {
+      setError('Não consegui preparar o dueto. Recarregue a página e tente novamente.');
+      return;
     }
 
-    const recorder = new MediaRecorder(stream);
+    canvas.width = 1280;
+    canvas.height = 720;
+    reference.currentTime = 0;
+    await reference.play().catch(() => undefined);
+
+    drawDuetFrame();
+
+    const canvasStream = canvas.captureStream(30);
+    const audioTracks = stream.getAudioTracks();
+    const mixedStream = new MediaStream([...canvasStream.getVideoTracks(), ...audioTracks]);
+    const recorder = new MediaRecorder(mixedStream, { mimeType: MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus') ? 'video/webm;codecs=vp9,opus' : 'video/webm' });
+
     mediaRecorderRef.current = recorder;
     recorder.ondataavailable = (event) => {
       if (event.data.size > 0) chunksRef.current.push(event.data);
     };
     recorder.onstop = () => {
+      if (drawLoopRef.current) cancelAnimationFrame(drawLoopRef.current);
+      reference.pause();
       const blob = new Blob(chunksRef.current, { type: 'video/webm' });
       setRecordedUrl(URL.createObjectURL(blob));
       stream.getTracks().forEach((track) => track.stop());
-      referenceVideoRef.current?.pause();
       setStep('review');
     };
+
     recorder.start();
     setStep('recording');
   }
@@ -100,6 +161,8 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl, referenceE
   }
 
   function reset() {
+    if (drawLoopRef.current) cancelAnimationFrame(drawLoopRef.current);
+    cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
     setRecordedUrl(null);
     setCaption('');
     setPostCommunity(false);
@@ -116,7 +179,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl, referenceE
   }
 
   return (
-    <div className="duet-remix-studio">
+    <div className="duet-remix-studio real-duet-studio">
       <section className="duet-remix-header">
         <div>
           <p className="eyebrow">Atividade prática</p>
@@ -125,42 +188,37 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl, referenceE
         </div>
         <div className="duet-instruction compact">
           <strong>Use fone de ouvido</strong>
-          <p>O vídeo da atividade toca junto com sua gravação. Assim o professor avalia tempo, entrada, sustentação e voz correta.</p>
+          <p>O vídeo da atividade e sua câmera entram no mesmo quadro. No final, o arquivo gerado já sai como dueto para avaliação.</p>
         </div>
       </section>
 
       {error ? <p className="duet-error">{error}</p> : null}
 
-      <section className="duet-remix-grid">
-        <article className="duet-reference-screen">
-          <span className="duet-screen-label">Vídeo da atividade</span>
-          {useNativeReferenceVideo ? (
-            <video ref={referenceVideoRef} src={referenceUrl || ''} playsInline controls={step !== 'recording'} />
-          ) : referencePreview ? (
-            <iframe src={referencePreview} allow="autoplay; fullscreen" allowFullScreen />
-          ) : (
-            <div className="duet-empty-reference">Nenhum vídeo de referência vinculado.</div>
-          )}
-        </article>
+      <section className="real-duet-stage">
+        <video ref={referenceVideoRef} className="hidden-duet-source" src={referenceSource} crossOrigin="anonymous" playsInline preload="auto" />
+        <video ref={cameraRef} className="hidden-duet-source" autoPlay muted playsInline />
 
-        <article className="duet-camera-screen">
-          <span className="duet-screen-label">Aluno</span>
-          {recordedUrl ? <video src={recordedUrl} controls /> : <video ref={cameraRef} autoPlay muted playsInline />}
-          {step === 'countdown' ? <div className="countdown overlay-countdown">{count}</div> : null}
-        </article>
+        {recordedUrl ? (
+          <video className="duet-final-video" src={recordedUrl} controls />
+        ) : (
+          <canvas ref={canvasRef} className="duet-canvas" width={1280} height={720} />
+        )}
+
+        {step === 'intro' ? <div className="duet-stage-overlay"><button className="button" onClick={startCountdown}>Iniciar dueto</button></div> : null}
+        {step === 'countdown' ? <div className="countdown overlay-countdown">{count}</div> : null}
       </section>
 
       <section className="duet-control-bar">
-        {step === 'intro' ? <button className="button" onClick={startCountdown}>Iniciar dueto</button> : null}
         {step === 'recording' ? (
           <>
-            <span className="recording-dot">● Gravando com a referência</span>
+            <span className="recording-dot">● Gravando dueto real</span>
             <button className="button danger" onClick={stopRecording}>Finalizar gravação</button>
           </>
         ) : null}
         {step === 'review' ? (
           <>
             <button className="button secondary" onClick={reset}>Regravar</button>
+            {recordedUrl ? <a className="button secondary" href={recordedUrl} download={`${lessonSlug}-dueto.webm`}>Baixar prévia</a> : null}
             <button className="button" onClick={publish}>Enviar para avaliação</button>
             <label className="community-toggle"><input type="checkbox" checked={postCommunity} onChange={(event) => setPostCommunity(event.target.checked)} /> Postar também na comunidade</label>
           </>
@@ -169,8 +227,8 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl, referenceE
 
       {step === 'review' ? (
         <section className="duet-review-note">
-          <h2>Prévia do dueto</h2>
-          <p>A referência e sua gravação ficam lado a lado para avaliação. Na próxima etapa técnica, o backend renderiza os dois em um único arquivo final.</p>
+          <h2>Dueto gerado</h2>
+          <p>Agora sim: a referência e o aluno estão no mesmo vídeo. O próximo passo é salvar esse arquivo no storage e enviar para a fila de avaliação.</p>
         </section>
       ) : null}
 
