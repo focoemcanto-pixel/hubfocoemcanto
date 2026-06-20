@@ -18,22 +18,38 @@ export async function POST(request: Request) {
   const driveUrl = webViewLink || driveFileLink(fileId);
   const supabase = createAdminClient();
 
-  const { data: existing } = await supabase.from('exercises').select('id').eq('drive_url', driveUrl).maybeSingle();
-  if (!existing?.id) {
-    const { count } = await supabase.from('exercises').select('*', { count: 'exact', head: true }).eq('module_id', moduleId);
-    await supabase.from('exercises').insert({
-      module_id: moduleId,
-      title: cleanTitle,
-      slug: `${slugify(cleanTitle)}-${fileId.slice(0, 6)}`,
-      description: 'Material importado do Google Drive.',
-      objective: 'Assista, pratique e envie sua resposta para avaliacao.',
-      media_type: mediaTypeFromFile(name, mimeType),
-      difficulty: 1,
-      drive_url: driveUrl,
-      media_url: driveUrl,
-      is_active: true,
-      sort_order: (count || 0) + 1,
-    });
+  const { data: existing } = await supabase
+    .from('exercises')
+    .select('id')
+    .eq('module_id', moduleId)
+    .eq('drive_url', driveUrl)
+    .maybeSingle();
+
+  if (existing?.id) {
+    return NextResponse.redirect(new URL(`/admin/biblioteca/${moduleId}?aviso=ja-importado`, request.url));
+  }
+
+  const { count } = await supabase
+    .from('exercises')
+    .select('*', { count: 'exact', head: true })
+    .eq('module_id', moduleId);
+
+  const { error } = await supabase.from('exercises').insert({
+    module_id: moduleId,
+    title: cleanTitle,
+    slug: `${slugify(cleanTitle)}-${fileId.slice(0, 6)}-${Date.now().toString(36)}`,
+    description: 'Material importado do Google Drive.',
+    objective: 'Assista, pratique e envie sua resposta para avaliacao.',
+    media_type: mediaTypeFromFile(name, mimeType),
+    difficulty: 1,
+    drive_url: driveUrl,
+    media_url: driveUrl,
+    is_active: true,
+    sort_order: (count || 0) + 1,
+  });
+
+  if (error) {
+    return NextResponse.redirect(new URL(`/admin/biblioteca/${moduleId}?erro=${encodeURIComponent(error.message)}`, request.url));
   }
 
   return NextResponse.redirect(new URL(`/admin/biblioteca/${moduleId}?sucesso=arquivo`, request.url));
