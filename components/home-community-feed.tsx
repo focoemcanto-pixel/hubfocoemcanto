@@ -11,6 +11,7 @@ type FeedPost = {
   mediaUrl?: string | null;
   likesCount: number;
   commentsCount: number;
+  canDelete?: boolean;
 };
 
 function initials(name?: string | null) {
@@ -28,6 +29,8 @@ export function HomeCommunityFeed({ initialPosts }: { initialPosts: FeedPost[] }
   const [liked, setLiked] = useState<Record<string, boolean>>({});
   const [comments, setComments] = useState<Record<string, string[]>>({});
   const [soundOn, setSoundOn] = useState<Record<string, boolean>>({});
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const [removingPost, setRemovingPost] = useState<string | null>(null);
   const videoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
 
   async function likePost(postId: string) {
@@ -70,6 +73,20 @@ export function HomeCommunityFeed({ initialPosts }: { initialPosts: FeedPost[] }
     }
   }
 
+  async function removePost(postId: string) {
+    if (!window.confirm('Excluir esta publicação?')) return;
+    setRemovingPost(postId);
+    const previous = posts;
+    setPosts((current) => current.filter((post) => post.id !== postId));
+    setOpenMenu(null);
+    const response = await fetch(`/api/community/posts/${postId}`, { method: 'DELETE', headers: { accept: 'application/json' } });
+    if (!response.ok) {
+      setPosts(previous);
+      alert('Não foi possível excluir a publicação.');
+    }
+    setRemovingPost(null);
+  }
+
   function toggleVideo(postId: string) {
     const video = videoRefs.current[postId];
     if (!video) return;
@@ -107,25 +124,23 @@ export function HomeCommunityFeed({ initialPosts }: { initialPosts: FeedPost[] }
             <header className="home-post-head">
               <div className="avatar">{initials(post.authorName)}</div>
               <div><strong>{post.authorName || 'Aluno VIP'}</strong><span>{post.exerciseTitle || 'Atividade da comunidade'}</span></div>
-              <a className="home-post-menu" href="/aluno/comunidade">•••</a>
+              <div className="home-post-options">
+                <button className="home-post-menu" type="button" onClick={() => setOpenMenu(openMenu === post.id ? null : post.id)}>•••</button>
+                {openMenu === post.id ? (
+                  <div className="post-options-popover">
+                    <a href={`/aluno/comunidade#post-${post.id}`}>Ver publicação</a>
+                    <button type="button" onClick={() => navigator.clipboard?.writeText(`${window.location.origin}/aluno/comunidade#post-${post.id}`)}>Copiar link</button>
+                    {post.canDelete ? <button className="danger-option" type="button" disabled={removingPost === post.id} onClick={() => removePost(post.id)}>{removingPost === post.id ? 'Excluindo...' : 'Excluir publicação'}</button> : null}
+                  </div>
+                ) : null}
+              </div>
             </header>
 
             <div className="home-post-media" onClick={() => toggleVideo(post.id)}>
               {post.mediaUrl ? (
                 <>
-                  <video
-                    ref={(node) => { videoRefs.current[post.id] = node; }}
-                    src={post.mediaUrl}
-                    autoPlay
-                    muted={!soundOn[post.id]}
-                    loop
-                    playsInline
-                    preload="auto"
-                    controls={false}
-                  />
-                  <button className="home-sound-toggle" type="button" onClick={(event) => { event.stopPropagation(); toggleSound(post.id); }}>
-                    {soundOn[post.id] ? '🔊 Som' : '🔇 Ativar som'}
-                  </button>
+                  <video ref={(node) => { videoRefs.current[post.id] = node; }} src={post.mediaUrl} autoPlay muted={!soundOn[post.id]} loop playsInline preload="auto" controls={false} />
+                  <button className="home-sound-toggle" type="button" onClick={(event) => { event.stopPropagation(); toggleSound(post.id); }}>{soundOn[post.id] ? '🔊 Som' : '🔇 Ativar som'}</button>
                 </>
               ) : (
                 <div className="home-post-placeholder"><div><span>▶</span><strong>{post.exerciseTitle || 'Publicação da comunidade'}</strong><small>Vídeo ainda não vinculado a este post</small></div></div>
@@ -145,9 +160,7 @@ export function HomeCommunityFeed({ initialPosts }: { initialPosts: FeedPost[] }
 
             <p className="home-post-caption"><strong>{post.authorName || 'Aluno VIP'}</strong>{post.caption || 'Compartilhou uma prática.'}</p>
             <div className="home-post-meta"><span>{post.likesCount} curtidas</span><span>{post.commentsCount} comentários</span></div>
-
             {localComments.length ? <div className="home-local-comments">{localComments.slice(-3).map((comment, index) => <p key={`${post.id}-${index}`}><strong>Você</strong> {comment}</p>)}</div> : null}
-
             <form className="home-comment-form" onSubmit={(event) => { event.preventDefault(); commentPost(post.id, event.currentTarget); }}>
               <input name="comment" placeholder="Adicionar comentário..." />
               <button type="submit">Publicar</button>
