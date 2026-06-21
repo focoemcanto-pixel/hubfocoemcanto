@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { createAdminClient } from '@/lib/supabase/admin';
 
-export const revalidate = 300;
+export const dynamic = 'force-dynamic';
 
 export default async function StudentModulePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
