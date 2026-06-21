@@ -48,7 +48,7 @@ export default async function ProfilePage() {
 
   const name = profileAny?.name || 'Aluno VIP';
   const handle = usernameFrom(profileAny, accessEmail);
-  const bio = profileAny?.bio || '🎤 Estudando técnica vocal\n🎵 Treinando segunda voz\n🔥 Evoluindo no Foco em Canto';
+  const bio = String(profileAny?.bio || '').trim();
 
   return (
     <AppShell>
@@ -74,7 +74,7 @@ export default async function ProfilePage() {
         <section className="ig-profile-bio">
           <h1>{name}</h1>
           <span className="ig-vip-pill">★ Aluno VIP</span>
-          <p>{bio}</p>
+          {bio ? <p>{bio}</p> : null}
           <small>Aluno desde 2026 · Foco em Harmonia</small>
         </section>
 
@@ -84,39 +84,15 @@ export default async function ProfilePage() {
         </section>
 
         <section className="ig-profile-shortcuts">
-          <Link href="/aluno/avaliacoes">
-            <div><strong>Minhas avaliações</strong><span>{reviewsCount || 0} recebidas · {pendingCount || 0} aguardando</span></div>
-            <b>›</b>
-          </Link>
-          <Link href="/aluno/comunidade">
-            <div><strong>Minhas publicações</strong><span>Veja e interaja com a comunidade</span></div>
-            <b>›</b>
-          </Link>
-          <Link href="/aluno/biblioteca">
-            <div><strong>Atividades enviadas</strong><span>{submissionsCount || 0} exercícios gravados</span></div>
-            <b>›</b>
-          </Link>
-          <Link href="/aluno/comunidade?tab=seguindo">
-            <div><strong>Seguindo</strong><span>Acompanhe alunos que você segue</span></div>
-            <b>›</b>
-          </Link>
+          <Link href="/aluno/avaliacoes"><div><strong>Minhas avaliações</strong><span>{reviewsCount || 0} recebidas · {pendingCount || 0} aguardando</span></div><b>›</b></Link>
+          <Link href="/aluno/comunidade"><div><strong>Minhas publicações</strong><span>Veja e interaja com a comunidade</span></div><b>›</b></Link>
+          <Link href="/aluno/biblioteca"><div><strong>Atividades enviadas</strong><span>{submissionsCount || 0} exercícios gravados</span></div><b>›</b></Link>
+          <Link href="/aluno/comunidade?tab=seguindo"><div><strong>Seguindo</strong><span>Acompanhe alunos que você segue</span></div><b>›</b></Link>
         </section>
 
-        <section className="ig-profile-grid-preview">
-          <h2>Resumo</h2>
-          <div>
-            <article><strong>{submissionsCount || 0}</strong><span>atividades</span></article>
-            <article><strong>{reviewsCount || 0}</strong><span>avaliações</span></article>
-            <article><strong>{pendingCount || 0}</strong><span>na fila</span></article>
-          </div>
-        </section>
+        <section className="ig-profile-grid-preview"><h2>Resumo</h2><div><article><strong>{submissionsCount || 0}</strong><span>atividades</span></article><article><strong>{reviewsCount || 0}</strong><span>avaliações</span></article><article><strong>{pendingCount || 0}</strong><span>na fila</span></article></div></section>
 
-        <section className="ig-profile-menu">
-          <Link href="/aluno/perfil/editar">Configurações do perfil</Link>
-          <Link href="/aluno/comunidade">Comunidade</Link>
-          <Link href="/aluno/biblioteca">Biblioteca</Link>
-          <form action="/auth/logout" method="post"><button type="submit">Sair da conta</button></form>
-        </section>
+        <section className="ig-profile-menu"><Link href="/aluno/perfil/editar">Configurações do perfil</Link><Link href="/aluno/comunidade">Comunidade</Link><Link href="/aluno/biblioteca">Biblioteca</Link><form action="/auth/logout" method="post"><button type="submit">Sair da conta</button></form></section>
       </main>
     </AppShell>
   );
