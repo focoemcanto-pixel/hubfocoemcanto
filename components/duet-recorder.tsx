@@ -52,6 +52,35 @@ function waitForVideoPlay(video: HTMLVideoElement) {
   });
 }
 
+function waitForVideoToMove(video: HTMLVideoElement) {
+  return new Promise<void>((resolve) => {
+    const initial = video.currentTime;
+    let resolved = false;
+    const finish = () => {
+      if (resolved) return;
+      resolved = true;
+      resolve();
+    };
+    const timeout = window.setTimeout(finish, isSafariLike() ? 900 : 650);
+    const check = () => {
+      if (resolved) return;
+      if (video.readyState >= 2 && !video.paused && Math.abs(video.currentTime - initial) > 0.035) {
+        window.clearTimeout(timeout);
+        finish();
+        return;
+      }
+      window.setTimeout(check, 30);
+    };
+    if ('requestVideoFrameCallback' in video) {
+      (video as HTMLVideoElement & { requestVideoFrameCallback?: (callback: () => void) => number }).requestVideoFrameCallback?.(() => {
+        window.clearTimeout(timeout);
+        finish();
+      });
+    }
+    check();
+  });
+}
+
 export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
   const [step, setStep] = useState<Step>('intro');
   const [count, setCount] = useState(3);
@@ -261,6 +290,8 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
       reference.currentTime = 0;
       reference.muted = false;
       await reference.play();
+      await waitForVideoToMove(reference);
+      drawDuetFrameOnce();
     } catch {
       setError('O iPhone bloqueou o início do vídeo. Toque em “Iniciar dueto” novamente.');
       setStep('intro');
