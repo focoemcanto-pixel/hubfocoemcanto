@@ -27,6 +27,39 @@ function proxiedVideoUrl(url?: string | null) {
   return url;
 }
 
+function isSafariLike() {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent;
+  return /iPad|iPhone|iPod/.test(ua) || (/Safari/.test(ua) && !/Chrome|Chromium|Android/.test(ua));
+}
+
+function recorderMimeType() {
+  if (typeof MediaRecorder === 'undefined') return undefined;
+  const options = [
+    'video/webm;codecs=vp8,opus',
+    'video/webm;codecs=vp9,opus',
+    'video/webm',
+    'video/mp4',
+  ];
+  return options.find((type) => MediaRecorder.isTypeSupported(type));
+}
+
+function waitForVideoPlay(video: HTMLVideoElement) {
+  return new Promise<void>((resolve) => {
+    if (video.readyState >= 2) {
+      resolve();
+      return;
+    }
+    const done = () => {
+      video.removeEventListener('loadedmetadata', done);
+      video.removeEventListener('canplay', done);
+      resolve();
+    };
+    video.addEventListener('loadedmetadata', done, { once: true });
+    video.addEventListener('canplay', done, { once: true });
+  });
+}
+
 export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
   const [step, setStep] = useState<Step>('intro');
   const [count, setCount] = useState(3);
@@ -44,9 +77,17 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
   const referenceVideoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawLoopRef = useRef<number | null>(null);
+  const drawTimerRef = useRef<number | null>(null);
 
   const canRecord = useMemo(() => typeof window !== 'undefined' && !!navigator.mediaDevices?.getUserMedia, []);
   const referenceSource = proxiedVideoUrl(referenceUrl);
+
+  function clearDrawLoop() {
+    if (drawLoopRef.current) cancelAnimationFrame(drawLoopRef.current);
+    if (drawTimerRef.current) window.clearInterval(drawTimerRef.current);
+    drawLoopRef.current = null;
+    drawTimerRef.current = null;
+  }
 
   function waitForReferenceVideo() {
     return new Promise<void>((resolve, reject) => {
@@ -55,6 +96,13 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
         reject(new Error('missing_reference'));
         return;
       }
+
+      video.setAttribute('playsinline', 'true');
+      video.setAttribute('webkit-playsinline', 'true');
+      video.preload = 'auto';
+      video.muted = true;
+      video.crossOrigin = 'anonymous';
+
       if (video.readyState >= 2 && video.videoWidth > 0) {
         resolve();
         return;
@@ -66,16 +114,50 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
       const cleanup = (done: () => void) => {
         window.clearTimeout(timeout);
         video.removeEventListener('loadeddata', onReady);
+        video.removeEventListener('loadedmetadata', onReady);
         video.removeEventListener('canplay', onReady);
         video.removeEventListener('error', onError);
         done();
       };
 
       video.addEventListener('loadeddata', onReady);
+      video.addEventListener('loadedmetadata', onReady);
       video.addEventListener('canplay', onReady);
       video.addEventListener('error', onError);
       video.load();
     });
+  }
+
+  async function prepareCameraStream() {
+    const constraints: MediaStreamConstraints = {
+      video: {
+        facingMode: 'user',
+        width: { ideal: 720, max: 1280 },
+        height: { ideal: 720, max: 1280 },
+        frameRate: { ideal: 24, max: 30 },
+      },
+      audio: {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+      },
+    };
+
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    cameraStreamRef.current = stream;
+
+    const camera = cameraRef.current;
+    if (camera) {
+      camera.setAttribute('playsinline', 'true');
+      camera.setAttribute('webkit-playsinline', 'true');
+      camera.muted = true;
+      camera.autoplay = true;
+      camera.srcObject = stream;
+      await waitForVideoPlay(camera);
+      await camera.play().catch(() => undefined);
+    }
+
+    return stream;
   }
 
   async function startCountdown() {
@@ -94,9 +176,8 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
     setStep('loading');
     try {
       await waitForReferenceVideo();
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      cameraStreamRef.current = stream;
-      if (cameraRef.current) cameraRef.current.srcObject = stream;
+      const stream = await prepareCameraStream();
+      drawDuetFrameOnce();
       setStep('countdown');
       let next = 3;
       setCount(next);
@@ -111,7 +192,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
       }, 1000);
     } catch {
       setStep('intro');
-      setError('O vídeo de referência não carregou. Reimporte essa aula ou reconecte o Drive.');
+      setError('O vídeo ou a câmera não carregaram. No iPhone, feche a aba, abra novamente e permita câmera/microfone.');
     }
   }
 
@@ -126,7 +207,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
     ctx.drawImage(media, sx, sy, sw, sh, x, y, width, height);
   }
 
-  function drawDuetFrame() {
+  function drawDuetFrameOnce() {
     const canvas = canvasRef.current;
     const camera = cameraRef.current;
     const reference = referenceVideoRef.current;
@@ -143,7 +224,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
     ctx.fillRect(0, 0, width, height);
 
     if (reference.readyState >= 2 && reference.videoWidth > 0) drawCover(ctx, reference, 0, 0, half, height);
-    if (camera.readyState >= 2) drawCover(ctx, camera, half, 0, half, height);
+    if (camera.readyState >= 2 && camera.videoWidth > 0) drawCover(ctx, camera, half, 0, half, height);
 
     ctx.fillStyle = 'rgba(0,0,0,.55)';
     ctx.fillRect(0, 0, width, 54);
@@ -158,8 +239,22 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
     ctx.moveTo(half, 0);
     ctx.lineTo(half, height);
     ctx.stroke();
+  }
 
-    drawLoopRef.current = requestAnimationFrame(drawDuetFrame);
+  function startDrawLoop() {
+    clearDrawLoop();
+    const draw = () => {
+      drawDuetFrameOnce();
+      drawLoopRef.current = requestAnimationFrame(draw);
+    };
+
+    if (isSafariLike()) {
+      drawTimerRef.current = window.setInterval(drawDuetFrameOnce, 33);
+      drawDuetFrameOnce();
+      return;
+    }
+
+    draw();
   }
 
   function buildMixedAudioStream(reference: HTMLVideoElement, micStream: MediaStream) {
@@ -187,43 +282,58 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
   async function beginDuetRecording(stream: MediaStream) {
     chunksRef.current = [];
     const canvas = canvasRef.current;
+    const camera = cameraRef.current;
     const reference = referenceVideoRef.current;
 
-    if (!canvas || !reference || reference.readyState < 2 || reference.videoWidth === 0) {
+    if (!canvas || !camera || !reference || reference.readyState < 2 || reference.videoWidth === 0) {
       setError('A referência ainda não está pronta. Tente iniciar novamente.');
       setStep('intro');
       return;
     }
 
-    canvas.width = 1280;
-    canvas.height = 720;
-    reference.currentTime = 0;
-    reference.muted = false;
-    await reference.play();
+    canvas.width = isSafariLike() ? 960 : 1280;
+    canvas.height = isSafariLike() ? 540 : 720;
 
-    drawDuetFrame();
+    try {
+      await camera.play();
+      reference.pause();
+      reference.currentTime = 0;
+      reference.muted = false;
+      await reference.play();
+    } catch {
+      setError('O iPhone bloqueou o início do vídeo. Toque em “Iniciar dueto” novamente.');
+      setStep('intro');
+      return;
+    }
 
-    const canvasStream = canvas.captureStream(30);
+    startDrawLoop();
+
+    const canvasStream = canvas.captureStream(isSafariLike() ? 24 : 30);
     const mixedAudioTracks = buildMixedAudioStream(reference, stream);
     const mixedStream = new MediaStream([...canvasStream.getVideoTracks(), ...mixedAudioTracks]);
-    const recorder = new MediaRecorder(mixedStream, { mimeType: MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus') ? 'video/webm;codecs=vp9,opus' : 'video/webm' });
+    const mimeType = recorderMimeType();
+    const recorder = mimeType ? new MediaRecorder(mixedStream, { mimeType }) : new MediaRecorder(mixedStream);
 
     mediaRecorderRef.current = recorder;
     recorder.ondataavailable = (event) => {
       if (event.data.size > 0) chunksRef.current.push(event.data);
     };
     recorder.onstop = () => {
-      if (drawLoopRef.current) cancelAnimationFrame(drawLoopRef.current);
+      clearDrawLoop();
       reference.pause();
       audioContextRef.current?.close().catch(() => undefined);
-      const blob = new Blob(chunksRef.current, { type: 'video/webm' });
+      const type = recorder.mimeType || mimeType || 'video/webm';
+      const blob = new Blob(chunksRef.current, { type });
       recordedBlobRef.current = blob;
       setRecordedUrl(URL.createObjectURL(blob));
       stream.getTracks().forEach((track) => track.stop());
       setStep('review');
     };
+    reference.onended = () => {
+      if (mediaRecorderRef.current?.state === 'recording') mediaRecorderRef.current.stop();
+    };
 
-    recorder.start();
+    recorder.start(1000);
     setStep('recording');
   }
 
@@ -232,7 +342,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
   }
 
   function reset() {
-    if (drawLoopRef.current) cancelAnimationFrame(drawLoopRef.current);
+    clearDrawLoop();
     cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
     audioContextRef.current?.close().catch(() => undefined);
     setRecordedUrl(null);
@@ -250,10 +360,12 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
     setIsSubmitting(true);
     setError('');
     const data = new FormData();
+    const fileType = recordedBlobRef.current.type || 'video/webm';
+    const extension = fileType.includes('mp4') ? 'mp4' : 'webm';
     data.set('lesson_slug', lessonSlug);
     data.set('caption', finalCaption);
     data.set('visibility', postCommunity ? 'community' : 'private');
-    data.set('file', new File([recordedBlobRef.current], `${lessonSlug}-dueto.webm`, { type: 'video/webm' }));
+    data.set('file', new File([recordedBlobRef.current], `${lessonSlug}-dueto.${extension}`, { type: fileType }));
 
     const response = await fetch('/api/submissions/duet', { method: 'POST', body: data });
     if (!response.ok) {
@@ -300,10 +412,10 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
       {error ? <p className="duet-error premium-duet-error">{error}</p> : null}
 
       <section className="real-duet-stage premium-duet-stage">
-        <video ref={referenceVideoRef} className="hidden-duet-source" src={referenceSource} crossOrigin="anonymous" playsInline preload="auto" />
-        <video ref={cameraRef} className="hidden-duet-source" autoPlay muted playsInline />
+        <video ref={referenceVideoRef} className="ios-duet-source" src={referenceSource} crossOrigin="anonymous" playsInline muted preload="auto" />
+        <video ref={cameraRef} className="ios-duet-source" autoPlay muted playsInline />
 
-        {recordedUrl ? <video className="duet-final-video" src={recordedUrl} controls /> : <canvas ref={canvasRef} className="duet-canvas" width={1280} height={720} />}
+        {recordedUrl ? <video className="duet-final-video" src={recordedUrl} controls playsInline /> : <canvas ref={canvasRef} className="duet-canvas" width={1280} height={720} />}
 
         {step === 'intro' ? (
           <div className="duet-stage-overlay premium-duet-overlay">
@@ -315,7 +427,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
             </div>
           </div>
         ) : null}
-        {step === 'loading' ? <div className="duet-stage-overlay premium-duet-overlay"><span className="recording-dot">Carregando referência...</span></div> : null}
+        {step === 'loading' ? <div className="duet-stage-overlay premium-duet-overlay"><span className="recording-dot">Preparando vídeo e câmera...</span></div> : null}
         {step === 'countdown' ? <div className="countdown overlay-countdown">{count}</div> : null}
       </section>
 
