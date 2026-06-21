@@ -20,7 +20,7 @@ import {
 import { ContentPlayer } from '@/components/content-player';
 import { createAdminClient } from '@/lib/supabase/admin';
 
-export const revalidate = 300;
+export const dynamic = 'force-dynamic';
 
 function isRealModule(module: any) {
   const description = String(module.description || '').toLowerCase();
