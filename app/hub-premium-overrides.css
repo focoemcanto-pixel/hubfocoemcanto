@@ -169,6 +169,33 @@
   background: rgba(255,255,255,.045);
 }
 
+.premium-action-row.compact {
+  grid-template-columns: minmax(220px, 320px) 1fr;
+}
+
+.premium-generated-thumb {
+  isolation: isolate;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(245,199,107,.34), transparent 32%),
+    linear-gradient(135deg, rgba(245,199,107,.18), rgba(255,255,255,.055)),
+    #181818;
+}
+
+.premium-generated-thumb > span {
+  position: absolute;
+  left: 8px;
+  bottom: 6px;
+  z-index: 2;
+  color: rgba(255,255,255,.76);
+  font-size: 11px;
+  font-weight: 1000;
+}
+
+.premium-generated-thumb svg {
+  opacity: 1 !important;
+  color: #f5c76b;
+}
+
 .premium-module-page {
   min-height: 100vh;
   padding: 42px 24px 110px;
