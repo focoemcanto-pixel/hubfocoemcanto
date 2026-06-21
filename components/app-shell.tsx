@@ -1,9 +1,8 @@
 import Link from 'next/link';
 
 const navItems = [
-  { href: '/aluno', label: 'Feed' },
+  { href: '/aluno', label: 'Início' },
   { href: '/aluno/biblioteca', label: 'Biblioteca' },
-  { href: '/aluno/enviar', label: 'Enviar' },
   { href: '/aluno/comunidade', label: 'Comunidade' },
   { href: '/aluno/perfil', label: 'Perfil' },
 ];
