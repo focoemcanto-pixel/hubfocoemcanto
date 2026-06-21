@@ -1,5 +1,4 @@
 import {
-  ArrowDownToLine,
   ArrowLeft,
   ArrowRight,
   BarChart3,
@@ -22,17 +21,6 @@ import { createAdminClient } from '@/lib/supabase/admin';
 
 export const dynamic = 'force-dynamic';
 
-function driveFileId(url?: string | null) {
-  if (!url) return null;
-  const match = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || url.match(/id=([a-zA-Z0-9_-]+)/);
-  return match?.[1] || null;
-}
-
-function driveThumb(url?: string | null) {
-  const id = driveFileId(url);
-  return id ? `https://lh3.googleusercontent.com/d/${id}=w320-h180` : '';
-}
-
 function isRealModule(module: any) {
   const description = String(module.description || '').toLowerCase();
   const title = String(module.title || '').toLowerCase();
@@ -44,10 +32,6 @@ function cleanDescription(text?: string | null) {
   if (!value) return '';
   if (value.toLowerCase().includes('material importado do google drive')) return '';
   return value;
-}
-
-function lessonThumb(item: any) {
-  return item?.thumbnail_url || driveThumb(item?.drive_url || item?.media_url || item?.audio_url);
 }
 
 const navItems = [
@@ -73,8 +57,8 @@ export default async function StudentLessonPage({ params }: { params: Promise<{ 
   const module = Array.isArray(lesson?.modules) ? lesson?.modules[0] : lesson?.modules;
 
   const [{ data: rawModules }, { data: currentModuleLessons }] = await Promise.all([
-    supabase.from('modules').select('id,title,slug,description,sort_order,exercises(id,title,slug,drive_url,media_url,audio_url,thumbnail_url,sort_order)').eq('is_active', true).order('sort_order'),
-    lesson?.module_id ? supabase.from('exercises').select('id,title,slug,drive_url,media_url,audio_url,thumbnail_url,sort_order').eq('module_id', lesson.module_id).order('sort_order') : { data: [] },
+    supabase.from('modules').select('id,title,slug,description,sort_order,exercises(id,title,slug,sort_order)').eq('is_active', true).order('sort_order'),
+    lesson?.module_id ? supabase.from('exercises').select('id,title,slug,sort_order').eq('module_id', lesson.module_id).order('sort_order') : { data: [] },
   ]);
 
   const modules = (rawModules || []).filter(isRealModule);
@@ -111,13 +95,13 @@ export default async function StudentLessonPage({ params }: { params: Promise<{ 
             <section className="premium-lesson-details" id="lesson-action">
               <div className="premium-lesson-header-row"><div><p className="premium-module-label"><Sparkles size={16} /> {module?.title || 'Biblioteca VIP'}</p><h1>{lesson?.title || 'Aula'}</h1><p>{description}</p></div><button className="premium-outline-button" type="button"><Check size={18} />Marcar como concluída</button></div>
               <div className="premium-progress-block"><div className="premium-progress-head"><span>Progresso do módulo</span><strong>{currentPosition} de {totalLessons} aulas</strong></div><div className="premium-progress"><span style={{ width: `${progress}%` }} /></div></div>
-              <div className="premium-action-row"><a className="premium-primary-button" href={`/aluno/atividade/${lesson?.slug || ''}`}><Headphones size={18} />Realizar atividade</a><a className="premium-secondary-button" href={lesson?.drive_url || lesson?.media_url || '#'} target="_blank" rel="noreferrer"><ArrowDownToLine size={18} />Baixar material</a><div className="premium-next-actions">{previousLesson ? <a className="premium-round" href={`/aluno/aula/${previousLesson.slug}`} aria-label="Aula anterior"><ArrowLeft size={20} /></a> : <span className="premium-round disabled"><ArrowLeft size={20} /></span>}{nextLesson ? <a className="premium-round" href={`/aluno/aula/${nextLesson.slug}`} aria-label="Próxima aula"><ArrowRight size={20} /></a> : <span className="premium-round disabled"><ArrowRight size={20} /></span>}</div></div>
+              <div className="premium-action-row compact"><a className="premium-primary-button" href={`/aluno/atividade/${lesson?.slug || ''}`}><Headphones size={18} />Realizar atividade</a><div className="premium-next-actions">{previousLesson ? <a className="premium-round" href={`/aluno/aula/${previousLesson.slug}`} aria-label="Aula anterior"><ArrowLeft size={20} /></a> : <span className="premium-round disabled"><ArrowLeft size={20} /></span>}{nextLesson ? <a className="premium-round" href={`/aluno/aula/${nextLesson.slug}`} aria-label="Próxima aula"><ArrowRight size={20} /></a> : <span className="premium-round disabled"><ArrowRight size={20} /></span>}</div></div>
               <div className="premium-tip-card" id="lesson-notes"><Sparkles size={20} /><div><strong>Dica do professor</strong><p>Use fone para ouvir a referência e captar melhor sua voz antes de gravar sua execução.</p></div></div>
             </section>
           </section>
           <aside className="premium-modules-panel">
             <div className="premium-modules-head"><a href="/aluno/biblioteca"><ArrowLeft size={18} /> Módulos</a><a href="/aluno"><X size={18} /></a></div>
-            <div className="premium-module-list">{modules.map((mod: any) => { const lessons = (mod.exercises || []).sort((a: any, b: any) => (a.sort_order || 0) - (b.sort_order || 0)); return <section className="premium-module-group" key={mod.id}><div className="premium-module-title"><strong>{mod.title}</strong><span>{lessons.length} aulas</span></div><div className="premium-lessons-list">{lessons.map((item: any, index: number) => { const thumb = lessonThumb(item); const active = item.slug === lesson?.slug; return <a className={active ? 'premium-lesson-item active' : 'premium-lesson-item'} href={`/aluno/aula/${item.slug}`} key={item.id}><span className={active ? 'premium-check active' : 'premium-check'}>{active ? <Check size={14} /> : null}</span><span className="premium-thumb">{thumb ? <img src={thumb} alt="" loading="lazy" /> : null}<Play size={18} /></span><span className="premium-lesson-copy"><strong>{item.title}</strong><small>Aula {String(index + 1).padStart(2, '0')}</small></span></a>; })}</div></section>; })}</div>
+            <div className="premium-module-list">{modules.map((mod: any) => { const lessons = (mod.exercises || []).sort((a: any, b: any) => (a.sort_order || 0) - (b.sort_order || 0)); return <section className="premium-module-group" key={mod.id}><div className="premium-module-title"><strong>{mod.title}</strong><span>{lessons.length} aulas</span></div><div className="premium-lessons-list">{lessons.map((item: any, index: number) => { const active = item.slug === lesson?.slug; return <a className={active ? 'premium-lesson-item active no-thumb' : 'premium-lesson-item no-thumb'} href={`/aluno/aula/${item.slug}`} key={item.id}><span className={active ? 'premium-check active' : 'premium-check'}>{active ? <Check size={14} /> : null}</span><span className="premium-thumb premium-generated-thumb"><span>{String(index + 1).padStart(2, '0')}</span><Play size={18} /></span><span className="premium-lesson-copy"><strong>{item.title}</strong><small>Aula {String(index + 1).padStart(2, '0')}</small></span></a>; })}</div></section>; })}</div>
           </aside>
         </div>
       </section>
