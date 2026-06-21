@@ -1,6 +1,7 @@
+import Link from 'next/link';
 import { createAdminClient } from '@/lib/supabase/admin';
 
-export const dynamic = 'force-dynamic';
+export const revalidate = 300;
 
 export default async function StudentModulePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -13,12 +14,12 @@ export default async function StudentModulePage({ params }: { params: Promise<{ 
   const firstLesson = lessons?.[0];
 
   return (
-    <main className="premium-module-page">
+    <main className="premium-module-page route-surface">
       <section className="library-hero">
         <p className="eyebrow">Trilha VIP</p>
         <h1>{module?.title || 'Modulo'}</h1>
         <p className="muted">{module?.description || 'Escolha uma aula para iniciar a jornada.'}</p>
-        {firstLesson ? <a className="button" href={`/aluno/aula/${firstLesson.slug}`}>Começar primeira aula</a> : <a className="button" href="/aluno/biblioteca">Voltar para biblioteca</a>}
+        {firstLesson ? <Link className="button" href={`/aluno/aula/${firstLesson.slug}`} prefetch>Começar primeira aula</Link> : <Link className="button" href="/aluno/biblioteca" prefetch>Voltar para biblioteca</Link>}
       </section>
 
       <section className="premium-module-list-shell">
@@ -29,7 +30,7 @@ export default async function StudentModulePage({ params }: { params: Promise<{ 
               <strong>{item.title}</strong>
               <p>{item.description || 'Aula prática do modulo.'}</p>
             </div>
-            <a href={`/aluno/aula/${item.slug}`}>Abrir aula</a>
+            <Link href={`/aluno/aula/${item.slug}`} prefetch>Abrir aula</Link>
           </article>
         ))}
       </section>
