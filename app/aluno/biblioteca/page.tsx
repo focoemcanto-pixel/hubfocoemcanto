@@ -19,27 +19,28 @@ export default async function StudentLibraryPage() {
 
   return (
     <AppShell>
-      <main className="page route-surface">
-        <section className="library-hero">
+      <main className="stream-library-page">
+        <section className="stream-library-hero">
           <p className="eyebrow">Biblioteca VIP</p>
-          <h1>Escolha sua area de estudo</h1>
-          <p className="muted">Aqui aparecem apenas os modulos criados por voce. O Drive serve apenas para anexar aulas dentro de cada modulo.</p>
+          <h1>Escolha sua área de estudo.</h1>
+          <p>Aulas, áudios e duetos organizados em uma experiência premium de treino vocal.</p>
         </section>
-
-        <section className="library-grid">
-          {modules.map((module: any) => (
-            <Link className="library-card" href={`/aluno/biblioteca/${module.slug}`} prefetch key={module.id}>
-              <div>
-                <span className="content-badge">Modulo</span>
-                <h2>{module.title}</h2>
-                <p className="muted">{module.description}</p>
-              </div>
-              <div className="track-footer">
-                <small>{module.exercises?.length || 0} conteudos</small>
-                <strong>Abrir</strong>
-              </div>
-            </Link>
-          ))}
+        <section className="stream-module-shelf">
+          <div className="shelf-title-row"><h2>Continue evoluindo</h2><span>{modules.length} módulos</span></div>
+          <div className="stream-module-row">
+            {modules.map((module: any, index: number) => (
+              <Link className="stream-module-card" href={`/aluno/biblioteca/${module.slug}`} prefetch key={module.id}>
+                <div className="stream-module-cover">
+                  {module.cover_url ? <img src={module.cover_url} alt={module.title} /> : null}
+                  <div className="stream-cover-gradient" />
+                  <span>{index === 0 ? 'EM ANDAMENTO' : 'MÓDULO'}</span>
+                  <h2>{module.title}</h2>
+                </div>
+                <div className="stream-card-meta"><small>{module.exercises?.length || 0} aulas</small><strong>{index === 0 ? '75%' : index === 1 ? '40%' : '0%'}</strong></div>
+                <div className="stream-progress"><i /></div>
+              </Link>
+            ))}
+          </div>
         </section>
       </main>
     </AppShell>
