@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { AppShell } from '@/components/app-shell';
 import { createAdminClient } from '@/lib/supabase/admin';
 
-export const revalidate = 300;
+export const dynamic = 'force-dynamic';
 
 export default async function StudentLibraryPage() {
   const supabase = createAdminClient();
