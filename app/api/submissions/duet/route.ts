@@ -7,6 +7,11 @@ export const dynamic = 'force-dynamic';
 const BUCKET = 'submission-media';
 let bucketReady = false;
 
+type ResolvedSubmissionContext = {
+  exercise: { id: string };
+  profile: { id: string; email?: string | null };
+};
+
 function pathPart(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9._-]+/g, '-');
 }
@@ -48,19 +53,11 @@ async function resolveExerciseAndProfile(supabase: ReturnType<typeof createAdmin
   return { exercise, profile: created };
 }
 
-async function saveSubmission(params: { lessonSlug: string; caption: string; visibility: string; fileUrl: string }) {
-  const email = (await cookies()).get('hub_access_email')?.value || '';
-  if (!email) return NextResponse.json({ error: 'not_authenticated' }, { status: 401 });
-  if (!params.lessonSlug || !params.fileUrl) return NextResponse.json({ error: 'missing_payload' }, { status: 400 });
-
-  const supabase = createAdminClient();
-  const resolved = await resolveExerciseAndProfile(supabase, params.lessonSlug, email);
-  if ('error' in resolved) return resolved.error;
-
+async function persistSubmission(supabase: ReturnType<typeof createAdminClient>, context: ResolvedSubmissionContext, params: { caption: string; visibility: string; fileUrl: string }) {
   const isCommunity = params.visibility === 'community';
   const { data: submission, error: submissionError } = await supabase.from('submissions').insert({
-    profile_id: resolved.profile.id,
-    exercise_id: resolved.exercise.id,
+    profile_id: context.profile.id,
+    exercise_id: context.exercise.id,
     file_url: params.fileUrl,
     file_type: 'duet_video',
     note: params.caption || 'Dueto gravado no Hub.',
@@ -72,8 +69,8 @@ async function saveSubmission(params: { lessonSlug: string; caption: string; vis
 
   if (isCommunity) {
     const { error: postError } = await supabase.from('community_posts').insert({
-      profile_id: resolved.profile.id,
-      exercise_id: resolved.exercise.id,
+      profile_id: context.profile.id,
+      exercise_id: context.exercise.id,
       submission_id: submission.id,
       media_url: params.fileUrl,
       caption: params.caption || 'Minha prática do dueto.',
@@ -83,6 +80,17 @@ async function saveSubmission(params: { lessonSlug: string; caption: string; vis
   }
 
   return NextResponse.json({ ok: true, id: submission.id });
+}
+
+async function saveSubmission(params: { lessonSlug: string; caption: string; visibility: string; fileUrl: string }) {
+  const email = (await cookies()).get('hub_access_email')?.value || '';
+  if (!email) return NextResponse.json({ error: 'not_authenticated' }, { status: 401 });
+  if (!params.lessonSlug || !params.fileUrl) return NextResponse.json({ error: 'missing_payload' }, { status: 400 });
+
+  const supabase = createAdminClient();
+  const resolved = await resolveExerciseAndProfile(supabase, params.lessonSlug, email);
+  if ('error' in resolved) return resolved.error;
+  return persistSubmission(supabase, resolved, params);
 }
 
 export async function POST(request: Request) {
@@ -104,18 +112,21 @@ export async function POST(request: Request) {
     if (!(file instanceof File) || !lessonSlug) return NextResponse.json({ error: 'missing_payload' }, { status: 400 });
 
     const supabase = createAdminClient();
-    const { data: exercise } = await supabase.from('exercises').select('id').eq('slug', lessonSlug).maybeSingle();
-    const exerciseId = exercise?.id || 'sem-aula';
+    const [resolved, bytes] = await Promise.all([
+      resolveExerciseAndProfile(supabase, lessonSlug, email),
+      file.arrayBuffer(),
+    ]);
+    if ('error' in resolved) return resolved.error;
+
     const fileType = file.type || 'video/webm';
     const extension = fileType.includes('mp4') ? 'mp4' : 'webm';
-    const objectPath = `${pathPart(email)}/${exerciseId}/${Date.now()}-dueto.${extension}`;
-    const bytes = await file.arrayBuffer();
+    const objectPath = `${pathPart(email)}/${resolved.exercise.id}/${Date.now()}-dueto.${extension}`;
 
     const { error: uploadError } = await uploadSubmissionFile(supabase, objectPath, bytes, fileType);
     if (uploadError) return NextResponse.json({ error: 'upload_failed', detail: uploadError.message }, { status: 500 });
 
     const { data: publicFile } = supabase.storage.from(BUCKET).getPublicUrl(objectPath);
-    return saveSubmission({ lessonSlug, caption, visibility, fileUrl: publicFile.publicUrl });
+    return persistSubmission(supabase, resolved, { caption, visibility, fileUrl: publicFile.publicUrl });
   } catch (error) {
     return NextResponse.json({ error: 'duet_submission_failed', message: error instanceof Error ? error.message : 'unknown_error' }, { status: 500 });
   }
