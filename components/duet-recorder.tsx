@@ -51,6 +51,14 @@ function audioOnlyMimeType() {
   return options.find((type) => MediaRecorder.isTypeSupported(type));
 }
 
+function recorderOptions(mimeType?: string, audioOnly = false): MediaRecorderOptions | undefined {
+  const options: MediaRecorderOptions = {};
+  if (mimeType) options.mimeType = mimeType;
+  if (!audioOnly) options.videoBitsPerSecond = isSafariLike() ? 2500000 : 5000000;
+  options.audioBitsPerSecond = audioOnly ? 160000 : 192000;
+  return options;
+}
+
 function waitForVideoPlay(video: HTMLVideoElement | HTMLAudioElement) {
   return new Promise<void>((resolve) => {
     if (video.readyState >= 2) return resolve();
@@ -120,6 +128,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
   const previewMicGainRef = useRef<GainNode | null>(null);
   const previewReferenceGainRef = useRef<GainNode | null>(null);
   const previewSourcesConnectedRef = useRef(false);
+  const previewSyncRef = useRef<number | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawLoopRef = useRef<number | null>(null);
   const drawTimerRef = useRef<number | null>(null);
@@ -128,8 +137,9 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
   const referenceSource = proxiedVideoUrl(referenceUrl);
 
   useEffect(() => {
-    if (previewReferenceGainRef.current) previewReferenceGainRef.current.gain.value = referenceVolume / 100;
-    if (previewMicGainRef.current) previewMicGainRef.current.gain.value = voiceVolume / 100;
+    const now = previewAudioContextRef.current?.currentTime || 0;
+    if (previewReferenceGainRef.current) previewReferenceGainRef.current.gain.setTargetAtTime(referenceVolume / 100, now, 0.006);
+    if (previewMicGainRef.current) previewMicGainRef.current.gain.setTargetAtTime(voiceVolume / 100, now, 0.006);
   }, [referenceVolume, voiceVolume]);
 
   function clearDrawLoop() {
@@ -139,7 +149,13 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
     drawTimerRef.current = null;
   }
 
+  function stopPreviewSync() {
+    if (previewSyncRef.current) cancelAnimationFrame(previewSyncRef.current);
+    previewSyncRef.current = null;
+  }
+
   function cleanupPreviewAudio() {
+    stopPreviewSync();
     previewAudioContextRef.current?.close().catch(() => undefined);
     previewAudioContextRef.current = null;
     previewMicGainRef.current = null;
@@ -180,7 +196,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
   async function prepareCameraStream() {
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: 'user', width: { ideal: 720, max: 1280 }, height: { ideal: 720, max: 1280 }, frameRate: { ideal: 24, max: 30 } },
-      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, sampleRate: 48000, channelCount: 1 },
     });
     cameraStreamRef.current = stream;
     const camera = cameraRef.current;
@@ -284,22 +300,20 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
   function buildMixedAudioStream(reference: HTMLVideoElement, micStream: MediaStream) {
     const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!AudioCtx) return micStream.getAudioTracks();
-    const audioContext = new AudioCtx();
+    const audioContext = new AudioCtx({ latencyHint: 'interactive', sampleRate: 48000 });
     audioContextRef.current = audioContext;
     const destination = audioContext.createMediaStreamDestination();
     try {
       const micSource = audioContext.createMediaStreamSource(micStream);
       const micGain = audioContext.createGain();
       micGain.gain.value = voiceVolume / 100;
-      micSource.connect(micGain);
-      micGain.connect(destination);
+      micSource.connect(micGain).connect(destination);
     } catch {}
     try {
       const referenceSourceNode = audioContext.createMediaElementSource(reference);
       const referenceGain = audioContext.createGain();
       referenceGain.gain.value = referenceVolume / 100;
-      referenceSourceNode.connect(referenceGain);
-      referenceGain.connect(destination);
+      referenceSourceNode.connect(referenceGain).connect(destination);
       referenceGain.connect(audioContext.destination);
     } catch {}
     return destination.stream.getAudioTracks();
@@ -309,9 +323,9 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
     if (!stream.getTracks().length) return null;
     const type = kind === 'video' ? videoOnlyMimeType() : audioOnlyMimeType();
     try {
-      const recorder = type ? new MediaRecorder(stream, { mimeType: type }) : new MediaRecorder(stream);
+      const recorder = new MediaRecorder(stream, recorderOptions(type, kind === 'audio'));
       recorder.ondataavailable = (event) => { if (event.data.size > 0) chunks.push(event.data); };
-      recorder.start(1000);
+      recorder.start();
       return recorder;
     } catch {
       return null;
@@ -353,7 +367,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
     const mixedAudioTracks = buildMixedAudioStream(reference, stream);
     const mixedStream = new MediaStream([...canvasStream.getVideoTracks(), ...mixedAudioTracks]);
     const mimeType = recorderMimeType();
-    const recorder = mimeType ? new MediaRecorder(mixedStream, { mimeType }) : new MediaRecorder(mixedStream);
+    const recorder = new MediaRecorder(mixedStream, recorderOptions(mimeType));
     mediaRecorderRef.current = recorder;
     recorder.ondataavailable = (event) => { if (event.data.size > 0) chunksRef.current.push(event.data); };
     recorder.onstop = () => {
@@ -376,12 +390,12 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
           micBlobRef.current = new Blob(micChunksRef.current, { type: micRecorderRef.current?.mimeType || audioOnlyMimeType() || 'audio/webm' });
           setMicUrl(URL.createObjectURL(micBlobRef.current));
         }
-      }, 450);
+      }, 250);
       setShowAudioEditor(true);
       setStep('review');
     };
     reference.onended = () => { if (mediaRecorderRef.current?.state === 'recording') mediaRecorderRef.current.stop(); };
-    recorder.start(1000);
+    recorder.start();
     setStep('recording');
   }
 
@@ -413,7 +427,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
     if (previewSourcesConnectedRef.current) return true;
     const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!AudioCtx) return false;
-    const audioContext = new AudioCtx();
+    const audioContext = new AudioCtx({ latencyHint: 'interactive', sampleRate: 48000 });
     previewAudioContextRef.current = audioContext;
     const micGain = audioContext.createGain();
     const referenceGain = audioContext.createGain();
@@ -422,6 +436,10 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
     previewMicGainRef.current = micGain;
     previewReferenceGainRef.current = referenceGain;
     try {
+      mic.muted = false;
+      reference.muted = false;
+      mic.volume = 1;
+      reference.volume = 1;
       const micSource = audioContext.createMediaElementSource(mic);
       const referenceSourceNode = audioContext.createMediaElementSource(reference);
       micSource.connect(micGain).connect(audioContext.destination);
@@ -431,6 +449,15 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
     } catch {
       return false;
     }
+  }
+
+  function startPreviewSyncLoop() {
+    stopPreviewSync();
+    const tick = () => {
+      syncPreviewTime();
+      previewSyncRef.current = requestAnimationFrame(tick);
+    };
+    tick();
   }
 
   async function togglePreviewPlayback() {
@@ -443,6 +470,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
       visual.pause();
       mic?.pause();
       reference?.pause();
+      stopPreviewSync();
       setIsPreviewPlaying(false);
       return;
     }
@@ -454,6 +482,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
       if (reference) reference.currentTime = time;
       await previewAudioContextRef.current?.resume().catch(() => undefined);
       await Promise.all([visual.play(), mic?.play().catch(() => undefined), reference?.play().catch(() => undefined)]).catch(() => undefined);
+      startPreviewSyncLoop();
     } else {
       await visual.play().catch(() => undefined);
     }
@@ -467,8 +496,8 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
     if (!visual) return;
     const duration = visual.duration || 0;
     setPreviewProgress(duration ? (visual.currentTime / duration) * 100 : 0);
-    if (mic && Math.abs(mic.currentTime - visual.currentTime) > 0.25) mic.currentTime = visual.currentTime;
-    if (reference && Math.abs(reference.currentTime - visual.currentTime) > 0.25) reference.currentTime = visual.currentTime;
+    if (mic && Math.abs(mic.currentTime - visual.currentTime) > 0.08) mic.currentTime = visual.currentTime;
+    if (reference && Math.abs(reference.currentTime - visual.currentTime) > 0.08) reference.currentTime = visual.currentTime;
   }
 
   async function renderFinalDuetBlob() {
@@ -484,8 +513,10 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
     reference.src = referenceSource;
     reference.crossOrigin = 'anonymous';
     visual.muted = true;
-    mic.muted = true;
-    reference.muted = true;
+    mic.muted = false;
+    reference.muted = false;
+    mic.volume = 1;
+    reference.volume = 1;
     visual.playsInline = true;
     reference.playsInline = true;
     await Promise.all([waitForVideoPlay(visual), waitForVideoPlay(mic), waitForVideoPlay(reference)]);
@@ -497,7 +528,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
     if (!ctx) throw new Error('canvas_failed');
     const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!AudioCtx) throw new Error('audio_context_failed');
-    const audioContext = new AudioCtx();
+    const audioContext = new AudioCtx({ latencyHint: 'playback', sampleRate: 48000 });
     const destination = audioContext.createMediaStreamDestination();
     const referenceSourceNode = audioContext.createMediaElementSource(reference);
     const referenceGain = audioContext.createGain();
@@ -510,26 +541,27 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
 
     const outputStream = new MediaStream([...canvas.captureStream(isSafariLike() ? 24 : 30).getVideoTracks(), ...destination.stream.getAudioTracks()]);
     const mimeType = recorderMimeType();
-    const recorder = mimeType ? new MediaRecorder(outputStream, { mimeType }) : new MediaRecorder(outputStream);
+    const recorder = new MediaRecorder(outputStream, recorderOptions(mimeType));
     const chunks: Blob[] = [];
     recorder.ondataavailable = (event) => { if (event.data.size > 0) chunks.push(event.data); };
     const done = new Promise<Blob>((resolve) => {
       recorder.onstop = () => resolve(new Blob(chunks, { type: recorder.mimeType || mimeType || 'video/webm' }));
     });
+    let frame = 0;
     const draw = () => {
       if (visual.ended || visual.paused) return;
       ctx.drawImage(visual, 0, 0, canvas.width, canvas.height);
-      requestAnimationFrame(draw);
+      frame = requestAnimationFrame(draw);
     };
-    recorder.start(1000);
+    recorder.start();
     visual.currentTime = 0;
     reference.currentTime = 0;
     mic.currentTime = 0;
     await audioContext.resume().catch(() => undefined);
     await Promise.all([visual.play(), reference.play(), mic.play()]);
     draw();
-    visual.onended = () => { if (recorder.state === 'recording') recorder.stop(); };
-    window.setTimeout(() => { if (recorder.state === 'recording') recorder.stop(); }, Math.max(2500, (visual.duration || 90) * 1000 + 800));
+    visual.onended = () => { cancelAnimationFrame(frame); if (recorder.state === 'recording') recorder.stop(); };
+    window.setTimeout(() => { cancelAnimationFrame(frame); if (recorder.state === 'recording') recorder.stop(); }, Math.max(2500, (visual.duration || 90) * 1000 + 800));
     const remixed = await done;
     await audioContext.close().catch(() => undefined);
     return remixed;
@@ -592,7 +624,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
         <video ref={cameraRef} className="ios-duet-source" autoPlay muted playsInline />
         {step === 'review' && visualUrl ? (
           <>
-            <video ref={previewVisualRef} className="duet-final-video realtime-duet-video" src={visualUrl} playsInline muted onTimeUpdate={syncPreviewTime} onEnded={() => setIsPreviewPlaying(false)} />
+            <video ref={previewVisualRef} className="duet-final-video realtime-duet-video" src={visualUrl} playsInline muted onTimeUpdate={syncPreviewTime} onEnded={() => { stopPreviewSync(); setIsPreviewPlaying(false); }} />
             <audio ref={previewMicRef} src={micUrl || undefined} preload="auto" />
             <video ref={previewReferenceRef} src={referenceSource} crossOrigin="anonymous" playsInline preload="auto" className="ios-duet-source" />
             <button type="button" className="reels-preview-play" onClick={togglePreviewPlayback}>{isPreviewPlaying ? <Pause size={34} fill="currentColor" /> : <Play size={38} fill="currentColor" />}</button>
@@ -608,17 +640,16 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
 
       {step === 'review' ? <section className="reels-preview-timeline"><button type="button" onClick={togglePreviewPlayback}>{isPreviewPlaying ? <Pause size={26} fill="currentColor" /> : <Play size={26} fill="currentColor" />}</button><div><span style={{ width: `${previewProgress}%` }} /></div></section> : null}
 
-      <section className="premium-audio-editor-toggle reels-audio-toggle">
-        <button type="button" onClick={() => setShowAudioEditor((value) => !value)}><SlidersHorizontal size={18} /> Mixer de áudio</button>
-        <span>Sua voz {voiceVolume}% · Referência {referenceVolume}%</span>
+      <section className="premium-audio-editor-toggle reels-audio-toggle compact-mixer-toggle">
+        <button type="button" onClick={() => setShowAudioEditor((value) => !value)}><SlidersHorizontal size={18} /> Mixer</button>
+        <span>Voz {voiceVolume}% · Ref {referenceVolume}%</span>
       </section>
 
       {showAudioEditor ? (
-        <section className="premium-audio-editor reels-live-mixer">
-          <header><div><p className="eyebrow">Mixer em tempo real</p><h2>Equilibre o dueto enquanto ouve</h2></div><button type="button" onClick={() => { setVoiceVolume(125); setReferenceVolume(60); }}>Reiniciar</button></header>
-          <div className="reels-mixer-row"><span className="mixer-icon mic"><Mic size={24} /></span><label>Sua gravação</label><input type="range" min="0" max="200" value={voiceVolume} onChange={(event) => setVoiceVolume(Number(event.target.value))} /><strong>{voiceVolume}%</strong></div>
-          <div className="reels-mixer-row"><span className="mixer-icon ref"><Music2 size={24} /></span><label>Referência</label><input type="range" min="0" max="120" value={referenceVolume} onChange={(event) => setReferenceVolume(Number(event.target.value))} /><strong>{referenceVolume}%</strong></div>
-          <p><Headphones size={18} /> Mova os controles enquanto a prévia toca. O volume muda na hora e o envio usa exatamente esse equilíbrio.</p>
+        <section className="premium-audio-editor reels-live-mixer compact-live-mixer">
+          <div className="reels-mixer-row"><span className="mixer-icon mic"><Mic size={18} /></span><label>Voz</label><input type="range" min="0" max="200" value={voiceVolume} onChange={(event) => setVoiceVolume(Number(event.target.value))} /><strong>{voiceVolume}%</strong></div>
+          <div className="reels-mixer-row"><span className="mixer-icon ref"><Music2 size={18} /></span><label>Referência</label><input type="range" min="0" max="120" value={referenceVolume} onChange={(event) => setReferenceVolume(Number(event.target.value))} /><strong>{referenceVolume}%</strong></div>
+          <p><Headphones size={15} /> Ajuste enquanto a prévia toca. A mudança é imediata.</p>
         </section>
       ) : null}
 
