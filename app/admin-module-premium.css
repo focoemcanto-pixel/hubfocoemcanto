@@ -75,9 +75,7 @@
   transform: translateX(2px);
 }
 
-.premium-admin-nav a.active svg {
-  color: #f5c76b;
-}
+.premium-admin-nav a.active svg { color: #f5c76b; }
 
 .premium-admin-plan-card {
   margin-top: auto;
@@ -88,16 +86,8 @@
 }
 
 .premium-admin-plan-card span,
-.premium-admin-plan-card p {
-  color: rgba(255,255,255,.64);
-}
-
-.premium-admin-plan-card strong {
-  display: block;
-  margin-top: 4px;
-  color: #f5c76b;
-}
-
+.premium-admin-plan-card p { color: rgba(255,255,255,.64); }
+.premium-admin-plan-card strong { display: block; margin-top: 4px; color: #f5c76b; }
 .premium-admin-plan-card a {
   display: grid;
   place-items: center;
@@ -115,7 +105,6 @@
   padding-top: 16px;
   border-top: 1px solid rgba(255,255,255,.10);
 }
-
 .premium-admin-profile > span {
   width: 46px;
   height: 46px;
@@ -126,20 +115,11 @@
   color: #1b1204;
   font-weight: 1000;
 }
-
 .premium-admin-profile strong,
-.premium-admin-profile small {
-  display: block;
-}
+.premium-admin-profile small { display: block; }
+.premium-admin-profile small { color: rgba(255,255,255,.58); }
 
-.premium-admin-profile small {
-  color: rgba(255,255,255,.58);
-}
-
-.premium-admin-main {
-  min-width: 0;
-  padding: 24px 30px 70px;
-}
+.premium-admin-main { min-width: 0; padding: 24px 30px 70px; }
 
 .premium-admin-topbar {
   height: 64px;
@@ -156,12 +136,7 @@
   top: 0;
   z-index: 30;
 }
-
-.premium-admin-topbar > div {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
+.premium-admin-topbar > div { display: flex; align-items: center; gap: 12px; }
 
 .premium-admin-ghost,
 .premium-admin-primary,
@@ -212,11 +187,7 @@
   transform: translateY(-1px);
   box-shadow: 0 22px 70px rgba(245,199,107,.30);
 }
-
-.premium-admin-icon {
-  width: 44px;
-  padding: 0;
-}
+.premium-admin-icon { width: 44px; padding: 0; }
 
 .premium-admin-hero-row {
   display: grid;
@@ -225,36 +196,16 @@
   align-items: start;
   margin-bottom: 26px;
 }
-
-.premium-admin-hero-copy {
-  padding: 28px 0;
-}
-
+.premium-admin-hero-copy { padding: 28px 0; }
 .premium-admin-hero-copy h1 {
   margin: 10px 0 14px;
   font-size: clamp(48px, 6.3vw, 86px);
   line-height: .88;
   letter-spacing: -.075em;
 }
-
-.premium-admin-hero-copy p {
-  max-width: 720px;
-  color: rgba(255,255,255,.70);
-  line-height: 1.6;
-}
-
-.premium-admin-hero-copy small {
-  display: block;
-  margin-top: 10px;
-  color: rgba(255,255,255,.54);
-}
-
-.premium-admin-title-row {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
+.premium-admin-hero-copy p { max-width: 720px; color: rgba(255,255,255,.70); line-height: 1.6; }
+.premium-admin-hero-copy small { display: block; margin-top: 10px; color: rgba(255,255,255,.54); }
+.premium-admin-title-row { display: flex; align-items: center; gap: 14px; }
 .premium-admin-title-row span {
   width: 44px;
   height: 44px;
@@ -264,14 +215,7 @@
   background: rgba(255,255,255,.08);
   color: #f5c76b;
 }
-
-.premium-admin-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 62px;
-}
-
+.premium-admin-tabs { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 62px; }
 .premium-admin-tabs a {
   min-height: 44px;
   display: inline-flex;
@@ -283,7 +227,6 @@
   font-weight: 900;
   transition: 180ms ease;
 }
-
 .premium-admin-tabs a:hover,
 .premium-admin-tabs a.active {
   color: #1d1402;
@@ -292,44 +235,19 @@
   box-shadow: 0 16px 48px rgba(245,199,107,.22);
 }
 
-.premium-cover-panel {
-  display: grid;
-  gap: 12px;
-}
-
+.premium-cover-panel { display: grid; gap: 12px; }
 .premium-cover-preview {
   position: relative;
   aspect-ratio: 16 / 7.3;
   overflow: hidden;
   border: 1px solid rgba(255,255,255,.14);
   border-radius: 24px;
-  background:
-    radial-gradient(circle at 78% 20%, rgba(245,199,107,.20), transparent 28%),
-    linear-gradient(135deg, rgba(245,199,107,.16), rgba(255,255,255,.055));
+  background: radial-gradient(circle at 78% 20%, rgba(245,199,107,.20), transparent 28%), linear-gradient(135deg, rgba(245,199,107,.16), rgba(255,255,255,.055));
   box-shadow: 0 30px 120px rgba(0,0,0,.40);
 }
-
-.premium-cover-preview img {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.premium-cover-shade {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(90deg, rgba(0,0,0,.82), rgba(0,0,0,.28), rgba(0,0,0,.05)), linear-gradient(180deg, transparent, rgba(0,0,0,.42));
-}
-
-.premium-cover-copy {
-  position: absolute;
-  left: 24px;
-  bottom: 22px;
-  max-width: 300px;
-}
-
+.premium-cover-preview img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.premium-cover-shade { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(0,0,0,.82), rgba(0,0,0,.28), rgba(0,0,0,.05)), linear-gradient(180deg, transparent, rgba(0,0,0,.42)); }
+.premium-cover-copy { position: absolute; left: 24px; bottom: 22px; max-width: 300px; }
 .premium-cover-copy span {
   display: inline-flex;
   padding: 6px 10px;
@@ -341,59 +259,19 @@
   text-transform: uppercase;
   letter-spacing: .08em;
 }
-
-.premium-cover-copy strong {
-  display: block;
-  margin-top: 10px;
-  font-size: 30px;
-  line-height: .94;
-  letter-spacing: -.04em;
-  text-transform: uppercase;
-}
-
-.premium-cover-copy p {
-  color: rgba(255,255,255,.74);
-  margin: 8px 0 0;
-}
-
-.premium-cover-actions {
-  display: grid;
-  grid-template-columns: 1fr 1fr auto;
-  gap: 10px;
-}
-
-.premium-cover-button input {
-  display: none;
-}
-
-.premium-cover-button {
-  border-color: rgba(245,199,107,.42);
-}
-
+.premium-cover-copy strong { display: block; margin-top: 10px; font-size: 30px; line-height: .94; letter-spacing: -.04em; text-transform: uppercase; }
+.premium-cover-copy p { color: rgba(255,255,255,.74); margin: 8px 0 0; }
+.premium-cover-actions { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; }
+.premium-cover-button input { display: none; }
+.premium-cover-button { border-color: rgba(245,199,107,.42); }
 .premium-cover-remove,
-.premium-lessons-head button {
-  border-color: rgba(248,113,113,.28);
-  color: #ff7777;
-}
-
+.premium-lessons-head button { border-color: rgba(248,113,113,.28); color: #ff7777; }
 .premium-cover-remove:hover,
-.premium-lessons-head button:hover {
-  border-color: rgba(248,113,113,.52);
-  background: rgba(248,113,113,.12);
-  transform: translateY(-1px);
-}
+.premium-lessons-head button:hover { border-color: rgba(248,113,113,.52); background: rgba(248,113,113,.12); transform: translateY(-1px); }
 
 .premium-admin-stats,
-.premium-admin-edit-grid {
-  display: grid;
-  gap: 18px;
-  margin-bottom: 22px;
-}
-
-.premium-admin-stats {
-  grid-template-columns: 1.35fr 1fr 1fr;
-}
-
+.premium-admin-edit-grid { display: grid; gap: 18px; margin-bottom: 22px; }
+.premium-admin-stats { grid-template-columns: 1.35fr 1fr 1fr; }
 .premium-admin-stats article,
 .premium-admin-card,
 .premium-lessons-board {
@@ -402,24 +280,11 @@
   background: radial-gradient(circle at 90% 0, rgba(245,199,107,.12), transparent 32%), linear-gradient(180deg, rgba(255,255,255,.075), rgba(255,255,255,.03));
   box-shadow: 0 24px 90px rgba(0,0,0,.30);
 }
-
-.premium-admin-stats article {
-  min-height: 170px;
-  padding: 24px;
-  transition: 180ms ease;
-}
-
+.premium-admin-stats article { min-height: 170px; padding: 24px; transition: 180ms ease; }
 .premium-admin-stats article:hover,
 .premium-admin-card:hover,
-.premium-lessons-board:hover {
-  border-color: rgba(245,199,107,.28);
-  transform: translateY(-2px);
-}
-
-.premium-admin-stats svg {
-  color: #f5c76b;
-}
-
+.premium-lessons-board:hover { border-color: rgba(245,199,107,.28); transform: translateY(-2px); }
+.premium-admin-stats svg { color: #f5c76b; }
 .premium-admin-stats span {
   display: block;
   margin-top: 16px;
@@ -429,20 +294,10 @@
   letter-spacing: .10em;
   text-transform: uppercase;
 }
-
-.premium-admin-stats strong {
-  display: block;
-  margin-top: 8px;
-  font-size: 34px;
-  line-height: .95;
-}
-
+.premium-admin-stats strong { display: block; margin-top: 8px; font-size: 34px; line-height: .95; }
 .premium-admin-stats p,
 .premium-lessons-head p,
-.premium-admin-lesson-info p {
-  color: rgba(255,255,255,.62);
-}
-
+.premium-admin-lesson-info p { color: rgba(255,255,255,.62); }
 .premium-admin-stats a {
   display: inline-flex;
   margin-top: 16px;
@@ -452,51 +307,18 @@
   background: #f5c76b;
   font-weight: 1000;
 }
-
-.premium-admin-edit-grid {
-  grid-template-columns: 1fr 1.22fr;
-}
-
+.premium-admin-edit-grid { grid-template-columns: 1fr 1.22fr; }
 .premium-admin-card,
-.premium-lessons-board {
-  padding: 24px;
-}
-
+.premium-lessons-board { padding: 24px; }
 .premium-admin-card h2,
-.premium-lessons-head h2 {
-  margin: 6px 0 18px;
-  font-size: 30px;
-  letter-spacing: -.04em;
-}
-
+.premium-lessons-head h2 { margin: 6px 0 18px; font-size: 30px; letter-spacing: -.04em; }
 .premium-admin-card .admin-form input,
 .premium-admin-card .admin-form textarea,
-.premium-admin-card .admin-form select {
-  border-radius: 16px;
-  border-color: rgba(255,255,255,.14);
-  background: rgba(255,255,255,.07);
-}
+.premium-admin-card .admin-form select { border-radius: 16px; border-color: rgba(255,255,255,.14); background: rgba(255,255,255,.07); }
 
-.premium-lessons-head {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: 18px;
-  margin-bottom: 18px;
-}
-
-.premium-lessons-head > div:last-child {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
-.premium-lessons-list {
-  display: grid;
-  gap: 12px;
-}
-
+.premium-lessons-head { display: flex; align-items: start; justify-content: space-between; gap: 18px; margin-bottom: 18px; }
+.premium-lessons-head > div:last-child { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.premium-lessons-list { display: grid; gap: 12px; }
 .premium-lesson-admin-row {
   display: grid;
   grid-template-columns: 34px 112px 1fr auto;
@@ -509,19 +331,8 @@
   background: rgba(255,255,255,.035);
   transition: 180ms ease;
 }
-
-.premium-lesson-admin-row:hover {
-  border-color: rgba(245,199,107,.30);
-  background: rgba(255,255,255,.06);
-  transform: translateX(2px);
-}
-
-.premium-check-input input {
-  width: 18px;
-  height: 18px;
-  accent-color: #f5c76b;
-}
-
+.premium-lesson-admin-row:hover { border-color: rgba(245,199,107,.30); background: rgba(255,255,255,.06); transform: translateX(2px); }
+.premium-check-input input { width: 18px; height: 18px; accent-color: #f5c76b; }
 .premium-admin-lesson-thumb {
   position: relative;
   height: 64px;
@@ -529,68 +340,114 @@
   overflow: hidden;
   display: grid;
   place-items: center;
-  background:
-    radial-gradient(circle at 20% 20%, rgba(245,199,107,.34), transparent 32%),
-    linear-gradient(135deg, rgba(245,199,107,.18), rgba(255,255,255,.055)),
-    #181818;
+  background: radial-gradient(circle at 20% 20%, rgba(245,199,107,.34), transparent 32%), linear-gradient(135deg, rgba(245,199,107,.18), rgba(255,255,255,.055)), #181818;
   box-shadow: inset 0 0 0 1px rgba(245,199,107,.18);
 }
+.premium-admin-lesson-thumb strong { position: absolute; left: 10px; bottom: 8px; color: #f5c76b; font-size: 22px; }
+.premium-admin-lesson-thumb span { color: #f5c76b; font-size: 18px; }
+.premium-admin-lesson-info .inline-title-form { margin: 8px 0; }
+.premium-admin-lesson-info .inline-title-form input { min-width: min(520px, 100%); border-radius: 999px; }
+.premium-admin-lesson-actions { display: flex; gap: 10px; align-items: center; }
+.premium-admin-lesson-actions span { width: 44px; padding: 0; color: #f5c76b; }
 
-.premium-admin-lesson-thumb strong {
-  position: absolute;
-  left: 10px;
-  bottom: 8px;
-  color: #f5c76b;
-  font-size: 22px;
+.premium-lessons-board-refined { padding: 30px; }
+.premium-lessons-head-refined { align-items: center; }
+.premium-lessons-list-refined { gap: 16px; }
+.premium-lesson-admin-row-refined {
+  grid-template-columns: 26px 128px minmax(280px, 1fr) auto;
+  gap: 18px;
+  min-height: 124px;
+  padding: 20px;
+  border-radius: 22px;
+  background: linear-gradient(135deg, rgba(255,255,255,.065), rgba(255,255,255,.025));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
 }
-
-.premium-admin-lesson-thumb span {
-  color: #f5c76b;
-  font-size: 18px;
+.premium-check-input-refined { display: grid; place-items: center; }
+.premium-check-input-refined input { border-radius: 6px; }
+.premium-admin-lesson-thumb-refined {
+  width: 128px;
+  height: 72px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(245,199,107,.28), rgba(255,255,255,.055));
 }
-
-.premium-admin-lesson-info .inline-title-form {
-  margin: 8px 0;
-}
-
-.premium-admin-lesson-info .inline-title-form input {
-  min-width: min(520px, 100%);
-  border-radius: 999px;
-}
-
-.premium-admin-lesson-actions {
-  display: flex;
-  gap: 10px;
+.premium-admin-lesson-thumb-refined img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.premium-admin-lesson-info-refined { min-width: 0; display: grid; gap: 8px; }
+.premium-inline-title-editor {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  gap: 8px;
   align-items: center;
+  max-width: 560px;
 }
-
-.premium-admin-lesson-actions span {
-  width: 44px;
-  padding: 0;
-  color: #f5c76b;
+.premium-inline-title-editor input {
+  height: 46px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,.16);
+  background: linear-gradient(180deg, rgba(255,255,255,.075), rgba(255,255,255,.035));
+  color: #fff;
+  padding: 0 14px;
+  font-weight: 950;
+  text-transform: uppercase;
+  outline: none;
+}
+.premium-inline-title-editor input:focus {
+  border-color: rgba(245,199,107,.72);
+  box-shadow: 0 0 0 3px rgba(245,199,107,.12);
+}
+.premium-inline-title-actions {
+  min-width: 84px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.premium-inline-title-actions button,
+.premium-admin-delete-one {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(255,255,255,.06);
+  color: #fff;
+  cursor: pointer;
+}
+.premium-icon-save { color: #f5c76b !important; border-color: rgba(245,199,107,.38) !important; background: rgba(245,199,107,.12) !important; }
+.premium-icon-cancel,
+.premium-admin-delete-one { color: #ff6b6b !important; border-color: rgba(248,113,113,.30) !important; background: rgba(248,113,113,.08) !important; }
+.premium-inline-title-actions span { min-width: 54px; color: rgba(255,255,255,.42); font-size: 12px; font-weight: 900; }
+.premium-inline-title-actions span.saved { color: #44d17a; }
+.premium-inline-title-actions span.error { color: #ff6b6b; }
+.spin { animation: adminSpin .8s linear infinite; }
+@keyframes adminSpin { to { transform: rotate(360deg); } }
+.premium-lesson-description-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: rgba(255,255,255,.62);
+  font-size: 14px;
+}
+.premium-lesson-description-line a { color: #f5c76b; font-weight: 900; }
+.premium-admin-lesson-actions-refined { gap: 12px; }
+.premium-admin-lesson-actions-refined a,
+.premium-admin-delete-one {
+  min-height: 48px;
+  border-radius: 14px;
+  white-space: nowrap;
 }
 
 @media (max-width: 1180px) {
-  .premium-admin-module-page {
-    grid-template-columns: 1fr;
-  }
-
-  .premium-admin-sidebar {
-    display: none;
-  }
-
+  .premium-admin-module-page { grid-template-columns: 1fr; }
+  .premium-admin-sidebar { display: none; }
   .premium-admin-hero-row,
   .premium-admin-stats,
-  .premium-admin-edit-grid {
-    grid-template-columns: 1fr;
-  }
+  .premium-admin-edit-grid { grid-template-columns: 1fr; }
+  .premium-lesson-admin-row-refined { grid-template-columns: 26px 120px 1fr; }
+  .premium-admin-lesson-actions-refined { grid-column: 3; justify-content: flex-start; flex-wrap: wrap; }
 }
 
 @media (max-width: 760px) {
-  .premium-admin-main {
-    padding: 18px 14px 60px;
-  }
-
+  .premium-admin-main { padding: 18px 14px 60px; }
   .premium-admin-topbar {
     height: auto;
     margin: -18px -14px 22px;
@@ -598,15 +455,16 @@
     align-items: flex-start;
     flex-direction: column;
   }
-
   .premium-cover-actions,
-  .premium-lesson-admin-row {
-    grid-template-columns: 1fr;
-  }
-
+  .premium-lesson-admin-row,
+  .premium-lesson-admin-row-refined { grid-template-columns: 1fr; }
   .premium-lessons-head,
-  .premium-admin-lesson-actions {
-    flex-direction: column;
-    align-items: stretch;
-  }
+  .premium-admin-lesson-actions,
+  .premium-lessons-head-refined { flex-direction: column; align-items: stretch; }
+  .premium-admin-lesson-thumb-refined { width: 100%; height: auto; aspect-ratio: 16 / 9; }
+  .premium-inline-title-editor { grid-template-columns: 1fr; max-width: none; }
+  .premium-inline-title-actions { min-width: 0; }
+  .premium-admin-lesson-actions-refined { grid-column: auto; }
+  .premium-admin-lesson-actions-refined a,
+  .premium-admin-delete-one { width: 100%; }
 }
