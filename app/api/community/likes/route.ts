@@ -2,11 +2,10 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 
-async function currentProfile() {
+async function currentProfile(supabase: ReturnType<typeof createAdminClient>) {
   const cookieStore = await cookies();
   const email = cookieStore.get('hub_access_email')?.value;
   if (!email) return null;
-  const supabase = createAdminClient();
   const { data } = await supabase.from('profiles').select('id,email,name').eq('email', email).maybeSingle();
   if (data) return data;
   const { data: created } = await supabase.from('profiles').insert({ email, name: email.split('@')[0], role: 'student' }).select('id,email,name').single();
@@ -23,24 +22,17 @@ export async function POST(request: Request) {
   const returnTo = String(formData.get('return_to') || '/aluno/comunidade');
   if (!postId) return wantsJson(request) ? NextResponse.json({ error: 'missing_post' }, { status: 400 }) : NextResponse.redirect(new URL(returnTo, request.url));
 
-  const profile = await currentProfile();
+  const supabase = createAdminClient();
+  const profile = await currentProfile(supabase);
   if (!profile) return wantsJson(request) ? NextResponse.json({ error: 'not_authenticated' }, { status: 401 }) : NextResponse.redirect(new URL('/aluno/comunidade?erro=perfil', request.url));
 
-  const supabase = createAdminClient();
-  const { data: existingRows } = await supabase
+  const { error: insertError } = await supabase
     .from('community_likes')
-    .select('id')
-    .eq('post_id', postId)
-    .eq('profile_id', profile.id)
-    .limit(1);
+    .upsert({ post_id: postId, profile_id: profile.id }, { onConflict: 'post_id,profile_id', ignoreDuplicates: true });
 
-  if (!existingRows?.length) {
-    await supabase.from('community_likes').insert({ post_id: postId, profile_id: profile.id });
-  }
+  if (insertError) return wantsJson(request) ? NextResponse.json({ error: 'like_failed', detail: insertError.message }, { status: 500 }) : NextResponse.redirect(new URL(returnTo, request.url));
 
-  const { count } = await supabase.from('community_likes').select('*', { count: 'exact', head: true }).eq('post_id', postId);
-  await supabase.from('community_posts').update({ likes_count: count || 0 }).eq('id', postId);
-
-  if (wantsJson(request)) return NextResponse.json({ ok: true, liked: true, likes_count: count || 0 });
+  // A interface já aplica a curtida instantaneamente. O contador consolidado pode ser atualizado por rotina/banco sem atrasar o toque.
+  if (wantsJson(request)) return NextResponse.json({ ok: true, liked: true });
   return NextResponse.redirect(new URL(returnTo, request.url));
 }
