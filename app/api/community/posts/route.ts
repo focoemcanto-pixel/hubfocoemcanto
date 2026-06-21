@@ -2,6 +2,12 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 
+function isBlockedCourseUrl(url: string) {
+  const value = url.toLowerCase();
+  if (!value) return false;
+  return value.includes('drive.google.com') || value.includes('googleusercontent.com') || value.includes('/api/media/drive/');
+}
+
 async function currentProfile() {
   const cookieStore = await cookies();
   const email = cookieStore.get('hub_access_email')?.value;
@@ -22,6 +28,7 @@ export async function POST(request: Request) {
   const exercise_id = String(formData.get('exercise_id') || '').trim() || null;
 
   if (!caption && !media_url) return NextResponse.redirect(new URL('/aluno/comunidade?erro=post-vazio', request.url));
+  if (isBlockedCourseUrl(media_url)) return NextResponse.redirect(new URL('/aluno/comunidade?erro=midia-protegida', request.url));
 
   const profile = await currentProfile();
   if (!profile) return NextResponse.redirect(new URL('/aluno/comunidade?erro=perfil', request.url));
