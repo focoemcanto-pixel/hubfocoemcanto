@@ -12,33 +12,12 @@ function pathPart(value: string) {
 
 async function ensureBucket() {
   const supabase = createAdminClient();
-
   const { data: buckets, error: listError } = await supabase.storage.listBuckets();
-  if (listError) {
-    return { ok: false, error: `bucket_list_failed: ${listError.message}` };
-  }
-
+  if (listError) return { ok: false, error: `bucket_list_failed: ${listError.message}` };
   const exists = buckets?.some((bucket) => bucket.id === BUCKET || bucket.name === BUCKET);
   if (exists) return { ok: true };
-
-  const { error: createError } = await supabase.storage.createBucket(BUCKET, {
-    public: true,
-  });
-
-  if (createError) {
-    return { ok: false, error: `bucket_create_failed: ${createError.message}` };
-  }
-
-  const { data: afterCreate, error: afterError } = await supabase.storage.listBuckets();
-  if (afterError) {
-    return { ok: false, error: `bucket_verify_failed: ${afterError.message}` };
-  }
-
-  const created = afterCreate?.some((bucket) => bucket.id === BUCKET || bucket.name === BUCKET);
-  if (!created) {
-    return { ok: false, error: 'bucket_verify_failed: submission-media not visible after create' };
-  }
-
+  const { error: createError } = await supabase.storage.createBucket(BUCKET, { public: true });
+  if (createError) return { ok: false, error: `bucket_create_failed: ${createError.message}` };
   return { ok: true };
 }
 
@@ -61,32 +40,40 @@ async function saveSubmission(params: { lessonSlug: string; caption: string; vis
     profile = created;
   }
 
+  const isCommunity = params.visibility === 'community';
   const { data: submission, error: submissionError } = await supabase.from('submissions').insert({
     profile_id: profile.id,
     exercise_id: exercise.id,
     file_url: params.fileUrl,
     file_type: 'duet_video',
     note: params.caption || 'Dueto gravado no Hub.',
-    visibility: params.visibility === 'community' ? 'community' : 'private',
+    visibility: isCommunity ? 'community' : 'private',
     status: 'pending_review',
   }).select('id').single();
 
   if (submissionError || !submission) return NextResponse.json({ error: 'submission_failed', detail: submissionError?.message }, { status: 500 });
+
+  if (isCommunity) {
+    const { error: postError } = await supabase.from('community_posts').insert({
+      profile_id: profile.id,
+      exercise_id: exercise.id,
+      submission_id: submission.id,
+      media_url: params.fileUrl,
+      caption: params.caption || 'Minha prática do dueto.',
+      category: 'dueto',
+    });
+    if (postError) return NextResponse.json({ error: 'community_post_failed', detail: postError.message }, { status: 500 });
+  }
+
   return NextResponse.json({ ok: true, id: submission.id });
 }
 
 export async function POST(request: Request) {
   try {
     const contentType = request.headers.get('content-type') || '';
-
     if (contentType.includes('application/json')) {
       const body = await request.json();
-      return saveSubmission({
-        lessonSlug: String(body.lesson_slug || ''),
-        caption: String(body.caption || '').trim(),
-        visibility: String(body.visibility || 'private'),
-        fileUrl: String(body.file_url || '').trim(),
-      });
+      return saveSubmission({ lessonSlug: String(body.lesson_slug || ''), caption: String(body.caption || '').trim(), visibility: String(body.visibility || 'private'), fileUrl: String(body.file_url || '').trim() });
     }
 
     const form = await request.formData();
@@ -101,19 +88,16 @@ export async function POST(request: Request) {
 
     const supabase = createAdminClient();
     const bucket = await ensureBucket();
-    if (!bucket.ok) {
-      return NextResponse.json({ error: 'bucket_failed', detail: bucket.error }, { status: 500 });
-    }
+    if (!bucket.ok) return NextResponse.json({ error: 'bucket_failed', detail: bucket.error }, { status: 500 });
 
     const { data: exercise } = await supabase.from('exercises').select('id').eq('slug', lessonSlug).maybeSingle();
     const exerciseId = exercise?.id || 'sem-aula';
-    const objectPath = `${pathPart(email)}/${exerciseId}/${Date.now()}-dueto.webm`;
+    const fileType = file.type || 'video/webm';
+    const extension = fileType.includes('mp4') ? 'mp4' : 'webm';
+    const objectPath = `${pathPart(email)}/${exerciseId}/${Date.now()}-dueto.${extension}`;
     const bytes = await file.arrayBuffer();
 
-    const { error: uploadError } = await supabase.storage.from(BUCKET).upload(objectPath, bytes, {
-      contentType: file.type || 'video/webm',
-      upsert: true,
-    });
+    const { error: uploadError } = await supabase.storage.from(BUCKET).upload(objectPath, bytes, { contentType: fileType, upsert: true });
     if (uploadError) return NextResponse.json({ error: 'upload_failed', detail: uploadError.message }, { status: 500 });
 
     const { data: publicFile } = supabase.storage.from(BUCKET).getPublicUrl(objectPath);
