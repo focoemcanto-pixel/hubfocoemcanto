@@ -13,6 +13,7 @@ import './community-fixes.css';
 import './activity-audio-controls.css';
 import './profile-premium.css';
 import './admin-reviews-premium.css';
+import './admin-premium.css';
 import './instagram-performance.css';
 import './social-profile.css';
 import './edit-profile.css';
