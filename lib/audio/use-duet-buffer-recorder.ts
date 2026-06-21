@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState } from 'react';
 import { DuetBufferEngine, type VoicePreset } from './duet-buffer-engine';
+import { loadDuetBufferEngine, toggleDuetBufferPlayback } from './duet-engine-loader';
 
 type Step = 'intro' | 'loading' | 'countdown' | 'recording' | 'review' | 'caption' | 'posted';
 
@@ -131,9 +132,31 @@ export function useDuetBufferRecorder(referenceSource: string, lessonSlug: strin
     draw();
   }
 
+  async function prepareEngine(voiceBlob: Blob) {
+    if (!referenceSource) return;
+    const engine = await loadDuetBufferEngine({
+      voiceBlob,
+      referenceSource,
+      previewVideo: previewRef.current,
+      settings,
+      previous: engineRef.current,
+    });
+    engineRef.current = engine;
+    setAudioReady(true);
+  }
+
+  async function togglePlayback() {
+    const playing = await toggleDuetBufferPlayback({
+      engine: engineRef.current,
+      video: previewRef.current,
+      canLiveEdit,
+    });
+    setIsPlaying(Boolean(playing));
+  }
+
   function applySettings() {
     engineRef.current?.applySettings();
   }
 
-  return { step, setStep, count, setCount, previewUrl, setPreviewUrl, visualUrl, setVisualUrl, error, setError, voiceVolume, setVoiceVolume, referenceVolume, setReferenceVolume, preset, setPreset, audioReady, setAudioReady, isPlaying, setIsPlaying, isSubmitting, setIsSubmitting, cameraRef, referenceRef, previewRef, canvasRef, engineRef, chunksRef, visualChunksRef, micChunksRef, mediaRecorderRef, visualRecorderRef, micRecorderRef, finalBlobRef, canRecord, canLiveEdit, settings, cleanup, waitReady, drawFrame, startDraw, clearDraw, applySettings, options, mime, isSafariLike, streamRef, audioCtxRef, referenceSource, lessonSlug };
+  return { step, setStep, count, setCount, previewUrl, setPreviewUrl, visualUrl, setVisualUrl, error, setError, voiceVolume, setVoiceVolume, referenceVolume, setReferenceVolume, preset, setPreset, audioReady, setAudioReady, isPlaying, setIsPlaying, isSubmitting, setIsSubmitting, cameraRef, referenceRef, previewRef, canvasRef, engineRef, chunksRef, visualChunksRef, micChunksRef, mediaRecorderRef, visualRecorderRef, micRecorderRef, finalBlobRef, canRecord, canLiveEdit, settings, cleanup, waitReady, drawFrame, startDraw, clearDraw, applySettings, prepareEngine, togglePlayback, options, mime, isSafariLike, streamRef, audioCtxRef, referenceSource, lessonSlug };
 }
