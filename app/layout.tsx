@@ -5,6 +5,7 @@ import './lesson-premium.css';
 import './activity-premium.css';
 import './hub-premium-overrides.css';
 import './admin-module-premium.css';
+import './activity-mobile-fixes.css';
 
 export default function RootLayout(props: { children: React.ReactNode }) {
   return (
