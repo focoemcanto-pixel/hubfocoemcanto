@@ -63,6 +63,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
   const [showAudioEditor, setShowAudioEditor] = useState(false);
   const [referenceVolume, setReferenceVolume] = useState(45);
   const [voiceVolume, setVoiceVolume] = useState(125);
+  const [previewAdjusted, setPreviewAdjusted] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const recordedBlobRef = useRef<Blob | null>(null);
@@ -70,6 +71,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
   const audioContextRef = useRef<AudioContext | null>(null);
   const cameraRef = useRef<HTMLVideoElement | null>(null);
   const referenceVideoRef = useRef<HTMLVideoElement | null>(null);
+  const recordedVideoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawLoopRef = useRef<number | null>(null);
   const drawTimerRef = useRef<number | null>(null);
@@ -136,6 +138,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
   async function startCountdown() {
     setError('');
     setRecordedUrl(null);
+    setPreviewAdjusted(false);
     recordedBlobRef.current = null;
     if (!canRecord) return setError('Seu navegador não liberou gravação por câmera/microfone. Tente pelo Chrome ou Safari atualizado.');
     if (!referenceSource) return setError('Essa atividade ainda não tem vídeo de referência vinculado.');
@@ -282,6 +285,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
       recordedBlobRef.current = blob;
       setRecordedUrl(URL.createObjectURL(blob));
       stream.getTracks().forEach((track) => track.stop());
+      setShowAudioEditor(true);
       setStep('review');
     };
     reference.onended = () => {
@@ -303,7 +307,14 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
     recordedBlobRef.current = null;
     setCaption('');
     setPostCommunity(false);
+    setPreviewAdjusted(false);
     setStep('intro');
+  }
+
+  function applyPreviewAudioBalance() {
+    const video = recordedVideoRef.current;
+    if (video) video.volume = Math.max(0.1, Math.min(1, voiceVolume / 125));
+    setPreviewAdjusted(true);
   }
 
   async function submitDuet(finalCaption: string, forceCommunity = postCommunity) {
@@ -328,14 +339,12 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
     setStep('posted');
   }
 
-  function publishPrivate() {
-    setPostCommunity(false);
+  function publishReview() {
+    if (postCommunity) {
+      setStep('caption');
+      return;
+    }
     submitDuet('', false);
-  }
-
-  function publishToFeed() {
-    setPostCommunity(true);
-    setStep('caption');
   }
 
   function finishPost() {
@@ -363,16 +372,17 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
 
       {showAudioEditor ? (
         <section className="premium-audio-editor">
-          <div><label>Volume da referência</label><input type="range" min="10" max="100" value={referenceVolume} onChange={(event) => setReferenceVolume(Number(event.target.value))} /><strong>{referenceVolume}%</strong></div>
-          <div><label>Volume da sua voz</label><input type="range" min="60" max="180" value={voiceVolume} onChange={(event) => setVoiceVolume(Number(event.target.value))} /><strong>{voiceVolume}%</strong></div>
-          <p>Ajuste antes de gravar novamente. Para deixar o dueto evidente, reduza a referência e aumente sua voz.</p>
+          <div><label>Volume da referência</label><input type="range" min="10" max="100" value={referenceVolume} onChange={(event) => { setReferenceVolume(Number(event.target.value)); setPreviewAdjusted(false); }} /><strong>{referenceVolume}%</strong></div>
+          <div><label>Volume da sua voz</label><input type="range" min="60" max="180" value={voiceVolume} onChange={(event) => { setVoiceVolume(Number(event.target.value)); setPreviewAdjusted(false); }} /><strong>{voiceVolume}%</strong></div>
+          <p>{step === 'review' ? 'Ajuste depois da gravação, confira a prévia e envie. Para alterar a separação real entre referência e voz no arquivo final, regrave com esse equilíbrio.' : 'Ajuste antes de gravar. Para deixar o dueto evidente, reduza a referência e aumente sua voz.'}</p>
+          {step === 'review' ? <button className="button secondary premium-apply-audio" type="button" onClick={applyPreviewAudioBalance}>{previewAdjusted ? 'Prévia ajustada' : 'Aplicar na prévia'}</button> : null}
         </section>
       ) : null}
 
       <section className="real-duet-stage premium-duet-stage">
         <video ref={referenceVideoRef} className="ios-duet-source" src={referenceSource} crossOrigin="anonymous" playsInline muted preload="auto" />
         <video ref={cameraRef} className="ios-duet-source" autoPlay muted playsInline />
-        {recordedUrl ? <video className="duet-final-video" src={recordedUrl} controls playsInline /> : <canvas ref={canvasRef} className="duet-canvas" width={1280} height={720} />}
+        {recordedUrl ? <video ref={recordedVideoRef} className="duet-final-video" src={recordedUrl} controls playsInline /> : <canvas ref={canvasRef} className="duet-canvas" width={1280} height={720} />}
         {step === 'intro' ? <div className="duet-stage-overlay premium-duet-overlay"><div className="premium-duet-start-card"><span><Sparkles size={20} /> Pronto para praticar?</span><h2>Grave sua segunda voz junto com a referência.</h2><p>Prepare o fone, posicione a câmera e clique para iniciar a contagem.</p><button className="button premium-primary-button" onClick={startCountdown}><Mic size={18} /> Iniciar dueto</button></div></div> : null}
         {step === 'loading' ? <div className="duet-stage-overlay premium-duet-overlay"><span className="recording-dot">Preparando vídeo e câmera...</span></div> : null}
         {step === 'countdown' ? <div className="countdown overlay-countdown">{count}</div> : null}
@@ -380,10 +390,10 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
 
       <section className="duet-control-bar premium-duet-control-bar">
         {step === 'recording' ? <><span className="recording-dot">● Gravando dueto real</span><button className="button danger" onClick={stopRecording}>Finalizar gravação</button></> : null}
-        {step === 'review' ? <><button className="button secondary" onClick={reset}><RefreshCcw size={16} /> Regravar</button><button className="button" onClick={publishPrivate} disabled={isSubmitting}><UploadCloud size={16} /> {isSubmitting ? 'Enviando...' : 'Enviar para avaliação'}</button><button className="button community-feed-button" onClick={publishToFeed} disabled={isSubmitting}><Send size={16} /> Postar no feed da comunidade</button></> : null}
+        {step === 'review' ? <><button className="button secondary" onClick={reset}><RefreshCcw size={16} /> Regravar</button><label className="community-toggle review-community-toggle"><input type="checkbox" checked={postCommunity} onChange={(event) => setPostCommunity(event.target.checked)} /> Publicar também na comunidade</label><button className="button" onClick={publishReview} disabled={isSubmitting}><UploadCloud size={16} /> {isSubmitting ? 'Enviando...' : 'Enviar para avaliação'}</button></> : null}
       </section>
 
-      {step === 'review' ? <section className="duet-review-note premium-duet-note"><CheckCircle2 size={24} /><div><h2>Dueto gerado</h2><p>A referência e o aluno foram gravados no mesmo vídeo. Ajuste o equilíbrio, regrave se necessário e envie para avaliação ou para o feed.</p></div></section> : null}
+      {step === 'review' ? <section className="duet-review-note premium-duet-note"><CheckCircle2 size={24} /><div><h2>Dueto gerado</h2><p>Confira o vídeo, ajuste o equilíbrio se necessário e envie. Marcando a comunidade, você escreve uma legenda antes de publicar.</p></div></section> : null}
       {step === 'caption' ? <section className="caption-box duet-caption-box premium-duet-note"><h2>Legenda da comunidade</h2><textarea value={caption} onChange={(event) => setCaption(event.target.value)} placeholder="Escreva uma legenda para o feed..." /><button className="button" onClick={finishPost} disabled={isSubmitting}>{isSubmitting ? 'Publicando...' : 'Publicar no feed e enviar'}</button></section> : null}
       {step === 'posted' ? <section className="posted-box duet-posted-box premium-duet-note"><CheckCircle2 size={28} /><div><h2>Atividade enviada</h2><p>Sua gravação entrou na fila de avaliação do professor.</p><a className="button secondary" href={`/aluno/aula/${lessonSlug}`}>Voltar para aula</a></div></section> : null}
     </div>
