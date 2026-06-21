@@ -1,0 +1,181 @@
+.bottom-nav {
+  grid-template-columns: repeat(4, 1fr) !important;
+}
+
+.premium-duet-overlay .recording-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  border: 1px solid rgba(245, 199, 107, 0.35);
+  border-radius: 999px;
+  padding: 16px 22px;
+  background: rgba(0, 0, 0, 0.78);
+  color: #f5c76b;
+  font-weight: 900;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.42);
+}
+
+.premium-duet-overlay .recording-dot::before {
+  content: '';
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(245, 199, 107, 0.28);
+  border-top-color: #f5c76b;
+  border-radius: 50%;
+  animation: hubSpin 0.8s linear infinite;
+}
+
+@keyframes hubSpin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 760px) {
+  .bottom-nav {
+    width: min(420px, calc(100% - 28px)) !important;
+    bottom: 12px !important;
+  }
+
+  .activity-page {
+    overflow-x: hidden;
+  }
+
+  .activity-topbar {
+    height: 64px !important;
+    padding: 0 18px !important;
+  }
+
+  .activity-topbar a,
+  .activity-topbar strong {
+    font-size: 14px;
+    line-height: 1.1;
+  }
+
+  .premium-duet-studio {
+    padding: 22px 18px 118px !important;
+  }
+
+  .premium-duet-header {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
+    margin-bottom: 18px !important;
+  }
+
+  .premium-duet-header h1 {
+    font-size: clamp(54px, 18vw, 74px) !important;
+    line-height: 0.86 !important;
+    letter-spacing: -0.075em !important;
+    margin: 8px 0 10px !important;
+  }
+
+  .premium-duet-steps {
+    display: grid !important;
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: 8px !important;
+    margin-top: 18px !important;
+  }
+
+  .premium-duet-steps span {
+    justify-content: center;
+    padding: 10px 8px !important;
+    font-size: 14px !important;
+    gap: 6px !important;
+  }
+
+  .premium-duet-instruction {
+    max-width: none !important;
+    padding: 18px !important;
+    border-radius: 24px !important;
+  }
+
+  .premium-duet-instruction p {
+    font-size: 16px !important;
+    line-height: 1.38 !important;
+  }
+
+  .premium-duet-stage {
+    margin-top: 18px !important;
+    min-height: auto !important;
+    border-radius: 26px !important;
+    overflow: visible !important;
+  }
+
+  .premium-duet-stage::before {
+    display: none !important;
+  }
+
+  .premium-duet-overlay {
+    position: relative !important;
+    inset: auto !important;
+    min-height: auto !important;
+    padding: 12px !important;
+    border-radius: 26px !important;
+    background: linear-gradient(180deg, rgba(245, 199, 107, 0.08), rgba(0, 0, 0, 0.62)) !important;
+    backdrop-filter: blur(10px);
+  }
+
+  .premium-duet-start-card {
+    width: 100% !important;
+    padding: 20px 16px 18px !important;
+    border-radius: 22px !important;
+  }
+
+  .premium-duet-start-card span {
+    font-size: 11px !important;
+    letter-spacing: 0.08em !important;
+  }
+
+  .premium-duet-start-card h2 {
+    font-size: clamp(28px, 9vw, 38px) !important;
+    line-height: 1 !important;
+    margin: 12px 0 10px !important;
+  }
+
+  .premium-duet-start-card p {
+    font-size: 15px !important;
+    line-height: 1.35 !important;
+    margin-bottom: 16px !important;
+  }
+
+  .premium-primary-button {
+    width: 100% !important;
+    min-height: 54px;
+    padding: 14px 18px !important;
+    font-size: 16px !important;
+  }
+
+  .duet-canvas,
+  .duet-final-video {
+    min-height: 230px !important;
+    width: 100% !important;
+    object-fit: contain !important;
+    border-radius: 22px;
+  }
+
+  .premium-duet-overlay .recording-dot {
+    width: 100%;
+    border-radius: 22px;
+    white-space: normal;
+    text-align: center;
+    line-height: 1.2;
+    padding: 18px;
+  }
+
+  .premium-duet-control-bar {
+    width: 100% !important;
+    border-radius: 24px !important;
+    padding: 12px !important;
+    justify-content: stretch !important;
+  }
+
+  .premium-duet-control-bar .button,
+  .premium-duet-control-bar a.button {
+    width: 100% !important;
+  }
+
+  .community-toggle {
+    width: 100%;
+    justify-content: center;
+  }
+}
