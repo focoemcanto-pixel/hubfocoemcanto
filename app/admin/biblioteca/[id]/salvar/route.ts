@@ -4,8 +4,15 @@ import { slugify } from '@/lib/google/drive-utils';
 
 const ASSETS_BUCKET = 'hub-assets';
 
-function redirectTo(request: Request, path: string) {
-  return NextResponse.redirect(new URL(path, request.url), { status: 303 });
+function wantsJson(request: Request) {
+  return request.headers.get('accept')?.includes('application/json') || request.headers.get('x-requested-with') === 'fetch';
+}
+
+function redirectOrJson(request: Request, id: string, payload: Record<string, unknown>, status = 200) {
+  if (wantsJson(request)) return NextResponse.json(payload, { status });
+  const key = payload.ok ? 'sucesso' : 'erro';
+  const value = payload.ok ? 'salvo' : encodeURIComponent(String(payload.error || 'erro_ao_salvar'));
+  return NextResponse.redirect(new URL(`/admin/biblioteca/${id}?${key}=${value}`, request.url), { status: 303 });
 }
 
 async function ensureAssetsBucket() {
@@ -59,14 +66,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const coverFile = formData.get('cover_file');
     const sort_order = Number(formData.get('sort_order') || 1);
 
-    if (!title) return redirectTo(request, `/admin/biblioteca/${id}?erro=titulo`);
+    if (!title) return redirectOrJson(request, id, { ok: false, error: 'Informe o título do módulo.' }, 400);
 
     let cover_url = removeCover ? '' : pastedCoverUrl;
     if (!removeCover && coverFile instanceof File && coverFile.size > 0) {
       const upload = await uploadModuleCover(coverFile, id);
-      if (!upload.ok) {
-        return redirectTo(request, `/admin/biblioteca/${id}?erro=${encodeURIComponent(upload.error || 'upload_capa')}`);
-      }
+      if (!upload.ok) return redirectOrJson(request, id, { ok: false, error: upload.error || 'Erro ao subir capa.' }, 500);
       cover_url = upload.url || cover_url;
     }
 
@@ -77,12 +82,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       description,
       cover_url,
       sort_order: Number.isFinite(sort_order) ? sort_order : 1,
-      updated_at: new Date().toISOString(),
     }).eq('id', id);
 
-    if (error) return redirectTo(request, `/admin/biblioteca/${id}?erro=${encodeURIComponent(error.message)}`);
-    return redirectTo(request, `/admin/biblioteca/${id}?sucesso=salvo`);
+    if (error) return redirectOrJson(request, id, { ok: false, error: error.message }, 500);
+    return redirectOrJson(request, id, { ok: true, cover_url, title, description });
   } catch (error) {
-    return redirectTo(request, `/admin/biblioteca/${id}?erro=${encodeURIComponent(error instanceof Error ? error.message : 'erro_ao_salvar')}`);
+    return redirectOrJson(request, id, { ok: false, error: error instanceof Error ? error.message : 'Erro ao salvar.' }, 500);
   }
 }
