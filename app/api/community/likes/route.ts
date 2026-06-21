@@ -27,11 +27,18 @@ export async function POST(request: Request) {
   if (!profile) return wantsJson(request) ? NextResponse.json({ error: 'not_authenticated' }, { status: 401 }) : NextResponse.redirect(new URL('/aluno/comunidade?erro=perfil', request.url));
 
   const supabase = createAdminClient();
-  const { data: existing } = await supabase.from('community_likes').select('id').eq('post_id', postId).eq('profile_id', profile.id).maybeSingle();
+  const { data: existingRows } = await supabase
+    .from('community_likes')
+    .select('id')
+    .eq('post_id', postId)
+    .eq('profile_id', profile.id)
+    .limit(10);
+
+  const alreadyLiked = Boolean(existingRows?.length);
   let liked = false;
 
-  if (existing?.id) {
-    await supabase.from('community_likes').delete().eq('id', existing.id);
+  if (alreadyLiked) {
+    await supabase.from('community_likes').delete().eq('post_id', postId).eq('profile_id', profile.id);
   } else {
     await supabase.from('community_likes').insert({ post_id: postId, profile_id: profile.id });
     liked = true;
