@@ -20,6 +20,10 @@ function reply(request: Request, payload: Record<string, unknown>, status = 200)
   return NextResponse.redirect(new URL(`/aluno/perfil?erro=${encodeURIComponent(String(payload.error || 'perfil'))}`, request.url), { status: 303 });
 }
 
+function missingColumn(message?: string) {
+  return !!message && (message.includes('schema cache') || message.includes('column') || message.includes('Could not find'));
+}
+
 async function ensureBucket() {
   const supabase = createAdminClient();
   const { data: buckets } = await supabase.storage.listBuckets();
@@ -51,7 +55,7 @@ export async function POST(request: Request) {
   const avatar = form.get('avatar');
 
   const supabase = createAdminClient();
-  let avatarUrl = String(profile.avatar_url || '');
+  let avatarUrl = String((profile as any).avatar_url || '');
 
   if (avatar instanceof File && avatar.size > 0) {
     const ok = await ensureBucket();
@@ -66,12 +70,20 @@ export async function POST(request: Request) {
     avatarUrl = data.publicUrl;
   }
 
-  const payload: Record<string, string> = { bio, headline, whatsapp };
-  if (name) payload.name = name;
-  if (avatarUrl) payload.avatar_url = avatarUrl;
+  const richPayload: Record<string, string> = { bio, headline, whatsapp };
+  if (name) richPayload.name = name;
+  if (avatarUrl) richPayload.avatar_url = avatarUrl;
 
-  const { error } = await supabase.from('profiles').update(payload).eq('id', profile.id);
-  if (error) return reply(request, { ok: false, error: error.message }, 500);
+  const { error } = await supabase.from('profiles').update(richPayload).eq('id', profile.id);
+  if (!error) return reply(request, { ok: true, avatar_url: avatarUrl, name, bio, headline, whatsapp });
 
-  return reply(request, { ok: true, avatar_url: avatarUrl, name, bio, headline, whatsapp });
+  if (!missingColumn(error.message)) return reply(request, { ok: false, error: error.message }, 500);
+
+  const safePayload: Record<string, string> = {};
+  if (name) safePayload.name = name;
+  if (avatarUrl) safePayload.avatar_url = avatarUrl;
+  const { error: safeError } = await supabase.from('profiles').update(safePayload).eq('id', profile.id);
+  if (safeError) return reply(request, { ok: false, error: safeError.message }, 500);
+
+  return reply(request, { ok: true, avatar_url: avatarUrl, name, bio: '', headline: '', whatsapp: '', warning: 'Campos extras ainda não existem no banco.' });
 }
