@@ -2,17 +2,6 @@ import { createAdminClient } from '@/lib/supabase/admin';
 
 export const dynamic = 'force-dynamic';
 
-function driveFileId(url?: string | null) {
-  if (!url) return null;
-  const match = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || url.match(/id=([a-zA-Z0-9_-]+)/);
-  return match?.[1] || null;
-}
-
-function driveThumb(url?: string | null) {
-  const id = driveFileId(url);
-  return id ? `https://drive.google.com/thumbnail?id=${id}&sz=w320` : '';
-}
-
 export default async function AdminModulePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = createAdminClient();
@@ -28,7 +17,7 @@ export default async function AdminModulePage({ params }: { params: Promise<{ id
           <p className="eyebrow">Modulo</p>
           <h1>{module?.title || 'Modulo'}</h1>
           <p className="muted">Edite os titulos direto na lista, exclua em massa e envie aulas do Drive para este modulo.</p>
-          <p className="muted">Capas recomendadas: modulo 320x480, thumbnail de aula 1280x720.</p>
+          <p className="muted">Capa recomendada: 320x480. As aulas agora usam cards internos quando o Drive não entrega thumbnail.</p>
         </div>
         <a className="button secondary" href="/admin/biblioteca">Voltar</a>
       </section>
@@ -52,9 +41,9 @@ export default async function AdminModulePage({ params }: { params: Promise<{ id
           <p className="muted">Use selecao em massa para remover aulas erradas.</p>
         </article>
         <article className="admin-stat">
-          <span>Capas</span>
-          <strong>320x480</strong>
-          <p className="muted">Ideal para cards verticais estilo Netflix.</p>
+          <span>Capa da home</span>
+          <strong>Upload</strong>
+          <p className="muted">Envie uma imagem vertical para exibir o modulo na home e na biblioteca.</p>
         </article>
       </section>
 
@@ -62,11 +51,12 @@ export default async function AdminModulePage({ params }: { params: Promise<{ id
         <article className="content-card">
           <p className="eyebrow">Editar modulo</p>
           <h2>Dados principais</h2>
-          <form className="admin-form" action={`/admin/biblioteca/${id}/salvar`} method="post">
+          <form className="admin-form" action={`/admin/biblioteca/${id}/salvar`} method="post" encType="multipart/form-data">
             <label>Titulo<input name="title" defaultValue={module?.title || ''} required /></label>
             <label>Descricao<textarea name="description" defaultValue={module?.description || ''} /></label>
             <label>Ordem<input name="sort_order" type="number" defaultValue={module?.sort_order || 1} /></label>
-            <label>Capa do modulo <small className="muted">Proporcao ideal: 320x480</small><input name="cover_url" defaultValue={module?.cover_url || ''} placeholder="Cole a URL da capa" /></label>
+            <label>Capa do modulo <small className="muted">Proporcao ideal: 320x480</small><input name="cover_file" type="file" accept="image/png,image/jpeg,image/webp" /></label>
+            <label>URL da capa <small className="muted">Opcional: use somente se ja tiver uma URL pronta</small><input name="cover_url" defaultValue={module?.cover_url || ''} placeholder="Cole a URL da capa" /></label>
             <button className="button" type="submit">Salvar modulo</button>
           </form>
         </article>
@@ -110,28 +100,25 @@ export default async function AdminModulePage({ params }: { params: Promise<{ id
             <button className="button secondary danger" type="submit">Excluir selecionadas</button>
           </div>
           <div className="admin-list lesson-manager-list">
-            {(exercises || []).map((exercise: any, index: number) => {
-              const thumb = exercise.thumbnail_url || driveThumb(exercise.drive_url || exercise.media_url);
-              return (
-                <div className="lesson-manager-row compact" key={exercise.id}>
-                  <label className="lesson-check"><input type="checkbox" name="lesson_id" value={exercise.id} /></label>
-                  <div className="lesson-thumb small">{thumb ? <img src={thumb} alt="" /> : <span>{exercise.media_type || 'video'}</span>}</div>
-                  <div className="lesson-info">
-                    <span className="pill">{index + 1} - {exercise.media_type} - nivel {exercise.difficulty}</span>
-                    <form className="inline-title-form" action={`/admin/biblioteca/${id}/aulas/renomear`} method="post">
-                      <input type="hidden" name="lesson_id" value={exercise.id} />
-                      <input name="title" defaultValue={exercise.title} aria-label="Titulo da aula" />
-                      <button type="submit">Salvar</button>
-                    </form>
-                    <p className="muted">{exercise.description || 'Sem descricao'}</p>
-                  </div>
-                  <div className="lesson-actions">
-                    <a className="button secondary" href={`/aluno/aula/${exercise.slug}`}>Ver aula</a>
-                    <a className="button secondary" href={`/admin/conteudos/exercicios/${exercise.id}/editar`}>Editar</a>
-                  </div>
+            {(exercises || []).map((exercise: any, index: number) => (
+              <div className="lesson-manager-row compact" key={exercise.id}>
+                <label className="lesson-check"><input type="checkbox" name="lesson_id" value={exercise.id} /></label>
+                <div className="lesson-thumb small generated"><span>{String(index + 1).padStart(2, '0')}</span></div>
+                <div className="lesson-info">
+                  <span className="pill">{index + 1} - {exercise.media_type} - nivel {exercise.difficulty}</span>
+                  <form className="inline-title-form" action={`/admin/biblioteca/${id}/aulas/renomear`} method="post">
+                    <input type="hidden" name="lesson_id" value={exercise.id} />
+                    <input name="title" defaultValue={exercise.title} aria-label="Titulo da aula" />
+                    <button type="submit">Salvar</button>
+                  </form>
+                  <p className="muted">{exercise.description || 'Sem descricao'}</p>
                 </div>
-              );
-            })}
+                <div className="lesson-actions">
+                  <a className="button secondary" href={`/aluno/aula/${exercise.slug}`}>Ver aula</a>
+                  <a className="button secondary" href={`/admin/conteudos/exercicios/${exercise.id}/editar`}>Editar</a>
+                </div>
+              </div>
+            ))}
           </div>
         </form>
       </section>
