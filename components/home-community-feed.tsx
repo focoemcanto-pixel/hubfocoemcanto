@@ -56,13 +56,14 @@ export function HomeCommunityFeed({ initialPosts }: { initialPosts: FeedPost[] }
     form.set('post_id', postId);
     form.set('return_to', '/aluno');
     const response = await fetch('/api/community/likes', { method: 'POST', body: form, headers: { accept: 'application/json' } });
-    if (response.ok) {
-      const json = await response.json().catch(() => null);
-      if (json) {
-        setLiked((current) => ({ ...current, [postId]: Boolean(json.liked) }));
-        setPosts((current) => current.map((post) => post.id === postId ? { ...post, likesCount: Number(json.likes_count || 0) } : post));
-      }
+    if (!response.ok) {
+      setLiked((current) => ({ ...current, [postId]: !willLike }));
+      setPosts((current) => current.map((post) => post.id === postId ? { ...post, likesCount: Math.max(0, post.likesCount + (willLike ? -1 : 1)) } : post));
+      return;
     }
+    const json = await response.json().catch(() => null);
+    if (json && typeof json.liked === 'boolean') setLiked((current) => ({ ...current, [postId]: Boolean(json.liked) }));
+    if (json && typeof json.likes_count === 'number') setPosts((current) => current.map((post) => post.id === postId ? { ...post, likesCount: json.likes_count } : post));
   }
 
   async function commentPost(postId: string, formElement: HTMLFormElement) {
@@ -77,10 +78,13 @@ export function HomeCommunityFeed({ initialPosts }: { initialPosts: FeedPost[] }
     form.set('return_to', '/aluno');
     form.set('comment', value);
     const response = await fetch('/api/community/comments', { method: 'POST', body: form, headers: { accept: 'application/json' } });
-    if (response.ok) {
-      const json = await response.json().catch(() => null);
-      if (json) setPosts((current) => current.map((post) => post.id === postId ? { ...post, commentsCount: Number(json.comments_count || post.commentsCount) } : post));
+    if (!response.ok) {
+      setComments((current) => ({ ...current, [postId]: (current[postId] || []).filter((comment, index, list) => !(comment === value && index === list.length - 1)) }));
+      setPosts((current) => current.map((post) => post.id === postId ? { ...post, commentsCount: Math.max(0, post.commentsCount - 1) } : post));
+      return;
     }
+    const json = await response.json().catch(() => null);
+    if (json && typeof json.comments_count === 'number') setPosts((current) => current.map((post) => post.id === postId ? { ...post, commentsCount: json.comments_count } : post));
   }
 
   async function followAuthor(authorId?: string | null) {
@@ -89,11 +93,14 @@ export function HomeCommunityFeed({ initialPosts }: { initialPosts: FeedPost[] }
     setFollowing((current) => ({ ...current, [authorId]: next }));
     const form = new FormData();
     form.set('following_id', authorId);
+    form.set('following', String(next));
     const response = await fetch('/api/community/follows', { method: 'POST', body: form, headers: { accept: 'application/json' } });
-    if (response.ok) {
-      const json = await response.json().catch(() => null);
-      if (json) setFollowing((current) => ({ ...current, [authorId]: Boolean(json.following) }));
+    if (!response.ok) {
+      setFollowing((current) => ({ ...current, [authorId]: !next }));
+      return;
     }
+    const json = await response.json().catch(() => null);
+    if (json) setFollowing((current) => ({ ...current, [authorId]: Boolean(json.following) }));
   }
 
   async function removePost(postId: string) {
