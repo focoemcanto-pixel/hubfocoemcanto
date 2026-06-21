@@ -130,7 +130,7 @@ export function HomeCommunityFeed({ initialPosts }: { initialPosts: FeedPost[] }
                   <div className="post-options-popover">
                     <a href={`/aluno/comunidade#post-${post.id}`}>Ver publicação</a>
                     <button type="button" onClick={() => navigator.clipboard?.writeText(`${window.location.origin}/aluno/comunidade#post-${post.id}`)}>Copiar link</button>
-                    {post.canDelete ? <button className="danger-option" type="button" disabled={removingPost === post.id} onClick={() => removePost(post.id)}>{removingPost === post.id ? 'Excluindo...' : 'Excluir publicação'}</button> : null}
+                    {post.canDelete !== false ? <button className="danger-option" type="button" disabled={removingPost === post.id} onClick={() => removePost(post.id)}>{removingPost === post.id ? 'Excluindo...' : 'Excluir publicação'}</button> : null}
                   </div>
                 ) : null}
               </div>
