@@ -2,6 +2,17 @@
   grid-template-columns: repeat(4, 1fr) !important;
 }
 
+.ios-duet-source {
+  position: absolute;
+  left: -10px;
+  top: -10px;
+  width: 4px;
+  height: 4px;
+  opacity: 0.01;
+  pointer-events: none;
+  z-index: -1;
+}
+
 .premium-duet-overlay .recording-dot {
   display: inline-flex;
   align-items: center;
