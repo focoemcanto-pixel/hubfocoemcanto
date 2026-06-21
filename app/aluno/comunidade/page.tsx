@@ -4,7 +4,7 @@ import { AppShell } from '@/components/app-shell';
 import { HomeCommunityFeed } from '@/components/home-community-feed';
 import { createAdminClient } from '@/lib/supabase/admin';
 
-type Related = { title?: string; name?: string; slug?: string; file_url?: string } | null;
+type Related = { title?: string; name?: string; slug?: string; file_url?: string; avatar_url?: string } | null;
 
 function related(value: unknown): Related {
   if (Array.isArray(value)) return (value[0] || null) as Related;
@@ -39,12 +39,12 @@ export default async function CommunityPage() {
   const [{ data: posts }, { data: communitySubmissions }, { data: rawModules }, { data: profile }] = await Promise.all([
     supabase
       .from('community_posts')
-      .select('id,profile_id,exercise_id,caption,media_url,likes_count,comments_count,created_at,profiles(name),exercises(title,slug),submissions(file_url)')
+      .select('id,profile_id,exercise_id,caption,media_url,likes_count,comments_count,created_at,profiles(name,avatar_url),exercises(title,slug),submissions(file_url)')
       .order('created_at', { ascending: false })
       .limit(30),
     supabase.from('submissions').select('profile_id,exercise_id,file_url,created_at').eq('visibility', 'community').order('created_at', { ascending: false }).limit(100),
     supabase.from('modules').select('id,title,description,is_active,sort_order,exercises(id,title,is_active,sort_order)').eq('is_active', true).order('sort_order'),
-    email ? supabase.from('profiles').select('name,email').eq('email', email).maybeSingle() : { data: null },
+    email ? supabase.from('profiles').select('id,name,email').eq('email', email).maybeSingle() : { data: null },
   ]);
 
   const modules = (rawModules || []).filter(isRealModule);
@@ -54,6 +54,12 @@ export default async function CommunityPage() {
     .map((exercise: any) => ({ ...exercise, moduleTitle: module.title }))
   );
   const firstName = firstNameOf(profile?.name);
+
+  const authorIds = Array.from(new Set((posts || []).map((post: any) => post.profile_id).filter(Boolean)));
+  const { data: follows } = profile?.id && authorIds.length
+    ? await supabase.from('community_follows').select('following_id').eq('follower_id', profile.id).in('following_id', authorIds)
+    : { data: [] };
+  const followingIds = new Set((follows || []).map((follow: any) => follow.following_id));
 
   const fallbackSubmissionByKey = new Map<string, string>();
   (communitySubmissions || []).forEach((submission: any) => {
@@ -68,13 +74,18 @@ export default async function CommunityPage() {
     const fallbackMedia = fallbackSubmissionByKey.get(`${post.profile_id}:${post.exercise_id}`) || '';
     return {
       id: post.id,
+      authorId: post.profile_id,
       authorName: author?.name || 'Aluno VIP',
+      authorAvatarUrl: author?.avatar_url || null,
+      createdAt: post.created_at,
       exerciseTitle: exercise?.title || 'Atividade da comunidade',
       exerciseSlug: exercise?.slug || null,
       caption: post.caption || 'Compartilhou uma prática.',
       mediaUrl: post.media_url || submission?.file_url || fallbackMedia || null,
       likesCount: post.likes_count || 0,
       commentsCount: post.comments_count || 0,
+      canDelete: Boolean(profile?.id && profile.id === post.profile_id),
+      isFollowing: followingIds.has(post.profile_id),
     };
   });
 
