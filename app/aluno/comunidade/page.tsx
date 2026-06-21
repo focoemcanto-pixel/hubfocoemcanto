@@ -14,6 +14,15 @@ function initials(name?: string | null) {
   return value.split(' ').slice(0, 2).map((part) => part[0]).join('').toUpperCase();
 }
 
+function isRealModule(module: any) {
+  const title = String(module?.title || '').toLowerCase();
+  const description = String(module?.description || '').toLowerCase();
+  if (!module?.is_active) return false;
+  if (title === 'biblioteca geral') return false;
+  if (description.includes('importados da pasta')) return false;
+  return true;
+}
+
 export const dynamic = 'force-dynamic';
 
 export default async function CommunityPage() {
@@ -21,12 +30,18 @@ export default async function CommunityPage() {
   const email = cookieStore.get('hub_access_email')?.value;
   const supabase = createAdminClient();
 
-  const [{ data: posts }, { data: exercises }, { data: profile }] = await Promise.all([
+  const [{ data: posts }, { data: rawModules }, { data: profile }] = await Promise.all([
     supabase.from('community_posts').select('id,caption,media_url,likes_count,comments_count,created_at,profiles(name),exercises(title),community_comments(id,comment,profiles(name))').order('created_at', { ascending: false }).limit(30),
-    supabase.from('exercises').select('id,title').eq('is_active', true).order('sort_order').limit(80),
+    supabase.from('modules').select('id,title,description,is_active,sort_order,exercises(id,title,is_active,sort_order)').eq('is_active', true).order('sort_order'),
     email ? supabase.from('profiles').select('name,email').eq('email', email).maybeSingle() : { data: null },
   ]);
 
+  const modules = (rawModules || []).filter(isRealModule);
+  const exercises = modules.flatMap((module: any) => (module.exercises || [])
+    .filter((exercise: any) => exercise.is_active)
+    .sort((a: any, b: any) => (a.sort_order || 0) - (b.sort_order || 0))
+    .map((exercise: any) => ({ ...exercise, moduleTitle: module.title }))
+  );
   const firstName = profile?.name ? profile.name.split(' ')[0] : 'Marcos';
 
   return (
@@ -45,15 +60,14 @@ export default async function CommunityPage() {
           <div className="composer-avatar">{initials(firstName)}</div>
           <form action="/api/community/posts" method="post">
             <textarea name="caption" placeholder="O que você treinou hoje? Compartilhe sua prática, dificuldade ou conquista..." />
-            <div className="composer-grid">
+            <div className="composer-grid secure-composer-grid">
               <select name="exercise_id" defaultValue="">
-                <option value="">Vincular a uma aula opcional</option>
-                {(exercises || []).map((item: any) => <option value={item.id} key={item.id}>{item.title}</option>)}
+                <option value="">Vincular somente a aula publicada no Hub</option>
+                {exercises.map((item: any) => <option value={item.id} key={item.id}>{item.moduleTitle} — {item.title}</option>)}
               </select>
-              <input name="media_url" placeholder="URL do vídeo ou áudio opcional" />
             </div>
             <div className="composer-actions">
-              <span>Publicar no feed da comunidade</span>
+              <span>Conteúdo do Drive não pode ser anexado aqui. Publique sua prática pelo envio da atividade.</span>
               <button type="submit">Publicar</button>
             </div>
           </form>
@@ -74,7 +88,7 @@ export default async function CommunityPage() {
                     <button type="button">...</button>
                   </header>
                   {post.caption ? <p className="community-caption">{post.caption}</p> : null}
-                  {post.media_url ? <video className="community-media" src={post.media_url} controls playsInline /> : <div className="community-wave"><span>Play</span><i /><i /><i /><i /><i /><i /><small>prática vocal</small></div>}
+                  {post.media_url ? <video className="community-media" src={post.media_url} controls playsInline /> : <div className="community-wave"><span>Post</span><i /><i /><i /><i /><i /><i /><small>prática vocal</small></div>}
                   <div className="community-actions-row">
                     <form action="/api/community/likes" method="post"><input type="hidden" name="post_id" value={post.id} /><input type="hidden" name="return_to" value="/aluno/comunidade" /><button type="submit">Curtir {post.likes_count || 0}</button></form>
                     <span>Comentários {post.comments_count || 0}</span>
