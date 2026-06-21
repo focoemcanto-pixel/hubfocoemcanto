@@ -7,6 +7,7 @@ import './hub-premium-overrides.css';
 import './admin-module-premium.css';
 import './admin-live-cover.css';
 import './activity-mobile-fixes.css';
+import './community-premium.css';
 
 export default function RootLayout(props: { children: React.ReactNode }) {
   return (
