@@ -8,6 +8,7 @@ import './admin-module-premium.css';
 import './admin-live-cover.css';
 import './activity-mobile-fixes.css';
 import './community-premium.css';
+import './activity-audio-controls.css';
 
 export default function RootLayout(props: { children: React.ReactNode }) {
   return (
