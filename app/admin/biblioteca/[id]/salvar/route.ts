@@ -32,13 +32,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const title = String(formData.get('title') || '').trim();
   const description = String(formData.get('description') || '').trim();
   const pastedCoverUrl = String(formData.get('cover_url') || '').trim();
+  const removeCover = String(formData.get('remove_cover') || '') === '1';
   const coverFile = formData.get('cover_file');
   const sort_order = Number(formData.get('sort_order') || 1);
 
   if (!title) return NextResponse.redirect(new URL(`/admin/biblioteca/${id}?erro=titulo`, request.url));
 
-  let cover_url = pastedCoverUrl;
-  if (coverFile instanceof File && coverFile.size > 0) {
+  let cover_url = removeCover ? '' : pastedCoverUrl;
+  if (!removeCover && coverFile instanceof File && coverFile.size > 0) {
     cover_url = await uploadModuleCover(coverFile, id);
   }
 
