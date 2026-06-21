@@ -13,10 +13,10 @@ import {
   Settings,
   Star,
   Trash2,
-  Upload,
   Users,
 } from 'lucide-react';
 import { AdminLessonTitleEditor } from '@/components/admin-lesson-title-editor';
+import { AdminModuleCoverUploader } from '@/components/admin-module-cover-uploader';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 export const dynamic = 'force-dynamic';
@@ -97,25 +97,13 @@ export default async function AdminModulePage({ params }: { params: Promise<{ id
           </div>
 
           <div className="premium-cover-panel">
-            <div className="premium-cover-preview">
-              {coverUrl ? <img src={coverUrl} alt="Capa do módulo" /> : null}
-              <div className="premium-cover-shade" />
-              <div className="premium-cover-copy">
-                <span>Segunda voz</span>
-                <strong>{moduleTitle}</strong>
-                <p>Domine a técnica, explore sua harmonia.</p>
-              </div>
-            </div>
-
-            <form className="premium-cover-actions" action={`/admin/biblioteca/${id}/salvar`} method="post" encType="multipart/form-data">
-              <input type="hidden" name="title" value={moduleTitle} />
-              <input type="hidden" name="description" value={module?.description || ''} />
-              <input type="hidden" name="sort_order" value={module?.sort_order || 1} />
-              <input type="hidden" name="cover_url" value={coverUrl} />
-              <label className="premium-cover-button"><Upload size={16} /> Alterar capa<input name="cover_file" type="file" accept="image/png,image/jpeg,image/webp" /></label>
-              <button className="premium-cover-remove" name="remove_cover" value="1" type="submit"><Trash2 size={16} /> Remover capa</button>
-              <button className="premium-cover-save" type="submit">Salvar capa</button>
-            </form>
+            <AdminModuleCoverUploader
+              moduleId={id}
+              title={moduleTitle}
+              description={module?.description || ''}
+              sortOrder={module?.sort_order || 1}
+              initialCoverUrl={coverUrl}
+            />
           </div>
         </section>
 
