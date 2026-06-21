@@ -1,7 +1,7 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
-import { CheckCircle2, Headphones, Mic, Music2, Play, RefreshCcw, Send, SlidersHorizontal, Sparkles, UploadCloud, Video, Wand2 } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { CheckCircle2, Headphones, Mic, Music2, Pause, Play, RefreshCcw, Send, Sparkles, UploadCloud, Video, Wand2 } from 'lucide-react';
 
 type Props = {
   lessonTitle: string;
@@ -12,6 +12,18 @@ type Props = {
 
 type Step = 'intro' | 'loading' | 'countdown' | 'recording' | 'review' | 'rendering' | 'caption' | 'posted';
 type VoicePreset = 'natural' | 'studio' | 'worship' | 'coral';
+
+type LiveNodes = {
+  ctx: AudioContext;
+  voiceGain: GainNode;
+  referenceGain: GainNode;
+  highpass: BiquadFilterNode;
+  presence: BiquadFilterNode;
+  compressor: DynamicsCompressorNode;
+  delay: DelayNode;
+  wet: GainNode;
+  dry: GainNode;
+};
 
 const presets: Array<{ id: VoicePreset; label: string; description: string }> = [
   { id: 'natural', label: 'Natural', description: 'Voz limpa e sem exagero.' },
@@ -93,7 +105,8 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
   const [step, setStep] = useState<Step>('intro');
   const [count, setCount] = useState(3);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [rawPreviewUrl, setRawPreviewUrl] = useState<string | null>(null);
+  const [liveVisualUrl, setLiveVisualUrl] = useState<string | null>(null);
+  const [liveMicUrl, setLiveMicUrl] = useState<string | null>(null);
   const [postCommunity, setPostCommunity] = useState(false);
   const [caption, setCaption] = useState('');
   const [error, setError] = useState('');
@@ -101,6 +114,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
   const [referenceVolume, setReferenceVolume] = useState(45);
   const [voiceVolume, setVoiceVolume] = useState(125);
   const [preset, setPreset] = useState<VoicePreset>('worship');
+  const [isLivePlaying, setIsLivePlaying] = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const visualRecorderRef = useRef<MediaRecorder | null>(null);
@@ -114,15 +128,24 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
   const micBlobRef = useRef<Blob | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const liveNodesRef = useRef<LiveNodes | null>(null);
+  const liveSyncRef = useRef<number | null>(null);
   const cameraRef = useRef<HTMLVideoElement | null>(null);
   const referenceVideoRef = useRef<HTMLVideoElement | null>(null);
   const previewVideoRef = useRef<HTMLVideoElement | null>(null);
+  const liveMicRef = useRef<HTMLAudioElement | null>(null);
+  const liveReferenceRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawLoopRef = useRef<number | null>(null);
   const drawTimerRef = useRef<number | null>(null);
 
   const canRecord = useMemo(() => typeof window !== 'undefined' && !!navigator.mediaDevices?.getUserMedia, []);
   const referenceSource = proxiedVideoUrl(referenceUrl);
+  const canLiveEdit = Boolean(liveVisualUrl && liveMicUrl && referenceSource);
+
+  useEffect(() => {
+    applyLiveSettings();
+  }, [voiceVolume, referenceVolume, preset]);
 
   function clearDrawLoop() {
     if (drawLoopRef.current) cancelAnimationFrame(drawLoopRef.current);
@@ -131,8 +154,28 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
     drawTimerRef.current = null;
   }
 
+  function stopLiveSync() {
+    if (liveSyncRef.current) cancelAnimationFrame(liveSyncRef.current);
+    liveSyncRef.current = null;
+  }
+
+  function stopLivePlayback() {
+    stopLiveSync();
+    previewVideoRef.current?.pause();
+    liveMicRef.current?.pause();
+    liveReferenceRef.current?.pause();
+    setIsLivePlaying(false);
+  }
+
+  function destroyLiveAudio() {
+    stopLivePlayback();
+    liveNodesRef.current?.ctx.close().catch(() => undefined);
+    liveNodesRef.current = null;
+  }
+
   function resetRecorders() {
     clearDrawLoop();
+    destroyLiveAudio();
     cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
     audioContextRef.current?.close().catch(() => undefined);
     mediaRecorderRef.current = null;
@@ -238,7 +281,8 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
   async function startCountdown() {
     setError('');
     setPreviewUrl(null);
-    setRawPreviewUrl(null);
+    setLiveVisualUrl(null);
+    setLiveMicUrl(null);
     previewBlobRef.current = null;
     rawPreviewBlobRef.current = null;
     visualBlobRef.current = null;
@@ -320,13 +364,14 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
       const rawBlob = new Blob(chunksRef.current, { type: rawType });
       rawPreviewBlobRef.current = rawBlob;
       previewBlobRef.current = rawBlob;
-      setRawPreviewUrl(URL.createObjectURL(rawBlob));
       setPreviewUrl(URL.createObjectURL(rawBlob));
       stream.getTracks().forEach((track) => track.stop());
       window.setTimeout(() => {
         if (visualChunksRef.current.length && micChunksRef.current.length) {
           visualBlobRef.current = new Blob(visualChunksRef.current, { type: visualRecorderRef.current?.mimeType || recorderMimeType(true, false) || 'video/webm' });
           micBlobRef.current = new Blob(micChunksRef.current, { type: micRecorderRef.current?.mimeType || recorderMimeType(false, true) || 'audio/webm' });
+          setLiveVisualUrl(URL.createObjectURL(visualBlobRef.current));
+          setLiveMicUrl(URL.createObjectURL(micBlobRef.current));
         }
       }, 900);
       setStep('review');
@@ -343,7 +388,8 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
   function reset() {
     resetRecorders();
     setPreviewUrl(null);
-    setRawPreviewUrl(null);
+    setLiveVisualUrl(null);
+    setLiveMicUrl(null);
     previewBlobRef.current = null;
     rawPreviewBlobRef.current = null;
     visualBlobRef.current = null;
@@ -351,6 +397,113 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
     setCaption('');
     setPostCommunity(false);
     setStep('intro');
+  }
+
+  function applyPresetToNodes(nodes: LiveNodes, selected: VoicePreset) {
+    const now = nodes.ctx.currentTime;
+    nodes.highpass.frequency.setTargetAtTime(selected === 'natural' ? 70 : 95, now, 0.012);
+    nodes.presence.frequency.setTargetAtTime(3200, now, 0.012);
+    nodes.presence.gain.setTargetAtTime(selected === 'natural' ? 1.5 : selected === 'coral' ? 2.2 : 3.2, now, 0.012);
+    nodes.compressor.threshold.setTargetAtTime(selected === 'natural' ? -20 : -26, now, 0.012);
+    nodes.compressor.ratio.setTargetAtTime(selected === 'natural' ? 2.4 : 4, now, 0.012);
+    nodes.delay.delayTime.setTargetAtTime(selected === 'coral' ? 0.028 : selected === 'worship' ? 0.12 : 0.001, now, 0.012);
+    nodes.wet.gain.setTargetAtTime(selected === 'coral' ? 0.18 : selected === 'worship' ? 0.14 : 0, now, 0.012);
+    nodes.dry.gain.setTargetAtTime(selected === 'natural' ? 1 : 0.92, now, 0.012);
+  }
+
+  function applyLiveSettings() {
+    const nodes = liveNodesRef.current;
+    if (!nodes) return;
+    const now = nodes.ctx.currentTime;
+    nodes.voiceGain.gain.setTargetAtTime(voiceVolume / 100, now, 0.006);
+    nodes.referenceGain.gain.setTargetAtTime(referenceVolume / 100, now, 0.006);
+    applyPresetToNodes(nodes, preset);
+  }
+
+  async function setupLiveMixer() {
+    if (liveNodesRef.current) {
+      applyLiveSettings();
+      return true;
+    }
+    const visual = previewVideoRef.current;
+    const mic = liveMicRef.current;
+    const reference = liveReferenceRef.current;
+    if (!visual || !mic || !reference || !liveVisualUrl || !liveMicUrl || !referenceSource) return false;
+    const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioCtx) return false;
+    const ctx = new AudioCtx({ latencyHint: 'interactive', sampleRate: 48000 });
+    const micSource = ctx.createMediaElementSource(mic);
+    const referenceSourceNode = ctx.createMediaElementSource(reference);
+    const voiceGain = ctx.createGain();
+    const referenceGain = ctx.createGain();
+    const highpass = ctx.createBiquadFilter();
+    const presence = ctx.createBiquadFilter();
+    const compressor = ctx.createDynamicsCompressor();
+    const delay = ctx.createDelay(0.35);
+    const wet = ctx.createGain();
+    const dry = ctx.createGain();
+    const limiter = ctx.createDynamicsCompressor();
+    highpass.type = 'highpass';
+    presence.type = 'peaking';
+    presence.Q.value = 0.9;
+    compressor.knee.value = 18;
+    compressor.attack.value = 0.004;
+    compressor.release.value = 0.18;
+    limiter.threshold.value = -6;
+    limiter.knee.value = 2;
+    limiter.ratio.value = 12;
+    limiter.attack.value = 0.002;
+    limiter.release.value = 0.08;
+    mic.volume = 1;
+    reference.volume = 1;
+    micSource.connect(voiceGain).connect(highpass).connect(presence).connect(compressor);
+    compressor.connect(dry).connect(limiter);
+    compressor.connect(delay).connect(wet).connect(limiter);
+    limiter.connect(ctx.destination);
+    referenceSourceNode.connect(referenceGain).connect(ctx.destination);
+    liveNodesRef.current = { ctx, voiceGain, referenceGain, highpass, presence, compressor, delay, wet, dry };
+    applyLiveSettings();
+    return true;
+  }
+
+  function liveSyncTick() {
+    const visual = previewVideoRef.current;
+    const mic = liveMicRef.current;
+    const reference = liveReferenceRef.current;
+    if (!visual || !mic || !reference || visual.paused || visual.ended) {
+      stopLivePlayback();
+      return;
+    }
+    const time = visual.currentTime;
+    if (Math.abs(mic.currentTime - time) > 0.45) mic.currentTime = time;
+    if (Math.abs(reference.currentTime - time) > 0.45) reference.currentTime = time;
+    liveSyncRef.current = requestAnimationFrame(liveSyncTick);
+  }
+
+  async function toggleLivePlayback() {
+    const visual = previewVideoRef.current;
+    const mic = liveMicRef.current;
+    const reference = liveReferenceRef.current;
+    if (!visual) return;
+    if (!canLiveEdit) {
+      if (visual.paused) await visual.play().catch(() => undefined);
+      else visual.pause();
+      return;
+    }
+    if (isLivePlaying) {
+      stopLivePlayback();
+      return;
+    }
+    const ready = await setupLiveMixer();
+    if (!ready || !mic || !reference) return;
+    const time = visual.currentTime || 0;
+    mic.currentTime = time;
+    reference.currentTime = time;
+    await liveNodesRef.current?.ctx.resume().catch(() => undefined);
+    await Promise.all([visual.play(), mic.play(), reference.play()]).catch(() => undefined);
+    setIsLivePlaying(true);
+    stopLiveSync();
+    liveSyncRef.current = requestAnimationFrame(liveSyncTick);
   }
 
   function connectPresetChain(ctx: AudioContext, input: AudioNode, output: AudioNode, selected: VoicePreset) {
@@ -392,13 +545,11 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
     limiter.connect(output);
   }
 
-  async function renderSmulePreview() {
+  async function renderFinalDuet() {
     const visualBlob = visualBlobRef.current;
     const micBlob = micBlobRef.current;
-    if (!visualBlob || !micBlob || !referenceSource) {
-      setError('As faixas separadas ainda estão preparando. Aguarde um instante e tente novamente.');
-      return null;
-    }
+    if (!visualBlob || !micBlob || !referenceSource) return previewBlobRef.current;
+    stopLivePlayback();
     setStep('rendering');
     setError('');
     try {
@@ -415,7 +566,6 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
       visual.playsInline = true;
       reference.playsInline = true;
       await Promise.all([waitForMediaReady(visual), waitForMediaReady(mic), waitForMediaReady(reference)]);
-
       const canvas = document.createElement('canvas');
       canvas.width = isSafariLike() ? 960 : 1280;
       canvas.height = isSafariLike() ? 540 : 720;
@@ -425,15 +575,12 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
       if (!AudioCtx) throw new Error('audio_context_failed');
       const audioCtx = new AudioCtx({ latencyHint: 'playback', sampleRate: 48000 });
       const destination = audioCtx.createMediaStreamDestination();
-
       const referenceSourceNode = audioCtx.createMediaElementSource(reference);
       const referenceGain = audioCtx.createGain();
       referenceGain.gain.value = referenceVolume / 100;
       referenceSourceNode.connect(referenceGain).connect(destination);
-
       const micSource = audioCtx.createMediaElementSource(mic);
       connectPresetChain(audioCtx, micSource, destination, preset);
-
       const outputStream = new MediaStream([...canvas.captureStream(isSafariLike() ? 24 : 30).getVideoTracks(), ...destination.stream.getAudioTracks()]);
       const mimeType = recorderMimeType();
       const recorder = new MediaRecorder(outputStream, recorderOptions(mimeType));
@@ -466,15 +613,13 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
       const finalBlob = await done;
       await audioCtx.close().catch(() => undefined);
       previewBlobRef.current = finalBlob;
-      const url = URL.createObjectURL(finalBlob);
-      setPreviewUrl(url);
+      setPreviewUrl(URL.createObjectURL(finalBlob));
       setStep('review');
-      window.setTimeout(() => previewVideoRef.current?.play().catch(() => undefined), 250);
       return finalBlob;
     } catch {
       setStep('review');
-      setError('Não consegui gerar a prévia processada neste navegador. Você ainda pode enviar a prévia original.');
-      return null;
+      setError('Não consegui renderizar o dueto final neste navegador. Vou enviar a prévia original.');
+      return previewBlobRef.current;
     }
   }
 
@@ -483,9 +628,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
     if (!finalBlob) return setError('Grave o dueto antes de enviar.');
     setIsSubmitting(true);
     setError('');
-    if (visualBlobRef.current && micBlobRef.current && finalBlob === rawPreviewBlobRef.current) {
-      finalBlob = (await renderSmulePreview()) || finalBlob;
-    }
+    finalBlob = (await renderFinalDuet()) || finalBlob;
     try {
       const data = new FormData();
       const fileType = finalBlob.type || 'video/webm';
@@ -521,8 +664,6 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
     submitDuet(caption || 'Minha prática do dueto.', true);
   }
 
-  const canRender = Boolean(visualBlobRef.current && micBlobRef.current);
-
   return (
     <div className="duet-remix-studio real-duet-studio premium-duet-studio reels-duet-editor smule-duet-studio">
       <section className="duet-remix-header premium-duet-header reels-duet-topbar">
@@ -530,9 +671,9 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
           <p className="eyebrow">Atividade prática</p>
           <h1>Grave seu dueto</h1>
           <p className="muted">Aula: {lessonTitle}</p>
-          <div className="premium-duet-steps"><span><Video size={16} /> Grave</span><span><Wand2 size={16} /> Efeito</span><span><Send size={16} /> Envie</span></div>
+          <div className="premium-duet-steps"><span><Video size={16} /> Grave</span><span><Wand2 size={16} /> Mix ao vivo</span><span><Send size={16} /> Envie</span></div>
         </div>
-        <div className="duet-instruction compact premium-duet-instruction"><Headphones size={24} /><div><strong>Use fone de ouvido</strong><p>A gravação fica estável. Depois o Hub renderiza uma prévia única com sua voz, referência e efeito vocal.</p></div></div>
+        <div className="duet-instruction compact premium-duet-instruction"><Headphones size={24} /><div><strong>Use fone de ouvido</strong><p>Depois de gravar, ajuste volumes e efeitos ouvindo o resultado na hora. O Hub renderiza só quando você envia.</p></div></div>
       </section>
 
       {error ? <p className="duet-error premium-duet-error">{error}</p> : null}
@@ -540,19 +681,26 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
       <section className="real-duet-stage premium-duet-stage reels-duet-preview">
         <video ref={referenceVideoRef} className="ios-duet-source" src={referenceSource} crossOrigin="anonymous" playsInline muted preload="auto" />
         <video ref={cameraRef} className="ios-duet-source" autoPlay muted playsInline />
-        {previewUrl ? <video ref={previewVideoRef} className="duet-final-video realtime-duet-video" src={previewUrl} controls playsInline /> : <canvas ref={canvasRef} className="duet-canvas" width={1280} height={720} />}
+        {previewUrl ? (
+          <>
+            <video ref={previewVideoRef} className="duet-final-video realtime-duet-video" src={liveVisualUrl || previewUrl} playsInline muted={Boolean(liveVisualUrl)} controls={!liveVisualUrl} onEnded={stopLivePlayback} />
+            {liveMicUrl ? <audio ref={liveMicRef} src={liveMicUrl} preload="auto" /> : null}
+            {liveVisualUrl ? <video ref={liveReferenceRef} className="ios-duet-source" src={referenceSource} crossOrigin="anonymous" playsInline preload="auto" onEnded={stopLivePlayback} /> : null}
+            {liveVisualUrl ? <button type="button" className="reels-preview-play" onClick={toggleLivePlayback}>{isLivePlaying ? <Pause size={34} fill="currentColor" /> : <Play size={38} fill="currentColor" />}</button> : null}
+          </>
+        ) : <canvas ref={canvasRef} className="duet-canvas" width={1280} height={720} />}
         {step === 'intro' ? <div className="duet-stage-overlay premium-duet-overlay"><div className="premium-duet-start-card"><span><Sparkles size={20} /> Pronto para praticar?</span><h2>Grave sua segunda voz junto com a referência.</h2><p>Prepare o fone, posicione a câmera e clique para iniciar a contagem.</p><button className="button premium-primary-button" onClick={startCountdown}><Mic size={18} /> Iniciar dueto</button></div></div> : null}
         {step === 'loading' ? <div className="duet-stage-overlay premium-duet-overlay"><span className="recording-dot">Preparando vídeo e câmera...</span></div> : null}
         {step === 'countdown' ? <div className="countdown overlay-countdown">{count}</div> : null}
         {step === 'recording' ? <div className="duet-stage-overlay premium-duet-overlay"><span className="recording-dot">● Gravando...</span></div> : null}
-        {step === 'rendering' ? <div className="duet-stage-overlay premium-duet-overlay"><span className="recording-dot">Renderizando prévia com efeito...</span></div> : null}
+        {step === 'rendering' ? <div className="duet-stage-overlay premium-duet-overlay"><span className="recording-dot">Renderizando arquivo final...</span></div> : null}
         {step === 'review' ? <div className="reels-video-chip"><Music2 size={17} /> {lessonTitle}</div> : null}
       </section>
 
       {step === 'review' || step === 'rendering' ? (
-        <section className="smule-mixer-panel">
+        <section className="smule-mixer-panel live-smule-panel">
           <header>
-            <div><p className="eyebrow">Mixer Smule</p><h2>Equilibre e escolha o efeito</h2></div>
+            <div><p className="eyebrow">Editor ao vivo</p><h2>Mexa e ouça na hora</h2></div>
             <button type="button" onClick={() => { setVoiceVolume(125); setReferenceVolume(45); setPreset('worship'); }}>Reset</button>
           </header>
           <div className="smule-slider-row"><span><Mic size={17} /> Voz</span><input type="range" min="0" max="200" value={voiceVolume} onChange={(e) => setVoiceVolume(Number(e.target.value))} /><strong>{voiceVolume}%</strong></div>
@@ -560,18 +708,17 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
           <div className="smule-preset-grid">
             {presets.map((item) => <button type="button" className={preset === item.id ? 'active' : ''} onClick={() => setPreset(item.id)} key={item.id}><strong>{item.label}</strong><small>{item.description}</small></button>)}
           </div>
-          <button type="button" className="smule-render-button" disabled={!canRender || step === 'rendering'} onClick={renderSmulePreview}><Wand2 size={18} /> {step === 'rendering' ? 'Gerando...' : 'Gerar prévia profissional'}</button>
-          <p className="smule-note"><Headphones size={15} /> O player toca apenas um vídeo final renderizado. Isso elimina latência, drift e áudio picotado.</p>
+          <p className="smule-note"><Headphones size={15} /> {canLiveEdit ? 'Toque no play do vídeo e ajuste. Volume e efeitos mudam simultaneamente, sem aplicar prévia.' : 'Preparando faixas separadas para edição ao vivo...'}</p>
         </section>
       ) : null}
 
       <section className="duet-control-bar premium-duet-control-bar reels-review-actions">
         {step === 'recording' ? <><span className="recording-dot">● Gravando dueto</span><button className="button danger" onClick={stopRecording}>Finalizar gravação</button></> : null}
-        {step === 'review' ? <><button className="button secondary" onClick={reset}><RefreshCcw size={16} /> Regravar</button><label className="community-toggle review-community-toggle"><input type="checkbox" checked={postCommunity} onChange={(event) => setPostCommunity(event.target.checked)} /> Publicar também na comunidade</label><button className="button" onClick={publishReview} disabled={isSubmitting}><UploadCloud size={16} /> {isSubmitting ? 'Enviando...' : 'Enviar para avaliação'}</button></> : null}
+        {step === 'review' ? <><button className="button secondary" onClick={reset}><RefreshCcw size={16} /> Regravar</button><label className="community-toggle review-community-toggle"><input type="checkbox" checked={postCommunity} onChange={(event) => setPostCommunity(event.target.checked)} /> Publicar também na comunidade</label><button className="button" onClick={publishReview} disabled={isSubmitting}><UploadCloud size={16} /> {isSubmitting ? 'Renderizando...' : 'Enviar para avaliação'}</button></> : null}
       </section>
 
-      {step === 'review' ? <section className="duet-review-note premium-duet-note"><CheckCircle2 size={24} /><div><h2>Dueto pronto</h2><p>Ajuste os volumes, escolha um efeito e gere uma prévia única antes de enviar.</p></div></section> : null}
-      {step === 'caption' ? <section className="caption-box duet-caption-box premium-duet-note reels-publish-card"><div><h2>Legenda da comunidade</h2><p>Compartilhe sua prática no feed.</p><textarea value={caption} onChange={(event) => setCaption(event.target.value)} placeholder="Escreva uma legenda para o feed..." /></div><button className="button" onClick={finishPost} disabled={isSubmitting}>{isSubmitting ? 'Enviando...' : 'Publicar no feed e enviar'}</button></section> : null}
+      {step === 'review' ? <section className="duet-review-note premium-duet-note"><CheckCircle2 size={24} /><div><h2>Dueto pronto para mixar</h2><p>O ajuste é ouvido em tempo real. O arquivo final só é renderizado quando você envia.</p></div></section> : null}
+      {step === 'caption' ? <section className="caption-box duet-caption-box premium-duet-note reels-publish-card"><div><h2>Legenda da comunidade</h2><p>Compartilhe sua prática no feed.</p><textarea value={caption} onChange={(event) => setCaption(event.target.value)} placeholder="Escreva uma legenda para o feed..." /></div><button className="button" onClick={finishPost} disabled={isSubmitting}>{isSubmitting ? 'Renderizando...' : 'Publicar no feed e enviar'}</button></section> : null}
       {step === 'posted' ? <section className="posted-box duet-posted-box premium-duet-note"><CheckCircle2 size={28} /><div><h2>Atividade enviada</h2><p>Sua gravação entrou na fila de avaliação do professor.</p><a className="button secondary" href={`/aluno/aula/${lessonSlug}`}>Voltar para aula</a></div></section> : null}
     </div>
   );
