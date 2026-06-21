@@ -1,12 +1,12 @@
 import {
   BarChart3,
   BookOpen,
-  CheckSquare,
   Eye,
   FilePlus2,
   Folder,
   HelpCircle,
   LayoutDashboard,
+  Link as LinkIcon,
   ListChecks,
   Pencil,
   Plus,
@@ -16,6 +16,7 @@ import {
   Upload,
   Users,
 } from 'lucide-react';
+import { AdminLessonTitleEditor } from '@/components/admin-lesson-title-editor';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 export const dynamic = 'force-dynamic';
@@ -156,34 +157,35 @@ export default async function AdminModulePage({ params }: { params: Promise<{ id
           </article>
         </section>
 
-        <section className="premium-lessons-board">
-          <div className="premium-lessons-head">
-            <div><p className="eyebrow">Aulas e exercícios</p><h2>Gerencie os conteúdos</h2><p>Edite títulos, visualize aulas, exclua envios errados e mantenha o módulo organizado.</p></div>
-            <div><a href={importUrl}><Upload size={16} /> Importar do Drive</a><button form="bulk-delete-lessons" type="submit"><Trash2 size={16} /> Excluir selecionadas</button></div>
+        <section className="premium-lessons-board premium-lessons-board-refined">
+          <div className="premium-lessons-head premium-lessons-head-refined">
+            <div><p className="eyebrow">Aulas e exercícios</p><h2>Gerencie os conteúdos</h2><p>Renomeie como no computador: editou, salvou e continua no mesmo lugar.</p></div>
+            <div><a href={importUrl}><Plus size={16} /> Adicionar vídeo</a><button form="bulk-delete-lessons" type="submit"><Trash2 size={16} /> Excluir selecionadas</button></div>
           </div>
 
           <form id="bulk-delete-lessons" action={`/admin/biblioteca/${id}/aulas/excluir`} method="post">
-            <div className="premium-lessons-list">
-              {(exercises || []).map((exercise: any, index: number) => (
-                <article className="premium-lesson-admin-row" key={exercise.id}>
-                  <label className="premium-check-input"><input type="checkbox" name="lesson_id" value={exercise.id} /></label>
-                  <div className="premium-admin-lesson-thumb"><strong>{String(index + 1).padStart(2, '0')}</strong><span>▶</span></div>
-                  <div className="premium-admin-lesson-info">
-                    <span className="pill">{String(exercise.media_type || 'video').toUpperCase()} · NÍVEL {exercise.difficulty || 1}</span>
-                    <form className="inline-title-form" action={`/admin/biblioteca/${id}/aulas/renomear`} method="post">
-                      <input type="hidden" name="lesson_id" value={exercise.id} />
-                      <input name="title" defaultValue={exercise.title} aria-label="Título da aula" />
-                      <button type="submit">Salvar</button>
-                    </form>
-                    <p>{exercise.description || 'Sem descrição'}</p>
-                  </div>
-                  <div className="premium-admin-lesson-actions">
-                    <a href={`/aluno/aula/${exercise.slug}`}><Eye size={16} /> Ver aula</a>
-                    <a href={`/admin/conteudos/exercicios/${exercise.id}/editar`}><Pencil size={16} /> Editar</a>
-                    <span><CheckSquare size={16} /></span>
-                  </div>
-                </article>
-              ))}
+            <div className="premium-lessons-list premium-lessons-list-refined">
+              {(exercises || []).map((exercise: any, index: number) => {
+                const thumb = String(exercise.thumbnail_url || '').trim();
+                return (
+                  <article className="premium-lesson-admin-row premium-lesson-admin-row-refined" key={exercise.id}>
+                    <label className="premium-check-input premium-check-input-refined"><input type="checkbox" name="lesson_id" value={exercise.id} /></label>
+                    <div className="premium-admin-lesson-thumb premium-admin-lesson-thumb-refined">
+                      {thumb ? <img src={thumb} alt="" /> : <><strong>{String(index + 1).padStart(2, '0')}</strong><span>▶</span></>}
+                    </div>
+                    <div className="premium-admin-lesson-info premium-admin-lesson-info-refined">
+                      <span className="pill">{String(exercise.media_type || 'video').toUpperCase()} · NÍVEL {exercise.difficulty || 1}</span>
+                      <AdminLessonTitleEditor moduleId={id} lessonId={exercise.id} initialTitle={exercise.title || ''} />
+                      <div className="premium-lesson-description-line"><LinkIcon size={14} /><span>{exercise.description || 'Sem descrição'}</span><a href={`/admin/conteudos/exercicios/${exercise.id}/editar`}>Adicionar descrição</a></div>
+                    </div>
+                    <div className="premium-admin-lesson-actions premium-admin-lesson-actions-refined">
+                      <a href={`/aluno/aula/${exercise.slug}`}><Eye size={16} /> Ver aula</a>
+                      <a href={`/admin/conteudos/exercicios/${exercise.id}/editar`}><Pencil size={16} /> Editar</a>
+                      <button form="bulk-delete-lessons" name="lesson_id" value={exercise.id} type="submit" className="premium-admin-delete-one" aria-label="Excluir aula"><Trash2 size={16} /></button>
+                    </div>
+                  </article>
+                );
+              })}
             </div>
           </form>
         </section>
