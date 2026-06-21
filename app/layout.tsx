@@ -12,6 +12,7 @@ import './instagram-feed.css';
 import './activity-audio-controls.css';
 import './profile-premium.css';
 import './admin-reviews-premium.css';
+import './instagram-performance.css';
 
 export default function RootLayout(props: { children: React.ReactNode }) {
   return (
