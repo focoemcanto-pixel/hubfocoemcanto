@@ -115,7 +115,7 @@ export default async function CommunityPage() {
               <h1>Compartilhe sua evolução.</h1>
               <p>Publique sua prática, receba apoio dos alunos e acompanhe o crescimento do grupo.</p>
             </div>
-            <div className="community-top-actions"><button type="button" aria-label="Notificações"><Bell size={20} /></button><Avatar className="community-current-avatar" name={firstName} url={currentAvatarUrl} /></div>
+            <div className="community-top-actions"><a className="community-bell" href="/aluno/notificacoes" aria-label="Notificações"><Bell size={20} /></a><a className="community-current-avatar-link" href="/aluno/perfil"><Avatar className="community-current-avatar" name={firstName} url={currentAvatarUrl} /></a></div>
           </header>
 
           <section className="community-create-strip">
