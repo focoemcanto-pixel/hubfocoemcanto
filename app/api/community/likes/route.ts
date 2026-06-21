@@ -13,26 +13,33 @@ async function currentProfile() {
   return created || null;
 }
 
+function wantsJson(request: Request) {
+  return request.headers.get('accept')?.includes('application/json');
+}
+
 export async function POST(request: Request) {
   const formData = await request.formData();
   const postId = String(formData.get('post_id') || '').trim();
   const returnTo = String(formData.get('return_to') || '/aluno/comunidade');
-  if (!postId) return NextResponse.redirect(new URL(returnTo, request.url));
+  if (!postId) return wantsJson(request) ? NextResponse.json({ error: 'missing_post' }, { status: 400 }) : NextResponse.redirect(new URL(returnTo, request.url));
 
   const profile = await currentProfile();
-  if (!profile) return NextResponse.redirect(new URL('/aluno/comunidade?erro=perfil', request.url));
+  if (!profile) return wantsJson(request) ? NextResponse.json({ error: 'not_authenticated' }, { status: 401 }) : NextResponse.redirect(new URL('/aluno/comunidade?erro=perfil', request.url));
 
   const supabase = createAdminClient();
   const { data: existing } = await supabase.from('community_likes').select('id').eq('post_id', postId).eq('profile_id', profile.id).maybeSingle();
+  let liked = false;
 
   if (existing?.id) {
     await supabase.from('community_likes').delete().eq('id', existing.id);
   } else {
     await supabase.from('community_likes').insert({ post_id: postId, profile_id: profile.id });
+    liked = true;
   }
 
   const { count } = await supabase.from('community_likes').select('*', { count: 'exact', head: true }).eq('post_id', postId);
   await supabase.from('community_posts').update({ likes_count: count || 0 }).eq('id', postId);
 
+  if (wantsJson(request)) return NextResponse.json({ ok: true, liked, likes_count: count || 0 });
   return NextResponse.redirect(new URL(returnTo, request.url));
 }
