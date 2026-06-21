@@ -14,13 +14,8 @@ const fallbackCovers = [
 ];
 
 const premiumHomeCss = `
-.premium-student-home{max-width:1040px;padding-top:8px}.bottom-nav{grid-template-columns:repeat(4,1fr);width:min(520px,calc(100% - 24px))}.premium-hero{position:relative;min-height:330px;overflow:hidden;border:1px solid rgba(255,255,255,.16);border-radius:32px;background:radial-gradient(circle at 72% 32%,rgba(245,199,107,.2),transparent 35%),linear-gradient(90deg,rgba(0,0,0,.9) 0%,rgba(0,0,0,.78) 42%,rgba(28,20,13,.52) 100%);box-shadow:0 34px 110px rgba(0,0,0,.48);padding:42px 44px;display:grid;grid-template-columns:minmax(0,1fr) 420px;align-items:center}.premium-hero:before{content:'';position:absolute;inset:0;background:linear-gradient(90deg,rgba(0,0,0,.82),rgba(0,0,0,.2) 52%,rgba(0,0,0,.64)),radial-gradient(circle at 78% 70%,rgba(245,199,107,.22),transparent 30%);pointer-events:none}.premium-hero-copy{position:relative;z-index:2}.premium-hero h1{font-family:Georgia,'Times New Roman',serif;font-size:clamp(44px,6.2vw,66px);line-height:.92;margin:12px 0 14px;letter-spacing:-.045em}.premium-hero p:not(.eyebrow){max-width:430px;color:#b9b9c3;line-height:1.45}.premium-button{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:13px 22px;border-radius:18px;font-weight:900;border:1px solid rgba(255,255,255,.12);box-shadow:0 14px 34px rgba(0,0,0,.3)}.premium-button.gold{background:linear-gradient(180deg,#ffe39b,#e9b348);color:#160f07}.premium-button.dark{background:rgba(255,255,255,.08);color:#fff}.premium-hero-photo{position:absolute;right:0;top:0;bottom:0;width:52%;z-index:1;background:linear-gradient(90deg,rgba(0,0,0,0),rgba(0,0,0,.18) 38%,rgba(0,0,0,.34)),radial-gradient(circle at 62% 44%,rgba(245,199,107,.34),transparent 28%),var(--student-hero-image);background-size:cover;background-position:center right;filter:saturate(.95) contrast(1.04)}.premium-hero-photo:after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,rgba(0,0,0,0),rgba(0,0,0,.12)),radial-gradient(circle at 42% 55%,transparent 0,rgba(0,0,0,.28) 70%)}.hero-icons{position:absolute;right:28px;top:26px;z-index:3;display:flex;gap:12px}.hero-icons span{display:grid;place-items:center;width:46px;height:46px;border-radius:50%;background:rgba(10,10,10,.62);border:1px solid rgba(255,255,255,.16);font-weight:900}.premium-continue-panel{margin-top:22px;border:1px solid rgba(255,255,255,.12);border-radius:26px;background:rgba(255,255,255,.035);padding:18px;box-shadow:0 24px 80px rgba(0,0,0,.22)}.premium-section-heading{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:14px}.premium-section-heading h2{margin:0;font-size:25px}.premium-section-heading a{color:#f5c76b;font-weight:900}.premium-course-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.premium-course-card{position:relative;min-height:190px;border:1px solid rgba(255,255,255,.1);border-radius:18px;overflow:hidden;background:#111;transition:transform .2s,border-color .2s}.premium-course-card:hover{transform:translateY(-4px);border-color:rgba(245,199,107,.75)}.course-cover{height:145px;background-size:cover;background-position:center;display:flex;align-items:flex-end;padding:14px;position:relative}.course-cover strong{font-family:Georgia,'Times New Roman',serif;font-size:23px;line-height:.95;text-transform:uppercase;text-shadow:0 4px 22px #000}.course-badge{position:absolute;left:10px;top:10px;border:1px solid rgba(245,199,107,.65);border-radius:999px;background:rgba(245,199,107,.18);color:#f5c76b;text-transform:uppercase;font-size:10px;font-weight:900;padding:6px 8px}.course-meta{display:flex;justify-content:space-between;padding:9px 12px 6px;color:#c7c7d1;font-size:12px}.premium-course-card .progress{margin:0 12px 12px;height:6px}.premium-community-feed{margin-top:26px}.feed-video{width:100%;border-radius:20px;background:#050505;border:1px solid rgba(255,255,255,.12)}@media(max-width:900px){.premium-hero{grid-template-columns:1fr;min-height:380px;padding:30px 24px}.premium-hero-photo{opacity:.42;width:70%}.premium-course-row{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:560px){.premium-hero h1{font-size:42px}.premium-course-row{grid-template-columns:1fr}.premium-hero-photo{display:none}.premium-hero{min-height:auto}.hero-icons{display:none}}
+.premium-student-home{max-width:1040px;padding-top:8px}.bottom-nav{grid-template-columns:repeat(4,1fr);width:min(520px,calc(100% - 24px))}.premium-hero{position:relative;min-height:330px;overflow:hidden;border:1px solid rgba(255,255,255,.16);border-radius:32px;background:radial-gradient(circle at 72% 32%,rgba(245,199,107,.2),transparent 35%),linear-gradient(90deg,rgba(0,0,0,.9) 0%,rgba(0,0,0,.78) 42%,rgba(28,20,13,.52) 100%);box-shadow:0 34px 110px rgba(0,0,0,.48);padding:42px 44px;display:grid;grid-template-columns:minmax(0,1fr) 420px;align-items:center}.premium-hero:before{content:'';position:absolute;inset:0;background:linear-gradient(90deg,rgba(0,0,0,.82),rgba(0,0,0,.2) 52%,rgba(0,0,0,.64)),radial-gradient(circle at 78% 70%,rgba(245,199,107,.22),transparent 30%);pointer-events:none}.premium-hero-copy{position:relative;z-index:2}.premium-hero h1{font-family:Georgia,'Times New Roman',serif;font-size:clamp(44px,6.2vw,66px);line-height:.92;margin:12px 0 14px;letter-spacing:-.045em}.premium-hero p:not(.eyebrow){max-width:430px;color:#b9b9c3;line-height:1.45}.premium-button{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:13px 22px;border-radius:18px;font-weight:900;border:1px solid rgba(255,255,255,.12);box-shadow:0 14px 34px rgba(0,0,0,.3)}.premium-button.gold{background:linear-gradient(180deg,#ffe39b,#e9b348);color:#160f07}.premium-button.dark{background:rgba(255,255,255,.08);color:#fff}.premium-hero-photo{position:absolute;right:0;top:0;bottom:0;width:52%;z-index:1;background:linear-gradient(90deg,rgba(0,0,0,0),rgba(0,0,0,.18) 38%,rgba(0,0,0,.34)),radial-gradient(circle at 62% 44%,rgba(245,199,107,.34),transparent 28%),var(--student-hero-image);background-size:cover;background-position:center right;filter:saturate(.95) contrast(1.04)}.premium-hero-photo:after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,rgba(0,0,0,0),rgba(0,0,0,.12)),radial-gradient(circle at 42% 55%,transparent 0,rgba(0,0,0,.28) 70%)}.hero-icons{position:absolute;right:28px;top:26px;z-index:3;display:flex;gap:12px}.hero-icons span{display:grid;place-items:center;width:46px;height:46px;border-radius:50%;background:rgba(10,10,10,.62);border:1px solid rgba(255,255,255,.16);font-weight:900}.premium-continue-panel{margin-top:22px;border:1px solid rgba(255,255,255,.12);border-radius:26px;background:rgba(255,255,255,.035);padding:18px;box-shadow:0 24px 80px rgba(0,0,0,.22)}.premium-section-heading{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:14px}.premium-section-heading h2{margin:0;font-size:25px}.premium-section-heading a{color:#f5c76b;font-weight:900}.premium-course-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.premium-course-card{position:relative;min-height:190px;border:1px solid rgba(255,255,255,.1);border-radius:18px;overflow:hidden;background:#111;transition:transform .2s,border-color .2s}.premium-course-card:hover{transform:translateY(-4px);border-color:rgba(245,199,107,.75)}.course-cover{height:145px;background-size:cover;background-position:center;display:flex;align-items:flex-end;padding:14px;position:relative}.course-cover strong{font-family:Georgia,'Times New Roman',serif;font-size:23px;line-height:.95;text-transform:uppercase;text-shadow:0 4px 22px #000}.course-badge{position:absolute;left:10px;top:10px;border:1px solid rgba(245,199,107,.65);border-radius:999px;background:rgba(245,199,107,.18);color:#f5c76b;text-transform:uppercase;font-size:10px;font-weight:900;padding:6px 8px}.course-meta{display:flex;justify-content:space-between;padding:9px 12px 6px;color:#c7c7d1;font-size:12px}.premium-course-card .progress{margin:0 12px 12px;height:6px}.premium-community-feed{margin-top:26px}.feed-video{width:100%;border-radius:20px;background:#050505;border:1px solid rgba(255,255,255,.12)}.empty-community-feed{border:1px solid rgba(255,255,255,.12);border-radius:26px;padding:28px;background:linear-gradient(180deg,rgba(255,255,255,.075),rgba(255,255,255,.03));box-shadow:0 24px 80px rgba(0,0,0,.22)}.empty-community-feed h3{margin:0 0 8px;font-size:24px}.empty-community-feed p{color:#b9b9c3;max-width:620px;line-height:1.55}.empty-community-feed a{margin-top:12px}@media(max-width:900px){.premium-hero{grid-template-columns:1fr;min-height:380px;padding:30px 24px}.premium-hero-photo{opacity:.42;width:70%}.premium-course-row{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:560px){.premium-hero h1{font-size:42px}.premium-course-row{grid-template-columns:1fr}.premium-hero-photo{display:none}.premium-hero{min-height:auto}.hero-icons{display:none}}
 `;
-
-const demoFeed = [
-  { name: 'Ana Beatriz', track: 'Duetos para Treino', title: 'Tu És Fiel Senhor', caption: 'Enviei minha segunda voz para avaliação.', rating: '5.0', comments: 8, likes: 32 },
-  { name: 'Carlos Henrique', track: 'Firmar Afinação', title: 'Exercício de Afinação 01', caption: 'Treino para manter a nota firme.', rating: '4.0', comments: 4, likes: 18 },
-];
 
 function getRelated(value: unknown) {
   if (Array.isArray(value)) return value[0] || null;
@@ -48,8 +43,8 @@ export default async function StudentPage() {
   ]);
 
   const modules = (rawModules || []).filter(isRealModule);
-  const feedItems = posts && posts.length > 0 ? posts : demoFeed;
-  const firstName = profile?.name ? profile.name.split(' ')[0] : 'Marcos';
+  const feedItems = posts || [];
+  const firstName = profile?.name ? profile.name.split(' ')[0'] : 'Marcos';
 
   return (
     <AppShell>
@@ -110,23 +105,31 @@ export default async function StudentPage() {
             <a href="/aluno/comunidade">Abrir comunidade</a>
           </div>
 
-          <div className="feed-list">
-            {feedItems.map((post: any, index: number) => {
-              const exercise = getRelated(post.exercises);
-              const author = getRelated(post.profiles);
-              return (
-                <article className="feed-card" key={post.id || index}>
-                  <div className="feed-header">
-                    <div className="avatar">{(author?.name || post.name || 'A')[0]}</div>
-                    <div><strong>{author?.name || post.name}</strong><span>{exercise?.title || post.title} - {post.track || 'Atividade'}</span></div>
-                  </div>
-                  {post.media_url ? <video className="feed-video" src={post.media_url} controls playsInline /> : <div className="media-placeholder"><span>Play</span><p>{exercise?.title || post.title}</p></div>}
-                  <p>{post.caption}</p>
-                  <div className="feed-meta"><span>Nota {post.rating || '5.0'}</span><span>{post.likes_count || post.likes} curtidas</span><span>{post.comments_count || post.comments} comentários</span></div>
-                </article>
-              );
-            })}
-          </div>
+          {feedItems.length > 0 ? (
+            <div className="feed-list">
+              {feedItems.map((post: any) => {
+                const exercise = getRelated(post.exercises);
+                const author = getRelated(post.profiles);
+                return (
+                  <article className="feed-card" key={post.id}>
+                    <div className="feed-header">
+                      <div className="avatar">{(author?.name || 'A')[0]}</div>
+                      <div><strong>{author?.name || 'Aluno VIP'}</strong><span>{exercise?.title || 'Atividade da comunidade'}</span></div>
+                    </div>
+                    {post.media_url ? <video className="feed-video" src={post.media_url} controls playsInline /> : <div className="media-placeholder"><span>Post</span><p>{exercise?.title || 'Publicação da comunidade'}</p></div>}
+                    <p>{post.caption}</p>
+                    <div className="feed-meta"><span>{post.likes_count || 0} curtidas</span><span>{post.comments_count || 0} comentários</span></div>
+                  </article>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="empty-community-feed">
+              <h3>Nenhuma postagem real ainda.</h3>
+              <p>Quando os alunos publicarem exercícios na comunidade, eles aparecerão aqui automaticamente.</p>
+              <a className="premium-button gold" href="/aluno/comunidade">Criar primeira postagem</a>
+            </div>
+          )}
         </section>
       </main>
     </AppShell>
