@@ -44,7 +44,7 @@ export default async function StudentPage() {
 
   const modules = (rawModules || []).filter(isRealModule);
   const feedItems = posts || [];
-  const firstName = profile?.name ? profile.name.split(' ')[0'] : 'Marcos';
+  const firstName = profile?.name ? profile.name.split(' ')[0] : 'Marcos';
 
   return (
     <AppShell>
@@ -60,38 +60,21 @@ export default async function StudentPage() {
               <a className="premium-button dark" href="/aluno/perfil">Ver avaliações</a>
             </div>
           </div>
-          <div
-            className="premium-hero-photo"
-            aria-hidden="true"
-            style={{ '--student-hero-image': `url(${studentHeroImage})` } as React.CSSProperties}
-          />
-          <div className="hero-icons">
-            <span>🔔</span>
-            <span>{firstName[0]}</span>
-          </div>
+          <div className="premium-hero-photo" aria-hidden="true" style={{ '--student-hero-image': `url(${studentHeroImage})` } as React.CSSProperties} />
+          <div className="hero-icons"><span>🔔</span><span>{firstName[0]}</span></div>
         </section>
 
         <section className="premium-continue-panel">
-          <div className="premium-section-heading">
-            <h2>Continue evoluindo</h2>
-            <a href="/aluno/biblioteca">Ver todos →</a>
-          </div>
+          <div className="premium-section-heading"><h2>Continue evoluindo</h2><a href="/aluno/biblioteca">Ver todos →</a></div>
           <div className="premium-course-row">
             {modules.slice(0, 6).map((module: any, index: number) => {
               const progress = progressFor(index);
               return (
                 <a className="premium-course-card" key={module.id} href={`/aluno/biblioteca/${module.slug}`}>
-                  <div
-                    className="course-cover"
-                    style={module.cover_url ? { backgroundImage: `linear-gradient(180deg, transparent 0%, rgba(0,0,0,.35) 42%, rgba(0,0,0,.88) 100%), url(${module.cover_url})` } : { background: fallbackCovers[index % fallbackCovers.length] }}
-                  >
-                    {index === 0 ? <span className="course-badge">Em andamento</span> : null}
-                    <strong>{module.title}</strong>
+                  <div className="course-cover" style={module.cover_url ? { backgroundImage: `linear-gradient(180deg, transparent 0%, rgba(0,0,0,.35) 42%, rgba(0,0,0,.88) 100%), url(${module.cover_url})` } : { background: fallbackCovers[index % fallbackCovers.length] }}>
+                    {index === 0 ? <span className="course-badge">Em andamento</span> : null}<strong>{module.title}</strong>
                   </div>
-                  <div className="course-meta">
-                    <span>{module.exercises?.length || 0} aulas</span>
-                    <span>{progress}%</span>
-                  </div>
+                  <div className="course-meta"><span>{module.exercises?.length || 0} aulas</span><span>{progress}%</span></div>
                   <div className="progress"><span style={{ width: `${progress}%` }} /></div>
                 </a>
               );
@@ -100,11 +83,7 @@ export default async function StudentPage() {
         </section>
 
         <section className="feed-layout premium-community-feed">
-          <div className="section-heading">
-            <div><p className="eyebrow">Comunidade VIP</p><h2>Atividades recentes</h2></div>
-            <a href="/aluno/comunidade">Abrir comunidade</a>
-          </div>
-
+          <div className="section-heading"><div><p className="eyebrow">Comunidade VIP</p><h2>Atividades recentes</h2></div><a href="/aluno/comunidade">Abrir comunidade</a></div>
           {feedItems.length > 0 ? (
             <div className="feed-list">
               {feedItems.map((post: any) => {
@@ -112,10 +91,7 @@ export default async function StudentPage() {
                 const author = getRelated(post.profiles);
                 return (
                   <article className="feed-card" key={post.id}>
-                    <div className="feed-header">
-                      <div className="avatar">{(author?.name || 'A')[0]}</div>
-                      <div><strong>{author?.name || 'Aluno VIP'}</strong><span>{exercise?.title || 'Atividade da comunidade'}</span></div>
-                    </div>
+                    <div className="feed-header"><div className="avatar">{(author?.name || 'A')[0]}</div><div><strong>{author?.name || 'Aluno VIP'}</strong><span>{exercise?.title || 'Atividade da comunidade'}</span></div></div>
                     {post.media_url ? <video className="feed-video" src={post.media_url} controls playsInline /> : <div className="media-placeholder"><span>Post</span><p>{exercise?.title || 'Publicação da comunidade'}</p></div>}
                     <p>{post.caption}</p>
                     <div className="feed-meta"><span>{post.likes_count || 0} curtidas</span><span>{post.comments_count || 0} comentários</span></div>
@@ -124,11 +100,7 @@ export default async function StudentPage() {
               })}
             </div>
           ) : (
-            <div className="empty-community-feed">
-              <h3>Nenhuma postagem real ainda.</h3>
-              <p>Quando os alunos publicarem exercícios na comunidade, eles aparecerão aqui automaticamente.</p>
-              <a className="premium-button gold" href="/aluno/comunidade">Criar primeira postagem</a>
-            </div>
+            <div className="empty-community-feed"><h3>Nenhuma postagem real ainda.</h3><p>Quando os alunos publicarem exercícios na comunidade, eles aparecerão aqui automaticamente.</p><a className="premium-button gold" href="/aluno/comunidade">Criar primeira postagem</a></div>
           )}
         </section>
       </main>
