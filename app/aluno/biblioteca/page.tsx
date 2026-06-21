@@ -1,7 +1,8 @@
+import Link from 'next/link';
 import { AppShell } from '@/components/app-shell';
 import { createAdminClient } from '@/lib/supabase/admin';
 
-export const dynamic = 'force-dynamic';
+export const revalidate = 300;
 
 export default async function StudentLibraryPage() {
   const supabase = createAdminClient();
@@ -18,7 +19,7 @@ export default async function StudentLibraryPage() {
 
   return (
     <AppShell>
-      <main className="page">
+      <main className="page route-surface">
         <section className="library-hero">
           <p className="eyebrow">Biblioteca VIP</p>
           <h1>Escolha sua area de estudo</h1>
@@ -27,7 +28,7 @@ export default async function StudentLibraryPage() {
 
         <section className="library-grid">
           {modules.map((module: any) => (
-            <a className="library-card" href={`/aluno/biblioteca/${module.slug}`} key={module.id}>
+            <Link className="library-card" href={`/aluno/biblioteca/${module.slug}`} prefetch key={module.id}>
               <div>
                 <span className="content-badge">Modulo</span>
                 <h2>{module.title}</h2>
@@ -37,7 +38,7 @@ export default async function StudentLibraryPage() {
                 <small>{module.exercises?.length || 0} conteudos</small>
                 <strong>Abrir</strong>
               </div>
-            </a>
+            </Link>
           ))}
         </section>
       </main>
