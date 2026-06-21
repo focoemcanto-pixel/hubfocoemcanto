@@ -27,22 +27,19 @@ export function HomeCommunityFeed({ initialPosts }: { initialPosts: FeedPost[] }
   const [posts, setPosts] = useState(initialPosts);
   const [liked, setLiked] = useState<Record<string, boolean>>({});
   const [comments, setComments] = useState<Record<string, string[]>>({});
+  const [soundOn, setSoundOn] = useState<Record<string, boolean>>({});
   const videoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
 
   async function likePost(postId: string) {
-    setLiked((current) => ({ ...current, [postId]: !current[postId] }));
-    setPosts((current) => current.map((post) => post.id === postId ? { ...post, likesCount: Math.max(0, post.likesCount + (liked[postId] ? -1 : 1)) } : post));
+    const willLike = !liked[postId];
+    setLiked((current) => ({ ...current, [postId]: willLike }));
+    setPosts((current) => current.map((post) => post.id === postId ? { ...post, likesCount: Math.max(0, post.likesCount + (willLike ? 1 : -1)) } : post));
 
     const form = new FormData();
     form.set('post_id', postId);
     form.set('return_to', '/aluno');
 
-    const response = await fetch('/api/community/likes', {
-      method: 'POST',
-      body: form,
-      headers: { accept: 'application/json' },
-    });
-
+    const response = await fetch('/api/community/likes', { method: 'POST', body: form, headers: { accept: 'application/json' } });
     if (response.ok) {
       const json = await response.json().catch(() => null);
       if (json) {
@@ -66,17 +63,10 @@ export function HomeCommunityFeed({ initialPosts }: { initialPosts: FeedPost[] }
     form.set('return_to', '/aluno');
     form.set('comment', value);
 
-    const response = await fetch('/api/community/comments', {
-      method: 'POST',
-      body: form,
-      headers: { accept: 'application/json' },
-    });
-
+    const response = await fetch('/api/community/comments', { method: 'POST', body: form, headers: { accept: 'application/json' } });
     if (response.ok) {
       const json = await response.json().catch(() => null);
-      if (json) {
-        setPosts((current) => current.map((post) => post.id === postId ? { ...post, commentsCount: Number(json.comments_count || post.commentsCount) } : post));
-      }
+      if (json) setPosts((current) => current.map((post) => post.id === postId ? { ...post, commentsCount: Number(json.comments_count || post.commentsCount) } : post));
     }
   }
 
@@ -85,6 +75,17 @@ export function HomeCommunityFeed({ initialPosts }: { initialPosts: FeedPost[] }
     if (!video) return;
     if (video.paused) video.play().catch(() => undefined);
     else video.pause();
+  }
+
+  function toggleSound(postId: string) {
+    const video = videoRefs.current[postId];
+    const enabled = !soundOn[postId];
+    setSoundOn((current) => ({ ...current, [postId]: enabled }));
+    if (video) {
+      video.muted = !enabled;
+      video.volume = enabled ? 1 : 0;
+      video.play().catch(() => undefined);
+    }
   }
 
   if (!posts.length) {
@@ -102,32 +103,32 @@ export function HomeCommunityFeed({ initialPosts }: { initialPosts: FeedPost[] }
       {posts.map((post) => {
         const localComments = comments[post.id] || [];
         return (
-          <article className="home-insta-post" key={post.id}>
+          <article className="home-insta-post" id={`post-${post.id}`} key={post.id}>
             <header className="home-post-head">
               <div className="avatar">{initials(post.authorName)}</div>
-              <div>
-                <strong>{post.authorName || 'Aluno VIP'}</strong>
-                <span>{post.exerciseTitle || 'Atividade da comunidade'}</span>
-              </div>
+              <div><strong>{post.authorName || 'Aluno VIP'}</strong><span>{post.exerciseTitle || 'Atividade da comunidade'}</span></div>
               <a className="home-post-menu" href="/aluno/comunidade">•••</a>
             </header>
 
             <div className="home-post-media" onClick={() => toggleVideo(post.id)}>
               {post.mediaUrl ? (
-                <video
-                  ref={(node) => { videoRefs.current[post.id] = node; }}
-                  src={post.mediaUrl}
-                  autoPlay
-                  muted
-                  loop
-                  playsInline
-                  preload="metadata"
-                  controls={false}
-                />
+                <>
+                  <video
+                    ref={(node) => { videoRefs.current[post.id] = node; }}
+                    src={post.mediaUrl}
+                    autoPlay
+                    muted={!soundOn[post.id]}
+                    loop
+                    playsInline
+                    preload="auto"
+                    controls={false}
+                  />
+                  <button className="home-sound-toggle" type="button" onClick={(event) => { event.stopPropagation(); toggleSound(post.id); }}>
+                    {soundOn[post.id] ? '🔊 Som' : '🔇 Ativar som'}
+                  </button>
+                </>
               ) : (
-                <div className="home-post-placeholder">
-                  <div><span>▶</span><strong>{post.exerciseTitle || 'Publicação da comunidade'}</strong></div>
-                </div>
+                <div className="home-post-placeholder"><div><span>▶</span><strong>{post.exerciseTitle || 'Publicação da comunidade'}</strong><small>Vídeo ainda não vinculado a este post</small></div></div>
               )}
             </div>
 
@@ -145,11 +146,7 @@ export function HomeCommunityFeed({ initialPosts }: { initialPosts: FeedPost[] }
             <p className="home-post-caption"><strong>{post.authorName || 'Aluno VIP'}</strong>{post.caption || 'Compartilhou uma prática.'}</p>
             <div className="home-post-meta"><span>{post.likesCount} curtidas</span><span>{post.commentsCount} comentários</span></div>
 
-            {localComments.length ? (
-              <div className="home-local-comments">
-                {localComments.slice(-3).map((comment, index) => <p key={`${post.id}-${index}`}><strong>Você</strong> {comment}</p>)}
-              </div>
-            ) : null}
+            {localComments.length ? <div className="home-local-comments">{localComments.slice(-3).map((comment, index) => <p key={`${post.id}-${index}`}><strong>Você</strong> {comment}</p>)}</div> : null}
 
             <form className="home-comment-form" onSubmit={(event) => { event.preventDefault(); commentPost(post.id, event.currentTarget); }}>
               <input name="comment" placeholder="Adicionar comentário..." />
