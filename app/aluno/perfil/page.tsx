@@ -57,6 +57,10 @@ function formatDate(value?: string | null) {
   return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
 }
 
+function initials(name?: string | null) {
+  return String(name || 'Aluno VIP').trim().split(' ').slice(0, 2).map((part) => part[0]).join('').toUpperCase();
+}
+
 export default async function ProfilePage() {
   const supabase = await createClient();
   const admin = createAdminClient();
@@ -70,7 +74,8 @@ export default async function ProfilePage() {
       ? await admin.from('profiles').select('*').eq('auth_user_id', user.id).maybeSingle()
       : { data: null };
 
-  const profileId = profile?.id;
+  const profileAny = (profile || {}) as any;
+  const profileId = profileAny?.id;
   const { data: submissionsData } = profileId
     ? await admin
         .from('submissions')
@@ -112,96 +117,187 @@ export default async function ProfilePage() {
   const reviewedCount = submissions.filter((item) => reviewBySubmission.has(item.id)).length;
   const approvedCount = submissions.filter((item) => item.status === 'approved').length;
   const pendingCount = submissions.filter((item) => item.status === 'pending_review').length;
+  const reworkCount = submissions.filter((item) => item.status === 'needs_rework').length;
   const reviewAverages = reviews.map(averageReview).filter((value): value is string => Boolean(value)).map(Number);
   const generalAverage = reviewAverages.length ? (reviewAverages.reduce((sum, value) => sum + value, 0) / reviewAverages.length).toFixed(1) : '—';
+  const firstName = String(profileAny?.name || 'Aluno VIP').split(' ')[0];
+  const nextRework = submissions.find((item) => item.status === 'needs_rework');
+  const nextPending = submissions.find((item) => item.status === 'pending_review');
+  const nextSuggestionExercise = nextRework?.exercise_id ? exerciseById.get(nextRework.exercise_id) : null;
+
+  const suggestion = nextRework
+    ? {
+        label: 'Correção disponível',
+        title: 'Refaça esta atividade com atenção ao feedback.',
+        text: 'Existe uma atividade marcada para refazer. Abra a aula, assista novamente a referência e grave uma nova versão com mais segurança.',
+        href: nextSuggestionExercise?.slug ? `/aluno/atividade/${nextSuggestionExercise.slug}` : '/aluno/biblioteca',
+        cta: 'Refazer agora',
+      }
+    : nextPending
+      ? {
+          label: 'Na fila do professor',
+          title: 'Sua próxima avaliação está em andamento.',
+          text: 'Enquanto aguarda a correção, continue treinando outra aula do módulo para manter constância vocal.',
+          href: '/aluno/biblioteca',
+          cta: 'Continuar treinando',
+        }
+      : submissions.length
+        ? {
+            label: 'Próximo passo',
+            title: 'Você já tem avaliações. Agora avance para uma nova prática.',
+            text: 'Escolha uma aula, grave outro dueto e acompanhe a evolução da sua afinação, ritmo e segurança.',
+            href: '/aluno/biblioteca',
+            cta: 'Abrir biblioteca',
+          }
+        : {
+            label: 'Comece por aqui',
+            title: 'Envie sua primeira atividade para receber avaliação.',
+            text: 'Grave um dueto em uma aula publicada no Hub. Seu envio aparecerá aqui com status, nota e comentário do professor.',
+            href: '/aluno/biblioteca',
+            cta: 'Escolher primeira aula',
+          };
 
   return (
     <AppShell>
-      <main className="page">
-        <section className="card profile-hero-card">
-          <p className="eyebrow">Meu perfil</p>
-          <h1 className="hero-title">{profile?.name || 'Aluno VIP'}</h1>
-          <p className="muted">{profile?.email || accessEmail}</p>
-          <div className="grid" style={{ marginTop: 20 }}>
-            <article className="card"><p className="stat">{submissions.length}</p><p className="muted">atividades enviadas</p></article>
-            <article className="card"><p className="stat">{reviewedCount}</p><p className="muted">avaliações recebidas</p></article>
-            <article className="card"><p className="stat">{generalAverage}</p><p className="muted">média geral</p></article>
-            <article className="card"><p className="stat">{pendingCount}</p><p className="muted">aguardando professor</p></article>
-          </div>
-        </section>
-
-        <section className="card" style={{ marginTop: 18 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-            <div>
-              <p className="eyebrow">Correções do professor</p>
-              <h2>Minhas avaliações</h2>
-              <p className="muted">Histórico compacto dos duetos, notas e comentários recebidos.</p>
+      <main className="student-profile-page">
+        <section className="profile-premium-hero">
+          <div className="profile-hero-grid">
+            <div className="profile-avatar-large">
+              {profileAny?.avatar_url ? <img src={profileAny.avatar_url} alt={profileAny?.name || 'Aluno'} /> : initials(profileAny?.name)}
             </div>
-            <div className="pill">{approvedCount} aprovadas</div>
+            <div>
+              <span className="profile-vip-badge">★ Aluno VIP</span>
+              <h1>{profileAny?.name || 'Aluno VIP'}</h1>
+              <p className="profile-headline">{profileAny?.headline || 'Minha jornada vocal dentro do Foco em Canto.'}</p>
+              <p className="profile-bio-preview">{profileAny?.bio || 'Adicione uma bio para contar um pouco sobre sua voz, seus objetivos e o que você está treinando agora.'}</p>
+            </div>
+            <div className="profile-score-orb">
+              <div><strong>{generalAverage}</strong><span>média geral</span></div>
+            </div>
           </div>
 
-          <div style={{ display: 'grid', gap: 10, marginTop: 18 }}>
-            {submissions.length ? submissions.map((submission) => {
-              const review = reviewBySubmission.get(submission.id);
-              const exercise = submission.exercise_id ? exerciseById.get(submission.exercise_id) : null;
-              const module = exercise?.module_id ? moduleById.get(exercise.module_id) : null;
-              const avg = averageReview(review);
-
-              return (
-                <details key={submission.id} className="card" style={{ padding: 0, overflow: 'hidden' }}>
-                  <summary style={{ cursor: 'pointer', listStyle: 'none', padding: 14, display: 'grid', gridTemplateColumns: '92px 1fr auto', gap: 14, alignItems: 'center' }}>
-                    <video src={submission.file_url || ''} muted playsInline preload="metadata" style={{ width: 92, height: 56, objectFit: 'cover', borderRadius: 12, background: '#050505', border: '1px solid rgba(255,255,255,.12)' }} />
-                    <div style={{ minWidth: 0 }}>
-                      <p className="eyebrow" style={{ marginBottom: 4 }}>{module?.title || 'Módulo'}</p>
-                      <strong style={{ display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{exercise?.title || 'Atividade enviada'}</strong>
-                      <p className="muted" style={{ margin: '4px 0 0', fontSize: 13 }}>
-                        {formatDate(submission.created_at)} · {avg ? `nota ${avg}` : 'sem nota ainda'}
-                      </p>
-                    </div>
-                    <span className="pill" style={{ borderColor: statusClass(submission.status), color: statusClass(submission.status), whiteSpace: 'nowrap' }}>{statusLabel(submission.status)}</span>
-                  </summary>
-
-                  <div style={{ borderTop: '1px solid rgba(255,255,255,.08)', padding: 14, display: 'grid', gridTemplateColumns: 'minmax(160px, 220px) 1fr', gap: 14 }}>
-                    <video src={submission.file_url || ''} controls playsInline style={{ width: '100%', borderRadius: 14, background: '#050505', border: '1px solid rgba(255,255,255,.12)' }} />
-                    <div style={{ display: 'grid', gap: 10 }}>
-                      {review ? (
-                        <>
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(72px, 1fr))', gap: 8 }}>
-                            <article className="card" style={{ padding: 10 }}><strong>{avg || '—'}</strong><p className="muted" style={{ margin: 0, fontSize: 12 }}>média</p></article>
-                            <article className="card" style={{ padding: 10 }}><strong>{review.pitch_rating || '—'}</strong><p className="muted" style={{ margin: 0, fontSize: 12 }}>afinação</p></article>
-                            <article className="card" style={{ padding: 10 }}><strong>{review.rhythm_rating || '—'}</strong><p className="muted" style={{ margin: 0, fontSize: 12 }}>ritmo</p></article>
-                            <article className="card" style={{ padding: 10 }}><strong>{review.harmony_rating || '—'}</strong><p className="muted" style={{ margin: 0, fontSize: 12 }}>2ª voz</p></article>
-                            <article className="card" style={{ padding: 10 }}><strong>{review.confidence_rating || '—'}</strong><p className="muted" style={{ margin: 0, fontSize: 12 }}>segurança</p></article>
-                          </div>
-                          <div className="card" style={{ padding: 12, background: 'rgba(255, 209, 102, .08)', borderColor: 'rgba(255, 209, 102, .25)' }}>
-                            <p className="eyebrow">Comentário</p>
-                            <p style={{ margin: 0 }}>{review.comment || 'Avaliação recebida sem comentário textual.'}</p>
-                          </div>
-                          {submission.status === 'needs_rework' && exercise?.slug ? <Link className="button" href={`/aluno/aula/${exercise.slug}`}>Refazer atividade</Link> : null}
-                        </>
-                      ) : (
-                        <div className="card" style={{ padding: 12, background: 'rgba(255,255,255,.04)' }}>
-                          <p className="eyebrow">Na fila</p>
-                          <p className="muted" style={{ margin: 0 }}>Aguardando a correção do professor.</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </details>
-              );
-            }) : (
-              <article className="card">
-                <h3>Nenhuma atividade enviada ainda</h3>
-                <p className="muted">Grave um dueto em uma aula para receber sua primeira avaliação.</p>
-                <Link className="button" href="/aluno/biblioteca">Abrir biblioteca</Link>
-              </article>
-            )}
+          <div className="profile-stats-row">
+            <article className="profile-stat-card"><strong>{submissions.length}</strong><span>atividades enviadas</span></article>
+            <article className="profile-stat-card"><strong>{reviewedCount}</strong><span>avaliações recebidas</span></article>
+            <article className="profile-stat-card"><strong>{approvedCount}</strong><span>aprovadas</span></article>
+            <article className="profile-stat-card"><strong>{pendingCount}</strong><span>aguardando professor</span></article>
           </div>
         </section>
 
-        <form action="/auth/logout" method="post" style={{ marginTop: 20 }}>
-          <button className="button secondary" type="submit">Sair</button>
-        </form>
+        <section className="profile-body-grid">
+          <aside>
+            <section className="profile-edit-card">
+              <p className="eyebrow">Editar perfil</p>
+              <h2>Seu cartão de aluno</h2>
+              <p className="muted">Essas informações aparecem no seu perfil e ajudam a personalizar sua presença na comunidade.</p>
+
+              <form className="profile-form" action="/api/profile" method="post" encType="multipart/form-data">
+                <label>
+                  Foto de perfil
+                  <div className="profile-upload-box">
+                    <strong>Subir nova foto</strong>
+                    <span className="muted">Use uma imagem quadrada para melhor resultado.</span>
+                    <input type="file" name="avatar" accept="image/png,image/jpeg,image/webp" />
+                  </div>
+                </label>
+                <label>Nome<input name="name" defaultValue={profileAny?.name || ''} placeholder="Seu nome" /></label>
+                <label>Headline<input name="headline" defaultValue={profileAny?.headline || ''} placeholder="Ex: Aprendendo segunda voz com segurança" /></label>
+                <label>WhatsApp<input name="whatsapp" defaultValue={profileAny?.whatsapp || ''} placeholder="Opcional" /></label>
+                <label>Bio<textarea name="bio" defaultValue={profileAny?.bio || ''} placeholder="Conte sobre sua jornada vocal, objetivos e maior desafio atual..." /></label>
+                <button className="profile-save-button" type="submit">Salvar perfil</button>
+              </form>
+            </section>
+
+            <form className="profile-logout" action="/auth/logout" method="post">
+              <button type="submit">Sair da conta</button>
+            </form>
+          </aside>
+
+          <section>
+            <article className="profile-suggestion-card">
+              <span className="suggestion-meta">{suggestion.label}</span>
+              <h2>{suggestion.title}</h2>
+              <p className="muted">{suggestion.text}</p>
+              <div className="suggestion-actions">
+                <Link className="primary" href={suggestion.href}>{suggestion.cta}</Link>
+                <Link href="/aluno/comunidade">Abrir comunidade</Link>
+              </div>
+            </article>
+
+            <section className="profile-reviews-card">
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+                <div>
+                  <p className="eyebrow">Status das avaliações</p>
+                  <h2>Minhas correções</h2>
+                  <p className="muted">Acompanhe cada envio, notas, comentários e pedidos de ajuste.</p>
+                </div>
+                <span className="profile-vip-badge">{approvedCount} aprovadas</span>
+              </div>
+
+              <div className="review-status-tabs">
+                <article className="review-status-pill"><strong>{pendingCount}</strong><span>aguardando</span></article>
+                <article className="review-status-pill"><strong>{reviewedCount}</strong><span>avaliadas</span></article>
+                <article className="review-status-pill"><strong>{reworkCount}</strong><span>para refazer</span></article>
+              </div>
+
+              <div className="premium-review-list">
+                {submissions.length ? submissions.map((submission) => {
+                  const review = reviewBySubmission.get(submission.id);
+                  const exercise = submission.exercise_id ? exerciseById.get(submission.exercise_id) : null;
+                  const module = exercise?.module_id ? moduleById.get(exercise.module_id) : null;
+                  const avg = averageReview(review);
+
+                  return (
+                    <details key={submission.id} className="premium-review-item">
+                      <summary className="premium-review-summary">
+                        <video className="premium-review-thumb" src={submission.file_url || ''} muted playsInline preload="metadata" />
+                        <div className="premium-review-title">
+                          <p className="eyebrow" style={{ marginBottom: 4 }}>{module?.title || 'Módulo'}</p>
+                          <strong>{exercise?.title || 'Atividade enviada'}</strong>
+                          <p className="muted" style={{ margin: '4px 0 0', fontSize: 13 }}>{formatDate(submission.created_at)} · {avg ? `nota ${avg}` : 'sem nota ainda'}</p>
+                        </div>
+                        <span className="premium-status-badge" style={{ color: statusClass(submission.status) }}>{statusLabel(submission.status)}</span>
+                      </summary>
+
+                      <div className="premium-review-body">
+                        <video src={submission.file_url || ''} controls playsInline />
+                        <div>
+                          {review ? (
+                            <>
+                              <div className="review-score-grid">
+                                <article className="review-score-card"><strong>{avg || '—'}</strong><span>média</span></article>
+                                <article className="review-score-card"><strong>{review.pitch_rating || '—'}</strong><span>afinação</span></article>
+                                <article className="review-score-card"><strong>{review.rhythm_rating || '—'}</strong><span>ritmo</span></article>
+                                <article className="review-score-card"><strong>{review.harmony_rating || '—'}</strong><span>2ª voz</span></article>
+                                <article className="review-score-card"><strong>{review.confidence_rating || '—'}</strong><span>segurança</span></article>
+                              </div>
+                              <div className="teacher-comment-box">
+                                <p className="eyebrow">Comentário do professor</p>
+                                <p style={{ margin: 0 }}>{review.comment || 'Avaliação recebida sem comentário textual.'}</p>
+                              </div>
+                              {submission.status === 'needs_rework' && exercise?.slug ? <div className="suggestion-actions"><Link className="primary" href={`/aluno/atividade/${exercise.slug}`}>Refazer atividade</Link></div> : null}
+                            </>
+                          ) : (
+                            <div className="teacher-comment-box">
+                              <p className="eyebrow">Na fila</p>
+                              <p className="muted" style={{ margin: 0 }}>Aguardando a correção do professor.</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </details>
+                  );
+                }) : (
+                  <article className="empty-profile-state">
+                    <h3>Nenhuma atividade enviada ainda</h3>
+                    <p className="muted">Grave um dueto em uma aula para receber sua primeira avaliação.</p>
+                    <div className="suggestion-actions" style={{ justifyContent: 'center' }}><Link className="primary" href="/aluno/biblioteca">Abrir biblioteca</Link></div>
+                  </article>
+                )}
+              </div>
+            </section>
+          </section>
+        </section>
       </main>
     </AppShell>
   );
