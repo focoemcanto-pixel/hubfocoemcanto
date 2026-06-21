@@ -20,6 +20,10 @@ function firstNameOf(name?: string | null) {
   return String(name || 'Marcos').trim().split(' ')[0] || 'Marcos';
 }
 
+function Avatar({ name, url, className = '' }: { name?: string | null; url?: string | null; className?: string }) {
+  return <span className={className}>{url ? <img src={url} alt={name || 'Perfil'} /> : <span>{initials(name)}</span>}</span>;
+}
+
 function isRealModule(module: any) {
   const title = String(module?.title || '').toLowerCase();
   const description = String(module?.description || '').toLowerCase();
@@ -44,7 +48,7 @@ export default async function CommunityPage() {
       .limit(30),
     supabase.from('submissions').select('profile_id,exercise_id,file_url,created_at').eq('visibility', 'community').order('created_at', { ascending: false }).limit(100),
     supabase.from('modules').select('id,title,description,is_active,sort_order,exercises(id,title,is_active,sort_order)').eq('is_active', true).order('sort_order'),
-    email ? supabase.from('profiles').select('id,name,email').eq('email', email).maybeSingle() : { data: null },
+    email ? supabase.from('profiles').select('id,name,email,avatar_url').eq('email', email).maybeSingle() : { data: null },
   ]);
 
   const modules = (rawModules || []).filter(isRealModule);
@@ -54,6 +58,7 @@ export default async function CommunityPage() {
     .map((exercise: any) => ({ ...exercise, moduleTitle: module.title }))
   );
   const firstName = firstNameOf(profile?.name);
+  const currentAvatarUrl = (profile as any)?.avatar_url || null;
 
   const authorIds = Array.from(new Set((posts || []).map((post: any) => post.profile_id).filter(Boolean)));
   const { data: follows } = profile?.id && authorIds.length
@@ -110,7 +115,7 @@ export default async function CommunityPage() {
               <h1>Compartilhe sua evolução.</h1>
               <p>Publique sua prática, receba apoio dos alunos e acompanhe o crescimento do grupo.</p>
             </div>
-            <div className="community-top-actions"><button type="button" aria-label="Notificações"><Bell size={20} /></button><span>{initials(firstName)}</span></div>
+            <div className="community-top-actions"><button type="button" aria-label="Notificações"><Bell size={20} /></button><Avatar className="community-current-avatar" name={firstName} url={currentAvatarUrl} /></div>
           </header>
 
           <section className="community-create-strip">
@@ -119,7 +124,7 @@ export default async function CommunityPage() {
           </section>
 
           <section id="nova-publicacao" className="community-composer-instagram">
-            <div className="composer-topline"><div className="avatar-ring mini"><span>{initials(firstName)}</span></div><strong>{firstName}</strong><small>Aluno VIP</small></div>
+            <div className="composer-topline"><div className="avatar-ring mini"><Avatar name={firstName} url={currentAvatarUrl} /></div><strong>{firstName}</strong><small>Aluno VIP</small></div>
             <form action="/api/community/posts" method="post">
               <textarea name="caption" placeholder="O que você treinou hoje? Compartilhe sua prática, dificuldade ou conquista..." />
               <select name="exercise_id" defaultValue="">
