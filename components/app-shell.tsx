@@ -10,10 +10,10 @@ const navItems = [
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="app-shell">
-      <main className="app-content">{children}</main>
-      <nav className="bottom-nav" aria-label="Navegação do aluno">
+      <main className="app-content route-surface">{children}</main>
+      <nav className="bottom-nav app-bottom-nav" aria-label="Navegação do aluno">
         {navItems.map((item) => (
-          <Link href={item.href} key={item.href}>{item.label}</Link>
+          <Link href={item.href} key={item.href} prefetch>{item.label}</Link>
         ))}
       </nav>
     </div>
