@@ -1,3 +1,4 @@
+import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 
@@ -13,6 +14,32 @@ type ConnectionRow = {
   scope?: string | null;
   token_type?: string | null;
 };
+
+function driveFileId(url?: string | null) {
+  if (!url) return null;
+  const match = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || url.match(/id=([a-zA-Z0-9_-]+)/) || url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  return match?.[1] || null;
+}
+
+async function canAccessLessonFile(fileId: string) {
+  const cookieStore = await cookies();
+  const email = cookieStore.get('hub_access_email')?.value;
+  if (!email) return false;
+
+  const supabase = createAdminClient();
+  const { data: profile } = await supabase.from('profiles').select('id,email').eq('email', email).maybeSingle();
+  if (!profile) return false;
+
+  const { data: lessons } = await supabase
+    .from('exercises')
+    .select('id,drive_url,media_url,audio_url,is_active')
+    .eq('is_active', true);
+
+  return (lessons || []).some((lesson) => {
+    const ids = [lesson.drive_url, lesson.media_url, lesson.audio_url].map(driveFileId).filter(Boolean);
+    return ids.includes(fileId);
+  });
+}
 
 async function loadAccess() {
   const supabase = createAdminClient();
@@ -61,6 +88,9 @@ async function loadAccess() {
 export async function GET(request: Request, { params }: Params) {
   try {
     const { id } = await params;
+    const allowed = await canAccessLessonFile(id);
+    if (!allowed) return NextResponse.json({ error: 'media_not_allowed' }, { status: 403 });
+
     const access = await loadAccess();
     if (!access) return NextResponse.json({ error: 'drive_not_connected' }, { status: 401 });
 
@@ -79,7 +109,9 @@ export async function GET(request: Request, { params }: Params) {
     const headers = new Headers();
     headers.set('content-type', upstream.headers.get('content-type') || 'video/mp4');
     headers.set('accept-ranges', 'bytes');
-    headers.set('cache-control', 'private, max-age=120');
+    headers.set('cache-control', 'private, no-store, max-age=0');
+    headers.set('x-content-type-options', 'nosniff');
+    headers.set('content-disposition', 'inline');
     const len = upstream.headers.get('content-length');
     const rangeHeader = upstream.headers.get('content-range');
     if (len) headers.set('content-length', len);
