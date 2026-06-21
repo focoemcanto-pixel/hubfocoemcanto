@@ -27,24 +27,14 @@ type ReviewRow = {
   created_at: string | null;
 };
 
-type ExerciseRow = {
-  id: string;
-  title: string | null;
-  slug: string | null;
-  module_id: string | null;
-};
-
-type ModuleRow = {
-  id: string;
-  title: string | null;
-  slug: string | null;
-};
+type ExerciseRow = { id: string; title: string | null; slug: string | null; module_id: string | null };
+type ModuleRow = { id: string; title: string | null; slug: string | null };
 
 function statusLabel(status?: string | null) {
   if (status === 'approved') return 'Aprovada';
   if (status === 'needs_rework') return 'Refazer';
   if (status === 'reviewed') return 'Avaliada';
-  return 'Aguardando avaliação';
+  return 'Aguardando';
 }
 
 function statusClass(status?: string | null) {
@@ -81,7 +71,6 @@ export default async function ProfilePage() {
       : { data: null };
 
   const profileId = profile?.id;
-
   const { data: submissionsData } = profileId
     ? await admin
         .from('submissions')
@@ -111,7 +100,6 @@ export default async function ProfilePage() {
   const { data: exercisesData } = exerciseIds.length
     ? await admin.from('exercises').select('id,title,slug,module_id').in('id', exerciseIds)
     : { data: [] };
-
   const exercises = (exercisesData || []) as ExerciseRow[];
   const exerciseById = new Map(exercises.map((exercise) => [exercise.id, exercise]));
   const moduleIds = Array.from(new Set(exercises.map((exercise) => exercise.module_id).filter(Boolean))) as string[];
@@ -119,8 +107,8 @@ export default async function ProfilePage() {
   const { data: modulesData } = moduleIds.length
     ? await admin.from('modules').select('id,title,slug').in('id', moduleIds)
     : { data: [] };
-
   const moduleById = new Map(((modulesData || []) as ModuleRow[]).map((module) => [module.id, module]));
+
   const reviewedCount = submissions.filter((item) => reviewBySubmission.has(item.id)).length;
   const approvedCount = submissions.filter((item) => item.status === 'approved').length;
   const pendingCount = submissions.filter((item) => item.status === 'pending_review').length;
@@ -147,12 +135,12 @@ export default async function ProfilePage() {
             <div>
               <p className="eyebrow">Correções do professor</p>
               <h2>Minhas avaliações</h2>
-              <p className="muted">Veja seus duetos enviados, comentários e notas recebidas.</p>
+              <p className="muted">Histórico compacto dos duetos, notas e comentários recebidos.</p>
             </div>
             <div className="pill">{approvedCount} aprovadas</div>
           </div>
 
-          <div style={{ display: 'grid', gap: 14, marginTop: 22 }}>
+          <div style={{ display: 'grid', gap: 10, marginTop: 18 }}>
             {submissions.length ? submissions.map((submission) => {
               const review = reviewBySubmission.get(submission.id);
               const exercise = submission.exercise_id ? exerciseById.get(submission.exercise_id) : null;
@@ -160,50 +148,46 @@ export default async function ProfilePage() {
               const avg = averageReview(review);
 
               return (
-                <article key={submission.id} className="card" style={{ padding: 18 }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 280px) 1fr', gap: 18, alignItems: 'start' }}>
-                    <div>
-                      {submission.file_url ? (
-                        <video src={submission.file_url} controls playsInline style={{ width: '100%', borderRadius: 18, background: '#050505', border: '1px solid rgba(255,255,255,.12)' }} />
-                      ) : (
-                        <div className="card" style={{ minHeight: 150 }}>Vídeo indisponível</div>
-                      )}
+                <details key={submission.id} className="card" style={{ padding: 0, overflow: 'hidden' }}>
+                  <summary style={{ cursor: 'pointer', listStyle: 'none', padding: 14, display: 'grid', gridTemplateColumns: '92px 1fr auto', gap: 14, alignItems: 'center' }}>
+                    <video src={submission.file_url || ''} muted playsInline preload="metadata" style={{ width: 92, height: 56, objectFit: 'cover', borderRadius: 12, background: '#050505', border: '1px solid rgba(255,255,255,.12)' }} />
+                    <div style={{ minWidth: 0 }}>
+                      <p className="eyebrow" style={{ marginBottom: 4 }}>{module?.title || 'Módulo'}</p>
+                      <strong style={{ display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{exercise?.title || 'Atividade enviada'}</strong>
+                      <p className="muted" style={{ margin: '4px 0 0', fontSize: 13 }}>
+                        {formatDate(submission.created_at)} · {avg ? `nota ${avg}` : 'sem nota ainda'}
+                      </p>
                     </div>
-                    <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-                        <div>
-                          <p className="eyebrow">{module?.title || 'Módulo'}</p>
-                          <h3 style={{ margin: '6px 0 4px' }}>{exercise?.title || 'Atividade enviada'}</h3>
-                          <p className="muted">Enviado em {formatDate(submission.created_at)}</p>
-                        </div>
-                        <span className="pill" style={{ borderColor: statusClass(submission.status), color: statusClass(submission.status) }}>{statusLabel(submission.status)}</span>
-                      </div>
+                    <span className="pill" style={{ borderColor: statusClass(submission.status), color: statusClass(submission.status), whiteSpace: 'nowrap' }}>{statusLabel(submission.status)}</span>
+                  </summary>
 
+                  <div style={{ borderTop: '1px solid rgba(255,255,255,.08)', padding: 14, display: 'grid', gridTemplateColumns: 'minmax(160px, 220px) 1fr', gap: 14 }}>
+                    <video src={submission.file_url || ''} controls playsInline style={{ width: '100%', borderRadius: 14, background: '#050505', border: '1px solid rgba(255,255,255,.12)' }} />
+                    <div style={{ display: 'grid', gap: 10 }}>
                       {review ? (
-                        <div style={{ marginTop: 16, display: 'grid', gap: 12 }}>
-                          <div className="grid">
-                            <article className="card"><p className="stat">{avg || '—'}</p><p className="muted">nota média</p></article>
-                            <article className="card"><p className="stat">{review.pitch_rating || '—'}</p><p className="muted">afinação</p></article>
-                            <article className="card"><p className="stat">{review.rhythm_rating || '—'}</p><p className="muted">ritmo</p></article>
-                            <article className="card"><p className="stat">{review.harmony_rating || '—'}</p><p className="muted">segunda voz</p></article>
+                        <>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(72px, 1fr))', gap: 8 }}>
+                            <article className="card" style={{ padding: 10 }}><strong>{avg || '—'}</strong><p className="muted" style={{ margin: 0, fontSize: 12 }}>média</p></article>
+                            <article className="card" style={{ padding: 10 }}><strong>{review.pitch_rating || '—'}</strong><p className="muted" style={{ margin: 0, fontSize: 12 }}>afinação</p></article>
+                            <article className="card" style={{ padding: 10 }}><strong>{review.rhythm_rating || '—'}</strong><p className="muted" style={{ margin: 0, fontSize: 12 }}>ritmo</p></article>
+                            <article className="card" style={{ padding: 10 }}><strong>{review.harmony_rating || '—'}</strong><p className="muted" style={{ margin: 0, fontSize: 12 }}>2ª voz</p></article>
+                            <article className="card" style={{ padding: 10 }}><strong>{review.confidence_rating || '—'}</strong><p className="muted" style={{ margin: 0, fontSize: 12 }}>segurança</p></article>
                           </div>
-                          <div className="card" style={{ background: 'rgba(255, 209, 102, .08)', borderColor: 'rgba(255, 209, 102, .25)' }}>
-                            <p className="eyebrow">Comentário do professor</p>
+                          <div className="card" style={{ padding: 12, background: 'rgba(255, 209, 102, .08)', borderColor: 'rgba(255, 209, 102, .25)' }}>
+                            <p className="eyebrow">Comentário</p>
                             <p style={{ margin: 0 }}>{review.comment || 'Avaliação recebida sem comentário textual.'}</p>
                           </div>
-                          {submission.status === 'needs_rework' && exercise?.slug ? (
-                            <Link className="button" href={`/aluno/aula/${exercise.slug}`}>Refazer atividade</Link>
-                          ) : null}
-                        </div>
+                          {submission.status === 'needs_rework' && exercise?.slug ? <Link className="button" href={`/aluno/aula/${exercise.slug}`}>Refazer atividade</Link> : null}
+                        </>
                       ) : (
-                        <div className="card" style={{ marginTop: 16, background: 'rgba(255,255,255,.04)' }}>
+                        <div className="card" style={{ padding: 12, background: 'rgba(255,255,255,.04)' }}>
                           <p className="eyebrow">Na fila</p>
-                          <p className="muted" style={{ margin: 0 }}>Sua atividade foi enviada e está aguardando a correção do professor.</p>
+                          <p className="muted" style={{ margin: 0 }}>Aguardando a correção do professor.</p>
                         </div>
                       )}
                     </div>
                   </div>
-                </article>
+                </details>
               );
             }) : (
               <article className="card">
