@@ -4,6 +4,7 @@ import './course-ui.css';
 import './lesson-premium.css';
 import './activity-premium.css';
 import './hub-premium-overrides.css';
+import './admin-module-premium.css';
 
 export default function RootLayout(props: { children: React.ReactNode }) {
   return (
