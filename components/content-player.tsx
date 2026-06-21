@@ -15,36 +15,42 @@ function getDriveFileId(url?: string | null) {
   return null;
 }
 
+function isAllowedInternalMedia(url: string) {
+  return url.startsWith('/api/media/drive/') || url.startsWith('/api/media/library/') || url.startsWith('/storage/v1/object/');
+}
+
 export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl }: ContentPlayerProps) {
-  const source = mediaUrl || driveUrl || '';
-  const driveFileId = getDriveFileId(source);
-  const embedUrl = driveFileId ? `https://drive.google.com/file/d/${driveFileId}/preview` : source;
+  const rawSource = driveUrl || mediaUrl || '';
+  const driveFileId = getDriveFileId(rawSource);
   const type = mediaType || 'video';
+  const source = driveFileId ? `/api/media/drive/${driveFileId}` : isAllowedInternalMedia(rawSource) ? rawSource : '';
 
   if (!source) {
     return (
       <div className="lesson-player empty-player">
-        <strong>Material ainda nao conectado</strong>
-        <p className="muted">Adicione um arquivo do Drive para liberar o player interno.</p>
+        <strong>Material protegido</strong>
+        <p className="muted">Este conteúdo só pode ser acessado pelo player interno do Hub.</p>
       </div>
     );
   }
 
-  if (type === 'audio' && !driveFileId) {
+  if (type === 'audio') {
     return (
       <div className="lesson-player">
-        <audio controls src={source} style={{ width: '100%' }} />
+        <audio controls controlsList="nodownload noplaybackrate" src={source} style={{ width: '100%' }} />
       </div>
     );
   }
 
   return (
     <div className="lesson-player">
-      <iframe
-        src={embedUrl}
-        title={title || 'Conteudo'}
-        allow="autoplay; encrypted-media; picture-in-picture"
-        allowFullScreen
+      <video
+        src={source}
+        title={title || 'Conteúdo'}
+        controls
+        controlsList="nodownload noplaybackrate"
+        playsInline
+        preload="metadata"
       />
     </div>
   );
