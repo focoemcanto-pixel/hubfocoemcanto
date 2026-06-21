@@ -32,21 +32,15 @@ export async function POST(request: Request) {
     .select('id')
     .eq('post_id', postId)
     .eq('profile_id', profile.id)
-    .limit(10);
+    .limit(1);
 
-  const alreadyLiked = Boolean(existingRows?.length);
-  let liked = false;
-
-  if (alreadyLiked) {
-    await supabase.from('community_likes').delete().eq('post_id', postId).eq('profile_id', profile.id);
-  } else {
+  if (!existingRows?.length) {
     await supabase.from('community_likes').insert({ post_id: postId, profile_id: profile.id });
-    liked = true;
   }
 
   const { count } = await supabase.from('community_likes').select('*', { count: 'exact', head: true }).eq('post_id', postId);
   await supabase.from('community_posts').update({ likes_count: count || 0 }).eq('id', postId);
 
-  if (wantsJson(request)) return NextResponse.json({ ok: true, liked, likes_count: count || 0 });
+  if (wantsJson(request)) return NextResponse.json({ ok: true, liked: true, likes_count: count || 0 });
   return NextResponse.redirect(new URL(returnTo, request.url));
 }
