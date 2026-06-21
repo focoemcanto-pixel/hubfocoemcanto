@@ -3,8 +3,12 @@ create table if not exists profiles (
   name text,
   email text unique,
   whatsapp text,
+  avatar_url text,
+  bio text,
+  headline text,
   role text default 'student',
-  created_at timestamptz default now()
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
 );
 
 create table if not exists subscriptions (
