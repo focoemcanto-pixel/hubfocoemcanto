@@ -18,6 +18,11 @@ export type RenderArgs = {
   settings: FinalRenderSettings;
 };
 
+type CaptureVideo = HTMLVideoElement & {
+  captureStream?: (fps?: number) => MediaStream;
+  mozCaptureStream?: (fps?: number) => MediaStream;
+};
+
 function isSafariLike() {
   if (typeof navigator === 'undefined') return false;
   const ua = navigator.userAgent;
@@ -92,6 +97,44 @@ function applyVoicePreset(ctx: AudioContext, input: AudioNode, destination: Audi
   compressor.connect(dry).connect(limiter); compressor.connect(delay).connect(wet).connect(limiter); limiter.connect(destination);
 }
 
+function makeCanvasVideoStream(visual: HTMLVideoElement) {
+  const canvas = document.createElement('canvas');
+  canvas.width = isSafariLike() ? 960 : 1280;
+  canvas.height = isSafariLike() ? 540 : 720;
+  const ctx2d = canvas.getContext('2d');
+  if (!ctx2d) throw new Error('canvas_failed');
+  let frame = 0;
+  let stopped = false;
+  const paint = () => {
+    ctx2d.fillStyle = '#050505';
+    ctx2d.fillRect(0, 0, canvas.width, canvas.height);
+    try { ctx2d.drawImage(visual, 0, 0, canvas.width, canvas.height); } catch {}
+  };
+  const draw = () => {
+    if (stopped) return;
+    paint();
+    frame = requestAnimationFrame(draw);
+  };
+  paint();
+  draw();
+  return {
+    stream: canvas.captureStream(isSafariLike() ? 24 : 30),
+    stop: () => { stopped = true; cancelAnimationFrame(frame); },
+  };
+}
+
+function makeDirectVideoStream(visual: HTMLVideoElement) {
+  const video = visual as CaptureVideo;
+  const capture = video.captureStream || video.mozCaptureStream;
+  if (!capture) return null;
+  const stream = capture.call(video, isSafariLike() ? 24 : 30);
+  if (!stream.getVideoTracks().length) return null;
+  return {
+    stream,
+    stop: () => stream.getTracks().forEach((track) => track.stop()),
+  };
+}
+
 export async function renderFinalDuetVideo({ visualBlob, voiceBlob, referenceBlob, referenceSource, settings }: RenderArgs) {
   const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
   if (!AudioCtx) throw new Error('audio_context_missing');
@@ -112,12 +155,6 @@ export async function renderFinalDuetVideo({ visualBlob, voiceBlob, referenceBlo
   ]);
   const voiceBuffer = settings.noiseReduction ? reduceVoiceNoise(audioCtx, rawVoiceBuffer) : rawVoiceBuffer;
 
-  const canvas = document.createElement('canvas');
-  canvas.width = isSafariLike() ? 960 : 1280;
-  canvas.height = isSafariLike() ? 540 : 720;
-  const ctx2d = canvas.getContext('2d');
-  if (!ctx2d) throw new Error('canvas_failed');
-
   const destination = audioCtx.createMediaStreamDestination();
   const voiceSource = audioCtx.createBufferSource();
   const referenceSourceNode = audioCtx.createBufferSource();
@@ -128,15 +165,13 @@ export async function renderFinalDuetVideo({ visualBlob, voiceBlob, referenceBlo
   referenceSourceNode.connect(referenceGain).connect(destination);
   applyVoicePreset(audioCtx, voiceSource, destination, settings.preset, normalizeVoiceTarget(settings.voiceVolume) * rmsNormalize(voiceBuffer));
 
-  const paint = () => {
-    ctx2d.fillStyle = '#050505';
-    ctx2d.fillRect(0, 0, canvas.width, canvas.height);
-    try { ctx2d.drawImage(visual, 0, 0, canvas.width, canvas.height); } catch {}
-  };
-  paint();
+  visual.currentTime = 0;
+  await audioCtx.resume().catch(() => undefined);
+  await visual.play().catch(() => undefined);
 
+  const videoCapture = makeDirectVideoStream(visual) || makeCanvasVideoStream(visual);
   const outputStream = new MediaStream([
-    ...canvas.captureStream(isSafariLike() ? 24 : 30).getVideoTracks(),
+    ...videoCapture.stream.getVideoTracks(),
     ...destination.stream.getAudioTracks(),
   ]);
   const mimeType = recorderMimeType();
@@ -147,40 +182,28 @@ export async function renderFinalDuetVideo({ visualBlob, voiceBlob, referenceBlo
     recorder.onstop = () => resolve(new Blob(chunks, { type: recorder.mimeType || mimeType || 'video/webm' }));
   });
 
-  let frame = 0;
   let stopped = false;
-  const draw = () => {
-    if (stopped) return;
-    paint();
-    frame = requestAnimationFrame(draw);
-  };
   const stop = () => {
     if (stopped) return;
     stopped = true;
     try { recorder.requestData(); } catch {}
     try { voiceSource.stop(); } catch {}
     try { referenceSourceNode.stop(); } catch {}
-    cancelAnimationFrame(frame);
+    try { visual.pause(); } catch {}
+    videoCapture.stop();
     window.setTimeout(() => {
       if (recorder.state === 'recording') recorder.stop();
     }, 120);
   };
 
-  visual.currentTime = 0;
-  await audioCtx.resume().catch(() => undefined);
   recorder.start(250);
-  draw();
   const startAt = audioCtx.currentTime + 0.08;
   const voiceOffset = Math.min(Math.max(0, clampLatencyMs(settings.latencyMs || 0) / 1000), Math.max(0, voiceBuffer.duration - 0.02));
   voiceSource.start(startAt, voiceOffset);
   referenceSourceNode.start(startAt, 0);
-  const delay = Math.max(0, (startAt - audioCtx.currentTime) * 1000);
-  window.setTimeout(() => {
-    visual.play().catch(() => undefined);
-  }, delay);
   visual.onended = stop;
   const maxDuration = Math.max(1, Math.min(visual.duration || 90, referenceBuffer.duration || 90, Math.max(0.5, voiceBuffer.duration - voiceOffset || 90)));
-  window.setTimeout(stop, maxDuration * 1000 + delay + 350);
+  window.setTimeout(stop, maxDuration * 1000 + 450);
   const rendered = await done;
   await audioCtx.close().catch(() => undefined);
   URL.revokeObjectURL(visualUrl);
