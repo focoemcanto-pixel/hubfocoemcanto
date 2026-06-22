@@ -61,8 +61,8 @@ export function useDuetBufferRecorder(referenceSource: string, lessonSlug: strin
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [visualUrl, setVisualUrl] = useState<string | null>(null);
   const [error, setError] = useState('');
-  const [voiceVolume, setVoiceVolumeState] = useState(135);
-  const [referenceVolume, setReferenceVolumeState] = useState(45);
+  const [voiceVolume, setVoiceVolumeState] = useState(100);
+  const [referenceVolume, setReferenceVolumeState] = useState(100);
   const [preset, setPresetState] = useState<VoicePreset>('natural');
   const [latencyMs, setLatencyMsState] = useState(70);
   const [noiseReduction, setNoiseReductionState] = useState(false);
@@ -70,7 +70,7 @@ export function useDuetBufferRecorder(referenceSource: string, lessonSlug: strin
   const [isPlaying, setIsPlaying] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const settingsRef = useRef({ voiceVolume: 135, referenceVolume: 45, preset: 'natural' as VoicePreset, latencyMs: 70, noiseReduction: false });
+  const settingsRef = useRef({ voiceVolume: 100, referenceVolume: 100, preset: 'natural' as VoicePreset, latencyMs: 70, noiseReduction: false });
   const cameraRef = useRef<HTMLVideoElement | null>(null);
   const referenceRef = useRef<HTMLVideoElement | null>(null);
   const previewRef = useRef<HTMLVideoElement | null>(null);
@@ -98,14 +98,16 @@ export function useDuetBufferRecorder(referenceSource: string, lessonSlug: strin
   const settings = () => settingsRef.current;
 
   function setVoiceVolume(value: number) {
-    settingsRef.current = { ...settingsRef.current, voiceVolume: value };
-    setVoiceVolumeState(value);
+    const next = Math.max(0, Math.min(100, value));
+    settingsRef.current = { ...settingsRef.current, voiceVolume: next };
+    setVoiceVolumeState(next);
     engineRef.current?.applySettings();
   }
 
   function setReferenceVolume(value: number) {
-    settingsRef.current = { ...settingsRef.current, referenceVolume: value };
-    setReferenceVolumeState(value);
+    const next = Math.max(0, Math.min(100, value));
+    settingsRef.current = { ...settingsRef.current, referenceVolume: next };
+    setReferenceVolumeState(next);
     engineRef.current?.applySettings();
   }
 
@@ -172,24 +174,13 @@ export function useDuetBufferRecorder(referenceSource: string, lessonSlug: strin
 
   async function prepareEngine(voiceBlob: Blob, referenceBlob?: Blob | null) {
     if (!referenceSource && !referenceBlob) return;
-    const engine = await loadDuetBufferEngine({
-      voiceBlob,
-      referenceSource,
-      referenceBlob,
-      previewVideo: previewRef.current,
-      settings,
-      previous: engineRef.current,
-    });
+    const engine = await loadDuetBufferEngine({ voiceBlob, referenceSource, referenceBlob, previewVideo: previewRef.current, settings, previous: engineRef.current });
     engineRef.current = engine;
     setAudioReady(true);
   }
 
   async function togglePlayback() {
-    const playing = await toggleDuetBufferPlayback({
-      engine: engineRef.current,
-      video: previewRef.current,
-      canLiveEdit,
-    });
+    const playing = await toggleDuetBufferPlayback({ engine: engineRef.current, video: previewRef.current, canLiveEdit });
     setIsPlaying(Boolean(playing));
   }
 
