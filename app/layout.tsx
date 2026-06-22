@@ -18,6 +18,7 @@ import './instagram-performance.css';
 import './social-profile.css';
 import './edit-profile.css';
 import './student-reviews.css';
+import './notifications-premium.css';
 
 export default function RootLayout(props: { children: React.ReactNode }) {
   return (
