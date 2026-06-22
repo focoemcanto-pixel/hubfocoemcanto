@@ -38,14 +38,54 @@ function normalizeDate(value?: string | null) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+function isActive(subscription?: Subscription | null) {
+  return String(subscription?.status || '').toLowerCase() === 'active';
+}
+
+function addMonths(date: Date, months: number) {
+  const copy = new Date(date);
+  const originalDay = copy.getDate();
+  copy.setMonth(copy.getMonth() + months);
+  if (copy.getDate() < originalDay) copy.setDate(0);
+  return copy;
+}
+
+function effectiveRenewalDate(subscription?: Subscription | null) {
+  const officialEnd = normalizeDate(subscription?.current_period_end);
+  const start = normalizeDate(subscription?.current_period_start) || normalizeDate(subscription?.updated_at);
+  const base = officialEnd || start;
+  if (!base) return { date: null as Date | null, estimated: false };
+
+  if (!isActive(subscription)) return { date: base, estimated: false };
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const renewal = new Date(base);
+
+  if (renewal >= today) return { date: renewal, estimated: false };
+
+  let estimated = new Date(renewal);
+  let guard = 0;
+  while (estimated < today && guard < 80) {
+    estimated = addMonths(estimated, 1);
+    guard += 1;
+  }
+
+  return { date: estimated, estimated: true };
+}
+
 function dateLabel(value?: string | null) {
   const date = normalizeDate(value);
   if (!date) return 'Sem data';
   return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(date);
 }
 
-function daysUntil(value?: string | null) {
-  const date = normalizeDate(value);
+function dateLabelFromDate(date?: Date | null) {
+  if (!date) return 'Sem data';
+  return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(date);
+}
+
+function daysUntilDate(date?: Date | null) {
   if (!date) return null;
   const start = new Date();
   start.setHours(0, 0, 0, 0);
@@ -54,13 +94,14 @@ function daysUntil(value?: string | null) {
   return Math.ceil((target.getTime() - start.getTime()) / 86400000);
 }
 
-function renewalLabel(value?: string | null) {
-  const days = daysUntil(value);
+function renewalLabel(date?: Date | null, estimated = false) {
+  const days = daysUntilDate(date);
   if (days === null) return 'sem data de renovacao';
-  if (days < 0) return `data antiga ha ${Math.abs(days)} dias`;
-  if (days === 0) return 'renova hoje';
-  if (days === 1) return 'renova amanha';
-  return `renova em ${days} dias`;
+  const prefix = estimated ? 'estimada · ' : '';
+  if (days < 0) return `${prefix}data antiga ha ${Math.abs(days)} dias`;
+  if (days === 0) return `${prefix}renova hoje`;
+  if (days === 1) return `${prefix}renova amanha`;
+  return `${prefix}renova em ${days} dias`;
 }
 
 function accessStatus(subscription?: Subscription | null) {
@@ -76,7 +117,8 @@ function renewalTone(subscription?: Subscription | null) {
   if (!subscription) return 'danger';
   const state = accessStatus(subscription);
   if (!state.active) return state.tone;
-  const days = daysUntil(subscription.current_period_end);
+  const { date } = effectiveRenewalDate(subscription);
+  const days = daysUntilDate(date);
   if (days === null) return 'pending';
   if (days < 0) return 'review';
   if (days <= 2) return 'late';
@@ -154,25 +196,27 @@ export default async function AdminPremiumPage({ searchParams }: { searchParams?
     const name = profile?.name || email.split('@')[0] || 'Sem nome';
     const student = { id: profile?.id || subscription.id || email, name, email, whatsapp: profile?.whatsapp || null };
     const state = accessStatus(subscription);
+    const renewalInfo = effectiveRenewalDate(subscription);
     const renewal = renewalTone(subscription);
     const lastEvent = logsByEmail.get(email) || null;
-    return { student, subscription, state, renewal, lastEvent, whatsapp: whatsappLink(student.whatsapp, student.name, state.tone) };
+    return { student, subscription, state, renewal, renewalInfo, lastEvent, whatsapp: whatsappLink(student.whatsapp, student.name, state.tone) };
   });
 
   const activeRows = rows.filter((row) => row.state.active);
   const lateRows = rows.filter((row) => row.state.tone === 'late');
   const pendingRows = rows.filter((row) => row.state.tone === 'pending');
   const removeRows = rows.filter((row) => row.state.remove);
-  const renewingTodayRows = activeRows.filter((row) => daysUntil(row.subscription.current_period_end) === 0);
+  const renewingTodayRows = activeRows.filter((row) => daysUntilDate(row.renewalInfo.date) === 0);
   const renewing7Rows = activeRows.filter((row) => {
-    const days = daysUntil(row.subscription.current_period_end);
+    const days = daysUntilDate(row.renewalInfo.date);
     return days !== null && days >= 0 && days <= 7;
   });
-  const reviewRows = activeRows.filter((row) => renewalTone(row.subscription) === 'review');
+  const reviewRows = activeRows.filter((row) => !row.renewalInfo.date);
   const filteredRows = currentFilter === 'ativos' ? activeRows : currentFilter === 'vencendo' ? renewing7Rows : currentFilter === 'revisar' ? reviewRows : currentFilter === 'atrasados' ? lateRows : currentFilter === 'pendentes' ? pendingRows : currentFilter === 'remover' ? removeRows : rows;
   const removeEmails = removeRows.map((row) => row.student.email).filter(Boolean).join('\n');
   const lateEmails = lateRows.map((row) => row.student.email).filter(Boolean).join('\n');
   const webhookProblems = logs.filter((log) => eventTone(log) === 'danger').length;
+  const estimatedRenewals = activeRows.filter((row) => row.renewalInfo.estimated).length;
 
   return (
     <main className="page admin-shell premium-admin-page premium-console">
@@ -193,7 +237,7 @@ export default async function AdminPremiumPage({ searchParams }: { searchParams?
       </nav>
 
       <section className="premium-health-grid">
-        <article className="premium-health-card active"><span>Assinantes ativos</span><strong>{activeRows.length}</strong><p>{reviewRows.length ? `${reviewRows.length} com data antiga para revisar` : 'Todos com acesso liberado'}</p></article>
+        <article className="premium-health-card active"><span>Assinantes ativos</span><strong>{activeRows.length}</strong><p>{estimatedRenewals ? `${estimatedRenewals} renovacoes mensais estimadas` : 'Todos com data oficial atual'}</p></article>
         <article className="premium-health-card"><span>Renovam hoje</span><strong>{renewingTodayRows.length}</strong><p>{renewing7Rows.length} renovam nos proximos 7 dias</p></article>
         <article className="premium-health-card late"><span>Atrasados</span><strong>{lateRows.length}</strong><p>{lateRows.length ? 'Cobrar renovacao' : 'Nenhum atraso registrado'}</p></article>
         <article className="premium-health-card danger"><span>Remover do grupo</span><strong>{removeRows.length}</strong><p>{webhookProblems} webhooks precisam de atencao</p></article>
@@ -201,14 +245,14 @@ export default async function AdminPremiumPage({ searchParams }: { searchParams?
 
       <section className="premium-ops-grid">
         <article className="premium-webhook-card">
-          <div><p className="eyebrow">Webhook Kiwify</p><h2>Sincronizacao automatica</h2><p>Use esta URL na Kiwify. O historico abaixo confirma vendas, renovacoes, atrasos e cancelamentos.</p></div>
+          <div><p className="eyebrow">Webhook Kiwify</p><h2>Sincronizacao automatica</h2><p>Use esta URL na Kiwify. Quando o webhook de renovacao chegar, a data oficial substitui a estimativa mensal.</p></div>
           <code>https://hub.focoemcanto.com/api/kiwify/webhook</code>
         </article>
         <article className="premium-alert-card">
           <p className="eyebrow">Alertas</p>
           <h2>{renewing7Rows.length + lateRows.length + removeRows.length + webhookProblems}</h2>
           <p>itens pedindo atencao agora</p>
-          <div><a href="/admin/premium?status=vencendo">Vencendo</a><a href="/admin/premium?status=revisar">Revisar datas</a></div>
+          <div><a href="/admin/premium?status=vencendo">Vencendo</a><a href="/admin/premium?status=revisar">Sem data</a></div>
         </article>
       </section>
 
@@ -216,7 +260,7 @@ export default async function AdminPremiumPage({ searchParams }: { searchParams?
         <a className={currentFilter === 'todos' ? 'active' : ''} href="/admin/premium?status=todos">Todos</a>
         <a className={currentFilter === 'ativos' ? 'active' : ''} href="/admin/premium?status=ativos">Ativos</a>
         <a className={currentFilter === 'vencendo' ? 'active' : ''} href="/admin/premium?status=vencendo">Vencendo</a>
-        <a className={currentFilter === 'revisar' ? 'active late' : ''} href="/admin/premium?status=revisar">Revisar datas</a>
+        <a className={currentFilter === 'revisar' ? 'active late' : ''} href="/admin/premium?status=revisar">Sem data</a>
         <a className={currentFilter === 'atrasados' ? 'active' : ''} href="/admin/premium?status=atrasados">Atrasados</a>
         <a className={currentFilter === 'pendentes' ? 'active' : ''} href="/admin/premium?status=pendentes">Pendentes</a>
         <a className={currentFilter === 'remover' ? 'active danger' : ''} href="/admin/premium?status=remover">Remover</a>
@@ -234,7 +278,7 @@ export default async function AdminPremiumPage({ searchParams }: { searchParams?
             <span className="pill">{filteredRows.length} contatos</span>
           </div>
           <div className="premium-subscriber-list">
-            {filteredRows.map(({ student, subscription, state, renewal, lastEvent, whatsapp }) => (
+            {filteredRows.map(({ student, subscription, state, renewal, renewalInfo, lastEvent, whatsapp }) => (
               <article className={`premium-subscriber-card ${state.tone} renewal-${renewal}`} key={`${student.id}-${subscription?.id || student.email}`}>
                 <div className="premium-member-main">
                   <span className={`premium-status ${state.tone}`}>{state.label}</span>
@@ -243,9 +287,9 @@ export default async function AdminPremiumPage({ searchParams }: { searchParams?
                   <small>{student.whatsapp || 'WhatsApp nao informado'}</small>
                 </div>
                 <div className="premium-renewal-box">
-                  <span>Renovacao</span>
-                  <strong>{dateLabel(subscription?.current_period_end)}</strong>
-                  <em>{renewalLabel(subscription?.current_period_end)}</em>
+                  <span>{renewalInfo.estimated ? 'Renovacao estimada' : 'Renovacao'}</span>
+                  <strong>{dateLabelFromDate(renewalInfo.date)}</strong>
+                  <em>{renewalLabel(renewalInfo.date, renewalInfo.estimated)}</em>
                 </div>
                 <div className="premium-plan-box">
                   <span>Plano</span>
@@ -258,7 +302,7 @@ export default async function AdminPremiumPage({ searchParams }: { searchParams?
                   <small>{lastEvent?.created_at ? dateLabel(lastEvent.created_at) : 'Sem evento vinculado ao email'}</small>
                 </div>
                 <div className="premium-actions premium-actions-console">
-                  <span className={state.remove ? 'remove-tag' : state.tone === 'late' ? 'late-tag' : renewal === 'review' ? 'late-tag' : 'keep-tag'}>{renewal === 'review' && state.active ? 'revisar data' : state.action}</span>
+                  <span className={state.remove ? 'remove-tag' : state.tone === 'late' ? 'late-tag' : renewal === 'review' ? 'late-tag' : 'keep-tag'}>{renewalInfo.estimated && state.active ? 'ciclo mensal estimado' : state.action}</span>
                   {whatsapp ? <a className="button secondary" href={whatsapp} target="_blank">WhatsApp</a> : null}
                 </div>
               </article>
