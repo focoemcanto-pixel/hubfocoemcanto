@@ -9,10 +9,10 @@ function timeAgo(value?: string | null) {
   const diff = Math.max(0, Date.now() - new Date(value).getTime());
   const m = Math.floor(diff / 60000);
   if (m < 1) return 'agora';
-  if (m < 60) return `${m} min`;
+  if (m < 60) return `${m}min`;
   const h = Math.floor(m / 60);
-  if (h < 24) return `${h} h`;
-  return `${Math.floor(h / 24)} d`;
+  if (h < 24) return `${h}h`;
+  return `${Math.floor(h / 24)}d`;
 }
 
 function initials(name?: string | null) {
@@ -35,6 +35,13 @@ function tabClass(current: string, value: string) {
   return current === value ? 'active' : '';
 }
 
+function filterLabel(value: string) {
+  if (value === 'seguindo') return 'Seguindo';
+  if (value === 'comentarios') return 'Comentários';
+  if (value === 'mencoes') return 'Menções';
+  return 'Tudo';
+}
+
 export const dynamic = 'force-dynamic';
 
 export default async function NotificationsPage({ searchParams }: { searchParams?: Promise<{ filtro?: string }> }) {
@@ -45,28 +52,43 @@ export default async function NotificationsPage({ searchParams }: { searchParams
   const { data: profile } = email ? await supabase.from('profiles').select('id').eq('email', email).maybeSingle() : { data: null };
   const profileId = (profile as any)?.id;
 
-  const [{ data: comments }, { data: likes }, { data: followers }, { data: following }] = profileId ? await Promise.all([
-    supabase.from('community_comments').select('id,created_at,comment,profiles(id,name,avatar_url),community_posts!inner(id,profile_id,caption,media_url,submissions(file_url))').eq('community_posts.profile_id', profileId).order('created_at', { ascending: false }).limit(24),
-    supabase.from('community_likes').select('id,created_at,profiles(id,name,avatar_url),community_posts!inner(id,profile_id,caption,media_url,submissions(file_url))').eq('community_posts.profile_id', profileId).order('created_at', { ascending: false }).limit(24),
-    supabase.from('community_follows').select('id,created_at,profiles!community_follows_follower_id_fkey(id,name,avatar_url)').eq('following_id', profileId).order('created_at', { ascending: false }).limit(24),
+  const [{ data: myPosts }, { data: followers }, { data: following }] = profileId ? await Promise.all([
+    supabase.from('community_posts').select('id,caption,media_url,created_at,submissions(file_url)').eq('profile_id', profileId).order('created_at', { ascending: false }).limit(100),
+    supabase.from('community_follows').select('id,created_at,profiles!community_follows_follower_id_fkey(id,name,avatar_url)').eq('following_id', profileId).order('created_at', { ascending: false }).limit(30),
     supabase.from('community_follows').select('following_id').eq('follower_id', profileId),
-  ]) : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }];
+  ]) : [{ data: [] }, { data: [] }, { data: [] }];
+
+  const postIds = (myPosts || []).map((post: any) => post.id).filter(Boolean);
+  const postMap = new Map((myPosts || []).map((post: any) => [post.id, post]));
+
+  const [{ data: comments }, { data: likes }, { data: reposts }] = profileId && postIds.length ? await Promise.all([
+    supabase.from('community_comments').select('id,post_id,profile_id,created_at,comment,profiles(id,name,avatar_url)').in('post_id', postIds).order('created_at', { ascending: false }).limit(40),
+    supabase.from('community_likes').select('id,post_id,profile_id,created_at,profiles(id,name,avatar_url)').in('post_id', postIds).order('created_at', { ascending: false }).limit(40),
+    supabase.from('community_reposts').select('id,post_id,profile_id,created_at,profiles(id,name,avatar_url)').in('post_id', postIds).order('created_at', { ascending: false }).limit(30),
+  ]) : [{ data: [] }, { data: [] }, { data: [] }];
 
   const followingIds = new Set((following || []).map((item: any) => item.following_id));
 
-  const commentItems = (comments || []).map((item: any) => {
-    const post = related(item.community_posts) as any;
-    const actor = related(item.profiles) as any;
+  const mediaFor = (postId: string) => {
+    const post = postMap.get(postId) as any;
     const submission = related(post?.submissions) as any;
+    return post?.media_url || submission?.file_url || null;
+  };
+
+  const commentItems = (comments || []).map((item: any) => {
+    const actor = related(item.profiles) as any;
     const isMention = String(item.comment || '').includes('@');
-    return { type: isMention ? 'mention' : 'comment', actorId: actor?.id || null, date: item.created_at, name: actor?.name || 'Aluno VIP', avatarUrl: actor?.avatar_url || null, text: isMention ? `mencionou você: ${item.comment || 'nova menção'}` : `comentou: ${item.comment || 'nova mensagem'}`, mediaUrl: post?.media_url || submission?.file_url || null, href: `/aluno/comunidade#post-${post?.id || ''}` };
+    return { type: isMention ? 'mention' : 'comment', actorId: actor?.id || null, date: item.created_at, name: actor?.name || 'Aluno VIP', avatarUrl: actor?.avatar_url || null, text: isMention ? `mencionou você: ${item.comment || 'nova menção'}` : `comentou: ${item.comment || 'nova mensagem'}`, mediaUrl: mediaFor(item.post_id), href: `/aluno/comunidade#post-${item.post_id || ''}` };
   });
 
   const likeItems = (likes || []).map((item: any) => {
-    const post = related(item.community_posts) as any;
     const actor = related(item.profiles) as any;
-    const submission = related(post?.submissions) as any;
-    return { type: 'like', actorId: actor?.id || null, date: item.created_at, name: actor?.name || 'Aluno VIP', avatarUrl: actor?.avatar_url || null, text: 'curtiu sua prática', mediaUrl: post?.media_url || submission?.file_url || null, href: `/aluno/comunidade#post-${post?.id || ''}` };
+    return { type: 'like', actorId: actor?.id || null, date: item.created_at, name: actor?.name || 'Aluno VIP', avatarUrl: actor?.avatar_url || null, text: 'curtiu sua prática', mediaUrl: mediaFor(item.post_id), href: `/aluno/comunidade#post-${item.post_id || ''}` };
+  });
+
+  const repostItems = (reposts || []).map((item: any) => {
+    const actor = related(item.profiles) as any;
+    return { type: 'repost', actorId: actor?.id || null, date: item.created_at, name: actor?.name || 'Aluno VIP', avatarUrl: actor?.avatar_url || null, text: 'repostou sua prática', mediaUrl: mediaFor(item.post_id), href: `/aluno/comunidade#post-${item.post_id || ''}` };
   });
 
   const followItems = (followers || []).map((item: any) => {
@@ -74,9 +96,10 @@ export default async function NotificationsPage({ searchParams }: { searchParams
     return { type: 'follow', actorId: actor?.id || null, date: item.created_at, name: actor?.name || 'Aluno VIP', avatarUrl: actor?.avatar_url || null, text: 'começou a seguir você', mediaUrl: null, href: '/aluno/comunidade' };
   });
 
-  const allItems = [...commentItems, ...likeItems, ...followItems]
+  const allItems = [...commentItems, ...likeItems, ...repostItems, ...followItems]
+    .filter((item) => item.actorId !== profileId)
     .sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime())
-    .slice(0, 40);
+    .slice(0, 60);
 
   const items = allItems.filter((item) => {
     if (currentFilter === 'seguindo') return Boolean(item.actorId && followingIds.has(item.actorId));
@@ -105,16 +128,16 @@ export default async function NotificationsPage({ searchParams }: { searchParams
     <AppShell>
       <main className="ig-notifications-page">
         <header className="ig-notifications-header">
-          <Link href="/aluno/comunidade" prefetch aria-label="Voltar"><ChevronLeft size={34} /></Link>
+          <Link href="/aluno/comunidade" prefetch aria-label="Voltar"><ChevronLeft size={32} /></Link>
           <h1>Notificações</h1>
         </header>
-        <div className="ig-notification-tabs">
-          <Link href="/aluno/notificacoes" prefetch><span className={tabClass(currentFilter, 'tudo')}>Tudo</span></Link>
-          <Link href="/aluno/notificacoes?filtro=seguindo" prefetch><span className={tabClass(currentFilter, 'seguindo')}>Pessoas que você segue</span></Link>
-          <Link href="/aluno/notificacoes?filtro=comentarios" prefetch><span className={tabClass(currentFilter, 'comentarios')}>Comentários</span></Link>
-          <Link href="/aluno/notificacoes?filtro=mencoes" prefetch><span className={tabClass(currentFilter, 'mencoes')}>Menções</span></Link>
-        </div>
-        {items.length ? <section className="ig-notification-list">{today.length ? <><h2>Hoje</h2>{today.map(renderItem)}</> : null}{older.length ? <><h2>Ontem</h2>{older.map(renderItem)}</> : null}</section> : <section className="empty-community-feed"><h3>{emptyText}</h3><p>As interações da comunidade aparecem aqui conforme acontecerem.</p></section>}
+        <nav className="ig-notification-tabs" aria-label="Filtros de notificações">
+          <Link className={tabClass(currentFilter, 'tudo')} href="/aluno/notificacoes" prefetch>{filterLabel('tudo')}</Link>
+          <Link className={tabClass(currentFilter, 'seguindo')} href="/aluno/notificacoes?filtro=seguindo" prefetch>{filterLabel('seguindo')}</Link>
+          <Link className={tabClass(currentFilter, 'comentarios')} href="/aluno/notificacoes?filtro=comentarios" prefetch>{filterLabel('comentarios')}</Link>
+          <Link className={tabClass(currentFilter, 'mencoes')} href="/aluno/notificacoes?filtro=mencoes" prefetch>{filterLabel('mencoes')}</Link>
+        </nav>
+        {items.length ? <section className="ig-notification-list">{today.length ? <><h2>Hoje</h2>{today.map(renderItem)}</> : null}{older.length ? <><h2>Anteriores</h2>{older.map(renderItem)}</> : null}</section> : <section className="ig-notifications-empty"><h3>{emptyText}</h3><p>Quando alguém curtir, comentar, repostar ou seguir você, tudo aparece aqui.</p></section>}
       </main>
     </AppShell>
   );
