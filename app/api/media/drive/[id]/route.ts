@@ -4,6 +4,11 @@ import { createAdminClient } from '@/lib/supabase/admin';
 
 export const dynamic = 'force-dynamic';
 
+const ACCESS_CACHE_MS = 55 * 60 * 1000;
+const LESSON_ACCESS_CACHE_MS = 5 * 60 * 1000;
+const allowedFileCache = new Map<string, number>();
+let cachedAccessToken: { token: string; expiresAt: number } | null = null;
+
 type Params = { params: Promise<{ id: string }> };
 
 type ConnectionRow = {
@@ -22,26 +27,38 @@ function driveFileId(url?: string | null) {
 }
 
 async function canAccessLessonFile(fileId: string) {
+  const cachedUntil = allowedFileCache.get(fileId) || 0;
+  if (cachedUntil > Date.now()) return true;
+
   const cookieStore = await cookies();
   const email = cookieStore.get('hub_access_email')?.value;
   if (!email) return false;
 
   const supabase = createAdminClient();
-  const { data: profile } = await supabase.from('profiles').select('id,email').eq('email', email).maybeSingle();
+
+  const [{ data: profile }, { data: lessons }] = await Promise.all([
+    supabase.from('profiles').select('id,email').eq('email', email).maybeSingle(),
+    supabase
+      .from('exercises')
+      .select('id,drive_url,media_url,audio_url,is_active')
+      .eq('is_active', true)
+      .or(`drive_url.ilike.%${fileId}%,media_url.ilike.%${fileId}%,audio_url.ilike.%${fileId}%`)
+      .limit(1),
+  ]);
+
   if (!profile) return false;
-
-  const { data: lessons } = await supabase
-    .from('exercises')
-    .select('id,drive_url,media_url,audio_url,is_active')
-    .eq('is_active', true);
-
-  return (lessons || []).some((lesson) => {
+  const allowed = Boolean((lessons || []).some((lesson) => {
     const ids = [lesson.drive_url, lesson.media_url, lesson.audio_url].map(driveFileId).filter(Boolean);
     return ids.includes(fileId);
-  });
+  }));
+
+  if (allowed) allowedFileCache.set(fileId, Date.now() + LESSON_ACCESS_CACHE_MS);
+  return allowed;
 }
 
 async function loadAccess() {
+  if (cachedAccessToken && cachedAccessToken.expiresAt > Date.now() + 60_000) return cachedAccessToken.token;
+
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from('google_drive_connections')
@@ -54,8 +71,11 @@ async function loadAccess() {
   const row = data as ConnectionRow | null;
   if (!row?.access_token) return null;
 
-  const expiresAt = row.expires_at ? new Date(row.expires_at).getTime() : 0;
-  if (expiresAt > Date.now() + 60_000 || !row.refresh_token) return row.access_token;
+  const rowExpiresAt = row.expires_at ? new Date(row.expires_at).getTime() : 0;
+  if (rowExpiresAt > Date.now() + 60_000 || !row.refresh_token) {
+    cachedAccessToken = { token: row.access_token, expiresAt: rowExpiresAt || Date.now() + ACCESS_CACHE_MS };
+    return row.access_token;
+  }
 
   const refresh = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
@@ -68,9 +88,14 @@ async function loadAccess() {
     }),
   });
 
-  if (!refresh.ok) return row.access_token;
+  if (!refresh.ok) {
+    cachedAccessToken = { token: row.access_token, expiresAt: Date.now() + 5 * 60 * 1000 };
+    return row.access_token;
+  }
+
   const json = await refresh.json();
-  const expires = new Date(Date.now() + Number(json.expires_in || 3600) * 1000).toISOString();
+  const expiresAt = Date.now() + Number(json.expires_in || 3600) * 1000;
+  const expires = new Date(expiresAt).toISOString();
 
   await supabase.from('google_drive_connections').upsert({
     id: row.id,
@@ -82,6 +107,7 @@ async function loadAccess() {
     updated_at: new Date().toISOString(),
   });
 
+  cachedAccessToken = { token: json.access_token as string, expiresAt };
   return json.access_token as string;
 }
 
@@ -100,7 +126,8 @@ export async function GET(request: Request, { params }: Params) {
 
     const upstream = await fetch(`https://www.googleapis.com/drive/v3/files/${id}?alt=media&supportsAllDrives=true`, {
       headers: driveHeaders,
-    });
+      cf: { cacheTtl: range ? 300 : 900, cacheEverything: false },
+    } as RequestInit & { cf?: { cacheTtl?: number; cacheEverything?: boolean } });
 
     if (!upstream.ok || !upstream.body) {
       return NextResponse.json({ error: 'drive_video_unavailable', status: upstream.status }, { status: upstream.status || 500 });
@@ -109,9 +136,10 @@ export async function GET(request: Request, { params }: Params) {
     const headers = new Headers();
     headers.set('content-type', upstream.headers.get('content-type') || 'video/mp4');
     headers.set('accept-ranges', 'bytes');
-    headers.set('cache-control', 'private, no-store, max-age=0');
+    headers.set('cache-control', 'private, max-age=300, stale-while-revalidate=600');
     headers.set('x-content-type-options', 'nosniff');
     headers.set('content-disposition', 'inline');
+    headers.set('vary', 'Range');
     const len = upstream.headers.get('content-length');
     const rangeHeader = upstream.headers.get('content-range');
     if (len) headers.set('content-length', len);
