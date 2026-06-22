@@ -2,6 +2,7 @@ import { revalidatePath } from 'next/cache';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { AdminInlineLessonName } from '@/components/admin-inline-lesson-name';
 import { AdminLoadingLink } from '@/components/admin-loading-link';
+import { AdminProductCoverPreview } from '@/components/admin-product-cover-preview';
 
 export const dynamic = 'force-dynamic';
 
@@ -256,13 +257,7 @@ export default async function ProductEditPage({ params, searchParams }: { params
                 <div className="admin-clean-form-row"><label>Tipo de pagamento<select name="billing_type" defaultValue={product.billing_type || 'one_time'}><option value="one_time">Pagamento unico</option><option value="recurring">Assinatura recorrente</option></select></label><label>Preco<input name="price" type="number" step="0.01" defaultValue={price(product.price_cents)} /></label></div>
                 <div className="admin-clean-form-row"><label>Status<select name="status" defaultValue={product.status || 'draft'}><option value="draft">Rascunho</option><option value="published">Publicado</option><option value="archived">Arquivado</option></select></label><label>URL da capa<input name="cover_url" defaultValue={product.cover_url || ''} /></label></div>
               </div>
-              <aside className="product-cover-editor">
-                <span className="admin-clean-eyebrow">Capa do produto</span>
-                <div className="product-cover-preview">{product.cover_url ? <img src={product.cover_url} alt={product.name} /> : <strong>{String(product.name || 'FC').slice(0, 2).toUpperCase()}</strong>}</div>
-                <p>Recomendado: 1280x720 para vitrine e checkout. A prévia atualiza após salvar.</p>
-                <label className="admin-upload-drop">Enviar capa<input name="cover_file" type="file" accept="image/png,image/jpeg,image/webp" /></label>
-                <label className="admin-clean-check"><input name="remove_cover" value="1" type="checkbox" /> Remover capa atual</label>
-              </aside>
+              <AdminProductCoverPreview initialUrl={product.cover_url} fallback={String(product.name || 'FC').slice(0, 2).toUpperCase()} />
             </section>
             <button className="admin-clean-button primary" type="submit">Salvar produto</button>
           </form>
