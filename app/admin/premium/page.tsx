@@ -2,19 +2,22 @@ import { createAdminClient } from '@/lib/supabase/admin';
 
 export const dynamic = 'force-dynamic';
 
+type SearchParams = { status?: string };
+
 type Subscription = {
+  id?: string;
   status?: string | null;
   current_period_end?: string | null;
   product_name?: string | null;
   provider?: string | null;
   updated_at?: string | null;
+  provider_customer_id?: string | null;
+  profiles?: any;
 };
 
-type SearchParams = { status?: string };
-
-function relatedSub(value: unknown): Subscription | null {
-  if (Array.isArray(value)) return (value[0] || null) as Subscription | null;
-  return (value || null) as Subscription | null;
+function relatedProfile(value: unknown) {
+  if (Array.isArray(value)) return value[0] || null;
+  return value || null;
 }
 
 function accessStatus(subscription?: Subscription | null) {
@@ -50,14 +53,16 @@ export default async function AdminPremiumPage({ searchParams }: { searchParams?
   const params = await searchParams;
   const currentFilter = normalizeFilter(params?.status);
   const supabase = createAdminClient();
-  const students = await safeQuery(
+
+  const subscriptions = await safeQuery(
     supabase
-      .from('profiles')
-      .select('id,name,email,whatsapp,role,created_at,subscriptions(status,current_period_end,product_name,provider,updated_at)')
-      .order('created_at', { ascending: false })
-      .limit(500),
-    [] as any[]
+      .from('subscriptions')
+      .select('id,status,current_period_end,product_name,provider,provider_customer_id,updated_at,profiles(id,name,email,whatsapp,created_at)')
+      .order('updated_at', { ascending: false })
+      .limit(1000),
+    [] as Subscription[]
   );
+
   const logs = await safeQuery(
     supabase
       .from('kiwify_webhook_events')
@@ -67,11 +72,15 @@ export default async function AdminPremiumPage({ searchParams }: { searchParams?
     [] as any[]
   );
 
-  const rows = (students || []).map((student: any) => {
-    const subscription = relatedSub(student.subscriptions);
+  const rows = (subscriptions || []).map((subscription: Subscription) => {
+    const profile = relatedProfile(subscription.profiles);
+    const email = profile?.email || subscription.provider_customer_id || 'sem-email';
+    const name = profile?.name || email.split('@')[0] || 'Sem nome';
+    const student = { id: profile?.id || subscription.id || email, name, email, whatsapp: profile?.whatsapp || null };
     const state = accessStatus(subscription);
     return { student, subscription, state, whatsapp: whatsappLink(student.whatsapp, student.name, state.tone) };
   });
+
   const activeRows = rows.filter((row) => row.state.active);
   const lateRows = rows.filter((row) => row.state.tone === 'late');
   const pendingRows = rows.filter((row) => row.state.tone === 'pending');
@@ -112,7 +121,7 @@ export default async function AdminPremiumPage({ searchParams }: { searchParams?
         <article><p className="eyebrow">Cobrança</p><h3>Assinaturas atrasadas</h3><p>{lateRows.length ? `${lateRows.length} alunos para cobrar renovacao.` : 'Nenhuma assinatura atrasada.'}</p><textarea readOnly value={lateEmails} placeholder="E-mails atrasados aparecem aqui" /></article>
       </section>
 
-      <section className="card admin-section"><div className="section-heading"><div><p className="eyebrow">Gestao de acesso</p><h2>Lista premium</h2></div><span className="pill">{filteredRows.length} contatos</span></div><div className="premium-table">{filteredRows.map(({ student, subscription, state, whatsapp }) => (<article className={`premium-row ${state.tone}`} key={student.id}><div><span className={`premium-status ${state.tone}`}>{state.label}</span><h3>{student.name || 'Sem nome'}</h3><p>{student.email}</p><small>{student.whatsapp || 'WhatsApp nao informado'}</small></div><div><strong>{subscription?.product_name || 'Produto nao informado'}</strong><span>{subscription?.provider || 'kiwify'}</span><small>Periodo informado: {subscription?.current_period_end || 'sem data'}</small></div><div className="premium-actions"><span className={state.remove ? 'remove-tag' : state.tone === 'late' ? 'late-tag' : 'keep-tag'}>{state.action}</span>{whatsapp ? <a className="button secondary" href={whatsapp} target="_blank">WhatsApp</a> : null}</div></article>))}{!filteredRows.length ? <p className="muted">Nenhum contato neste filtro.</p> : null}</div></section>
+      <section className="card admin-section"><div className="section-heading"><div><p className="eyebrow">Gestao de acesso</p><h2>Lista premium</h2></div><span className="pill">{filteredRows.length} contatos</span></div><div className="premium-table">{filteredRows.map(({ student, subscription, state, whatsapp }) => (<article className={`premium-row ${state.tone}`} key={`${student.id}-${subscription?.id || student.email}`}><div><span className={`premium-status ${state.tone}`}>{state.label}</span><h3>{student.name || 'Sem nome'}</h3><p>{student.email}</p><small>{student.whatsapp || 'WhatsApp nao informado'}</small></div><div><strong>{subscription?.product_name || 'Produto nao informado'}</strong><span>{subscription?.provider || 'kiwify'}</span><small>Periodo informado: {subscription?.current_period_end || 'sem data'}</small></div><div className="premium-actions"><span className={state.remove ? 'remove-tag' : state.tone === 'late' ? 'late-tag' : 'keep-tag'}>{state.action}</span>{whatsapp ? <a className="button secondary" href={whatsapp} target="_blank">WhatsApp</a> : null}</div></article>))}{!filteredRows.length ? <p className="muted">Nenhuma assinatura neste filtro. Se voce importou em uma tabela temporaria, execute o SQL de sincronizacao para preencher subscriptions.</p> : null}</div></section>
 
       <section className="card admin-section"><div className="section-heading"><div><p className="eyebrow">Diagnostico</p><h2>Ultimos eventos recebidos da Kiwify</h2></div><span className="pill">{logs.length} eventos</span></div><div className="premium-log-list">{logs.length ? logs.map((log: any) => (<article className={`premium-log-row ${log.status}`} key={log.id}><div><strong>{log.event_name || 'evento'}</strong><p>{log.customer_email || 'sem email'} - {log.product_name || 'sem produto'}</p></div><span>{log.mapped_status || log.status}</span><small>{log.error_message || log.created_at}</small></article>)) : <p className="muted">Nenhum evento registrado ainda.</p>}</div></section>
     </main>
