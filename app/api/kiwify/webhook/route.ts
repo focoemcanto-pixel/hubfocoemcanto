@@ -1,13 +1,59 @@
-import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
 import { getKiwifyCustomer, getKiwifyEventName, getKiwifyProduct, getKiwifySubscription, getKiwifyToken, mapKiwifyStatus, type KiwifyPayload } from '@/lib/kiwify/events';
 
-export const runtime = 'edge';
+export const dynamic = 'force-dynamic';
 
 type ProcessingResult = { ok: boolean; error?: string; profileId?: string; subscriptionId?: string };
 
-function getAdminClient() {
-  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { persistSession: false } });
+function json(payload: unknown, status = 200) {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
+  });
+}
+
+function supabaseConfig() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) throw new Error('supabase_env_missing');
+  return { url: url.replace(/\/$/, ''), key };
+}
+
+async function supabaseRequest(path: string, init: RequestInit = {}) {
+  const { url, key } = supabaseConfig();
+  return fetch(`${url}/rest/v1/${path}`, {
+    ...init,
+    headers: {
+      apikey: key,
+      authorization: `Bearer ${key}`,
+      'content-type': 'application/json',
+      ...init.headers,
+    },
+  });
+}
+
+async function upsertProfile(email: string, name?: string, phone?: string) {
+  const basePayload: Record<string, string> = { email, role: 'student' };
+  if (name) basePayload.name = name;
+  const fullPayload: Record<string, string> = { ...basePayload };
+  if (phone) fullPayload.whatsapp = phone;
+
+  async function attempt(payload: Record<string, string>) {
+    const response = await supabaseRequest('profiles?on_conflict=email&select=id', {
+      method: 'POST',
+      headers: { prefer: 'resolution=merge-duplicates,return=representation' },
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json().catch(() => null);
+    return { response, data };
+  }
+
+  const first = await attempt(fullPayload);
+  if (first.response.ok && Array.isArray(first.data) && first.data[0]?.id) return { id: first.data[0].id as string };
+
+  const second = await attempt(basePayload);
+  if (second.response.ok && Array.isArray(second.data) && second.data[0]?.id) return { id: second.data[0].id as string };
+
+  return { error: JSON.stringify(second.data || first.data || { status: second.response.status }) };
 }
 
 function isAuthorized(request: Request, payload: KiwifyPayload) {
@@ -30,25 +76,16 @@ async function parsePayload(request: Request): Promise<{ payload: KiwifyPayload;
   }
 }
 
-async function safeLog(supabase: ReturnType<typeof getAdminClient>, row: Record<string, unknown>) {
+async function safeLog(row: Record<string, unknown>) {
   try {
-    await supabase.from('kiwify_webhook_events').insert(row);
+    await supabaseRequest('kiwify_webhook_events', {
+      method: 'POST',
+      headers: { prefer: 'return=minimal' },
+      body: JSON.stringify(row),
+    });
   } catch {
-    // Log table is optional. Never fail Kiwify because of logging.
+    // Optional diagnostics table. Never fail the webhook because of logging.
   }
-}
-
-async function upsertProfile(supabase: ReturnType<typeof getAdminClient>, email: string, name?: string, phone?: string) {
-  const basePayload: Record<string, string> = { email, role: 'student' };
-  if (name) basePayload.name = name;
-  const fullPayload: Record<string, string> = { ...basePayload };
-  if (phone) fullPayload.whatsapp = phone;
-
-  const first = await supabase.from('profiles').upsert(fullPayload, { onConflict: 'email' }).select('id').single();
-  if (!first.error && first.data) return first;
-
-  // Some older schemas do not have whatsapp. Fallback keeps the webhook working.
-  return supabase.from('profiles').upsert(basePayload, { onConflict: 'email' }).select('id').single();
 }
 
 async function processSubscription(payload: KiwifyPayload): Promise<ProcessingResult> {
@@ -60,13 +97,14 @@ async function processSubscription(payload: KiwifyPayload): Promise<ProcessingRe
   const email = customer.email;
   if (!email) return { ok: false, error: 'customer_email_missing' };
 
-  const supabase = getAdminClient();
-  const { data: profile, error: profileError } = await upsertProfile(supabase, email, customer.name, customer.phone);
-  if (profileError || !profile) return { ok: false, error: profileError?.message || 'profile_error' };
+  const profile = await upsertProfile(email, customer.name, customer.phone);
+  if ('error' in profile || !profile.id) return { ok: false, error: profile.error || 'profile_error' };
 
   const providerSubscriptionId = subscription.id || subscription.orderId || `${email}:kiwify`;
-  const { error } = await supabase.from('subscriptions').upsert(
-    {
+  const response = await supabaseRequest('subscriptions?on_conflict=provider_subscription_id', {
+    method: 'POST',
+    headers: { prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify({
       profile_id: profile.id,
       provider: 'kiwify',
       provider_customer_id: email,
@@ -76,22 +114,30 @@ async function processSubscription(payload: KiwifyPayload): Promise<ProcessingRe
       current_period_end: subscription.currentPeriodEnd || null,
       raw_payload: payload,
       updated_at: new Date().toISOString(),
-    },
-    { onConflict: 'provider_subscription_id' }
-  );
+    }),
+  });
 
-  if (error) return { ok: false, error: error.message, profileId: profile.id, subscriptionId: providerSubscriptionId };
+  if (!response.ok) {
+    const detail = await response.text().catch(() => 'subscription_error');
+    return { ok: false, error: detail, profileId: profile.id, subscriptionId: providerSubscriptionId };
+  }
+
   return { ok: true, profileId: profile.id, subscriptionId: providerSubscriptionId };
 }
 
 export async function GET(request: Request) {
-  return NextResponse.json({
-    ok: true,
-    service: 'Hub Foco em Canto Kiwify Webhook',
-    method: 'POST',
-    webhook_url: `${new URL(request.url).origin}/api/kiwify/webhook`,
-    needs_sql: ['subscriptions', 'kiwify_webhook_events'],
-  });
+  try {
+    supabaseConfig();
+    return json({
+      ok: true,
+      service: 'Hub Foco em Canto Kiwify Webhook',
+      method: 'POST',
+      webhook_url: `${new URL(request.url).origin}/api/kiwify/webhook`,
+      status: 'ready',
+    });
+  } catch (error) {
+    return json({ ok: false, service: 'Hub Foco em Canto Kiwify Webhook', error: error instanceof Error ? error.message : 'config_error' }, 200);
+  }
 }
 
 export async function POST(request: Request) {
@@ -101,15 +147,20 @@ export async function POST(request: Request) {
   const product = getKiwifyProduct(payload);
   const subscription = getKiwifySubscription(payload);
   const status = mapKiwifyStatus(eventName, subscription.status);
-  const supabase = getAdminClient();
 
   if (!isAuthorized(request, payload)) {
-    await safeLog(supabase, { event_name: eventName, customer_email: customer.email, product_name: product.name, status: 'unauthorized', raw_payload: payload, raw_body: raw });
-    return NextResponse.json({ ok: false, error: 'unauthorized_webhook' }, { status: 401 });
+    await safeLog({ event_name: eventName, customer_email: customer.email, product_name: product.name, status: 'unauthorized', raw_payload: payload, raw_body: raw });
+    return json({ ok: false, error: 'unauthorized_webhook' }, 200);
   }
 
-  const result = await processSubscription(payload);
-  await safeLog(supabase, {
+  let result: ProcessingResult;
+  try {
+    result = await processSubscription(payload);
+  } catch (error) {
+    result = { ok: false, error: error instanceof Error ? error.message : 'unknown_error' };
+  }
+
+  await safeLog({
     event_name: eventName,
     customer_email: customer.email,
     product_name: product.name,
@@ -121,7 +172,5 @@ export async function POST(request: Request) {
     raw_body: raw,
   });
 
-  // Return 200 even when DB schema is missing, so Kiwify test can confirm the endpoint is reachable.
-  // The response body still shows the real processing error.
-  return NextResponse.json({ ok: result.ok, event: eventName, email: customer.email, product: product.name, status, subscription_id: result.subscriptionId, error: result.error });
+  return json({ ok: result.ok, event: eventName, email: customer.email, product: product.name, status, subscription_id: result.subscriptionId, error: result.error }, 200);
 }
