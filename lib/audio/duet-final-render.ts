@@ -6,11 +6,11 @@ export type FinalRenderSettings = {
   preset: VoicePreset;
 };
 
-type RenderArgs = {
+export type RenderArgs = {
   visualBlob: Blob;
   voiceBlob: Blob;
   referenceBlob?: Blob | null;
-  referenceSource: string;
+  referenceSource?: string | null;
   settings: FinalRenderSettings;
 };
 
@@ -125,7 +125,7 @@ export async function renderFinalDuetVideo({ visualBlob, voiceBlob, referenceBlo
   const audioCtx = new AudioCtx({ latencyHint: 'playback', sampleRate: 48000 });
   const [voiceBuffer, referenceBuffer] = await Promise.all([
     decodeBlob(audioCtx, voiceBlob),
-    referenceBlob ? decodeBlob(audioCtx, referenceBlob) : decodeUrl(audioCtx, referenceSource),
+    referenceBlob ? decodeBlob(audioCtx, referenceBlob) : decodeUrl(audioCtx, referenceSource || ''),
   ]);
 
   const canvas = document.createElement('canvas');
