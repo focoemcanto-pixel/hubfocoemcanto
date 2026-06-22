@@ -1,6 +1,7 @@
 import './admin.css';
 import './school-admin.css';
 import './admin-redesign.css';
+import './module-settings-overrides.css';
 import '../app-premium.css';
 
 const navItems = [
