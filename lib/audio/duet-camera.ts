@@ -5,6 +5,27 @@ type PrepareDuetCameraOptions = {
   micMode?: DuetMicMode;
 };
 
+function centerMicAudio(stream: MediaStream) {
+  const audioTrack = stream.getAudioTracks()[0];
+  if (!audioTrack) return stream;
+  const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!AudioCtx) return stream;
+
+  const ctx = new AudioCtx({ latencyHint: 'interactive', sampleRate: 48000 });
+  const source = ctx.createMediaStreamSource(new MediaStream([audioTrack]));
+  const splitter = ctx.createChannelSplitter(2);
+  const mono = ctx.createGain();
+  const destination = ctx.createMediaStreamDestination();
+
+  mono.gain.value = 0.9;
+  source.connect(splitter);
+  splitter.connect(mono, 0);
+  try { splitter.connect(mono, 1); } catch {}
+  mono.connect(destination);
+
+  return new MediaStream([...stream.getVideoTracks(), ...destination.stream.getAudioTracks()]);
+}
+
 export async function prepareDuetCamera(camera: HTMLVideoElement | null, options: PrepareDuetCameraOptions = {}) {
   const isCleanMode = options.micMode === 'clean';
   const audio: MediaTrackConstraints = {
@@ -19,7 +40,7 @@ export async function prepareDuetCamera(camera: HTMLVideoElement | null, options
     audio.deviceId = { exact: options.audioDeviceId };
   }
 
-  const stream = await navigator.mediaDevices.getUserMedia({
+  const rawStream = await navigator.mediaDevices.getUserMedia({
     video: {
       facingMode: 'user',
       width: { ideal: 720, max: 1280 },
@@ -28,6 +49,7 @@ export async function prepareDuetCamera(camera: HTMLVideoElement | null, options
     },
     audio,
   });
+  const stream = centerMicAudio(rawStream);
 
   if (camera) {
     camera.muted = true;
