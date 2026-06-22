@@ -91,7 +91,9 @@ export default async function ProductEditPage({ params }: { params: Promise<{ id
   ]);
 
   const linkedIds = new Set(((links || []) as Row[]).map((link) => link.module_id));
-  const modules = ((allModules || []) as Row[]).filter((module) => linkedIds.has(module.id));
+  const cleanModules = ((allModules || []) as Row[]).filter((module) => !String(module.description || '').toLowerCase().includes('importados da pasta'));
+  const isVipProduct = String(product.slug || '').includes('grupo-vip') || String(product.name || '').toLowerCase().includes('grupo vip');
+  const modules = linkedIds.size ? cleanModules.filter((module) => linkedIds.has(module.id)) : (isVipProduct ? cleanModules : []);
 
   return (
     <main className="admin-page-clean">
