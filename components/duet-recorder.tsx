@@ -9,6 +9,7 @@ import { buildDuetMonitorAudio } from '@/lib/audio/duet-monitor';
 import { proxiedVideoUrl } from '@/lib/audio/duet-recording-utils';
 import { useDuetBufferRecorder } from '@/lib/audio/use-duet-buffer-recorder';
 import { renderFinalDuetVideo } from '@/lib/audio/duet-final-render';
+import { calculateDuetAutoMix } from '@/lib/audio/duet-automix';
 import { deviceHint, listAudioInputDevices, preferredPhoneMicDeviceId, type AudioInputDevice } from '@/lib/audio/audio-device-utils';
 import { estimateDuetLatencyMs } from '@/lib/audio/duet-latency';
 import type { VoicePreset } from '@/lib/audio/duet-buffer-engine';
@@ -38,6 +39,8 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
   const [audioSetupUnlocked, setAudioSetupUnlocked] = useState(false);
   const [showMixer, setShowMixer] = useState(false);
   const [renderStatus, setRenderStatus] = useState('');
+  const [isAutoMixing, setIsAutoMixing] = useState(false);
+  const [autoMixMessage, setAutoMixMessage] = useState('');
   const premiumRenderCacheRef = useRef<{ signature: string; blob: Blob } | null>(null);
 
   const selectedAudioDevice = audioDevices.find((device) => device.deviceId === selectedAudioDeviceId) || null;
@@ -120,6 +123,8 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
     setPostCommunity(false);
     setShowMixer(false);
     setRenderStatus('');
+    setIsAutoMixing(false);
+    setAutoMixMessage('');
   }
 
   async function startCountdown() {
@@ -240,9 +245,11 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
         recorder.voiceBlobRef.current = voiceBlob;
         recorder.referenceBlobRef.current = referenceBlob;
         recorder.setVisualUrl(URL.createObjectURL(visualBlob));
-        recorder.prepareEngine(voiceBlob, referenceBlob).catch(() => {
-          recorder.setError('O motor ao vivo não conseguiu preparar os áudios gravados. A prévia original ainda pode ser enviada.');
-        });
+        recorder.prepareEngine(voiceBlob, referenceBlob)
+          .then(() => applyAutoMix(true))
+          .catch(() => {
+            recorder.setError('O motor ao vivo não conseguiu preparar os áudios gravados. A prévia original ainda pode ser enviada.');
+          });
       }
     }, 900);
 
@@ -252,6 +259,32 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
   function stopRecording() { recorder.mediaRecorderRef.current?.stop(); }
   function reset() { recorder.cleanup(); resetLocalState(); recorder.setStep('intro'); }
   async function togglePlayback() { await recorder.togglePlayback(); }
+
+  async function applyAutoMix(isInitial = false) {
+    const voiceBlob = recorder.voiceBlobRef.current;
+    const referenceBlob = recorder.referenceBlobRef.current;
+    if (!voiceBlob || (!referenceBlob && !referenceSource)) return;
+    setIsAutoMixing(true);
+    setAutoMixMessage(isInitial ? 'Analisando sua voz e a referência...' : 'Analisando áudio...');
+    try {
+      const result = await calculateDuetAutoMix({
+        voiceBlob,
+        referenceBlob,
+        referenceSource,
+        currentPreset: recorder.preset,
+      });
+      recorder.setVoiceVolume(result.voiceVolume);
+      recorder.setReferenceVolume(result.referenceVolume);
+      recorder.setPreset(result.preset);
+      premiumRenderCacheRef.current = null;
+      setAutoMixMessage(result.message);
+      if (!isInitial) setShowMixer(true);
+    } catch {
+      setAutoMixMessage(isInitial ? '' : 'Não consegui analisar automaticamente. Ajuste manualmente.');
+    } finally {
+      setIsAutoMixing(false);
+    }
+  }
 
   function fallbackUploadBlob() {
     return recorder.finalBlobRef.current;
@@ -390,14 +423,14 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
 
       {renderStatus && recorder.step !== 'rendering' && recorder.step !== 'posted' ? <p className="duet-render-status">{renderStatus}</p> : null}
       {recorder.step === 'review' ? <div className="duet-mixer-toggle-wrap"><button type="button" className="button secondary" onClick={() => setShowMixer((value) => !value)}><SlidersHorizontal size={16} /> {showMixer ? 'Ocultar mixer' : 'Editar mixagem'}</button></div> : null}
-      {recorder.step === 'review' && showMixer ? <DuetMixerPanel voiceVolume={recorder.voiceVolume} referenceVolume={recorder.referenceVolume} preset={recorder.preset as VoicePreset} canLiveEdit={recorder.canLiveEdit} latencyMs={recorder.latencyMs} noiseReduction={recorder.noiseReduction} onVoiceChange={recorder.setVoiceVolume} onReferenceChange={recorder.setReferenceVolume} onPresetChange={recorder.setPreset} onLatencyChange={recorder.setLatencyMs} onNoiseReductionChange={recorder.setNoiseReduction} onReset={() => { recorder.setVoiceVolume(DEFAULT_VOICE_VOLUME); recorder.setReferenceVolume(DEFAULT_REFERENCE_VOLUME); recorder.setPreset(DEFAULT_PRESET); recorder.setNoiseReduction(false); recorder.setLatencyMs(estimateDuetLatencyMs(selectedAudioDevice?.label)); }} /> : null}
+      {recorder.step === 'review' && showMixer ? <DuetMixerPanel voiceVolume={recorder.voiceVolume} referenceVolume={recorder.referenceVolume} preset={recorder.preset as VoicePreset} canLiveEdit={recorder.canLiveEdit} latencyMs={recorder.latencyMs} noiseReduction={recorder.noiseReduction} isAutoMixing={isAutoMixing} autoMixMessage={autoMixMessage} onAutoMix={() => applyAutoMix(false)} onVoiceChange={recorder.setVoiceVolume} onReferenceChange={recorder.setReferenceVolume} onPresetChange={recorder.setPreset} onLatencyChange={recorder.setLatencyMs} onNoiseReductionChange={recorder.setNoiseReduction} onReset={() => { recorder.setVoiceVolume(DEFAULT_VOICE_VOLUME); recorder.setReferenceVolume(DEFAULT_REFERENCE_VOLUME); recorder.setPreset(DEFAULT_PRESET); recorder.setNoiseReduction(false); recorder.setLatencyMs(estimateDuetLatencyMs(selectedAudioDevice?.label)); setAutoMixMessage(''); }} /> : null}
 
       <section className="duet-control-bar premium-duet-control-bar reels-review-actions">
         {recorder.step === 'recording' ? <><span className="recording-dot">● Gravando dueto</span><button className="button danger" onClick={stopRecording}>Finalizar gravação</button></> : null}
         {recorder.step === 'review' ? <><button className="button secondary" onClick={reset} disabled={recorder.isSubmitting}><RefreshCcw size={16} /> Regravar</button><label className="community-toggle review-community-toggle"><input type="checkbox" checked={postCommunity} onChange={(event) => setPostCommunity(event.target.checked)} disabled={recorder.isSubmitting} /> Publicar também na comunidade</label><button className="button" onClick={() => postCommunity ? recorder.setStep('caption') : submitDuet('', false)} disabled={recorder.isSubmitting}><UploadCloud size={16} /> {postCommunity ? 'Continuar' : recorder.isSubmitting ? (renderStatus || 'Publicando...') : 'Enviar para avaliação'}</button></> : null}
       </section>
 
-      {recorder.step === 'review' ? <section className="duet-review-note premium-duet-note"><CheckCircle2 size={24} /><div><h2>Dueto pronto</h2><p>Por padrão ele fica natural. Abra o mixer apenas se quiser ajustar volume, efeito ou redução de ruído pós-gravação.</p></div></section> : null}
+      {recorder.step === 'review' ? <section className="duet-review-note premium-duet-note"><CheckCircle2 size={24} /><div><h2>Dueto pronto</h2><p>O Hub já tenta equilibrar voz e referência automaticamente. Abra o mixer apenas se quiser refinar.</p></div></section> : null}
       {recorder.step === 'caption' ? <section className="caption-box duet-caption-box premium-duet-note reels-publish-card"><div><h2>Legenda da comunidade</h2><p>Compartilhe sua prática no feed.</p><textarea value={caption} onChange={(event) => setCaption(event.target.value)} placeholder="Escreva uma legenda para o feed..." /></div><button className="button" onClick={() => submitDuet(caption || 'Minha prática do dueto.', true)} disabled={recorder.isSubmitting}>{recorder.isSubmitting ? (renderStatus || 'Publicando...') : 'Publicar no feed e enviar'}</button></section> : null}
       {recorder.step === 'posted' ? <section className="posted-box duet-posted-box premium-duet-note"><CheckCircle2 size={28} /><div><h2>Atividade enviada</h2><p>Sua gravação já foi publicada. Se você ajustar a mix, o Hub refina só essa camada em segundo plano.</p><a className="button secondary" href={`/aluno/aula/${lessonSlug}`}>Voltar para aula</a></div></section> : null}
     </div>
