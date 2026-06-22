@@ -7,7 +7,9 @@ type Bus = {
   referenceInput: GainNode;
   referenceGain: GainNode;
   highpass: BiquadFilterNode;
+  body: BiquadFilterNode;
   presence: BiquadFilterNode;
+  air: BiquadFilterNode;
   compressor: DynamicsCompressorNode;
   delay: DelayNode;
   wet: GainNode;
@@ -75,8 +77,10 @@ export class DuetBufferEngine {
     if (!bus) return;
     const { voiceVolume, referenceVolume, preset } = this.getSettings();
     const now = bus.ctx.currentTime;
-    bus.voiceGain.gain.setTargetAtTime((voiceVolume / 100) * this.voiceNormalize, now, 0.006);
-    bus.referenceGain.gain.setTargetAtTime(referenceVolume / 100, now, 0.006);
+    bus.voiceGain.gain.cancelScheduledValues(now);
+    bus.referenceGain.gain.cancelScheduledValues(now);
+    bus.voiceGain.gain.setTargetAtTime((voiceVolume / 100) * this.voiceNormalize, now, 0.003);
+    bus.referenceGain.gain.setTargetAtTime(referenceVolume / 100, now, 0.003);
     this.applyPreset(bus, preset);
   }
 
@@ -92,6 +96,7 @@ export class DuetBufferEngine {
   async play() {
     if (!this.bus || !this.voiceBuffer || !this.referenceBuffer || !this.video) return;
     this.stopSources();
+    this.applySettings();
     const duration = this.duration();
     let offset = this.offset;
     if (duration && offset >= duration - 0.05) offset = 0;
@@ -214,43 +219,75 @@ export class DuetBufferEngine {
     const referenceInput = ctx.createGain();
     const referenceGain = ctx.createGain();
     const highpass = ctx.createBiquadFilter();
+    const body = ctx.createBiquadFilter();
     const presence = ctx.createBiquadFilter();
+    const air = ctx.createBiquadFilter();
     const compressor = ctx.createDynamicsCompressor();
-    const delay = ctx.createDelay(0.35);
+    const delay = ctx.createDelay(0.45);
     const wet = ctx.createGain();
     const dry = ctx.createGain();
     const limiter = ctx.createDynamicsCompressor();
 
     highpass.type = 'highpass';
+    body.type = 'peaking';
     presence.type = 'peaking';
+    air.type = 'highshelf';
     limiter.threshold.value = -5.5;
     limiter.knee.value = 1.5;
     limiter.ratio.value = 14;
     limiter.attack.value = 0.002;
     limiter.release.value = 0.08;
 
-    voiceInput.connect(voiceGain).connect(highpass).connect(presence).connect(compressor);
+    voiceInput.connect(voiceGain).connect(highpass).connect(body).connect(presence).connect(air).connect(compressor);
     compressor.connect(dry).connect(limiter);
     compressor.connect(delay).connect(wet).connect(limiter);
     limiter.connect(destination);
     referenceInput.connect(referenceGain).connect(destination);
 
-    return { ctx, voiceInput, voiceGain, referenceInput, referenceGain, highpass, presence, compressor, delay, wet, dry, limiter };
+    return { ctx, voiceInput, voiceGain, referenceInput, referenceGain, highpass, body, presence, air, compressor, delay, wet, dry, limiter };
   }
 
   private applyPreset(nodes: Bus, selected: VoicePreset) {
     const now = nodes.ctx.currentTime;
-    nodes.highpass.frequency.setTargetAtTime(selected === 'natural' ? 70 : 95, now, 0.01);
-    nodes.presence.frequency.setTargetAtTime(3200, now, 0.01);
-    nodes.presence.Q.setTargetAtTime(0.9, now, 0.01);
-    nodes.presence.gain.setTargetAtTime(selected === 'natural' ? 1.2 : selected === 'coral' ? 2.2 : 3.2, now, 0.01);
-    nodes.compressor.threshold.setTargetAtTime(selected === 'natural' ? -21 : -28, now, 0.01);
-    nodes.compressor.knee.setTargetAtTime(18, now, 0.01);
-    nodes.compressor.ratio.setTargetAtTime(selected === 'natural' ? 2.2 : 4.2, now, 0.01);
-    nodes.compressor.attack.setTargetAtTime(0.004, now, 0.01);
-    nodes.compressor.release.setTargetAtTime(0.18, now, 0.01);
-    nodes.delay.delayTime.setTargetAtTime(selected === 'coral' ? 0.028 : selected === 'worship' ? 0.12 : 0.001, now, 0.01);
-    nodes.wet.gain.setTargetAtTime(selected === 'coral' ? 0.18 : selected === 'worship' ? 0.14 : 0, now, 0.01);
-    nodes.dry.gain.setTargetAtTime(selected === 'natural' ? 1 : 0.94, now, 0.01);
+    const set = (param: AudioParam, value: number, speed = 0.006) => {
+      param.cancelScheduledValues(now);
+      param.setTargetAtTime(value, now, speed);
+    };
+
+    const presets: Record<VoicePreset, {
+      highpass: number;
+      bodyGain: number;
+      presenceGain: number;
+      airGain: number;
+      threshold: number;
+      ratio: number;
+      delay: number;
+      wet: number;
+      dry: number;
+    }> = {
+      natural: { highpass: 65, bodyGain: 0.2, presenceGain: 0.8, airGain: 0.4, threshold: -18, ratio: 1.8, delay: 0.001, wet: 0, dry: 1 },
+      studio: { highpass: 92, bodyGain: 2.4, presenceGain: 6.2, airGain: 4.5, threshold: -32, ratio: 5.8, delay: 0.018, wet: 0.05, dry: 0.95 },
+      worship: { highpass: 105, bodyGain: 1.4, presenceGain: 4.8, airGain: 5.6, threshold: -30, ratio: 4.6, delay: 0.16, wet: 0.28, dry: 0.9 },
+      coral: { highpass: 115, bodyGain: 0.6, presenceGain: 3.2, airGain: 2.2, threshold: -28, ratio: 4, delay: 0.035, wet: 0.36, dry: 0.82 },
+    };
+    const current = presets[selected];
+
+    set(nodes.highpass.frequency, current.highpass);
+    set(nodes.body.frequency, 240);
+    set(nodes.body.Q, 0.7);
+    set(nodes.body.gain, current.bodyGain);
+    set(nodes.presence.frequency, 3300);
+    set(nodes.presence.Q, 0.85);
+    set(nodes.presence.gain, current.presenceGain);
+    set(nodes.air.frequency, 7200);
+    set(nodes.air.gain, current.airGain);
+    set(nodes.compressor.threshold, current.threshold);
+    set(nodes.compressor.knee, 14);
+    set(nodes.compressor.ratio, current.ratio);
+    set(nodes.compressor.attack, 0.003);
+    set(nodes.compressor.release, 0.14);
+    set(nodes.delay.delayTime, current.delay);
+    set(nodes.wet.gain, current.wet);
+    set(nodes.dry.gain, current.dry);
   }
 }
