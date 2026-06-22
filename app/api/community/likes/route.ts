@@ -16,6 +16,13 @@ function wantsJson(request: Request) {
   return request.headers.get('accept')?.includes('application/json');
 }
 
+async function syncLikeCount(supabase: ReturnType<typeof createAdminClient>, postId: string) {
+  const { count } = await supabase.from('community_likes').select('id', { count: 'exact', head: true }).eq('post_id', postId);
+  const likesCount = count || 0;
+  await supabase.from('community_posts').update({ likes_count: likesCount }).eq('id', postId);
+  return likesCount;
+}
+
 export async function POST(request: Request) {
   const formData = await request.formData();
   const postId = String(formData.get('post_id') || '').trim();
@@ -37,6 +44,7 @@ export async function POST(request: Request) {
     if (error) return wantsJson(request) ? NextResponse.json({ error: 'unlike_failed', detail: error.message }, { status: 500 }) : NextResponse.redirect(new URL(returnTo, request.url));
   }
 
-  if (wantsJson(request)) return NextResponse.json({ ok: true, liked });
+  const likesCount = await syncLikeCount(supabase, postId);
+  if (wantsJson(request)) return NextResponse.json({ ok: true, liked, likes_count: likesCount });
   return NextResponse.redirect(new URL(returnTo, request.url));
 }
