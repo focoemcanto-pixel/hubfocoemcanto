@@ -36,9 +36,11 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
     recorder.chunksRef.current = [];
     recorder.visualChunksRef.current = [];
     recorder.micChunksRef.current = [];
+    recorder.referenceChunksRef.current = [];
     recorder.finalBlobRef.current = null;
     recorder.visualBlobRef.current = null;
     recorder.voiceBlobRef.current = null;
+    recorder.referenceBlobRef.current = null;
     setCaption('');
     setPostCommunity(false);
   }
@@ -96,6 +98,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
     recorder.chunksRef.current = [];
     recorder.visualChunksRef.current = [];
     recorder.micChunksRef.current = [];
+    recorder.referenceChunksRef.current = [];
     canvas.width = isSafariLike() ? 960 : 1280;
     canvas.height = isSafariLike() ? 540 : 720;
 
@@ -118,7 +121,12 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
 
     const monitor = buildDuetMonitorAudio(reference, stream);
     const tracks = Array.isArray(monitor) ? monitor : monitor.tracks;
-    if (!Array.isArray(monitor)) recorder.audioCtxRef.current = monitor.context;
+    if (!Array.isArray(monitor)) {
+      recorder.audioCtxRef.current = monitor.context;
+      if (monitor.referenceTracks?.length) {
+        recorder.referenceRecorderRef.current = startDuetRecorder(new MediaStream(monitor.referenceTracks), recorder.referenceChunksRef.current, 'audio');
+      }
+    }
     const mixedStream = new MediaStream([...canvasStream.getVideoTracks(), ...tracks]);
     const mixedRecorder = startDuetRecorder(mixedStream, recorder.chunksRef.current, 'mixed');
     recorder.mediaRecorderRef.current = mixedRecorder;
@@ -135,6 +143,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
     recorder.audioCtxRef.current?.close().catch(() => undefined);
     try { if (recorder.visualRecorderRef.current?.state === 'recording') recorder.visualRecorderRef.current.stop(); } catch {}
     try { if (recorder.micRecorderRef.current?.state === 'recording') recorder.micRecorderRef.current.stop(); } catch {}
+    try { if (recorder.referenceRecorderRef.current?.state === 'recording') recorder.referenceRecorderRef.current.stop(); } catch {}
 
     const blob = new Blob(recorder.chunksRef.current, { type: mediaRecorder.mimeType || 'video/webm' });
     recorder.finalBlobRef.current = blob;
@@ -145,11 +154,15 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
       if (recorder.visualChunksRef.current.length && recorder.micChunksRef.current.length) {
         const visualBlob = new Blob(recorder.visualChunksRef.current, { type: recorder.visualRecorderRef.current?.mimeType || 'video/webm' });
         const voiceBlob = new Blob(recorder.micChunksRef.current, { type: recorder.micRecorderRef.current?.mimeType || 'audio/webm' });
+        const referenceBlob = recorder.referenceChunksRef.current.length
+          ? new Blob(recorder.referenceChunksRef.current, { type: recorder.referenceRecorderRef.current?.mimeType || 'audio/webm' })
+          : null;
         recorder.visualBlobRef.current = visualBlob;
         recorder.voiceBlobRef.current = voiceBlob;
+        recorder.referenceBlobRef.current = referenceBlob;
         recorder.setVisualUrl(URL.createObjectURL(visualBlob));
-        recorder.prepareEngine(voiceBlob).catch(() => {
-          recorder.setError('O motor ao vivo não conseguiu decodificar essa referência. A prévia original ainda pode ser enviada.');
+        recorder.prepareEngine(voiceBlob, referenceBlob).catch(() => {
+          recorder.setError('O motor ao vivo não conseguiu preparar os áudios gravados. A prévia original ainda pode ser enviada.');
         });
       }
     }, 900);
@@ -175,13 +188,15 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
     const fallback = recorder.finalBlobRef.current;
     const visualBlob = recorder.visualBlobRef.current;
     const voiceBlob = recorder.voiceBlobRef.current;
-    if (!visualBlob || !voiceBlob || !referenceSource) return fallback;
+    const referenceBlob = recorder.referenceBlobRef.current;
+    if (!visualBlob || !voiceBlob || (!referenceBlob && !referenceSource)) return fallback;
     recorder.engineRef.current?.pause(true);
     recorder.setStep('rendering');
     try {
       const rendered = await renderFinalDuetVideo({
         visualBlob,
         voiceBlob,
+        referenceBlob,
         referenceSource,
         settings: {
           voiceVolume: recorder.voiceVolume,
