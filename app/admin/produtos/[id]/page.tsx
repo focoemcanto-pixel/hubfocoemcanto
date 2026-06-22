@@ -90,11 +90,13 @@ export default async function ProductEditPage({ params, searchParams }: { params
   const courseId = course?.id || '';
   const [{ data: links }, { data: allModules }] = await Promise.all([
     courseId ? supabase.from('course_module_links').select('module_id,sort_order').eq('course_id', courseId).order('sort_order') : Promise.resolve({ data: [] }),
-    supabase.from('modules').select('id,title,slug,description,sort_order,storage_provider,cover_url,exercises(id,title,slug,media_type,sort_order)').neq('is_active', false).order('sort_order'),
+    supabase.from('modules').select('id,title,slug,description,sort_order,storage_provider,cover_url,is_active,exercises(id,title,slug,media_type,sort_order)').order('sort_order'),
   ]);
 
   const linkedIds = new Set(((links || []) as Row[]).map((link) => link.module_id));
-  const cleanModules = ((allModules || []) as Row[]).filter((module) => !String(module.description || '').toLowerCase().includes('importados da pasta'));
+  const cleanModules = ((allModules || []) as Row[])
+    .filter((module) => module.is_active !== false)
+    .filter((module) => !String(module.description || '').toLowerCase().includes('importados da pasta'));
   const isVipProduct = String(product.slug || '').includes('grupo-vip') || String(product.name || '').toLowerCase().includes('grupo vip');
   const modules = linkedIds.size ? cleanModules.filter((module) => linkedIds.has(module.id)) : (isVipProduct ? cleanModules : []);
   const tabHref = (tab: string) => `/admin/produtos/${product.id}?tab=${tab}`;
