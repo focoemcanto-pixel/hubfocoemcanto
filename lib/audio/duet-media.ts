@@ -7,10 +7,10 @@ export function isSafariLike() {
 export function duetMimeType(videoOnly = false, audioOnly = false) {
   if (typeof MediaRecorder === 'undefined') return undefined;
   const options = audioOnly
-    ? ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']
+    ? ['audio/mp4;codecs=mp4a.40.2', 'audio/mp4', 'audio/webm;codecs=opus', 'audio/webm']
     : videoOnly
-      ? ['video/webm;codecs=vp8', 'video/webm', 'video/mp4']
-      : ['video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'];
+      ? ['video/mp4;codecs=avc1.42E01E', 'video/mp4', 'video/webm;codecs=vp8', 'video/webm']
+      : ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4;codecs=h264,aac', 'video/mp4', 'video/webm;codecs=vp8,opus', 'video/webm;codecs=vp9,opus', 'video/webm'];
   return options.find((type) => MediaRecorder.isTypeSupported(type));
 }
 
