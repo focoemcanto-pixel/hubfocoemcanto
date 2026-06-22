@@ -88,6 +88,18 @@ async function deleteLesson(formData: FormData) {
   if (productId) revalidatePath(`/admin/produtos/${productId}`);
 }
 
+async function deleteModule(formData: FormData) {
+  'use server';
+  const supabase = createAdminClient();
+  const productId = String(formData.get('product_id') || '');
+  const courseId = String(formData.get('course_id') || '');
+  const moduleId = String(formData.get('module_id') || '');
+  if (!moduleId) return;
+  if (courseId) await supabase.from('course_module_links').delete().eq('course_id', courseId).eq('module_id', moduleId);
+  await supabase.from('modules').update({ is_active: false, sort_order: 9999 }).eq('id', moduleId);
+  if (productId) revalidatePath(`/admin/produtos/${productId}`);
+}
+
 export default async function ProductEditPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams?: Promise<Search> }) {
   const { id } = await params;
   const query = searchParams ? await searchParams : {};
@@ -103,11 +115,11 @@ export default async function ProductEditPage({ params, searchParams }: { params
   const courseId = course?.id || '';
   const [{ data: links }, { data: allModules }] = await Promise.all([
     courseId ? supabase.from('course_module_links').select('module_id,sort_order').eq('course_id', courseId).order('sort_order') : Promise.resolve({ data: [] }),
-    supabase.from('modules').select('id,title,slug,description,sort_order,cover_url,exercises(id,title,slug,media_type,sort_order)').order('sort_order'),
+    supabase.from('modules').select('id,title,slug,description,sort_order,cover_url,is_active,exercises(id,title,slug,media_type,sort_order)').order('sort_order'),
   ]);
 
   const linkedIds = new Set(((links || []) as Row[]).map((link) => link.module_id));
-  const cleanModules = ((allModules || []) as Row[]).filter((module) => !String(module.description || '').toLowerCase().includes('importados da pasta'));
+  const cleanModules = ((allModules || []) as Row[]).filter((module) => module.is_active !== false).filter((module) => !String(module.description || '').toLowerCase().includes('importados da pasta'));
   const isVipProduct = String(product.slug || '').includes('grupo-vip') || String(product.name || '').toLowerCase().includes('grupo vip');
   const linkedModules = cleanModules.filter((module) => linkedIds.has(module.id));
   const modules = isVipProduct ? (linkedModules.length ? linkedModules : cleanModules) : linkedModules;
@@ -146,7 +158,7 @@ export default async function ProductEditPage({ params, searchParams }: { params
               const importUrl = `/admin/conteudos/selecionar-drive?module=${module.id}`;
               return (
                 <article className="admin-member-module" key={module.id}>
-                  <div className="admin-member-module-head"><div><span className="admin-clean-pill">drive · {lessons.length} conteudos</span><h3>{module.title}</h3><p>{module.description || 'Sem descricao.'}</p></div><div className="admin-clean-actions"><a className="admin-clean-button secondary" href={`/admin/biblioteca/${module.id}`}>Editar modulo</a><a className="admin-clean-button primary" href={importUrl}>+ Aula</a></div></div>
+                  <div className="admin-member-module-head"><div><span className="admin-clean-pill">drive · {lessons.length} conteudos</span><h3>{module.title}</h3><p>{module.description || 'Sem descricao.'}</p></div><div className="admin-clean-actions"><a className="admin-clean-button secondary" href={`/admin/biblioteca/${module.id}?product=${product.id}`}>Editar modulo</a><a className="admin-clean-button primary" href={importUrl}>+ Aula</a><form action={deleteModule}><input type="hidden" name="product_id" value={product.id} /><input type="hidden" name="course_id" value={courseId} /><input type="hidden" name="module_id" value={module.id} /><button className="admin-clean-button danger" type="submit">Excluir modulo</button></form></div></div>
                   <div className="admin-lesson-list">
                     {lessons.map((lesson) => (
                       <div className="admin-lesson-row" key={lesson.id}>
