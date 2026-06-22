@@ -1,5 +1,6 @@
 import { revalidatePath } from 'next/cache';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { AdminInlineLessonName } from '@/components/admin-inline-lesson-name';
 
 export const dynamic = 'force-dynamic';
 
@@ -75,6 +76,18 @@ async function createModule(formData: FormData) {
   revalidatePath(`/admin/produtos/${productId}`);
 }
 
+async function deleteLesson(formData: FormData) {
+  'use server';
+  const supabase = createAdminClient();
+  const productId = String(formData.get('product_id') || '');
+  const lessonId = String(formData.get('lesson_id') || '');
+  if (!lessonId) return;
+  await supabase.from('community_posts').delete().eq('exercise_id', lessonId);
+  await supabase.from('submissions').delete().eq('exercise_id', lessonId);
+  await supabase.from('exercises').delete().eq('id', lessonId);
+  if (productId) revalidatePath(`/admin/produtos/${productId}`);
+}
+
 export default async function ProductEditPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams?: Promise<Search> }) {
   const { id } = await params;
   const query = searchParams ? await searchParams : {};
@@ -85,7 +98,7 @@ export default async function ProductEditPage({ params, searchParams }: { params
     supabase.from('courses').select('*').eq('product_id', id).order('created_at', { ascending: true }).limit(1).maybeSingle(),
   ]);
 
-  if (!product) return <main className="admin-page-clean"><section className="admin-clean-section"><h1>Produto não encontrado</h1><a className="admin-clean-button" href="/admin/produtos">Voltar</a></section></main>;
+  if (!product) return <main className="admin-page-clean"><section className="admin-clean-section"><h1>Produto nao encontrado</h1><a className="admin-clean-button" href="/admin/produtos">Voltar</a></section></main>;
 
   const courseId = course?.id || '';
   const [{ data: links }, { data: allModules }] = await Promise.all([
@@ -103,28 +116,28 @@ export default async function ProductEditPage({ params, searchParams }: { params
   return (
     <main className="admin-page-clean">
       <section className="admin-clean-hero">
-        <div><span className="admin-clean-eyebrow">Gerenciar produto</span><h1>{product.name}</h1><p>{product.description || 'Configure produto, preço, capa, módulos, aulas, alunos e comentários.'}</p></div>
+        <div><span className="admin-clean-eyebrow">Gerenciar produto</span><h1>{product.name}</h1><p>{product.description || 'Configure produto, preco, capa, modulos, aulas, alunos e comentarios.'}</p></div>
         <a className="admin-clean-button secondary" href="/admin/produtos">Voltar</a>
       </section>
 
       <section className="admin-product-tabs">
-        <a className={activeTab === 'conteudo' ? 'active' : ''} href={tabHref('conteudo')}>Conteúdo</a>
+        <a className={activeTab === 'conteudo' ? 'active' : ''} href={tabHref('conteudo')}>Conteudo</a>
         <a className={activeTab === 'alunos' ? 'active' : ''} href={tabHref('alunos')}>Alunos</a>
-        <a className={activeTab === 'comentarios' ? 'active' : ''} href={tabHref('comentarios')}>Comentários</a>
-        <a className={activeTab === 'configuracoes' ? 'active' : ''} href={tabHref('configuracoes')}>Configurações</a>
+        <a className={activeTab === 'comentarios' ? 'active' : ''} href={tabHref('comentarios')}>Comentarios</a>
+        <a className={activeTab === 'configuracoes' ? 'active' : ''} href={tabHref('configuracoes')}>Configuracoes</a>
       </section>
 
       {activeTab === 'conteudo' ? (
         <section className="admin-clean-section">
-          <div className="admin-clean-heading"><div><span className="admin-clean-eyebrow">Área de membros</span><h2>Conteúdo</h2></div><label className="admin-clean-button primary" htmlFor="new-module-toggle">Adicionar módulo</label></div>
+          <div className="admin-clean-heading"><div><span className="admin-clean-eyebrow">Area de membros</span><h2>Conteudo</h2></div><label className="admin-clean-button primary" htmlFor="new-module-toggle">Adicionar modulo</label></div>
           <input id="new-module-toggle" className="admin-hidden-toggle" type="checkbox" />
           <form className="admin-clean-form admin-module-create" action={createModule}>
             <input type="hidden" name="product_id" value={product.id} />
             <input type="hidden" name="course_id" value={courseId} />
-            <label>Nome do módulo<input name="title" placeholder="Ex: Introdução" required /></label>
-            <label>Descrição<textarea name="description" placeholder="O que o aluno verá neste módulo?" /></label>
+            <label>Nome do modulo<input name="title" placeholder="Ex: Introducao" required /></label>
+            <label>Descricao<textarea name="description" placeholder="O que o aluno vera neste modulo?" /></label>
             <div className="admin-clean-form-row"><label>Origem<select name="storage_provider" defaultValue="drive"><option value="drive">Google Drive</option><option value="r2">Cloudflare R2</option></select></label><label>Ordem<input name="sort_order" type="number" defaultValue="0" /></label></div>
-            <button className="admin-clean-button primary" type="submit">Criar módulo</button>
+            <button className="admin-clean-button primary" type="submit">Criar modulo</button>
           </form>
 
           <div className="admin-member-modules">
@@ -133,37 +146,52 @@ export default async function ProductEditPage({ params, searchParams }: { params
               const importUrl = `/admin/conteudos/selecionar-drive?module=${module.id}`;
               return (
                 <article className="admin-member-module" key={module.id}>
-                  <div className="admin-member-module-head"><div><span className="admin-clean-pill">drive · {lessons.length} conteúdos</span><h3>{module.title}</h3><p>{module.description || 'Sem descrição.'}</p></div><div className="admin-clean-actions"><a className="admin-clean-button secondary" href={`/admin/biblioteca/${module.id}`}>Editar módulo</a><a className="admin-clean-button primary" href={importUrl}>+ Aula</a></div></div>
+                  <div className="admin-member-module-head"><div><span className="admin-clean-pill">drive · {lessons.length} conteudos</span><h3>{module.title}</h3><p>{module.description || 'Sem descricao.'}</p></div><div className="admin-clean-actions"><a className="admin-clean-button secondary" href={`/admin/biblioteca/${module.id}`}>Editar modulo</a><a className="admin-clean-button primary" href={importUrl}>+ Aula</a></div></div>
                   <div className="admin-lesson-list">
-                    {lessons.map((lesson) => <div className="admin-lesson-row" key={lesson.id}><span>::</span><strong>{lesson.title}</strong><small>{lesson.media_type || 'video'}</small><a href={`/admin/conteudos/exercicios/${lesson.id}/editar`}>Editar</a></div>)}
+                    {lessons.map((lesson) => (
+                      <div className="admin-lesson-row" key={lesson.id}>
+                        <span className="admin-drag-dot">::</span>
+                        <AdminInlineLessonName moduleId={module.id} lessonId={lesson.id} initialTitle={lesson.title || ''} />
+                        <small>{lesson.media_type || 'video'}</small>
+                        <div className="admin-lesson-actions">
+                          <a href={`/aluno/aula/${lesson.slug}`} title="Abrir aula">Abrir</a>
+                          <a href={`/admin/conteudos/exercicios/${lesson.id}/editar`} title="Editar aula">Editar</a>
+                          <form action={deleteLesson}>
+                            <input type="hidden" name="product_id" value={product.id} />
+                            <input type="hidden" name="lesson_id" value={lesson.id} />
+                            <button type="submit" title="Excluir aula">Excluir</button>
+                          </form>
+                        </div>
+                      </div>
+                    ))}
                     {!lessons.length ? <p className="admin-clean-muted">Nenhuma aula ainda. Clique em + Aula para puxar do Drive ou preparar R2.</p> : null}
                   </div>
                 </article>
               );
             })}
-            {!modules.length ? <div className="admin-empty-state"><strong>Nenhum módulo criado.</strong><p>Crie o primeiro módulo e depois adicione aulas pelo Drive/R2.</p></div> : null}
+            {!modules.length ? <div className="admin-empty-state"><strong>Nenhum modulo criado.</strong><p>Crie o primeiro modulo e depois adicione aulas pelo Drive/R2.</p></div> : null}
           </div>
         </section>
       ) : null}
 
       {activeTab === 'configuracoes' ? (
         <section className="admin-clean-section">
-          <div className="admin-clean-heading"><div><span className="admin-clean-eyebrow">Produto</span><h2>Configurações</h2></div></div>
+          <div className="admin-clean-heading"><div><span className="admin-clean-eyebrow">Produto</span><h2>Configuracoes</h2></div></div>
           <form className="admin-clean-form" action={updateProduct}>
             <input type="hidden" name="id" value={product.id} />
             <input type="hidden" name="course_id" value={courseId} />
             <label>Nome do produto<input name="name" defaultValue={product.name || ''} required /></label>
             <label>Slug<input name="slug" defaultValue={product.slug || ''} required /></label>
-            <label>Descrição<textarea name="description" defaultValue={product.description || ''} /></label>
-            <div className="admin-clean-form-row"><label>Tipo de pagamento<select name="billing_type" defaultValue={product.billing_type || 'one_time'}><option value="one_time">Pagamento único</option><option value="recurring">Assinatura recorrente</option></select></label><label>Preço<input name="price" type="number" step="0.01" defaultValue={price(product.price_cents)} /></label></div>
+            <label>Descricao<textarea name="description" defaultValue={product.description || ''} /></label>
+            <div className="admin-clean-form-row"><label>Tipo de pagamento<select name="billing_type" defaultValue={product.billing_type || 'one_time'}><option value="one_time">Pagamento unico</option><option value="recurring">Assinatura recorrente</option></select></label><label>Preco<input name="price" type="number" step="0.01" defaultValue={price(product.price_cents)} /></label></div>
             <div className="admin-clean-form-row"><label>Status<select name="status" defaultValue={product.status || 'draft'}><option value="draft">Rascunho</option><option value="published">Publicado</option><option value="archived">Arquivado</option></select></label><label>URL da capa<input name="cover_url" defaultValue={product.cover_url || ''} /></label></div>
             <button className="admin-clean-button primary" type="submit">Salvar produto</button>
           </form>
         </section>
       ) : null}
 
-      {activeTab === 'alunos' ? <section className="admin-clean-section"><span className="admin-clean-eyebrow">Alunos</span><h2>Alunos deste produto</h2><p className="admin-clean-muted">Próxima etapa: listar compradores, status de acesso e liberação via webhook.</p></section> : null}
-      {activeTab === 'comentarios' ? <section className="admin-clean-section"><span className="admin-clean-eyebrow">Comentários</span><h2>Comentários</h2><p className="admin-clean-muted">Próxima etapa: centralizar comentários por aula e módulo.</p></section> : null}
+      {activeTab === 'alunos' ? <section className="admin-clean-section"><span className="admin-clean-eyebrow">Alunos</span><h2>Alunos deste produto</h2><p className="admin-clean-muted">Proxima etapa: listar compradores, status de acesso e liberacao via webhook.</p></section> : null}
+      {activeTab === 'comentarios' ? <section className="admin-clean-section"><span className="admin-clean-eyebrow">Comentarios</span><h2>Comentarios</h2><p className="admin-clean-muted">Proxima etapa: centralizar comentarios por aula e modulo.</p></section> : null}
     </main>
   );
 }
