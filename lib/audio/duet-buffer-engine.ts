@@ -43,6 +43,21 @@ export class DuetBufferEngine {
       this.decodeBlob(ctx, voiceBlob),
       this.decodeUrl(ctx, referenceUrl),
     ]);
+    this.finishLoad(ctx, voiceBuffer, referenceBuffer);
+  }
+
+  async loadBlobs(voiceBlob: Blob, referenceBlob: Blob) {
+    const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioCtx) throw new Error('audio_context_missing');
+    const ctx = new AudioCtx({ latencyHint: 'interactive', sampleRate: 48000 });
+    const [voiceBuffer, referenceBuffer] = await Promise.all([
+      this.decodeBlob(ctx, voiceBlob),
+      this.decodeBlob(ctx, referenceBlob),
+    ]);
+    this.finishLoad(ctx, voiceBuffer, referenceBuffer);
+  }
+
+  private async finishLoad(ctx: AudioContext, voiceBuffer: AudioBuffer, referenceBuffer: AudioBuffer) {
     this.voiceBuffer = voiceBuffer;
     this.referenceBuffer = referenceBuffer;
     this.voiceNormalize = this.normalizeGain(voiceBuffer);
