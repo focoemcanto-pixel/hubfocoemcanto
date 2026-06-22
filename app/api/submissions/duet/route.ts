@@ -110,6 +110,7 @@ export async function POST(request: Request) {
 
     if (!email) return NextResponse.json({ error: 'not_authenticated' }, { status: 401 });
     if (!(file instanceof File) || !lessonSlug) return NextResponse.json({ error: 'missing_payload' }, { status: 400 });
+    if (file.size < 1000) return NextResponse.json({ error: 'empty_media_file', detail: 'O vídeo final ficou vazio. Renderize novamente antes de publicar.' }, { status: 400 });
 
     const supabase = createAdminClient();
     const [resolved, bytes] = await Promise.all([
@@ -117,6 +118,7 @@ export async function POST(request: Request) {
       file.arrayBuffer(),
     ]);
     if ('error' in resolved) return resolved.error;
+    if (bytes.byteLength < 1000) return NextResponse.json({ error: 'empty_media_file', detail: 'O arquivo enviado ficou vazio.' }, { status: 400 });
 
     const fileType = file.type || 'video/webm';
     const extension = fileType.includes('mp4') ? 'mp4' : 'webm';
