@@ -1,12 +1,16 @@
+export type DuetMicMode = 'studio' | 'clean';
+
 type PrepareDuetCameraOptions = {
   audioDeviceId?: string | null;
+  micMode?: DuetMicMode;
 };
 
 export async function prepareDuetCamera(camera: HTMLVideoElement | null, options: PrepareDuetCameraOptions = {}) {
+  const isCleanMode = options.micMode === 'clean';
   const audio: MediaTrackConstraints = {
-    echoCancellation: false,
-    noiseSuppression: false,
-    autoGainControl: false,
+    echoCancellation: isCleanMode,
+    noiseSuppression: isCleanMode,
+    autoGainControl: isCleanMode,
     sampleRate: 48000,
     channelCount: 1,
   };
