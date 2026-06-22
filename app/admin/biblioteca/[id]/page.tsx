@@ -5,10 +5,10 @@ import {
   Folder,
   Link as LinkIcon,
   ListChecks,
-  Pencil,
   Plus,
   Trash2,
 } from 'lucide-react';
+import { AdminInlineModuleTitle } from '@/components/admin-inline-module-title';
 import { AdminLessonTitleEditor } from '@/components/admin-lesson-title-editor';
 import { AdminModuleCoverUploader } from '@/components/admin-module-cover-uploader';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -45,7 +45,7 @@ export default async function AdminModulePage({ params, searchParams }: { params
         <section className="premium-admin-hero-row">
           <div className="premium-admin-hero-copy">
             <p className="eyebrow">Configurações do módulo · {storageProvider.toUpperCase()}</p>
-            <div className="premium-admin-title-row"><h1>{moduleTitle}</h1><span><Pencil size={18} /></span></div>
+            <AdminInlineModuleTitle moduleId={id} initialTitle={moduleTitle} />
             <p>{moduleDescription}</p>
             <small>Capas recomendadas: módulo 320x480, thumbnail de aula 1280x720.</small>
             <nav className="premium-admin-tabs"><a className="active" href="#dados">Dados do módulo</a><a href={importUrl}>Importar do Drive</a><a href={studentUrl}>Ver aluno</a></nav>
@@ -61,31 +61,42 @@ export default async function AdminModulePage({ params, searchParams }: { params
           <article><FilePlus2 size={30} /><span>Capas</span><strong>320x480</strong><p>Proporção ideal para cards verticais premium.</p></article>
         </section>
 
-        <section id="dados" className="premium-admin-edit-grid">
-          <article className="premium-admin-card">
-            <p className="eyebrow">Editar módulo</p><h2>Dados principais</h2>
-            <form className="admin-form" action={`/admin/biblioteca/${id}/salvar`} method="post" encType="multipart/form-data">
-              <label>Título<input name="title" defaultValue={moduleTitle} required /></label>
-              <label>Descrição<textarea name="description" defaultValue={module?.description || ''} /></label>
-              <label>Ordem<input name="sort_order" type="number" defaultValue={module?.sort_order || 1} /></label>
-              <div className="admin-form-grid"><label>Origem<select name="storage_provider" defaultValue={storageProvider}><option value="drive">Google Drive</option><option value="r2">Cloudflare R2</option></select></label><label>Prefixo R2<input name="r2_prefix" defaultValue={module?.r2_prefix || ''} placeholder="foco-harmonia/modulo-01" /></label></div>
-              <label>Capa do módulo <small className="muted">Proporção ideal: 320x480</small><input name="cover_file" type="file" accept="image/png,image/jpeg,image/webp" /></label>
-              <label>URL da capa <small className="muted">Opcional</small><input name="cover_url" defaultValue={coverUrl} placeholder="Cole a URL da capa" /></label>
-              <button className="premium-admin-primary" type="submit">Salvar módulo</button>
-            </form>
-          </article>
+        <section id="dados" className="module-accordion-area">
+          <input id="toggle-module-data" className="admin-hidden-toggle" type="checkbox" />
+          <input id="toggle-manual-lesson" className="admin-hidden-toggle" type="checkbox" />
+          <div className="module-settings-actions">
+            <label className="admin-clean-button primary" htmlFor="toggle-module-data">Editar dados do módulo</label>
+            <label className="admin-clean-button secondary" htmlFor="toggle-manual-lesson">Adicionar aula manual</label>
+          </div>
 
-          <article className="premium-admin-card">
-            <p className="eyebrow">Nova aula manual</p><h2>Adicionar conteúdo</h2>
-            <form className="admin-form" action="/admin/conteudos/criar" method="post">
-              <input type="hidden" name="module_id" value={id} />
-              <label>Título<input name="title" required placeholder="Ex: Aula 01 - Segunda voz" /></label>
-              <div className="admin-form-grid"><label>Tipo<select name="media_type" defaultValue="video"><option value="video">Aula em vídeo</option><option value="audio">Exercício em áudio</option><option value="dueto">Dueto</option></select></label><label>Nível<select name="difficulty" defaultValue="1"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></label></div>
-              <label>Link Drive ou URL R2<input name="drive_url" placeholder="Cole o arquivo do Drive ou URL assinada/R2" /></label>
-              <label>Descrição<textarea name="description" /></label><label>Objetivo<textarea name="objective" /></label>
-              <button className="premium-admin-primary" type="submit"><Plus size={16} /> Adicionar</button>
-            </form>
-          </article>
+          <div className="module-collapsible module-data-panel">
+            <article className="premium-admin-card">
+              <p className="eyebrow">Editar módulo</p><h2>Dados principais</h2>
+              <form className="admin-form" action={`/admin/biblioteca/${id}/salvar`} method="post" encType="multipart/form-data">
+                <label>Título<input name="title" defaultValue={moduleTitle} required /></label>
+                <label>Descrição<textarea name="description" defaultValue={module?.description || ''} /></label>
+                <label>Ordem<input name="sort_order" type="number" defaultValue={module?.sort_order || 1} /></label>
+                <div className="admin-form-grid"><label>Origem<select name="storage_provider" defaultValue={storageProvider}><option value="drive">Google Drive</option><option value="r2">Cloudflare R2</option></select></label><label>Prefixo R2<input name="r2_prefix" defaultValue={module?.r2_prefix || ''} placeholder="foco-harmonia/modulo-01" /></label></div>
+                <label>Capa do módulo <small className="muted">Proporção ideal: 320x480</small><input name="cover_file" type="file" accept="image/png,image/jpeg,image/webp" /></label>
+                <label>URL da capa <small className="muted">Opcional</small><input name="cover_url" defaultValue={coverUrl} placeholder="Cole a URL da capa" /></label>
+                <button className="premium-admin-primary" type="submit">Salvar módulo</button>
+              </form>
+            </article>
+          </div>
+
+          <div className="module-collapsible module-lesson-panel">
+            <article className="premium-admin-card">
+              <p className="eyebrow">Nova aula manual</p><h2>Adicionar conteúdo</h2>
+              <form className="admin-form" action="/admin/conteudos/criar" method="post">
+                <input type="hidden" name="module_id" value={id} />
+                <label>Título<input name="title" required placeholder="Ex: Aula 01 - Segunda voz" /></label>
+                <div className="admin-form-grid"><label>Tipo<select name="media_type" defaultValue="video"><option value="video">Aula em vídeo</option><option value="audio">Exercício em áudio</option><option value="dueto">Dueto</option></select></label><label>Nível<select name="difficulty" defaultValue="1"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></label></div>
+                <label>Link Drive ou URL R2<input name="drive_url" placeholder="Cole o arquivo do Drive ou URL assinada/R2" /></label>
+                <label>Descrição<textarea name="description" /></label><label>Objetivo<textarea name="objective" /></label>
+                <button className="premium-admin-primary" type="submit"><Plus size={16} /> Adicionar</button>
+              </form>
+            </article>
+          </div>
         </section>
 
         <section className="premium-lessons-board premium-lessons-board-refined">
@@ -94,7 +105,7 @@ export default async function AdminModulePage({ params, searchParams }: { params
             <div className="premium-lessons-list premium-lessons-list-refined">
               {(exercises || []).map((exercise: any, index: number) => {
                 const thumb = String(exercise.thumbnail_url || '').trim();
-                return <article className="premium-lesson-admin-row premium-lesson-admin-row-refined" key={exercise.id}><label className="premium-check-input premium-check-input-refined"><input type="checkbox" name="lesson_id" value={exercise.id} /></label><div className="premium-admin-lesson-thumb premium-admin-lesson-thumb-refined">{thumb ? <img src={thumb} alt="" /> : <><strong>{String(index + 1).padStart(2, '0')}</strong><span>▶</span></>}</div><div className="premium-admin-lesson-info premium-admin-lesson-info-refined"><span className="pill">{String(exercise.storage_provider || exercise.media_type || 'video').toUpperCase()} · NÍVEL {exercise.difficulty || 1}</span><AdminLessonTitleEditor moduleId={id} lessonId={exercise.id} initialTitle={exercise.title || ''} /><div className="premium-lesson-description-line"><LinkIcon size={14} /><span>{exercise.description || 'Sem descrição'}</span><a href={`/admin/conteudos/exercicios/${exercise.id}/editar`}>Adicionar descrição</a></div></div><div className="premium-admin-lesson-actions premium-admin-lesson-actions-refined"><a href={`/aluno/aula/${exercise.slug}`}><Eye size={16} /> Ver aula</a><a href={`/admin/conteudos/exercicios/${exercise.id}/editar`}><Pencil size={16} /> Editar</a><button form="bulk-delete-lessons" name="lesson_id" value={exercise.id} type="submit" className="premium-admin-delete-one" aria-label="Excluir aula"><Trash2 size={16} /></button></div></article>;
+                return <article className="premium-lesson-admin-row premium-lesson-admin-row-refined" key={exercise.id}><label className="premium-check-input premium-check-input-refined"><input type="checkbox" name="lesson_id" value={exercise.id} /></label><div className="premium-admin-lesson-thumb premium-admin-lesson-thumb-refined">{thumb ? <img src={thumb} alt="" /> : <><strong>{String(index + 1).padStart(2, '0')}</strong><span>▶</span></>}</div><div className="premium-admin-lesson-info premium-admin-lesson-info-refined"><span className="pill">{String(exercise.storage_provider || exercise.media_type || 'video').toUpperCase()} · NÍVEL {exercise.difficulty || 1}</span><AdminLessonTitleEditor moduleId={id} lessonId={exercise.id} initialTitle={exercise.title || ''} /><div className="premium-lesson-description-line"><LinkIcon size={14} /><span>{exercise.description || 'Sem descrição'}</span><a href={`/admin/conteudos/exercicios/${exercise.id}/editar`}>Adicionar descrição</a></div></div><div className="premium-admin-lesson-actions premium-admin-lesson-actions-refined"><a href={`/aluno/aula/${exercise.slug}`}><Eye size={16} /> Ver aula</a><a href={`/admin/conteudos/exercicios/${exercise.id}/editar`}>Editar</a><button form="bulk-delete-lessons" name="lesson_id" value={exercise.id} type="submit" className="premium-admin-delete-one" aria-label="Excluir aula"><Trash2 size={16} /></button></div></article>;
               })}
             </div>
           </form>
