@@ -8,6 +8,7 @@ import { isSafariLike, startDuetRecorder } from '@/lib/audio/duet-media';
 import { buildDuetMonitorAudio } from '@/lib/audio/duet-monitor';
 import { proxiedVideoUrl } from '@/lib/audio/duet-recording-utils';
 import { useDuetBufferRecorder } from '@/lib/audio/use-duet-buffer-recorder';
+import { renderFinalDuetVideo } from '@/lib/audio/duet-final-render';
 import type { VoicePreset } from '@/lib/audio/duet-buffer-engine';
 
 type Props = {
@@ -36,6 +37,8 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
     recorder.visualChunksRef.current = [];
     recorder.micChunksRef.current = [];
     recorder.finalBlobRef.current = null;
+    recorder.visualBlobRef.current = null;
+    recorder.voiceBlobRef.current = null;
     setCaption('');
     setPostCommunity(false);
   }
@@ -142,6 +145,8 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
       if (recorder.visualChunksRef.current.length && recorder.micChunksRef.current.length) {
         const visualBlob = new Blob(recorder.visualChunksRef.current, { type: recorder.visualRecorderRef.current?.mimeType || 'video/webm' });
         const voiceBlob = new Blob(recorder.micChunksRef.current, { type: recorder.micRecorderRef.current?.mimeType || 'audio/webm' });
+        recorder.visualBlobRef.current = visualBlob;
+        recorder.voiceBlobRef.current = voiceBlob;
         recorder.setVisualUrl(URL.createObjectURL(visualBlob));
         recorder.prepareEngine(voiceBlob).catch(() => {
           recorder.setError('O motor ao vivo não conseguiu decodificar essa referência. A prévia original ainda pode ser enviada.');
@@ -166,8 +171,36 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
     await recorder.togglePlayback();
   }
 
+  async function getUploadBlob() {
+    const fallback = recorder.finalBlobRef.current;
+    const visualBlob = recorder.visualBlobRef.current;
+    const voiceBlob = recorder.voiceBlobRef.current;
+    if (!visualBlob || !voiceBlob || !referenceSource) return fallback;
+    recorder.setStep('rendering');
+    try {
+      const rendered = await renderFinalDuetVideo({
+        visualBlob,
+        voiceBlob,
+        referenceSource,
+        settings: {
+          voiceVolume: recorder.voiceVolume,
+          referenceVolume: recorder.referenceVolume,
+          preset: recorder.preset,
+        },
+      });
+      recorder.finalBlobRef.current = rendered;
+      recorder.setPreviewUrl(URL.createObjectURL(rendered));
+      return rendered;
+    } catch {
+      recorder.setError('Não consegui renderizar a mix final neste navegador. Vou enviar a prévia original.');
+      return fallback;
+    } finally {
+      recorder.setStep('review');
+    }
+  }
+
   async function submitDuet(finalCaption: string, forceCommunity = false) {
-    const blob = recorder.finalBlobRef.current;
+    const blob = await getUploadBlob();
     if (!blob) {
       recorder.setError('Grave o dueto antes de enviar.');
       return;
@@ -227,6 +260,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
         {recorder.step === 'loading' ? <div className="duet-stage-overlay premium-duet-overlay"><span className="recording-dot">Preparando vídeo e câmera...</span></div> : null}
         {recorder.step === 'countdown' ? <div className="countdown overlay-countdown">{recorder.count}</div> : null}
         {recorder.step === 'recording' ? <div className="duet-stage-overlay premium-duet-overlay"><span className="recording-dot">● Gravando...</span></div> : null}
+        {recorder.step === 'rendering' ? <div className="duet-stage-overlay premium-duet-overlay"><span className="recording-dot">Renderizando mix final...</span></div> : null}
         {recorder.step === 'review' ? <div className="reels-video-chip"><Music2 size={17} /> {lessonTitle}</div> : null}
       </section>
 
@@ -237,7 +271,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
         {recorder.step === 'review' ? <><button className="button secondary" onClick={reset}><RefreshCcw size={16} /> Regravar</button><label className="community-toggle review-community-toggle"><input type="checkbox" checked={postCommunity} onChange={(event) => setPostCommunity(event.target.checked)} /> Publicar também na comunidade</label><button className="button" onClick={() => postCommunity ? recorder.setStep('caption') : submitDuet('', false)} disabled={recorder.isSubmitting}><UploadCloud size={16} /> {postCommunity ? 'Continuar' : recorder.isSubmitting ? 'Enviando...' : 'Enviar para avaliação'}</button></> : null}
       </section>
 
-      {recorder.step === 'review' ? <section className="duet-review-note premium-duet-note"><CheckCircle2 size={24} /><div><h2>Dueto pronto para mixar</h2><p>O ajuste é ouvido em tempo real. O arquivo final com efeito será a próxima etapa do motor.</p></div></section> : null}
+      {recorder.step === 'review' ? <section className="duet-review-note premium-duet-note"><CheckCircle2 size={24} /><div><h2>Dueto pronto para mixar</h2><p>O ajuste é ouvido em tempo real. Ao enviar, o Hub renderiza a versão final com sua mixagem.</p></div></section> : null}
       {recorder.step === 'caption' ? <section className="caption-box duet-caption-box premium-duet-note reels-publish-card"><div><h2>Legenda da comunidade</h2><p>Compartilhe sua prática no feed.</p><textarea value={caption} onChange={(event) => setCaption(event.target.value)} placeholder="Escreva uma legenda para o feed..." /></div><button className="button" onClick={() => submitDuet(caption || 'Minha prática do dueto.', true)} disabled={recorder.isSubmitting}>{recorder.isSubmitting ? 'Enviando...' : 'Publicar no feed e enviar'}</button></section> : null}
       {recorder.step === 'posted' ? <section className="posted-box duet-posted-box premium-duet-note"><CheckCircle2 size={28} /><div><h2>Atividade enviada</h2><p>Sua gravação entrou na fila de avaliação do professor.</p><a className="button secondary" href={`/aluno/aula/${lessonSlug}`}>Voltar para aula</a></div></section> : null}
     </div>
