@@ -90,15 +90,14 @@ export default async function ProductEditPage({ params, searchParams }: { params
   const courseId = course?.id || '';
   const [{ data: links }, { data: allModules }] = await Promise.all([
     courseId ? supabase.from('course_module_links').select('module_id,sort_order').eq('course_id', courseId).order('sort_order') : Promise.resolve({ data: [] }),
-    supabase.from('modules').select('id,title,slug,description,sort_order,storage_provider,cover_url,is_active,exercises(id,title,slug,media_type,sort_order)').order('sort_order'),
+    supabase.from('modules').select('id,title,slug,description,sort_order,cover_url,exercises(id,title,slug,media_type,sort_order)').order('sort_order'),
   ]);
 
   const linkedIds = new Set(((links || []) as Row[]).map((link) => link.module_id));
-  const cleanModules = ((allModules || []) as Row[])
-    .filter((module) => module.is_active !== false)
-    .filter((module) => !String(module.description || '').toLowerCase().includes('importados da pasta'));
+  const cleanModules = ((allModules || []) as Row[]).filter((module) => !String(module.description || '').toLowerCase().includes('importados da pasta'));
   const isVipProduct = String(product.slug || '').includes('grupo-vip') || String(product.name || '').toLowerCase().includes('grupo vip');
-  const modules = linkedIds.size ? cleanModules.filter((module) => linkedIds.has(module.id)) : (isVipProduct ? cleanModules : []);
+  const linkedModules = cleanModules.filter((module) => linkedIds.has(module.id));
+  const modules = isVipProduct ? (linkedModules.length ? linkedModules : cleanModules) : linkedModules;
   const tabHref = (tab: string) => `/admin/produtos/${product.id}?tab=${tab}`;
 
   return (
@@ -134,7 +133,7 @@ export default async function ProductEditPage({ params, searchParams }: { params
               const importUrl = `/admin/conteudos/selecionar-drive?module=${module.id}`;
               return (
                 <article className="admin-member-module" key={module.id}>
-                  <div className="admin-member-module-head"><div><span className="admin-clean-pill">{module.storage_provider || 'drive'} · {lessons.length} conteúdos</span><h3>{module.title}</h3><p>{module.description || 'Sem descrição.'}</p></div><div className="admin-clean-actions"><a className="admin-clean-button secondary" href={`/admin/biblioteca/${module.id}`}>Editar módulo</a><a className="admin-clean-button primary" href={importUrl}>+ Aula</a></div></div>
+                  <div className="admin-member-module-head"><div><span className="admin-clean-pill">drive · {lessons.length} conteúdos</span><h3>{module.title}</h3><p>{module.description || 'Sem descrição.'}</p></div><div className="admin-clean-actions"><a className="admin-clean-button secondary" href={`/admin/biblioteca/${module.id}`}>Editar módulo</a><a className="admin-clean-button primary" href={importUrl}>+ Aula</a></div></div>
                   <div className="admin-lesson-list">
                     {lessons.map((lesson) => <div className="admin-lesson-row" key={lesson.id}><span>::</span><strong>{lesson.title}</strong><small>{lesson.media_type || 'video'}</small><a href={`/admin/conteudos/exercicios/${lesson.id}/editar`}>Editar</a></div>)}
                     {!lessons.length ? <p className="admin-clean-muted">Nenhuma aula ainda. Clique em + Aula para puxar do Drive ou preparar R2.</p> : null}
