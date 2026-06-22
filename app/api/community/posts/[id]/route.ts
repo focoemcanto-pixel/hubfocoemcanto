@@ -32,8 +32,16 @@ export async function DELETE(_request: Request, context: { params: Promise<{ id:
     supabase.from('community_reposts').delete().eq('post_id', id).then(() => null),
   ]);
 
-  const { error: removeError } = await supabase.from('community_posts').delete().eq('id', id).eq('profile_id', profile.id);
-  if (removeError) return NextResponse.json({ error: 'post_remove_failed', detail: removeError.message }, { status: 500 });
+  const { data: removed, error: removeError } = await supabase
+    .from('community_posts')
+    .delete()
+    .eq('id', id)
+    .eq('profile_id', profile.id)
+    .select('id')
+    .maybeSingle();
 
-  return NextResponse.json({ ok: true });
+  if (removeError) return NextResponse.json({ error: 'post_remove_failed', detail: removeError.message }, { status: 500 });
+  if (!removed?.id) return NextResponse.json({ error: 'post_not_removed' }, { status: 409 });
+
+  return NextResponse.json({ ok: true, removed_id: id });
 }
