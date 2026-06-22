@@ -134,6 +134,7 @@ export async function renderFinalDuetVideo({ visualBlob, voiceBlob, referenceBlo
   visual.src = URL.createObjectURL(visualBlob);
   visual.muted = true;
   visual.playsInline = true;
+  visual.preload = 'auto';
   await waitReady(visual);
 
   const audioCtx = new AudioCtx({ latencyHint: 'playback', sampleRate: 48000 });
@@ -157,6 +158,10 @@ export async function renderFinalDuetVideo({ visualBlob, voiceBlob, referenceBlo
   referenceGain.gain.value = referenceTarget(settings.referenceVolume);
   referenceSourceNode.connect(referenceGain).connect(destination);
   applyVoicePreset(audioCtx, voiceSource, destination, settings.preset, normalizeVoiceTarget(settings.voiceVolume) * rmsNormalize(voiceBuffer));
+
+  ctx2d.fillStyle = '#050505';
+  ctx2d.fillRect(0, 0, canvas.width, canvas.height);
+  try { ctx2d.drawImage(visual, 0, 0, canvas.width, canvas.height); } catch {}
 
   const outputStream = new MediaStream([
     ...canvas.captureStream(isSafariLike() ? 24 : 30).getVideoTracks(),
@@ -189,19 +194,17 @@ export async function renderFinalDuetVideo({ visualBlob, voiceBlob, referenceBlo
     if (recorder.state === 'recording') recorder.stop();
   };
 
-  recorder.start(1000);
   visual.currentTime = 0;
   await audioCtx.resume().catch(() => undefined);
-  const startAt = audioCtx.currentTime + 0.06;
+  await visual.play().catch(() => undefined);
+  draw();
+  recorder.start(1000);
+  const startAt = audioCtx.currentTime + 0.035;
   const voiceOffset = Math.min(Math.max(0, clampLatencyMs(settings.latencyMs || 0) / 1000), Math.max(0, voiceBuffer.duration - 0.02));
   voiceSource.start(startAt, voiceOffset);
-  referenceSourceNode.start(startAt, 0);
-  const startDelayMs = Math.max(0, (startAt - audioCtx.currentTime) * 1000);
-  window.setTimeout(() => {
-    visual.play().then(draw).catch(stop);
-  }, startDelayMs);
+  referenceSourceNode.start(startAt, Math.min(visual.currentTime, Math.max(0, referenceBuffer.duration - 0.02)));
   visual.onended = stop;
-  window.setTimeout(stop, Math.max(2500, (visual.duration || 90) * 1000 + startDelayMs + 900));
+  window.setTimeout(stop, Math.max(2500, (visual.duration || 90) * 1000 + 900));
   const rendered = await done;
   await audioCtx.close().catch(() => undefined);
   return rendered;
