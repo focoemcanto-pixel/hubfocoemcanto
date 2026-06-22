@@ -4,6 +4,7 @@ export function buildDuetMonitorAudio(reference: HTMLVideoElement, stream: Media
 
   const context = new AudioCtx({ latencyHint: 'interactive', sampleRate: 48000 });
   const destination = context.createMediaStreamDestination();
+  const referenceDestination = context.createMediaStreamDestination();
 
   try {
     const microphone = context.createMediaStreamSource(stream);
@@ -13,10 +14,17 @@ export function buildDuetMonitorAudio(reference: HTMLVideoElement, stream: Media
   try {
     const referenceSource = context.createMediaElementSource(reference);
     const referenceGain = context.createGain();
+    const referenceRecordGain = context.createGain();
     referenceGain.gain.value = 0.45;
+    referenceRecordGain.gain.value = 1;
     referenceSource.connect(referenceGain).connect(destination);
+    referenceSource.connect(referenceRecordGain).connect(referenceDestination);
     referenceGain.connect(context.destination);
   } catch {}
 
-  return { tracks: destination.stream.getAudioTracks(), context };
+  return {
+    tracks: destination.stream.getAudioTracks(),
+    referenceTracks: referenceDestination.stream.getAudioTracks(),
+    context,
+  };
 }
