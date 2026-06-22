@@ -1,4 +1,5 @@
 import './admin.css';
+import './school-admin.css';
 import '../app-premium.css';
 
 export default function AdminLayout(props: { children: any }) {
