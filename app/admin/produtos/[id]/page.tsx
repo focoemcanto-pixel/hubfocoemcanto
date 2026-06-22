@@ -1,9 +1,11 @@
 import { revalidatePath } from 'next/cache';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { AdminInlineLessonName } from '@/components/admin-inline-lesson-name';
+import { AdminLoadingLink } from '@/components/admin-loading-link';
 
 export const dynamic = 'force-dynamic';
 
+const ASSETS_BUCKET = 'hub-assets';
 type Row = any;
 type Search = { tab?: string };
 
@@ -11,8 +13,39 @@ function price(cents?: number | null) {
   return String(((cents || 0) / 100).toFixed(2));
 }
 
+function money(cents?: number | null) {
+  return ((cents || 0) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
 function slugify(value: string) {
   return value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || `item-${Date.now()}`;
+}
+
+async function ensureAssetsBucket() {
+  const supabase = createAdminClient();
+  const { data: buckets, error } = await supabase.storage.listBuckets();
+  if (error) return { ok: false, error: error.message };
+  const exists = buckets?.some((bucket) => bucket.id === ASSETS_BUCKET || bucket.name === ASSETS_BUCKET);
+  if (exists) return { ok: true };
+  const { error: createError } = await supabase.storage.createBucket(ASSETS_BUCKET, { public: true });
+  if (createError && !createError.message.toLowerCase().includes('already exists')) return { ok: false, error: createError.message };
+  return { ok: true };
+}
+
+async function uploadProductCover(file: File, productId: string) {
+  if (!file || file.size === 0) return { ok: true, url: '' };
+  if (!file.type.startsWith('image/')) return { ok: false, error: 'Arquivo de capa inválido.' };
+  const bucket = await ensureAssetsBucket();
+  if (!bucket.ok) return { ok: false, error: bucket.error || 'Erro no bucket.' };
+  const supabase = createAdminClient();
+  const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+  const safeExt = ['jpg', 'jpeg', 'png', 'webp'].includes(ext) ? ext : 'jpg';
+  const path = `products/${productId}/cover-${Date.now()}.${safeExt}`;
+  const bytes = await file.arrayBuffer();
+  const { error } = await supabase.storage.from(ASSETS_BUCKET).upload(path, bytes, { contentType: file.type || 'image/jpeg', upsert: true });
+  if (error) return { ok: false, error: error.message };
+  const { data } = supabase.storage.from(ASSETS_BUCKET).getPublicUrl(path);
+  return { ok: true, url: data.publicUrl };
 }
 
 async function updateProduct(formData: FormData) {
@@ -23,10 +56,17 @@ async function updateProduct(formData: FormData) {
   const name = String(formData.get('name') || '').trim();
   const slug = String(formData.get('slug') || '').trim();
   const description = String(formData.get('description') || '').trim();
-  const coverUrl = String(formData.get('cover_url') || '').trim();
   const status = String(formData.get('status') || 'draft');
   const billingType = String(formData.get('billing_type') || 'one_time');
+  const removeCover = String(formData.get('remove_cover') || '') === '1';
+  const coverFile = formData.get('cover_file');
+  let coverUrl = removeCover ? '' : String(formData.get('cover_url') || '').trim();
   if (!id || !name || !slug) return;
+
+  if (!removeCover && coverFile instanceof File && coverFile.size > 0) {
+    const upload = await uploadProductCover(coverFile, id);
+    if (upload.ok && upload.url) coverUrl = upload.url;
+  }
 
   await supabase.from('products').update({
     name,
@@ -100,6 +140,14 @@ async function deleteModule(formData: FormData) {
   if (productId) revalidatePath(`/admin/produtos/${productId}`);
 }
 
+function matchesProduct(subscription: Row, product: Row, isVipProduct: boolean) {
+  const name = String(subscription.product_name || '').toLowerCase();
+  const productName = String(product.name || '').toLowerCase();
+  const slug = String(product.slug || '').toLowerCase();
+  if (isVipProduct) return name.includes('vip') || name.includes('grupo') || name.includes('fh') || !name;
+  return name.includes(productName) || name.includes(slug.replace(/-/g, ' '));
+}
+
 export default async function ProductEditPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams?: Promise<Search> }) {
   const { id } = await params;
   const query = searchParams ? await searchParams : {};
@@ -113,17 +161,33 @@ export default async function ProductEditPage({ params, searchParams }: { params
   if (!product) return <main className="admin-page-clean"><section className="admin-clean-section"><h1>Produto nao encontrado</h1><a className="admin-clean-button" href="/admin/produtos">Voltar</a></section></main>;
 
   const courseId = course?.id || '';
-  const [{ data: links }, { data: allModules }] = await Promise.all([
+  const isVipProduct = String(product.slug || '').includes('grupo-vip') || String(product.name || '').toLowerCase().includes('grupo vip');
+  const [{ data: links }, { data: allModules }, { data: profiles }, { data: subscriptions }] = await Promise.all([
     courseId ? supabase.from('course_module_links').select('module_id,sort_order').eq('course_id', courseId).order('sort_order') : Promise.resolve({ data: [] }),
     supabase.from('modules').select('id,title,slug,description,sort_order,cover_url,is_active,exercises(id,title,slug,media_type,sort_order)').order('sort_order'),
+    supabase.from('profiles').select('id,name,email,whatsapp,avatar_url,role,created_at').order('created_at', { ascending: false }),
+    supabase.from('subscriptions').select('profile_id,status,product_name,current_period_end,created_at').order('created_at', { ascending: false }),
   ]);
 
   const linkedIds = new Set(((links || []) as Row[]).map((link) => link.module_id));
   const cleanModules = ((allModules || []) as Row[]).filter((module) => module.is_active !== false).filter((module) => !String(module.description || '').toLowerCase().includes('importados da pasta'));
-  const isVipProduct = String(product.slug || '').includes('grupo-vip') || String(product.name || '').toLowerCase().includes('grupo vip');
   const linkedModules = cleanModules.filter((module) => linkedIds.has(module.id));
   const modules = isVipProduct ? (linkedModules.length ? linkedModules : cleanModules) : linkedModules;
   const tabHref = (tab: string) => `/admin/produtos/${product.id}?tab=${tab}`;
+
+  const subsByProfile = new Map<string, Row[]>();
+  ((subscriptions || []) as Row[]).forEach((sub) => {
+    const key = String(sub.profile_id || '');
+    if (!key) return;
+    const list = subsByProfile.get(key) || [];
+    list.push(sub);
+    subsByProfile.set(key, list);
+  });
+  const productStudents = ((profiles || []) as Row[]).map((profile) => {
+    const subs = subsByProfile.get(profile.id) || [];
+    const related = subs.find((sub) => matchesProduct(sub, product, isVipProduct)) || subs[0];
+    return { ...profile, subscription: related, hasRelatedSubscription: Boolean(related) };
+  }).filter((profile) => isVipProduct ? true : profile.hasRelatedSubscription);
 
   return (
     <main className="admin-page-clean">
@@ -158,22 +222,14 @@ export default async function ProductEditPage({ params, searchParams }: { params
               const importUrl = `/admin/conteudos/selecionar-drive?module=${module.id}`;
               return (
                 <article className="admin-member-module" key={module.id}>
-                  <div className="admin-member-module-head"><div><span className="admin-clean-pill">drive · {lessons.length} conteudos</span><h3>{module.title}</h3><p>{module.description || 'Sem descricao.'}</p></div><div className="admin-clean-actions"><a className="admin-clean-button secondary" href={`/admin/biblioteca/${module.id}?product=${product.id}`}>Editar modulo</a><a className="admin-clean-button primary" href={importUrl}>+ Aula</a><form action={deleteModule}><input type="hidden" name="product_id" value={product.id} /><input type="hidden" name="course_id" value={courseId} /><input type="hidden" name="module_id" value={module.id} /><button className="admin-clean-button danger" type="submit">Excluir modulo</button></form></div></div>
+                  <div className="admin-member-module-head"><div><span className="admin-clean-pill">drive · {lessons.length} conteudos</span><h3>{module.title}</h3><p>{module.description || 'Sem descricao.'}</p></div><div className="admin-clean-actions"><a className="admin-clean-button secondary" href={`/admin/biblioteca/${module.id}?product=${product.id}`}>Editar modulo</a><AdminLoadingLink className="admin-clean-button primary" href={importUrl} loadingLabel="Abrindo Drive...">+ Aula</AdminLoadingLink><form action={deleteModule}><input type="hidden" name="product_id" value={product.id} /><input type="hidden" name="course_id" value={courseId} /><input type="hidden" name="module_id" value={module.id} /><button className="admin-clean-button danger" type="submit">Excluir modulo</button></form></div></div>
                   <div className="admin-lesson-list">
                     {lessons.map((lesson) => (
                       <div className="admin-lesson-row" key={lesson.id}>
                         <span className="admin-drag-dot">::</span>
                         <AdminInlineLessonName moduleId={module.id} lessonId={lesson.id} initialTitle={lesson.title || ''} />
                         <small>{lesson.media_type || 'video'}</small>
-                        <div className="admin-lesson-actions">
-                          <a href={`/aluno/aula/${lesson.slug}`} title="Abrir aula">Abrir</a>
-                          <a href={`/admin/conteudos/exercicios/${lesson.id}/editar`} title="Editar aula">Editar</a>
-                          <form action={deleteLesson}>
-                            <input type="hidden" name="product_id" value={product.id} />
-                            <input type="hidden" name="lesson_id" value={lesson.id} />
-                            <button type="submit" title="Excluir aula">Excluir</button>
-                          </form>
-                        </div>
+                        <div className="admin-lesson-actions"><a href={`/aluno/aula/${lesson.slug}`} title="Abrir aula">Abrir</a><a href={`/admin/conteudos/exercicios/${lesson.id}/editar`} title="Editar aula">Editar</a><form action={deleteLesson}><input type="hidden" name="product_id" value={product.id} /><input type="hidden" name="lesson_id" value={lesson.id} /><button type="submit" title="Excluir aula">Excluir</button></form></div>
                       </div>
                     ))}
                     {!lessons.length ? <p className="admin-clean-muted">Nenhuma aula ainda. Clique em + Aula para puxar do Drive ou preparar R2.</p> : null}
@@ -189,20 +245,31 @@ export default async function ProductEditPage({ params, searchParams }: { params
       {activeTab === 'configuracoes' ? (
         <section className="admin-clean-section">
           <div className="admin-clean-heading"><div><span className="admin-clean-eyebrow">Produto</span><h2>Configuracoes</h2></div></div>
-          <form className="admin-clean-form" action={updateProduct}>
+          <form className="admin-clean-form" action={updateProduct} encType="multipart/form-data">
             <input type="hidden" name="id" value={product.id} />
             <input type="hidden" name="course_id" value={courseId} />
-            <label>Nome do produto<input name="name" defaultValue={product.name || ''} required /></label>
-            <label>Slug<input name="slug" defaultValue={product.slug || ''} required /></label>
-            <label>Descricao<textarea name="description" defaultValue={product.description || ''} /></label>
-            <div className="admin-clean-form-row"><label>Tipo de pagamento<select name="billing_type" defaultValue={product.billing_type || 'one_time'}><option value="one_time">Pagamento unico</option><option value="recurring">Assinatura recorrente</option></select></label><label>Preco<input name="price" type="number" step="0.01" defaultValue={price(product.price_cents)} /></label></div>
-            <div className="admin-clean-form-row"><label>Status<select name="status" defaultValue={product.status || 'draft'}><option value="draft">Rascunho</option><option value="published">Publicado</option><option value="archived">Arquivado</option></select></label><label>URL da capa<input name="cover_url" defaultValue={product.cover_url || ''} /></label></div>
+            <section className="product-config-grid">
+              <div className="product-config-fields">
+                <label>Nome do produto<input name="name" defaultValue={product.name || ''} required /></label>
+                <label>Slug<input name="slug" defaultValue={product.slug || ''} required /></label>
+                <label>Descricao<textarea name="description" defaultValue={product.description || ''} /></label>
+                <div className="admin-clean-form-row"><label>Tipo de pagamento<select name="billing_type" defaultValue={product.billing_type || 'one_time'}><option value="one_time">Pagamento unico</option><option value="recurring">Assinatura recorrente</option></select></label><label>Preco<input name="price" type="number" step="0.01" defaultValue={price(product.price_cents)} /></label></div>
+                <div className="admin-clean-form-row"><label>Status<select name="status" defaultValue={product.status || 'draft'}><option value="draft">Rascunho</option><option value="published">Publicado</option><option value="archived">Arquivado</option></select></label><label>URL da capa<input name="cover_url" defaultValue={product.cover_url || ''} /></label></div>
+              </div>
+              <aside className="product-cover-editor">
+                <span className="admin-clean-eyebrow">Capa do produto</span>
+                <div className="product-cover-preview">{product.cover_url ? <img src={product.cover_url} alt={product.name} /> : <strong>{String(product.name || 'FC').slice(0, 2).toUpperCase()}</strong>}</div>
+                <p>Recomendado: 1280x720 para vitrine e checkout. A prévia atualiza após salvar.</p>
+                <label className="admin-upload-drop">Enviar capa<input name="cover_file" type="file" accept="image/png,image/jpeg,image/webp" /></label>
+                <label className="admin-clean-check"><input name="remove_cover" value="1" type="checkbox" /> Remover capa atual</label>
+              </aside>
+            </section>
             <button className="admin-clean-button primary" type="submit">Salvar produto</button>
           </form>
         </section>
       ) : null}
 
-      {activeTab === 'alunos' ? <section className="admin-clean-section"><span className="admin-clean-eyebrow">Alunos</span><h2>Alunos deste produto</h2><p className="admin-clean-muted">Proxima etapa: listar compradores, status de acesso e liberacao via webhook.</p></section> : null}
+      {activeTab === 'alunos' ? <section className="admin-clean-section"><div className="admin-clean-heading"><div><span className="admin-clean-eyebrow">Alunos</span><h2>Alunos deste produto</h2></div><strong>{productStudents.length} encontrados</strong></div><div className="admin-students-list">{productStudents.map((student) => { const sub = student.subscription || {}; const active = ['active', 'paid', 'trialing'].includes(String(sub.status || '').toLowerCase()); return <article className="admin-student-row" key={student.id}><div className="admin-student-avatar">{student.avatar_url ? <img src={student.avatar_url} alt="" /> : <span>{String(student.name || student.email || 'A').slice(0, 1).toUpperCase()}</span>}</div><div><h3>{student.name || 'Aluno sem nome'}</h3><p>{student.email || 'Sem e-mail'}{student.whatsapp ? ` · ${student.whatsapp}` : ''}</p></div><div><span className={active ? 'student-status active' : 'student-status'}>{sub.status || 'sem assinatura'}</span><small>{sub.product_name || product.name}</small></div></article>; })}{!productStudents.length ? <p className="admin-clean-muted">Nenhum aluno encontrado para este produto ainda.</p> : null}</div></section> : null}
       {activeTab === 'comentarios' ? <section className="admin-clean-section"><span className="admin-clean-eyebrow">Comentarios</span><h2>Comentarios</h2><p className="admin-clean-muted">Proxima etapa: centralizar comentarios por aula e modulo.</p></section> : null}
     </main>
   );
