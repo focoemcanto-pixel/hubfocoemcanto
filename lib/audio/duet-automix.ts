@@ -8,64 +8,99 @@ export type AutoMixResult = {
 };
 
 type AudioStats = { rms: number; activeRms: number; peak: number };
-const clamp=(v:number,min:number,max:number)=>Math.max(min,Math.min(max,v));
-const roundToStep=(v:number,s=5)=>Math.round(v/s)*s;
+const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+const roundToStep = (v: number, s = 5) => Math.round(v / s) * s;
 
-async function decodeBlob(ctx:AudioContext,blob:Blob){const b=await blob.arrayBuffer();return ctx.decodeAudioData(b.slice(0));}
-async function decodeUrl(ctx:AudioContext,url:string){const r=await fetch(url,{cache:'force-cache'});if(!r.ok) throw new Error('reference_fetch_failed');const b=await r.arrayBuffer();return ctx.decodeAudioData(b.slice(0));}
-
-function stats(buffer:AudioBuffer):AudioStats{
- const channel=buffer.getChannelData(0); const step=Math.max(1,Math.floor(channel.length/60000));
- let sum=0,count=0,peak=0; const samples:number[]=[];
- for(let i=0;i<channel.length;i+=step){const s=Math.abs(channel[i]); peak=Math.max(peak,s); sum+=s*s; count++; samples.push(s);} 
- const rms=Math.sqrt(sum/Math.max(1,count)); const gate=Math.max(0.006,rms*0.55);
- let activeSum=0,activeCount=0;
- for(const s of samples){ if(s>=gate){activeSum+=s*s; activeCount++;}}
- return {rms,activeRms:Math.sqrt(activeSum/Math.max(1,activeCount))||rms,peak};
+async function decodeBlob(ctx: AudioContext, blob: Blob) {
+  const b = await blob.arrayBuffer();
+  return ctx.decodeAudioData(b.slice(0));
 }
 
-export async function calculateDuetAutoMix(params:{voiceBlob:Blob;referenceBlob?:Blob|null;referenceSource?:string|null;currentPreset?:VoicePreset;}):Promise<AutoMixResult>{
- const AudioCtx=window.AudioContext||(window as any).webkitAudioContext;
- if(!AudioCtx) throw new Error('audio_context_missing');
- const ctx=new AudioCtx({latencyHint:'playback',sampleRate:48000});
- try{
-  const [voiceBuffer,referenceBuffer]=await Promise.all([
-   decodeBlob(ctx,params.voiceBlob),
-   params.referenceBlob?decodeBlob(ctx,params.referenceBlob):decodeUrl(ctx,params.referenceSource||'')
-  ]);
+async function decodeUrl(ctx: AudioContext, url: string) {
+  const r = await fetch(url, { cache: 'force-cache' });
+  if (!r.ok) throw new Error('reference_fetch_failed');
+  const b = await r.arrayBuffer();
+  return ctx.decodeAudioData(b.slice(0));
+}
 
-  const voice=stats(voiceBuffer);
-  const reference=stats(referenceBuffer);
+function stats(buffer: AudioBuffer): AudioStats {
+  const channel = buffer.getChannelData(0);
+  const step = Math.max(1, Math.floor(channel.length / 60000));
+  let sum = 0;
+  let count = 0;
+  let peak = 0;
+  const samples: number[] = [];
+  for (let i = 0; i < channel.length; i += step) {
+    const s = Math.abs(channel[i]);
+    peak = Math.max(peak, s);
+    sum += s * s;
+    count++;
+    samples.push(s);
+  }
+  const rms = Math.sqrt(sum / Math.max(1, count));
+  const gate = Math.max(0.006, rms * 0.55);
+  let activeSum = 0;
+  let activeCount = 0;
+  for (const s of samples) {
+    if (s >= gate) {
+      activeSum += s * s;
+      activeCount++;
+    }
+  }
+  return { rms, activeRms: Math.sqrt(activeSum / Math.max(1, activeCount)) || rms, peak };
+}
 
-  const ratio=voice.activeRms/Math.max(reference.activeRms,0.0001);
-  const targetRatio=1.2; // voz levemente acima da referência
+function balancedVisibleVolumes(ratio: number) {
+  const targetRatio = 1.2;
+  const rawCorrection = Math.log2(clamp(ratio / targetRatio, 0.35, 2.85));
+  const visualSpread = clamp(rawCorrection * 16, -18, 18);
 
-  let voiceVolume=100;
-  let referenceVolume=100;
+  let voiceVolume = 100 - visualSpread;
+  let referenceVolume = 100 + visualSpread;
 
-  if(ratio<targetRatio){
-    voiceVolume=100*(targetRatio/Math.max(ratio,0.1));
-  }else{
-    referenceVolume=100*(ratio/targetRatio);
+  // Mantém os controles bonitos e proporcionais: ambos perto de 100,
+  // mas ainda corrige a relação real entre voz e referência.
+  const maxGap = 30;
+  const gap = Math.abs(referenceVolume - voiceVolume);
+  if (gap > maxGap) {
+    const center = (voiceVolume + referenceVolume) / 2;
+    const sign = referenceVolume > voiceVolume ? 1 : -1;
+    voiceVolume = center - sign * (maxGap / 2);
+    referenceVolume = center + sign * (maxGap / 2);
   }
 
-  // limites conservadores para não gerar mix maluca
-  voiceVolume=clamp(voiceVolume,70,165);
-  referenceVolume=clamp(referenceVolume,45,120);
+  return {
+    voiceVolume: roundToStep(clamp(voiceVolume, 82, 118)),
+    referenceVolume: roundToStep(clamp(referenceVolume, 82, 118)),
+  };
+}
 
-  // proteção contra clipping
-  if(voice.peak>0.85) voiceVolume=Math.min(voiceVolume,100);
-  if(voice.activeRms<0.04) voiceVolume=Math.max(voiceVolume,130);
+export async function calculateDuetAutoMix(params: { voiceBlob: Blob; referenceBlob?: Blob | null; referenceSource?: string | null; currentPreset?: VoicePreset; }): Promise<AutoMixResult> {
+  const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!AudioCtx) throw new Error('audio_context_missing');
+  const ctx = new AudioCtx({ latencyHint: 'playback', sampleRate: 48000 });
+  try {
+    const [voiceBuffer, referenceBuffer] = await Promise.all([
+      decodeBlob(ctx, params.voiceBlob),
+      params.referenceBlob ? decodeBlob(ctx, params.referenceBlob) : decodeUrl(ctx, params.referenceSource || ''),
+    ]);
 
-  voiceVolume=roundToStep(voiceVolume);
-  referenceVolume=roundToStep(referenceVolume);
+    const voice = stats(voiceBuffer);
+    const reference = stats(referenceBuffer);
+    const ratio = voice.activeRms / Math.max(reference.activeRms, 0.0001);
+    let { voiceVolume, referenceVolume } = balancedVisibleVolumes(ratio);
 
-  const preset:VoicePreset=params.currentPreset&&params.currentPreset!=='natural'?params.currentPreset:'studio';
+    if (voice.peak > 0.9) voiceVolume = Math.min(voiceVolume, 95);
+    if (voice.activeRms < 0.035 && ratio < 1.1) voiceVolume = Math.max(voiceVolume, 112);
 
-  let message='Mix equilibrada automaticamente.';
-  if(ratio>1.8) message='Sua voz estava muito acima da referência. Reequilibrei a mix.';
-  else if(ratio<0.8) message='Sua voz estava baixa. Aumentei a presença vocal.';
+    const preset: VoicePreset = params.currentPreset && params.currentPreset !== 'natural' ? params.currentPreset : 'studio';
 
-  return {voiceVolume,referenceVolume,preset,message};
- } finally { await ctx.close().catch(()=>undefined); }
+    let message = 'Mix equilibrada automaticamente.';
+    if (ratio > 1.8) message = 'Sua voz estava acima da referência. Equilibrei os dois volumes.';
+    else if (ratio < 0.8) message = 'Sua voz estava baixa. Ajustei a presença vocal sem exagerar.';
+
+    return { voiceVolume, referenceVolume, preset, message };
+  } finally {
+    await ctx.close().catch(() => undefined);
+  }
 }
