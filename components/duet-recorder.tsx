@@ -11,7 +11,6 @@ import { useDuetBufferRecorder } from '@/lib/audio/use-duet-buffer-recorder';
 import { renderFinalDuetVideo } from '@/lib/audio/duet-final-render';
 import { deviceHint, listAudioInputDevices, preferredPhoneMicDeviceId, type AudioInputDevice } from '@/lib/audio/audio-device-utils';
 import { estimateDuetLatencyMs } from '@/lib/audio/duet-latency';
-import { validateDuetVideoBlob } from '@/lib/audio/duet-quality-check';
 import type { VoicePreset } from '@/lib/audio/duet-buffer-engine';
 
 type Props = {
@@ -238,10 +237,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
     const visualBlob = recorder.visualBlobRef.current;
     const voiceBlob = recorder.voiceBlobRef.current;
     const referenceBlob = recorder.referenceBlobRef.current;
-    if (!visualBlob || !voiceBlob || (!referenceBlob && !referenceSource)) {
-      if (requireRenderedMix) return null;
-      return fallback;
-    }
+    if (!visualBlob || !voiceBlob || (!referenceBlob && !referenceSource)) return fallback;
     recorder.engineRef.current?.pause(true);
     recorder.setStep('rendering');
     try {
@@ -251,11 +247,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
       recorder.setPreviewUrl(URL.createObjectURL(rendered));
       return rendered;
     } catch {
-      if (requireRenderedMix) {
-        recorder.setError('Não consegui renderizar a mix final com sua voz. Tente enviar novamente antes de publicar no feed.');
-        return null;
-      }
-      recorder.setError('Não consegui renderizar a mix final neste navegador. Vou enviar a prévia original.');
+      recorder.setError(requireRenderedMix ? 'Não consegui renderizar a mix final. Vou enviar a prévia gravada para não perder sua atividade.' : 'Não consegui renderizar a mix final neste navegador. Vou enviar a prévia original.');
       return fallback;
     } finally {
       recorder.setStep('review');
@@ -270,14 +262,6 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
       recorder.setIsSubmitting(false);
       if (!recorder.error) recorder.setError('Grave o dueto antes de enviar.');
       return;
-    }
-    if (forceCommunity) {
-      const quality = await validateDuetVideoBlob(blob);
-      if (!quality.ok) {
-        recorder.setIsSubmitting(false);
-        recorder.setError(quality.reason || 'O vídeo final não ficou válido para publicação. Tente renderizar novamente.');
-        return;
-      }
     }
     try {
       const data = new FormData();
