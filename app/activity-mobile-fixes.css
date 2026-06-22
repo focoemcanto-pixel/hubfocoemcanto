@@ -41,6 +41,50 @@
   to { transform: rotate(360deg); }
 }
 
+.smule-slider-row input[type='range'] {
+  accent-color: #f5c76b;
+}
+
+.duet-premium-action {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  border: 1px solid rgba(245, 199, 107, 0.24);
+  border-radius: 18px;
+  padding: 14px 16px;
+  background: linear-gradient(135deg, rgba(245, 199, 107, 0.14), rgba(255, 255, 255, 0.035));
+  color: #fff;
+  text-align: left;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 14px 34px rgba(0, 0, 0, 0.24);
+}
+
+.duet-premium-action svg {
+  flex: 0 0 auto;
+  color: #f5c76b;
+}
+
+.duet-premium-action span {
+  display: grid;
+  gap: 3px;
+}
+
+.duet-premium-action strong {
+  font-size: 15px;
+  line-height: 1.1;
+}
+
+.duet-premium-action small {
+  color: rgba(255, 255, 255, 0.68);
+  line-height: 1.25;
+}
+
+.duet-premium-action.active,
+.duet-premium-action.automix-action {
+  border-color: rgba(245, 199, 107, 0.42);
+  background: linear-gradient(135deg, rgba(245, 199, 107, 0.22), rgba(245, 199, 107, 0.07));
+}
+
 @media (max-width: 760px) {
   .bottom-nav {
     width: min(420px, calc(100% - 28px)) !important;
