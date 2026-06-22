@@ -13,7 +13,7 @@ type ProductRow = {
   cover_url: string | null;
   price_cents: number | null;
   billing_type: string | null;
-  courses?: { id: string }[] | null;
+  courses?: { id: string; slug: string | null }[] | null;
 };
 
 function slugify(value: string) {
@@ -66,7 +66,7 @@ export default async function AdminProductsPage() {
   const supabase = createAdminClient();
   const { data } = await supabase
     .from('products')
-    .select('id,name,slug,description,type,status,cover_url,price_cents,billing_type,courses(id)')
+    .select('id,name,slug,description,type,status,cover_url,price_cents,billing_type,courses(id,slug)')
     .order('created_at', { ascending: false });
   const products = (data || []) as ProductRow[];
 
@@ -78,31 +78,35 @@ export default async function AdminProductsPage() {
           <h1>Produtos</h1>
           <p>Crie, precifique e gerencie cursos ou assinaturas em um único lugar. Produto e área de membros agora são a mesma experiência.</p>
         </div>
-        <a className="admin-clean-button primary" href="#novo-produto">Criar produto</a>
+        <label className="admin-clean-button primary" htmlFor="create-product-toggle">Criar produto</label>
       </section>
 
       <section className="admin-course-grid">
-        {products.map((product) => (
-          <article className="admin-course-card" key={product.id}>
-            <div className="admin-course-cover">
-              {product.cover_url ? <img src={product.cover_url} alt={product.name} /> : <span>{product.name.slice(0, 2).toUpperCase()}</span>}
-            </div>
-            <div className="admin-course-body">
-              <span className="admin-clean-pill">{product.billing_type === 'recurring' ? 'Assinatura' : 'Pagamento único'} · {product.status || 'draft'}</span>
-              <h2>{product.name}</h2>
-              <p className="admin-clean-muted">{product.description || 'Sem descrição cadastrada.'}</p>
-              <div className="product-meta-line"><strong>{money(product.price_cents)}</strong><small>{product.courses?.length || 0} área vinculada</small></div>
-              <div className="admin-clean-actions">
-                <a className="admin-clean-button primary" href={`/admin/produtos/${product.id}`}>Gerenciar</a>
-                <a className="admin-clean-button secondary" href={`/aluno/cursos/${product.slug}`}>Prévia</a>
+        {products.map((product) => {
+          const previewHref = '/aluno/biblioteca';
+          return (
+            <article className="admin-course-card" key={product.id}>
+              <div className="admin-course-cover">
+                {product.cover_url ? <img src={product.cover_url} alt={product.name} /> : <span>{product.name.slice(0, 2).toUpperCase()}</span>}
               </div>
-            </div>
-          </article>
-        ))}
+              <div className="admin-course-body">
+                <span className="admin-clean-pill">{product.billing_type === 'recurring' ? 'Assinatura' : 'Pagamento único'} · {product.status || 'draft'}</span>
+                <h2>{product.name}</h2>
+                <p className="admin-clean-muted">{product.description || 'Sem descrição cadastrada.'}</p>
+                <div className="product-meta-line"><strong>{money(product.price_cents)}</strong><small>{product.courses?.length || 0} área vinculada</small></div>
+                <div className="admin-clean-actions">
+                  <a className="admin-clean-button primary" href={`/admin/produtos/${product.id}`}>Gerenciar</a>
+                  <a className="admin-clean-button secondary" href={previewHref}>Prévia</a>
+                </div>
+              </div>
+            </article>
+          );
+        })}
       </section>
 
-      <section id="novo-produto" className="admin-clean-section">
-        <div className="admin-clean-heading"><div><span className="admin-clean-eyebrow">Novo produto</span><h2>Criar produto</h2></div></div>
+      <input id="create-product-toggle" className="admin-hidden-toggle" type="checkbox" />
+      <section id="novo-produto" className="admin-clean-section admin-create-product-panel">
+        <div className="admin-clean-heading"><div><span className="admin-clean-eyebrow">Novo produto</span><h2>Criar produto</h2></div><label className="admin-clean-button secondary" htmlFor="create-product-toggle">Fechar</label></div>
         <form className="admin-clean-form" action={createProduct}>
           <label>Tipo de pagamento<select name="billing_type" defaultValue="one_time"><option value="one_time">Pagamento único</option><option value="recurring">Assinatura recorrente</option></select></label>
           <label>Nome do produto<input name="name" placeholder="Ex: Foco em Harmonia" required /></label>
