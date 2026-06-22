@@ -2,9 +2,8 @@ import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 function isValidActiveSubscription(subscription: any) {
-  if (subscription?.status !== 'active') return false;
-  if (!subscription?.current_period_end) return true;
-  return new Date(subscription.current_period_end).getTime() >= Date.now();
+  const status = String(subscription?.status || '').toLowerCase();
+  return status === 'active';
 }
 
 export async function POST(request: Request) {
