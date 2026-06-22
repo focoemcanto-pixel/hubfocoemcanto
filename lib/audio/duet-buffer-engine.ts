@@ -1,5 +1,12 @@
 export type VoicePreset = 'natural' | 'studio' | 'worship' | 'coral';
 
+type DuetSettings = {
+  voiceVolume: number;
+  referenceVolume: number;
+  preset: VoicePreset;
+  latencyMs?: number;
+};
+
 type Bus = {
   ctx: AudioContext;
   voiceInput: GainNode;
@@ -35,7 +42,7 @@ export class DuetBufferEngine {
   video: HTMLVideoElement | null = null;
   isPlaying = false;
 
-  constructor(private getSettings: () => { voiceVolume: number; referenceVolume: number; preset: VoicePreset }) {}
+  constructor(private getSettings: () => DuetSettings) {}
 
   async load(voiceBlob: Blob, referenceUrl: string) {
     const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -101,13 +108,15 @@ export class DuetBufferEngine {
     let offset = this.offset;
     if (duration && offset >= duration - 0.05) offset = 0;
 
+    const latencySeconds = this.voiceLatencySeconds();
+    const voiceOffset = Math.min(Math.max(0, offset + latencySeconds), Math.max(0, this.voiceBuffer.duration - 0.02));
     const voice = this.bus.ctx.createBufferSource();
     const reference = this.bus.ctx.createBufferSource();
     voice.buffer = this.voiceBuffer;
     reference.buffer = this.referenceBuffer;
     voice.connect(this.bus.voiceInput);
     reference.connect(this.bus.referenceInput);
-    voice.onended = () => {
+    reference.onended = () => {
       if (this.isPlaying) this.pause(false, true);
     };
 
@@ -117,7 +126,7 @@ export class DuetBufferEngine {
     this.video.playbackRate = 1;
     await this.video.play().catch(() => undefined);
     const startAt = this.bus.ctx.currentTime + 0.035;
-    voice.start(startAt, offset);
+    voice.start(startAt, voiceOffset);
     reference.start(startAt, offset);
     this.playback = { voice, reference, startedAt: startAt - offset };
     this.offset = offset;
@@ -153,9 +162,14 @@ export class DuetBufferEngine {
 
   duration() {
     const videoDuration = this.video?.duration || 0;
-    const voiceDuration = this.voiceBuffer?.duration || 0;
+    const voiceDuration = Math.max(0, (this.voiceBuffer?.duration || 0) - this.voiceLatencySeconds());
     const referenceDuration = this.referenceBuffer?.duration || 0;
     return Math.max(0, Math.min(...[videoDuration, voiceDuration, referenceDuration].filter(Boolean)) || videoDuration || voiceDuration || referenceDuration);
+  }
+
+  private voiceLatencySeconds() {
+    const latencyMs = this.getSettings().latencyMs || 0;
+    return Math.max(0, Math.min(0.28, latencyMs / 1000));
   }
 
   private startSyncLoop() {
