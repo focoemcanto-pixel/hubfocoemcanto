@@ -50,29 +50,14 @@ function stats(buffer: AudioBuffer): AudioStats {
   return { rms, activeRms: Math.sqrt(activeSum / Math.max(1, activeCount)) || rms, peak };
 }
 
-function balancedVisibleVolumes(ratio: number) {
-  const targetRatio = 1.2;
-  const rawCorrection = Math.log2(clamp(ratio / targetRatio, 0.35, 2.85));
-  const visualSpread = clamp(rawCorrection * 16, -18, 18);
-
-  let voiceVolume = 100 - visualSpread;
-  let referenceVolume = 100 + visualSpread;
-
-  // Mantém os controles bonitos e proporcionais: ambos perto de 100,
-  // mas ainda corrige a relação real entre voz e referência.
-  const maxGap = 30;
-  const gap = Math.abs(referenceVolume - voiceVolume);
-  if (gap > maxGap) {
-    const center = (voiceVolume + referenceVolume) / 2;
-    const sign = referenceVolume > voiceVolume ? 1 : -1;
-    voiceVolume = center - sign * (maxGap / 2);
-    referenceVolume = center + sign * (maxGap / 2);
-  }
-
-  return {
-    voiceVolume: roundToStep(clamp(voiceVolume, 82, 118)),
-    referenceVolume: roundToStep(clamp(referenceVolume, 82, 118)),
-  };
+function fineTuneVolumes(ratio: number) {
+  const targetRatio = 1.08;
+  const correction = Math.log2(clamp(ratio / targetRatio, 0.45, 2.4));
+  let voiceVolume = 100 - correction * 10;
+  let referenceVolume = 100 + correction * 10;
+  voiceVolume = roundToStep(clamp(voiceVolume, 70, 100));
+  referenceVolume = roundToStep(clamp(referenceVolume, 70, 100));
+  return { voiceVolume, referenceVolume };
 }
 
 export async function calculateDuetAutoMix(params: { voiceBlob: Blob; referenceBlob?: Blob | null; referenceSource?: string | null; currentPreset?: VoicePreset; }): Promise<AutoMixResult> {
@@ -88,16 +73,16 @@ export async function calculateDuetAutoMix(params: { voiceBlob: Blob; referenceB
     const voice = stats(voiceBuffer);
     const reference = stats(referenceBuffer);
     const ratio = voice.activeRms / Math.max(reference.activeRms, 0.0001);
-    let { voiceVolume, referenceVolume } = balancedVisibleVolumes(ratio);
+    let { voiceVolume, referenceVolume } = fineTuneVolumes(ratio);
 
-    if (voice.peak > 0.9) voiceVolume = Math.min(voiceVolume, 95);
-    if (voice.activeRms < 0.035 && ratio < 1.1) voiceVolume = Math.max(voiceVolume, 112);
+    if (voice.peak > 0.9) voiceVolume = Math.min(voiceVolume, 90);
+    if (voice.activeRms < 0.035 && ratio < 1.1) voiceVolume = Math.max(voiceVolume, 95);
 
     const preset: VoicePreset = params.currentPreset && params.currentPreset !== 'natural' ? params.currentPreset : 'studio';
 
-    let message = 'Mix equilibrada automaticamente.';
-    if (ratio > 1.8) message = 'Sua voz estava acima da referência. Equilibrei os dois volumes.';
-    else if (ratio < 0.8) message = 'Sua voz estava baixa. Ajustei a presença vocal sem exagerar.';
+    let message = 'Ganhos das faixas normalizados. Ajuste fino aplicado.';
+    if (ratio > 1.8) message = 'Sua voz veio com ganho alto. Normalizei a faixa e deixei a referência presente.';
+    else if (ratio < 0.8) message = 'Sua voz veio baixa. Normalizei a faixa sem exagerar o volume.';
 
     return { voiceVolume, referenceVolume, preset, message };
   } finally {
