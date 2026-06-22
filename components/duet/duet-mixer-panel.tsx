@@ -1,6 +1,6 @@
 'use client';
 
-import { Headphones, Mic, Music2, SlidersHorizontal } from 'lucide-react';
+import { Headphones, Mic, Music2, SlidersHorizontal, Sparkles } from 'lucide-react';
 import { duetPresets } from './duet-presets';
 import type { VoicePreset } from '@/lib/audio/duet-buffer-engine';
 
@@ -11,11 +11,14 @@ type Props = {
   canLiveEdit: boolean;
   latencyMs?: number;
   noiseReduction?: boolean;
+  isAutoMixing?: boolean;
+  autoMixMessage?: string;
   onVoiceChange: (value: number) => void;
   onReferenceChange: (value: number) => void;
   onPresetChange: (value: VoicePreset) => void;
   onLatencyChange?: (value: number) => void;
   onNoiseReductionChange?: (value: boolean) => void;
+  onAutoMix?: () => void;
   onReset: () => void;
 };
 
@@ -25,10 +28,13 @@ export function DuetMixerPanel({
   preset,
   canLiveEdit,
   noiseReduction = false,
+  isAutoMixing = false,
+  autoMixMessage = '',
   onVoiceChange,
   onReferenceChange,
   onPresetChange,
   onNoiseReductionChange,
+  onAutoMix,
   onReset,
 }: Props) {
   return (
@@ -40,6 +46,13 @@ export function DuetMixerPanel({
         </div>
         <button type="button" onClick={onReset}>Reset</button>
       </header>
+      <button type="button" className="noise-reduction-toggle compact active" onClick={onAutoMix} disabled={!canLiveEdit || isAutoMixing}>
+        <Sparkles size={18} />
+        <span>
+          <strong>{isAutoMixing ? 'Analisando sua voz...' : 'Melhorar automaticamente'}</strong>
+          <small>{autoMixMessage || 'Equilibra voz e referência sem precisar mexer nos sliders.'}</small>
+        </span>
+      </button>
       <div className="smule-slider-row">
         <span><Mic size={17} /> Voz</span>
         <input type="range" min="0" max="220" value={voiceVolume} onChange={(event) => onVoiceChange(Number(event.target.value))} />
@@ -66,7 +79,7 @@ export function DuetMixerPanel({
         </span>
       </button>
       <p className="smule-note">
-        <Headphones size={15} /> {canLiveEdit ? 'O Hub já aplica tratamento interno. Ajuste apenas volume, efeito e ruído se precisar.' : 'Preparando motor de audio profissional...'}
+        <Headphones size={15} /> {canLiveEdit ? 'O Hub já aplica tratamento interno. Use o AutoMix e ajuste manualmente só se quiser.' : 'Preparando motor de audio profissional...'}
       </p>
     </section>
   );
