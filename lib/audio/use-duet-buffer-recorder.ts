@@ -79,12 +79,15 @@ export function useDuetBufferRecorder(referenceSource: string, lessonSlug: strin
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const visualRecorderRef = useRef<MediaRecorder | null>(null);
   const micRecorderRef = useRef<MediaRecorder | null>(null);
+  const referenceRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const visualChunksRef = useRef<Blob[]>([]);
   const micChunksRef = useRef<Blob[]>([]);
+  const referenceChunksRef = useRef<Blob[]>([]);
   const finalBlobRef = useRef<Blob | null>(null);
   const visualBlobRef = useRef<Blob | null>(null);
   const voiceBlobRef = useRef<Blob | null>(null);
+  const referenceBlobRef = useRef<Blob | null>(null);
 
   const canRecord = useMemo(() => typeof window !== 'undefined' && !!navigator.mediaDevices?.getUserMedia, []);
   const canLiveEdit = Boolean(visualUrl && audioReady);
@@ -134,11 +137,12 @@ export function useDuetBufferRecorder(referenceSource: string, lessonSlug: strin
     draw();
   }
 
-  async function prepareEngine(voiceBlob: Blob) {
-    if (!referenceSource) return;
+  async function prepareEngine(voiceBlob: Blob, referenceBlob?: Blob | null) {
+    if (!referenceSource && !referenceBlob) return;
     const engine = await loadDuetBufferEngine({
       voiceBlob,
       referenceSource,
+      referenceBlob,
       previewVideo: previewRef.current,
       settings,
       previous: engineRef.current,
@@ -160,5 +164,5 @@ export function useDuetBufferRecorder(referenceSource: string, lessonSlug: strin
     engineRef.current?.applySettings();
   }
 
-  return { step, setStep, count, setCount, previewUrl, setPreviewUrl, visualUrl, setVisualUrl, error, setError, voiceVolume, setVoiceVolume, referenceVolume, setReferenceVolume, preset, setPreset, audioReady, setAudioReady, isPlaying, setIsPlaying, isSubmitting, setIsSubmitting, cameraRef, referenceRef, previewRef, canvasRef, engineRef, chunksRef, visualChunksRef, micChunksRef, mediaRecorderRef, visualRecorderRef, micRecorderRef, finalBlobRef, visualBlobRef, voiceBlobRef, canRecord, canLiveEdit, settings, cleanup, waitReady, drawFrame, startDraw, clearDraw, applySettings, prepareEngine, togglePlayback, options, mime, isSafariLike, streamRef, audioCtxRef, referenceSource, lessonSlug };
+  return { step, setStep, count, setCount, previewUrl, setPreviewUrl, visualUrl, setVisualUrl, error, setError, voiceVolume, setVoiceVolume, referenceVolume, setReferenceVolume, preset, setPreset, audioReady, setAudioReady, isPlaying, setIsPlaying, isSubmitting, setIsSubmitting, cameraRef, referenceRef, previewRef, canvasRef, engineRef, chunksRef, visualChunksRef, micChunksRef, referenceChunksRef, mediaRecorderRef, visualRecorderRef, micRecorderRef, referenceRecorderRef, finalBlobRef, visualBlobRef, voiceBlobRef, referenceBlobRef, canRecord, canLiveEdit, settings, cleanup, waitReady, drawFrame, startDraw, clearDraw, applySettings, prepareEngine, togglePlayback, options, mime, isSafariLike, streamRef, audioCtxRef, referenceSource, lessonSlug };
 }
