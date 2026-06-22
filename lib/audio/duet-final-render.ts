@@ -65,13 +65,14 @@ function rmsNormalize(buffer: AudioBuffer) {
     count++;
   }
   const rms = Math.sqrt(sum / Math.max(1, count));
-  if (!Number.isFinite(rms) || rms <= 0.0001) return 2.8;
-  return Math.max(1.2, Math.min(5.2, 0.18 / rms));
+  if (!Number.isFinite(rms) || rms <= 0.0001) return 3.2;
+  return Math.max(1.35, Math.min(6.4, 0.22 / rms));
 }
 
 function applyVoicePreset(ctx: AudioContext, input: AudioNode, destination: AudioNode, preset: VoicePreset, voiceGainValue: number) {
   const gain = ctx.createGain();
   const highpass = ctx.createBiquadFilter();
+  const body = ctx.createBiquadFilter();
   const presence = ctx.createBiquadFilter();
   const compressor = ctx.createDynamicsCompressor();
   const delay = ctx.createDelay(0.35);
@@ -82,25 +83,29 @@ function applyVoicePreset(ctx: AudioContext, input: AudioNode, destination: Audi
   gain.gain.value = voiceGainValue;
   highpass.type = 'highpass';
   highpass.frequency.value = preset === 'natural' ? 70 : 95;
+  body.type = 'peaking';
+  body.frequency.value = 240;
+  body.Q.value = 0.75;
+  body.gain.value = preset === 'studio' ? 1.5 : preset === 'worship' ? 1.1 : 0.4;
   presence.type = 'peaking';
   presence.frequency.value = 3200;
   presence.Q.value = 0.9;
-  presence.gain.value = preset === 'natural' ? 1.2 : preset === 'coral' ? 2.2 : 3.2;
-  compressor.threshold.value = preset === 'natural' ? -21 : -28;
+  presence.gain.value = preset === 'natural' ? 1.2 : preset === 'coral' ? 2.2 : 3.5;
+  compressor.threshold.value = preset === 'natural' ? -22 : -30;
   compressor.knee.value = 18;
-  compressor.ratio.value = preset === 'natural' ? 2.2 : 4.2;
-  compressor.attack.value = 0.004;
-  compressor.release.value = 0.18;
+  compressor.ratio.value = preset === 'natural' ? 2.4 : 4.8;
+  compressor.attack.value = 0.003;
+  compressor.release.value = 0.16;
   delay.delayTime.value = preset === 'coral' ? 0.028 : preset === 'worship' ? 0.12 : 0.001;
   wet.gain.value = preset === 'coral' ? 0.18 : preset === 'worship' ? 0.14 : 0;
   dry.gain.value = preset === 'natural' ? 1 : 0.94;
-  limiter.threshold.value = -5.5;
+  limiter.threshold.value = -4.8;
   limiter.knee.value = 1.5;
-  limiter.ratio.value = 14;
-  limiter.attack.value = 0.002;
-  limiter.release.value = 0.08;
+  limiter.ratio.value = 16;
+  limiter.attack.value = 0.0015;
+  limiter.release.value = 0.07;
 
-  input.connect(gain).connect(highpass).connect(presence).connect(compressor);
+  input.connect(gain).connect(highpass).connect(body).connect(presence).connect(compressor);
   compressor.connect(dry).connect(limiter);
   compressor.connect(delay).connect(wet).connect(limiter);
   limiter.connect(destination);
@@ -172,20 +177,22 @@ export async function renderFinalDuetVideo({ visualBlob, voiceBlob, referenceSou
   recorder.start(1000);
   visual.currentTime = 0;
   await audioCtx.resume().catch(() => undefined);
-  await visual.play();
-  const startAt = audioCtx.currentTime + 0.04;
+  const startAt = audioCtx.currentTime + 0.06;
   voiceSource.start(startAt, 0);
   referenceSourceNode.start(startAt, 0);
-  draw();
+  const startDelayMs = Math.max(0, (startAt - audioCtx.currentTime) * 1000);
+  window.setTimeout(() => {
+    visual.play().then(draw).catch(stop);
+  }, startDelayMs);
   visual.onended = stop;
-  window.setTimeout(stop, Math.max(2500, (visual.duration || 90) * 1000 + 900));
+  window.setTimeout(stop, Math.max(2500, (visual.duration || 90) * 1000 + startDelayMs + 900));
   const rendered = await done;
   await audioCtx.close().catch(() => undefined);
   return rendered;
 }
 
 export function normalizeVoiceTarget(volume: number) {
-  return Math.max(0, Math.min(2.5, volume / 100));
+  return Math.max(0, Math.min(3.2, volume / 100));
 }
 
 export function referenceTarget(volume: number) {
