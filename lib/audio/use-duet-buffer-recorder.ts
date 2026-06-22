@@ -60,13 +60,14 @@ export function useDuetBufferRecorder(referenceSource: string, lessonSlug: strin
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [visualUrl, setVisualUrl] = useState<string | null>(null);
   const [error, setError] = useState('');
-  const [voiceVolume, setVoiceVolume] = useState(135);
-  const [referenceVolume, setReferenceVolume] = useState(45);
-  const [preset, setPreset] = useState<VoicePreset>('worship');
+  const [voiceVolume, setVoiceVolumeState] = useState(135);
+  const [referenceVolume, setReferenceVolumeState] = useState(45);
+  const [preset, setPresetState] = useState<VoicePreset>('worship');
   const [audioReady, setAudioReady] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const settingsRef = useRef({ voiceVolume: 135, referenceVolume: 45, preset: 'worship' as VoicePreset });
   const cameraRef = useRef<HTMLVideoElement | null>(null);
   const referenceRef = useRef<HTMLVideoElement | null>(null);
   const previewRef = useRef<HTMLVideoElement | null>(null);
@@ -91,7 +92,25 @@ export function useDuetBufferRecorder(referenceSource: string, lessonSlug: strin
 
   const canRecord = useMemo(() => typeof window !== 'undefined' && !!navigator.mediaDevices?.getUserMedia, []);
   const canLiveEdit = Boolean(visualUrl && audioReady);
-  const settings = () => ({ voiceVolume, referenceVolume, preset });
+  const settings = () => settingsRef.current;
+
+  function setVoiceVolume(value: number) {
+    settingsRef.current = { ...settingsRef.current, voiceVolume: value };
+    setVoiceVolumeState(value);
+    engineRef.current?.applySettings();
+  }
+
+  function setReferenceVolume(value: number) {
+    settingsRef.current = { ...settingsRef.current, referenceVolume: value };
+    setReferenceVolumeState(value);
+    engineRef.current?.applySettings();
+  }
+
+  function setPreset(value: VoicePreset) {
+    settingsRef.current = { ...settingsRef.current, preset: value };
+    setPresetState(value);
+    engineRef.current?.applySettings();
+  }
 
   function clearDraw() {
     if (drawRef.current) cancelAnimationFrame(drawRef.current);
@@ -161,6 +180,7 @@ export function useDuetBufferRecorder(referenceSource: string, lessonSlug: strin
   }
 
   function applySettings() {
+    settingsRef.current = { voiceVolume, referenceVolume, preset };
     engineRef.current?.applySettings();
   }
 
