@@ -56,7 +56,7 @@ export default async function AdminLibraryPage() {
               <div className="module-action-row">
                 <a className="button secondary" href={`/admin/biblioteca/${module.id}`}>Gerenciar</a>
                 <a className="button secondary" href={`/aluno/biblioteca/${module.slug}`}>Ver aluno</a>
-                <form action={`/admin/biblioteca/${module.id}/excluir`} method="post" onSubmit="return confirm('Remover este módulo da biblioteca?')">
+                <form action={`/admin/biblioteca/${module.id}/excluir`} method="post">
                   <button className="button danger-button" type="submit">Excluir</button>
                 </form>
               </div>
