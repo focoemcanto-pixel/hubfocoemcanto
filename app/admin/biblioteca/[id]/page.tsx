@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { AdminInlineModuleTitle } from '@/components/admin-inline-module-title';
 import { AdminLessonTitleEditor } from '@/components/admin-lesson-title-editor';
+import { AdminLoadingLink } from '@/components/admin-loading-link';
 import { AdminModuleCoverUploader } from '@/components/admin-module-cover-uploader';
 import { createAdminClient } from '@/lib/supabase/admin';
 
@@ -48,7 +49,7 @@ export default async function AdminModulePage({ params, searchParams }: { params
             <AdminInlineModuleTitle moduleId={id} initialTitle={moduleTitle} />
             <p>{moduleDescription}</p>
             <small>Capas recomendadas: módulo 320x480, thumbnail de aula 1280x720.</small>
-            <nav className="premium-admin-tabs"><a className="active" href="#dados">Dados do módulo</a><a href={importUrl}>Importar do Drive</a><a href={studentUrl}>Ver aluno</a></nav>
+            <nav className="premium-admin-tabs"><a className="active" href="#dados">Dados do módulo</a><AdminLoadingLink href={importUrl} loadingLabel="Abrindo Drive...">Importar do Drive</AdminLoadingLink><a href={studentUrl}>Ver aluno</a></nav>
           </div>
           <div className="premium-cover-panel">
             <AdminModuleCoverUploader moduleId={id} title={moduleTitle} description={module?.description || ''} sortOrder={module?.sort_order || 1} initialCoverUrl={coverUrl} />
@@ -56,7 +57,7 @@ export default async function AdminModulePage({ params, searchParams }: { params
         </section>
 
         <section className="premium-admin-stats">
-          <article><Folder size={30} /><span>Origem do conteúdo</span><strong>{storageProvider === 'r2' ? 'Cloudflare R2' : 'Google Drive'}</strong><p>{storageProvider === 'r2' ? 'Preparado para receber vídeos hospedados no R2.' : 'Entre na pasta certa e importe apenas os arquivos deste módulo.'}</p><a href={importUrl}>Selecionar pasta ou arquivo</a></article>
+          <article><Folder size={30} /><span>Origem do conteúdo</span><strong>{storageProvider === 'r2' ? 'Cloudflare R2' : 'Google Drive'}</strong><p>{storageProvider === 'r2' ? 'Preparado para receber vídeos hospedados no R2.' : 'Entre na pasta certa e importe apenas os arquivos deste módulo.'}</p><AdminLoadingLink href={importUrl} loadingLabel="Abrindo Drive...">Selecionar pasta ou arquivo</AdminLoadingLink></article>
           <article><ListChecks size={30} /><span>Conteúdos</span><strong>{exercises?.length || 0}</strong><p>Aulas e exercícios neste módulo.</p></article>
           <article><FilePlus2 size={30} /><span>Capas</span><strong>320x480</strong><p>Proporção ideal para cards verticais premium.</p></article>
         </section>
@@ -100,7 +101,7 @@ export default async function AdminModulePage({ params, searchParams }: { params
         </section>
 
         <section className="premium-lessons-board premium-lessons-board-refined">
-          <div className="premium-lessons-head premium-lessons-head-refined"><div><p className="eyebrow">Aulas e exercícios</p><h2>Gerencie os conteúdos</h2><p>Renomeie como no computador: editou, salvou e continua no mesmo lugar.</p></div><div><a href={importUrl}><Plus size={16} /> Adicionar vídeo</a><button form="bulk-delete-lessons" type="submit"><Trash2 size={16} /> Excluir selecionadas</button></div></div>
+          <div className="premium-lessons-head premium-lessons-head-refined"><div><p className="eyebrow">Aulas e exercícios</p><h2>Gerencie os conteúdos</h2><p>Renomeie como no computador: editou, salvou e continua no mesmo lugar.</p></div><div><AdminLoadingLink href={importUrl} loadingLabel="Abrindo Drive..."><Plus size={16} /> Adicionar vídeo</AdminLoadingLink><button form="bulk-delete-lessons" type="submit"><Trash2 size={16} /> Excluir selecionadas</button></div></div>
           <form id="bulk-delete-lessons" action={`/admin/biblioteca/${id}/aulas/excluir`} method="post">
             <div className="premium-lessons-list premium-lessons-list-refined">
               {(exercises || []).map((exercise: any, index: number) => {
