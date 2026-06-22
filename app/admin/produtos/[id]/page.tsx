@@ -6,89 +6,15 @@ import { AdminProductCoverPreview } from '@/components/admin-product-cover-previ
 
 export const dynamic = 'force-dynamic';
 
-const ASSETS_BUCKET = 'hub-assets';
 type Row = any;
-type Search = { tab?: string };
+type Search = { tab?: string; saved?: string; error?: string };
 
 function price(cents?: number | null) {
   return String(((cents || 0) / 100).toFixed(2));
 }
 
-function money(cents?: number | null) {
-  return ((cents || 0) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
-
 function slugify(value: string) {
   return value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || `item-${Date.now()}`;
-}
-
-async function ensureAssetsBucket() {
-  const supabase = createAdminClient();
-  const { data: buckets, error } = await supabase.storage.listBuckets();
-  if (error) return { ok: false, error: error.message };
-  const exists = buckets?.some((bucket) => bucket.id === ASSETS_BUCKET || bucket.name === ASSETS_BUCKET);
-  if (exists) return { ok: true };
-  const { error: createError } = await supabase.storage.createBucket(ASSETS_BUCKET, { public: true });
-  if (createError && !createError.message.toLowerCase().includes('already exists')) return { ok: false, error: createError.message };
-  return { ok: true };
-}
-
-async function uploadProductCover(file: File, productId: string) {
-  if (!file || file.size === 0) return { ok: true, url: '' };
-  if (!file.type.startsWith('image/')) return { ok: false, error: 'Arquivo de capa inválido.' };
-  const bucket = await ensureAssetsBucket();
-  if (!bucket.ok) return { ok: false, error: bucket.error || 'Erro no bucket.' };
-  const supabase = createAdminClient();
-  const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
-  const safeExt = ['jpg', 'jpeg', 'png', 'webp'].includes(ext) ? ext : 'jpg';
-  const path = `products/${productId}/cover-${Date.now()}.${safeExt}`;
-  const bytes = await file.arrayBuffer();
-  const { error } = await supabase.storage.from(ASSETS_BUCKET).upload(path, bytes, { contentType: file.type || 'image/jpeg', upsert: true });
-  if (error) return { ok: false, error: error.message };
-  const { data } = supabase.storage.from(ASSETS_BUCKET).getPublicUrl(path);
-  return { ok: true, url: data.publicUrl };
-}
-
-async function updateProduct(formData: FormData) {
-  'use server';
-  const supabase = createAdminClient();
-  const id = String(formData.get('id') || '');
-  const courseId = String(formData.get('course_id') || '');
-  const name = String(formData.get('name') || '').trim();
-  const slug = String(formData.get('slug') || '').trim();
-  const description = String(formData.get('description') || '').trim();
-  const status = String(formData.get('status') || 'draft');
-  const billingType = String(formData.get('billing_type') || 'one_time');
-  const removeCover = String(formData.get('remove_cover') || '') === '1';
-  const coverFile = formData.get('cover_file');
-  let coverUrl = removeCover ? '' : String(formData.get('cover_url') || '').trim();
-  if (!id || !name || !slug) return;
-
-  if (!removeCover && coverFile instanceof File && coverFile.size > 0) {
-    const upload = await uploadProductCover(coverFile, id);
-    if (upload.ok && upload.url) coverUrl = upload.url;
-  }
-
-  await supabase.from('products').update({
-    name,
-    slug,
-    description,
-    status,
-    billing_type: billingType,
-    type: billingType === 'recurring' ? 'subscription' : 'course',
-    price_cents: Math.round(Number(formData.get('price') || 0) * 100),
-    cover_url: coverUrl,
-    updated_at: new Date().toISOString(),
-  }).eq('id', id);
-
-  if (courseId) {
-    await supabase.from('courses').update({ title: name, slug, description, cover_url: coverUrl, status, updated_at: new Date().toISOString() }).eq('id', courseId);
-  } else {
-    await supabase.from('courses').insert({ product_id: id, title: name, slug, description, cover_url: coverUrl, status });
-  }
-
-  revalidatePath('/admin/produtos');
-  revalidatePath(`/admin/produtos/${id}`);
 }
 
 async function createModule(formData: FormData) {
@@ -110,10 +36,7 @@ async function createModule(formData: FormData) {
     is_active: true,
   }).select('id').single();
 
-  if (module?.id) {
-    await supabase.from('course_module_links').insert({ course_id: courseId, module_id: module.id, sort_order: Number(formData.get('sort_order') || 0) });
-  }
-
+  if (module?.id) await supabase.from('course_module_links').insert({ course_id: courseId, module_id: module.id, sort_order: Number(formData.get('sort_order') || 0) });
   revalidatePath(`/admin/produtos/${productId}`);
 }
 
@@ -144,9 +67,9 @@ async function deleteModule(formData: FormData) {
 function matchesProduct(subscription: Row, product: Row, isVipProduct: boolean) {
   const name = String(subscription.product_name || '').toLowerCase();
   const productName = String(product.name || '').toLowerCase();
-  const slug = String(product.slug || '').toLowerCase();
+  const slug = String(product.slug || '').toLowerCase().replace(/-/g, ' ');
   if (isVipProduct) return name.includes('vip') || name.includes('grupo') || name.includes('fh') || !name;
-  return name.includes(productName) || name.includes(slug.replace(/-/g, ' '));
+  return name.includes(productName) || name.includes(slug);
 }
 
 export default async function ProductEditPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams?: Promise<Search> }) {
@@ -154,6 +77,7 @@ export default async function ProductEditPage({ params, searchParams }: { params
   const query = searchParams ? await searchParams : {};
   const activeTab = ['conteudo', 'alunos', 'comentarios', 'configuracoes'].includes(String(query.tab || '')) ? String(query.tab) : 'conteudo';
   const supabase = createAdminClient();
+
   const [{ data: product }, { data: course }] = await Promise.all([
     supabase.from('products').select('*').eq('id', id).maybeSingle(),
     supabase.from('courses').select('*').eq('product_id', id).order('created_at', { ascending: true }).limit(1).maybeSingle(),
@@ -223,16 +147,12 @@ export default async function ProductEditPage({ params, searchParams }: { params
               const importUrl = `/admin/conteudos/selecionar-drive?module=${module.id}`;
               return (
                 <article className="admin-member-module" key={module.id}>
-                  <div className="admin-member-module-head"><div><span className="admin-clean-pill">drive · {lessons.length} conteudos</span><h3>{module.title}</h3><p>{module.description || 'Sem descricao.'}</p></div><div className="admin-clean-actions"><a className="admin-clean-button secondary" href={`/admin/biblioteca/${module.id}?product=${product.id}`}>Editar modulo</a><AdminLoadingLink className="admin-clean-button primary" href={importUrl} loadingLabel="Abrindo Drive...">+ Aula</AdminLoadingLink><form action={deleteModule}><input type="hidden" name="product_id" value={product.id} /><input type="hidden" name="course_id" value={courseId} /><input type="hidden" name="module_id" value={module.id} /><button className="admin-clean-button danger" type="submit">Excluir modulo</button></form></div></div>
+                  <div className="admin-member-module-head">
+                    <div><span className="admin-clean-pill">drive · {lessons.length} conteudos</span><h3>{module.title}</h3><p>{module.description || 'Sem descricao.'}</p></div>
+                    <div className="admin-clean-actions"><a className="admin-clean-button secondary" href={`/admin/biblioteca/${module.id}?product=${product.id}`}>Editar modulo</a><AdminLoadingLink className="admin-clean-button primary" href={importUrl} loadingLabel="Abrindo Drive...">+ Aula</AdminLoadingLink><form action={deleteModule}><input type="hidden" name="product_id" value={product.id} /><input type="hidden" name="course_id" value={courseId} /><input type="hidden" name="module_id" value={module.id} /><button className="admin-clean-button danger" type="submit">Excluir modulo</button></form></div>
+                  </div>
                   <div className="admin-lesson-list">
-                    {lessons.map((lesson) => (
-                      <div className="admin-lesson-row" key={lesson.id}>
-                        <span className="admin-drag-dot">::</span>
-                        <AdminInlineLessonName moduleId={module.id} lessonId={lesson.id} initialTitle={lesson.title || ''} />
-                        <small>{lesson.media_type || 'video'}</small>
-                        <div className="admin-lesson-actions"><a href={`/aluno/aula/${lesson.slug}`} title="Abrir aula">Abrir</a><a href={`/admin/conteudos/exercicios/${lesson.id}/editar`} title="Editar aula">Editar</a><form action={deleteLesson}><input type="hidden" name="product_id" value={product.id} /><input type="hidden" name="lesson_id" value={lesson.id} /><button type="submit" title="Excluir aula">Excluir</button></form></div>
-                      </div>
-                    ))}
+                    {lessons.map((lesson) => <div className="admin-lesson-row" key={lesson.id}><span className="admin-drag-dot">::</span><AdminInlineLessonName moduleId={module.id} lessonId={lesson.id} initialTitle={lesson.title || ''} /><small>{lesson.media_type || 'video'}</small><div className="admin-lesson-actions"><a href={`/aluno/aula/${lesson.slug}`} title="Abrir aula">Abrir</a><a href={`/admin/conteudos/exercicios/${lesson.id}/editar`} title="Editar aula">Editar</a><form action={deleteLesson}><input type="hidden" name="product_id" value={product.id} /><input type="hidden" name="lesson_id" value={lesson.id} /><button type="submit" title="Excluir aula">Excluir</button></form></div></div>)}
                     {!lessons.length ? <p className="admin-clean-muted">Nenhuma aula ainda. Clique em + Aula para puxar do Drive ou preparar R2.</p> : null}
                   </div>
                 </article>
@@ -245,9 +165,8 @@ export default async function ProductEditPage({ params, searchParams }: { params
 
       {activeTab === 'configuracoes' ? (
         <section className="admin-clean-section">
-          <div className="admin-clean-heading"><div><span className="admin-clean-eyebrow">Produto</span><h2>Configuracoes</h2></div></div>
-          <form className="admin-clean-form" action={updateProduct} encType="multipart/form-data">
-            <input type="hidden" name="id" value={product.id} />
+          <div className="admin-clean-heading"><div><span className="admin-clean-eyebrow">Produto</span><h2>Configuracoes</h2>{query.saved ? <p className="admin-save-success">Alterações salvas com sucesso.</p> : null}{query.error ? <p className="admin-save-error">Não foi possível salvar. Verifique os dados e tente novamente.</p> : null}</div></div>
+          <form className="admin-clean-form" action={`/admin/produtos/${product.id}/salvar`} method="post" encType="multipart/form-data">
             <input type="hidden" name="course_id" value={courseId} />
             <section className="product-config-grid">
               <div className="product-config-fields">
