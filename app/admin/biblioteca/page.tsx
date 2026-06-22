@@ -28,6 +28,8 @@ export default async function AdminLibraryPage() {
       <nav className="admin-tabs">
         <a href="/admin">Resumo</a>
         <a href="/admin/biblioteca">Biblioteca</a>
+        <a href="/admin/premium">Premium</a>
+        <a href="/admin/drive">Drive</a>
         <a href="/admin/avaliacoes">Avaliacoes</a>
       </nav>
 
