@@ -28,7 +28,14 @@ function isSafariLike() {
 
 function recorderMimeType() {
   if (typeof MediaRecorder === 'undefined') return undefined;
-  return ['video/webm;codecs=vp8,opus', 'video/webm;codecs=vp9,opus', 'video/webm', 'video/mp4'].find((type) => MediaRecorder.isTypeSupported(type));
+  return [
+    'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+    'video/mp4;codecs=h264,aac',
+    'video/mp4',
+    'video/webm;codecs=vp8,opus',
+    'video/webm;codecs=vp9,opus',
+    'video/webm',
+  ].find((type) => MediaRecorder.isTypeSupported(type));
 }
 
 function waitReady(media: HTMLMediaElement) {
@@ -175,7 +182,7 @@ export async function renderFinalDuetVideo({ visualBlob, voiceBlob, referenceBlo
     window.setTimeout(() => { if (recorder.state === 'recording') recorder.stop(); }, 120);
   };
 
-  recorder.start(250);
+  recorder.start(1000);
   const startAt = audioCtx.currentTime + 0.08;
   const voiceOffset = Math.min(Math.max(0, clampLatencyMs(settings.latencyMs || 0) / 1000), Math.max(0, voiceBuffer.duration - 0.02));
   voiceSource.start(startAt, voiceOffset);
