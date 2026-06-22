@@ -9,13 +9,18 @@ type Settings = {
 export async function loadDuetBufferEngine(args: {
   voiceBlob: Blob;
   referenceSource: string;
+  referenceBlob?: Blob | null;
   previewVideo: HTMLVideoElement | null;
   settings: () => Settings;
   previous?: DuetBufferEngine | null;
 }) {
   const engine = new DuetBufferEngine(args.settings);
   args.previous?.destroy();
-  await engine.load(args.voiceBlob, args.referenceSource);
+  if (args.referenceBlob) {
+    await engine.loadBlobs(args.voiceBlob, args.referenceBlob);
+  } else {
+    await engine.load(args.voiceBlob, args.referenceSource);
+  }
   engine.setVideo(args.previewVideo);
   return engine;
 }
