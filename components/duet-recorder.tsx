@@ -9,6 +9,7 @@ import { buildDuetMonitorAudio } from '@/lib/audio/duet-monitor';
 import { proxiedVideoUrl } from '@/lib/audio/duet-recording-utils';
 import { useDuetBufferRecorder } from '@/lib/audio/use-duet-buffer-recorder';
 import { renderFinalDuetVideo } from '@/lib/audio/duet-final-render';
+import { deviceHint, listAudioInputDevices, preferredPhoneMicDeviceId, type AudioInputDevice } from '@/lib/audio/audio-device-utils';
 import type { VoicePreset } from '@/lib/audio/duet-buffer-engine';
 
 type Props = {
@@ -23,10 +24,54 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
   const recorder = useDuetBufferRecorder(referenceSource, lessonSlug);
   const [caption, setCaption] = useState('');
   const [postCommunity, setPostCommunity] = useState(false);
+  const [audioDevices, setAudioDevices] = useState<AudioInputDevice[]>([]);
+  const [selectedAudioDeviceId, setSelectedAudioDeviceId] = useState('');
+  const [isLoadingDevices, setIsLoadingDevices] = useState(false);
+  const [audioSetupUnlocked, setAudioSetupUnlocked] = useState(false);
+
+  const selectedAudioDevice = audioDevices.find((device) => device.deviceId === selectedAudioDeviceId) || null;
 
   useEffect(() => {
     recorder.applySettings();
   }, [recorder.voiceVolume, recorder.referenceVolume, recorder.preset]);
+
+  useEffect(() => {
+    refreshAudioDevices(false).catch(() => undefined);
+    const mediaDevices = navigator.mediaDevices;
+    if (!mediaDevices?.addEventListener) return;
+    const onDeviceChange = () => refreshAudioDevices(false).catch(() => undefined);
+    mediaDevices.addEventListener('devicechange', onDeviceChange);
+    return () => mediaDevices.removeEventListener('devicechange', onDeviceChange);
+  }, []);
+
+  async function refreshAudioDevices(preferPhoneMic = false) {
+    if (!navigator.mediaDevices?.enumerateDevices) return;
+    setIsLoadingDevices(true);
+    try {
+      const devices = await listAudioInputDevices();
+      setAudioDevices(devices);
+      if (!selectedAudioDeviceId || !devices.some((device) => device.deviceId === selectedAudioDeviceId)) {
+        setSelectedAudioDeviceId(preferPhoneMic ? preferredPhoneMicDeviceId(devices) : devices[0]?.deviceId || '');
+      }
+    } finally {
+      setIsLoadingDevices(false);
+    }
+  }
+
+  async function unlockAudioSetup() {
+    if (!navigator.mediaDevices?.getUserMedia) return;
+    setIsLoadingDevices(true);
+    try {
+      const probe = await navigator.mediaDevices.getUserMedia({ audio: true });
+      probe.getTracks().forEach((track) => track.stop());
+      setAudioSetupUnlocked(true);
+      await refreshAudioDevices(true);
+    } catch {
+      recorder.setError('Não consegui acessar os microfones. Permita o microfone no navegador para escolher a entrada de áudio.');
+    } finally {
+      setIsLoadingDevices(false);
+    }
+  }
 
   function resetLocalState() {
     recorder.setPreviewUrl(null);
@@ -68,8 +113,10 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
       reference.preload = 'auto';
       reference.load();
       await recorder.waitReady(reference);
-      const stream = await prepareDuetCamera(recorder.cameraRef.current);
+      const stream = await prepareDuetCamera(recorder.cameraRef.current, { audioDeviceId: selectedAudioDeviceId || undefined });
       recorder.streamRef.current = stream;
+      setAudioSetupUnlocked(true);
+      refreshAudioDevices(false).catch(() => undefined);
       recorder.drawFrame();
       recorder.setStep('countdown');
       let next = 3;
@@ -262,10 +309,29 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
           <p className="muted">Aula: {lessonTitle}</p>
           <div className="premium-duet-steps"><span><Video size={16} /> Grave</span><span><Wand2 size={16} /> Motor de áudio</span><span><Send size={16} /> Envie</span></div>
         </div>
-        <div className="duet-instruction compact premium-duet-instruction"><Headphones size={24} /><div><strong>Use fone de ouvido</strong><p>O editor usa um único clock de áudio. Volumes e efeitos mudam enquanto você ouve, sem aplicar prévia.</p></div></div>
+        <div className="duet-instruction compact premium-duet-instruction"><Headphones size={24} /><div><strong>Use fone de ouvido</strong><p>Ouça pelo fone e escolha se a voz será captada pelo microfone do celular ou do fone.</p></div></div>
       </section>
 
       {recorder.error ? <p className="duet-error premium-duet-error">{recorder.error}</p> : null}
+
+      {recorder.step === 'intro' || recorder.step === 'loading' ? (
+        <section className="premium-duet-note duet-audio-setup-card">
+          <Headphones size={24} />
+          <div>
+            <h2>Configuração de áudio</h2>
+            <p>Para melhor qualidade: deixe a referência no fone e escolha abaixo o microfone que vai gravar sua voz.</p>
+            <div className="duet-device-row">
+              <select value={selectedAudioDeviceId} onChange={(event) => setSelectedAudioDeviceId(event.target.value)} disabled={isLoadingDevices || recorder.step !== 'intro'}>
+                {audioDevices.length ? audioDevices.map((device) => (
+                  <option value={device.deviceId} key={device.deviceId}>{device.label}{device.isLikelyHeadset ? ' · fone' : device.isLikelyPhoneMic ? ' · celular' : ''}</option>
+                )) : <option value="">Microfone padrão do navegador</option>}
+              </select>
+              <button type="button" className="button secondary" onClick={unlockAudioSetup} disabled={isLoadingDevices || recorder.step !== 'intro'}><Mic size={16} /> {audioSetupUnlocked ? 'Atualizar' : 'Detectar microfones'}</button>
+            </div>
+            <p className="muted">{deviceHint(selectedAudioDevice)} {audioSetupUnlocked ? '' : 'Toque em detectar para liberar nomes como Bluetooth, fone ou microfone interno.'}</p>
+          </div>
+        </section>
+      ) : null}
 
       <section className="real-duet-stage premium-duet-stage reels-duet-preview">
         <video ref={recorder.referenceRef} className="ios-duet-source" src={referenceSource} crossOrigin="anonymous" playsInline muted preload="auto" />
@@ -276,8 +342,8 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
             {recorder.visualUrl ? <button type="button" className="reels-preview-play" onClick={togglePlayback}>{recorder.isPlaying ? <Pause size={34} fill="currentColor" /> : <Play size={38} fill="currentColor" />}</button> : null}
           </>
         ) : <canvas ref={recorder.canvasRef} className="duet-canvas" width={1280} height={720} />}
-        {recorder.step === 'intro' ? <div className="duet-stage-overlay premium-duet-overlay"><div className="premium-duet-start-card"><span><Sparkles size={20} /> Pronto para praticar?</span><h2>Grave sua segunda voz junto com a referência.</h2><p>Prepare o fone, posicione a câmera e clique para iniciar a contagem.</p><button className="button premium-primary-button" onClick={startCountdown}><Mic size={18} /> Iniciar dueto</button></div></div> : null}
-        {recorder.step === 'loading' ? <div className="duet-stage-overlay premium-duet-overlay"><span className="recording-dot">Preparando vídeo e câmera...</span></div> : null}
+        {recorder.step === 'intro' ? <div className="duet-stage-overlay premium-duet-overlay"><div className="premium-duet-start-card"><span><Sparkles size={20} /> Pronto para praticar?</span><h2>Grave sua segunda voz junto com a referência.</h2><p>Prepare o fone, confira o microfone escolhido e clique para iniciar a contagem.</p><button className="button premium-primary-button" onClick={startCountdown}><Mic size={18} /> Iniciar dueto</button></div></div> : null}
+        {recorder.step === 'loading' ? <div className="duet-stage-overlay premium-duet-overlay"><span className="recording-dot">Preparando vídeo, câmera e microfone...</span></div> : null}
         {recorder.step === 'countdown' ? <div className="countdown overlay-countdown">{recorder.count}</div> : null}
         {recorder.step === 'recording' ? <div className="duet-stage-overlay premium-duet-overlay"><span className="recording-dot">● Gravando...</span></div> : null}
         {recorder.step === 'rendering' ? <div className="duet-stage-overlay premium-duet-overlay"><span className="recording-dot">Renderizando mix final...</span></div> : null}
