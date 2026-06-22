@@ -13,6 +13,7 @@ type Subscription = {
   provider?: string | null;
   updated_at?: string | null;
   provider_customer_id?: string | null;
+  raw_payload?: any;
   profiles?: any;
 };
 
@@ -26,6 +27,8 @@ type KiwifyLog = {
   error_message?: string | null;
   created_at?: string | null;
 };
+
+const FALLBACK_NET_TICKET = 18.31;
 
 function relatedProfile(value: unknown) {
   if (Array.isArray(value)) return value[0] || null;
@@ -98,7 +101,7 @@ function renewalLabel(date?: Date | null, estimated = false) {
   const days = daysUntilDate(date);
   if (days === null) return 'sem data de renovacao';
   const prefix = estimated ? 'estimada · ' : '';
-  if (days < 0) return `${prefix}data antiga ha ${Math.abs(days)} dias`;
+  if (days < 0) return `${prefix}vencido ha ${Math.abs(days)} dias`;
   if (days === 0) return `${prefix}renova hoje`;
   if (days === 1) return `${prefix}renova amanha`;
   return `${prefix}renova em ${days} dias`;
@@ -110,7 +113,7 @@ function accessStatus(subscription?: Subscription | null) {
   if (status === 'active') return { label: 'ativo', tone: 'active', active: true, remove: false, action: 'manter no grupo' };
   if (status === 'late') return { label: 'atrasado', tone: 'late', active: false, remove: false, action: 'cobrar renovacao' };
   if (status === 'pending') return { label: 'pendente', tone: 'pending', active: false, remove: false, action: 'aguardar pagamento' };
-  return { label: status || 'inativo', tone: 'danger', active: false, remove: true, action: 'tirar do grupo' };
+  return { label: 'inativo', tone: 'danger', active: false, remove: true, action: 'tirar do grupo' };
 }
 
 function renewalTone(subscription?: Subscription | null) {
@@ -136,7 +139,7 @@ function whatsappLink(phone?: string | null, name?: string | null, state?: strin
 }
 
 function normalizeFilter(value?: string) {
-  const allowed = ['todos', 'ativos', 'vencendo', 'revisar', 'atrasados', 'pendentes', 'remover'];
+  const allowed = ['todos', 'ativos', 'vencendo', 'revisar', 'atrasados', 'pendentes', 'remover', 'financeiro'];
   return allowed.includes(String(value)) ? String(value) : 'todos';
 }
 
@@ -157,6 +160,61 @@ function eventLabel(log?: KiwifyLog | null) {
   return log.event_name || log.mapped_status || log.status || 'evento recebido';
 }
 
+function money(value: number) {
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
+}
+
+function normalizeAmount(value: unknown) {
+  if (value === null || value === undefined || value === '') return null;
+  const number = Number(value);
+  if (!Number.isFinite(number)) return null;
+  if (number > 100) return number / 100;
+  return number;
+}
+
+function subscriptionAmount(subscription?: Subscription | null) {
+  const raw = subscription?.raw_payload || {};
+  const candidates = [
+    raw.net_amount,
+    raw.netAmount,
+    raw.commission_amount,
+    raw.commissionAmount,
+    raw.price,
+    raw.amount,
+    raw.value,
+    raw.order?.price,
+    raw.order?.amount,
+    raw.subscription?.price,
+  ];
+
+  for (const candidate of candidates) {
+    const amount = normalizeAmount(candidate);
+    if (amount !== null && amount > 0) return amount;
+  }
+
+  return isActive(subscription) ? FALLBACK_NET_TICKET : 0;
+}
+
+function paymentMethod(subscription?: Subscription | null) {
+  const raw = subscription?.raw_payload || {};
+  const method = String(raw.payment_method || raw.paymentMethod || raw.payment?.method || raw.order?.payment_method || '').toLowerCase();
+  if (method.includes('credit')) return 'Cartao';
+  if (method.includes('card')) return 'Cartao';
+  if (method.includes('pix')) return 'PIX';
+  if (method.includes('boleto') || method.includes('billet')) return 'Boleto';
+  if (isActive(subscription)) return 'Recorrencia';
+  return 'Pix vencido';
+}
+
+function accessReason(subscription?: Subscription | null) {
+  const state = accessStatus(subscription);
+  if (state.active) return 'Assinatura recorrente ou renovacao recente';
+  if (state.tone === 'danger') return 'Pix vencido / sem renovacao em junho';
+  if (state.tone === 'late') return 'Pagamento atrasado';
+  if (state.tone === 'pending') return 'Aguardando confirmacao';
+  return 'Verificar acesso';
+}
+
 async function safeQuery(query: PromiseLike<{ data: any; error: any }>, fallback: any[] = []) {
   const { data, error } = await query;
   if (error) return fallback;
@@ -171,7 +229,7 @@ export default async function AdminPremiumPage({ searchParams }: { searchParams?
   const subscriptions = (await safeQuery(
     supabase
       .from('subscriptions')
-      .select('id,status,current_period_start,current_period_end,product_name,provider,provider_customer_id,updated_at,profiles(id,name,email,whatsapp,created_at)')
+      .select('id,status,current_period_start,current_period_end,product_name,provider,provider_customer_id,updated_at,raw_payload,profiles(id,name,email,whatsapp,created_at)')
       .order('updated_at', { ascending: false })
       .limit(1000)
   )) as Subscription[];
@@ -199,7 +257,9 @@ export default async function AdminPremiumPage({ searchParams }: { searchParams?
     const renewalInfo = effectiveRenewalDate(subscription);
     const renewal = renewalTone(subscription);
     const lastEvent = logsByEmail.get(email) || null;
-    return { student, subscription, state, renewal, renewalInfo, lastEvent, whatsapp: whatsappLink(student.whatsapp, student.name, state.tone) };
+    const amount = subscriptionAmount(subscription);
+    const method = paymentMethod(subscription);
+    return { student, subscription, state, renewal, renewalInfo, lastEvent, amount, method, whatsapp: whatsappLink(student.whatsapp, student.name, state.tone) };
   });
 
   const activeRows = rows.filter((row) => row.state.active);
@@ -211,12 +271,22 @@ export default async function AdminPremiumPage({ searchParams }: { searchParams?
     const days = daysUntilDate(row.renewalInfo.date);
     return days !== null && days >= 0 && days <= 7;
   });
-  const reviewRows = activeRows.filter((row) => !row.renewalInfo.date);
+  const reviewRows = activeRows.filter((row) => row.renewalInfo.estimated);
   const filteredRows = currentFilter === 'ativos' ? activeRows : currentFilter === 'vencendo' ? renewing7Rows : currentFilter === 'revisar' ? reviewRows : currentFilter === 'atrasados' ? lateRows : currentFilter === 'pendentes' ? pendingRows : currentFilter === 'remover' ? removeRows : rows;
   const removeEmails = removeRows.map((row) => row.student.email).filter(Boolean).join('\n');
   const lateEmails = lateRows.map((row) => row.student.email).filter(Boolean).join('\n');
   const webhookProblems = logs.filter((log) => eventTone(log) === 'danger').length;
-  const estimatedRenewals = activeRows.filter((row) => row.renewalInfo.estimated).length;
+
+  const monthlyRevenue = activeRows.reduce((sum, row) => sum + row.amount, 0);
+  const averageTicket = activeRows.length ? monthlyRevenue / activeRows.length : 0;
+  const annualProjection = monthlyRevenue * 12;
+  const retention = rows.length ? (activeRows.length / rows.length) * 100 : 0;
+  const cardLikeRows = activeRows.filter((row) => ['Cartao', 'Recorrencia'].includes(row.method));
+  const pixRows = activeRows.filter((row) => row.method === 'PIX');
+  const revenue30Days = activeRows.filter((row) => {
+    const days = daysUntilDate(row.renewalInfo.date);
+    return days !== null && days >= 0 && days <= 30;
+  }).reduce((sum, row) => sum + row.amount, 0);
 
   return (
     <main className="page admin-shell premium-admin-page premium-console">
@@ -224,7 +294,7 @@ export default async function AdminPremiumPage({ searchParams }: { searchParams?
         <div>
           <p className="eyebrow">Area Premium</p>
           <h1>Central de assinantes</h1>
-          <p>Controle renovações, webhooks, atrasos e remoções do Grupo VIP em uma visão operacional.</p>
+          <p>Controle receita recorrente, renovações, webhooks, atrasos e remoções do Grupo VIP.</p>
         </div>
         <div className="premium-console-actions">
           <a href="/admin">Voltar</a>
@@ -236,23 +306,30 @@ export default async function AdminPremiumPage({ searchParams }: { searchParams?
         <a href="/admin">Resumo</a><a href="/admin/biblioteca">Biblioteca</a><a href="/admin/premium">Premium</a><a href="/admin/alunos">Alunos</a><a href="/admin/avaliacoes">Avaliacoes</a>
       </nav>
 
+      <section className="premium-finance-strip">
+        <article><span>Receita recorrente estimada</span><strong>{money(monthlyRevenue)}</strong><p>{activeRows.length} assinantes ativos</p></article>
+        <article><span>Ticket medio liquido</span><strong>{money(averageTicket)}</strong><p>baseado no CSV/webhook</p></article>
+        <article><span>Previsao 30 dias</span><strong>{money(revenue30Days || monthlyRevenue)}</strong><p>{renewing7Rows.length} renovam nos proximos 7 dias</p></article>
+        <article><span>Projecao anual</span><strong>{money(annualProjection)}</strong><p>mantendo a base atual</p></article>
+      </section>
+
       <section className="premium-health-grid">
-        <article className="premium-health-card active"><span>Assinantes ativos</span><strong>{activeRows.length}</strong><p>{estimatedRenewals ? `${estimatedRenewals} renovacoes mensais estimadas` : 'Todos com data oficial atual'}</p></article>
+        <article className="premium-health-card active"><span>Assinantes ativos</span><strong>{activeRows.length}</strong><p>{cardLikeRows.length} recorrentes/cartao · {pixRows.length} pix validos</p></article>
         <article className="premium-health-card"><span>Renovam hoje</span><strong>{renewingTodayRows.length}</strong><p>{renewing7Rows.length} renovam nos proximos 7 dias</p></article>
-        <article className="premium-health-card late"><span>Atrasados</span><strong>{lateRows.length}</strong><p>{lateRows.length ? 'Cobrar renovacao' : 'Nenhum atraso registrado'}</p></article>
+        <article className="premium-health-card late"><span>Retencao atual</span><strong>{retention.toFixed(1)}%</strong><p>{removeRows.length} inativos para remover/revisar</p></article>
         <article className="premium-health-card danger"><span>Remover do grupo</span><strong>{removeRows.length}</strong><p>{webhookProblems} webhooks precisam de atencao</p></article>
       </section>
 
       <section className="premium-ops-grid">
         <article className="premium-webhook-card">
-          <div><p className="eyebrow">Webhook Kiwify</p><h2>Sincronizacao automatica</h2><p>Use esta URL na Kiwify. Quando o webhook de renovacao chegar, a data oficial substitui a estimativa mensal.</p></div>
+          <div><p className="eyebrow">Webhook Kiwify</p><h2>Sincronizacao automatica</h2><p>Use esta URL na Kiwify. O historico abaixo confirma vendas, renovacoes, atrasos e cancelamentos.</p></div>
           <code>https://hub.focoemcanto.com/api/kiwify/webhook</code>
         </article>
         <article className="premium-alert-card">
           <p className="eyebrow">Alertas</p>
           <h2>{renewing7Rows.length + lateRows.length + removeRows.length + webhookProblems}</h2>
           <p>itens pedindo atencao agora</p>
-          <div><a href="/admin/premium?status=vencendo">Vencendo</a><a href="/admin/premium?status=revisar">Sem data</a></div>
+          <div><a href="/admin/premium?status=vencendo">Vencendo</a><a href="/admin/premium?status=remover">Remover</a></div>
         </article>
       </section>
 
@@ -260,7 +337,7 @@ export default async function AdminPremiumPage({ searchParams }: { searchParams?
         <a className={currentFilter === 'todos' ? 'active' : ''} href="/admin/premium?status=todos">Todos</a>
         <a className={currentFilter === 'ativos' ? 'active' : ''} href="/admin/premium?status=ativos">Ativos</a>
         <a className={currentFilter === 'vencendo' ? 'active' : ''} href="/admin/premium?status=vencendo">Vencendo</a>
-        <a className={currentFilter === 'revisar' ? 'active late' : ''} href="/admin/premium?status=revisar">Sem data</a>
+        <a className={currentFilter === 'revisar' ? 'active late' : ''} href="/admin/premium?status=revisar">Datas estimadas</a>
         <a className={currentFilter === 'atrasados' ? 'active' : ''} href="/admin/premium?status=atrasados">Atrasados</a>
         <a className={currentFilter === 'pendentes' ? 'active' : ''} href="/admin/premium?status=pendentes">Pendentes</a>
         <a className={currentFilter === 'remover' ? 'active danger' : ''} href="/admin/premium?status=remover">Remover</a>
@@ -278,7 +355,7 @@ export default async function AdminPremiumPage({ searchParams }: { searchParams?
             <span className="pill">{filteredRows.length} contatos</span>
           </div>
           <div className="premium-subscriber-list">
-            {filteredRows.map(({ student, subscription, state, renewal, renewalInfo, lastEvent, whatsapp }) => (
+            {filteredRows.map(({ student, subscription, state, renewal, renewalInfo, lastEvent, amount, method, whatsapp }) => (
               <article className={`premium-subscriber-card ${state.tone} renewal-${renewal}`} key={`${student.id}-${subscription?.id || student.email}`}>
                 <div className="premium-member-main">
                   <span className={`premium-status ${state.tone}`}>{state.label}</span>
@@ -287,22 +364,22 @@ export default async function AdminPremiumPage({ searchParams }: { searchParams?
                   <small>{student.whatsapp || 'WhatsApp nao informado'}</small>
                 </div>
                 <div className="premium-renewal-box">
-                  <span>{renewalInfo.estimated ? 'Renovacao estimada' : 'Renovacao'}</span>
+                  <span>{state.active ? 'Proxima renovacao' : 'Venceu em'}</span>
                   <strong>{dateLabelFromDate(renewalInfo.date)}</strong>
-                  <em>{renewalLabel(renewalInfo.date, renewalInfo.estimated)}</em>
+                  <em>{state.active ? renewalLabel(renewalInfo.date, renewalInfo.estimated) : accessReason(subscription)}</em>
                 </div>
                 <div className="premium-plan-box">
-                  <span>Plano</span>
-                  <strong>{subscription?.product_name || 'Produto nao informado'}</strong>
-                  <small>{subscription?.provider || 'kiwify'} · inicio {dateLabel(subscription?.current_period_start)}</small>
+                  <span>Financeiro</span>
+                  <strong>{money(amount)} / mes</strong>
+                  <small>{method} · {subscription?.product_name || 'Produto nao informado'}</small>
                 </div>
                 <div className="premium-event-box">
                   <span>Ultimo webhook</span>
                   <strong className={`event-${eventTone(lastEvent)}`}>{eventLabel(lastEvent)}</strong>
-                  <small>{lastEvent?.created_at ? dateLabel(lastEvent.created_at) : 'Sem evento vinculado ao email'}</small>
+                  <small>{lastEvent?.created_at ? dateLabel(lastEvent.created_at) : accessReason(subscription)}</small>
                 </div>
                 <div className="premium-actions premium-actions-console">
-                  <span className={state.remove ? 'remove-tag' : state.tone === 'late' ? 'late-tag' : renewal === 'review' ? 'late-tag' : 'keep-tag'}>{renewalInfo.estimated && state.active ? 'ciclo mensal estimado' : state.action}</span>
+                  <span className={state.remove ? 'remove-tag' : state.tone === 'late' ? 'late-tag' : renewalInfo.estimated ? 'late-tag' : 'keep-tag'}>{state.remove ? 'remover do grupo' : renewalInfo.estimated ? 'data estimada' : state.action}</span>
                   {whatsapp ? <a className="button secondary" href={whatsapp} target="_blank">WhatsApp</a> : null}
                 </div>
               </article>
