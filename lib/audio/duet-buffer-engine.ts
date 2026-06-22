@@ -38,7 +38,8 @@ export class DuetBufferEngine {
   private playback: Playback | null = null;
   private syncFrame: number | null = null;
   private offset = 0;
-  private voiceNormalize = 2.4;
+  private voicePreGain = 1;
+  private referencePreGain = 1;
 
   voiceBuffer: AudioBuffer | null = null;
   cleanVoiceBuffer: AudioBuffer | null = null;
@@ -74,7 +75,8 @@ export class DuetBufferEngine {
     this.voiceBuffer = voiceBuffer;
     this.cleanVoiceBuffer = reduceVoiceNoise(ctx, voiceBuffer);
     this.referenceBuffer = referenceBuffer;
-    this.voiceNormalize = this.normalizeGain(voiceBuffer);
+    this.voicePreGain = this.trackPreGain(voiceBuffer, 0.078, 0.12, 2.8);
+    this.referencePreGain = this.trackPreGain(referenceBuffer, 0.082, 0.25, 4.2);
     await this.bus?.ctx.close().catch(() => undefined);
     this.bus = this.makeBus(ctx, ctx.destination);
     this.applySettings();
@@ -89,8 +91,8 @@ export class DuetBufferEngine {
     const now = bus.ctx.currentTime;
     bus.voiceGain.gain.cancelScheduledValues(now);
     bus.referenceGain.gain.cancelScheduledValues(now);
-    bus.voiceGain.gain.setTargetAtTime((voiceVolume / 100) * this.voiceNormalize, now, 0.003);
-    bus.referenceGain.gain.setTargetAtTime(referenceVolume / 100, now, 0.003);
+    bus.voiceGain.gain.setTargetAtTime((voiceVolume / 100) * this.voicePreGain, now, 0.003);
+    bus.referenceGain.gain.setTargetAtTime((referenceVolume / 100) * this.referencePreGain, now, 0.003);
     this.applyPreset(bus, preset);
   }
 
@@ -172,12 +174,35 @@ export class DuetBufferEngine {
   private async decodeBlob(ctx: AudioContext, blob: Blob) { const arrayBuffer = await blob.arrayBuffer(); return await ctx.decodeAudioData(arrayBuffer.slice(0)); }
   private async decodeUrl(ctx: AudioContext, url: string) { const response = await fetch(url, { cache: 'force-cache' }); if (!response.ok) throw new Error('reference_fetch_failed'); const arrayBuffer = await response.arrayBuffer(); return await ctx.decodeAudioData(arrayBuffer.slice(0)); }
 
-  private normalizeGain(buffer: AudioBuffer) {
-    const data = buffer.getChannelData(0); const step = Math.max(1, Math.floor(data.length / 30000)); let sum = 0; let count = 0;
-    for (let i = 0; i < data.length; i += step) { sum += data[i] * data[i]; count++; }
+  private activeRms(buffer: AudioBuffer) {
+    const data = buffer.getChannelData(0);
+    const step = Math.max(1, Math.floor(data.length / 60000));
+    let sum = 0;
+    let count = 0;
+    const samples: number[] = [];
+    for (let i = 0; i < data.length; i += step) {
+      const sample = Math.abs(data[i]);
+      sum += sample * sample;
+      count++;
+      samples.push(sample);
+    }
     const rms = Math.sqrt(sum / Math.max(1, count));
-    if (!Number.isFinite(rms) || rms <= 0.0001) return 2.8;
-    return Math.max(1.2, Math.min(5.2, 0.18 / rms));
+    const gate = Math.max(0.006, rms * 0.55);
+    let activeSum = 0;
+    let activeCount = 0;
+    for (const sample of samples) {
+      if (sample >= gate) {
+        activeSum += sample * sample;
+        activeCount++;
+      }
+    }
+    return Math.sqrt(activeSum / Math.max(1, activeCount)) || rms;
+  }
+
+  private trackPreGain(buffer: AudioBuffer, targetRms: number, min: number, max: number) {
+    const rms = this.activeRms(buffer);
+    if (!Number.isFinite(rms) || rms <= 0.0001) return 1;
+    return Math.max(min, Math.min(max, targetRms / rms));
   }
 
   private makeBus(ctx: AudioContext, destination: AudioNode): Bus {
