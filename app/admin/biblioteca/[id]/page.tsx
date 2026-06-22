@@ -1,19 +1,13 @@
 import {
-  BarChart3,
   BookOpen,
   Eye,
   FilePlus2,
   Folder,
-  HelpCircle,
-  LayoutDashboard,
   Link as LinkIcon,
   ListChecks,
   Pencil,
   Plus,
-  Settings,
-  Star,
   Trash2,
-  Users,
 } from 'lucide-react';
 import { AdminLessonTitleEditor } from '@/components/admin-lesson-title-editor';
 import { AdminModuleCoverUploader } from '@/components/admin-module-cover-uploader';
@@ -21,19 +15,11 @@ import { createAdminClient } from '@/lib/supabase/admin';
 
 export const dynamic = 'force-dynamic';
 
-const adminNav = [
-  { href: '/admin', label: 'Resumo', icon: LayoutDashboard },
-  { href: '/admin/cursos', label: 'Cursos', icon: BookOpen },
-  { href: '/admin/biblioteca', label: 'Biblioteca', icon: Folder, active: true },
-  { href: '/admin/alunos', label: 'Alunos', icon: Users },
-  { href: '/admin/comunidade', label: 'Comunidade', icon: Users },
-  { href: '/admin/avaliacoes', label: 'Avaliações', icon: Star },
-  { href: '/admin/relatorios', label: 'Relatórios', icon: BarChart3 },
-  { href: '/admin/configuracoes', label: 'Configurações', icon: Settings },
-];
+type Search = { product?: string };
 
-export default async function AdminModulePage({ params }: { params: Promise<{ id: string }> }) {
+export default async function AdminModulePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams?: Promise<Search> }) {
   const { id } = await params;
+  const query = searchParams ? await searchParams : {};
   const supabase = createAdminClient();
   const [{ data: module }, { data: exercises }] = await Promise.all([
     supabase.from('modules').select('*').eq('id', id).single(),
@@ -46,31 +32,23 @@ export default async function AdminModulePage({ params }: { params: Promise<{ id
   const storageProvider = String(module?.storage_provider || 'drive');
   const studentUrl = `/aluno/biblioteca/${module?.slug || ''}`;
   const importUrl = `/admin/conteudos/selecionar-drive?module=${id}`;
+  const backUrl = query.product ? `/admin/produtos/${query.product}?tab=conteudo` : '/admin/produtos';
 
   return (
-    <main className="premium-admin-module-page">
-      <aside className="premium-admin-sidebar">
-        <a className="premium-admin-logo" href="/admin"><span>▥</span><div><strong>FOCO</strong><small>EM CANTO</small></div></a>
-        <nav className="premium-admin-nav">
-          {adminNav.map((item) => { const Icon = item.icon; return <a className={item.active ? 'active' : ''} href={item.href} key={item.label}><Icon size={20} /> {item.label}</a>; })}
-        </nav>
-        <div className="premium-admin-plan-card"><span>Plano atual</span><strong>PROFESSOR</strong><p>Acesso completo</p><a href="/admin">Ver painel</a></div>
-        <div className="premium-admin-profile"><span>MC</span><div><strong>Marcos Cruz</strong><small>Professor</small></div></div>
-      </aside>
-
-      <section className="premium-admin-main">
-        <header className="premium-admin-topbar">
-          <a className="premium-admin-ghost" href="/admin/biblioteca">← Voltar para biblioteca</a>
-          <div><a className="premium-admin-ghost" href={studentUrl}><Eye size={16} /> Visualizar módulo</a><a className="premium-admin-primary" href={studentUrl}><BookOpen size={16} /> Ver como aluno</a><a className="premium-admin-icon" href="/admin"><HelpCircle size={18} /></a></div>
+    <main className="premium-admin-module-page module-settings-page">
+      <section className="premium-admin-main module-settings-main">
+        <header className="premium-admin-topbar module-settings-topbar">
+          <a className="premium-admin-ghost" href={backUrl}>← Voltar para o produto</a>
+          <div><a className="premium-admin-ghost" href={studentUrl}><Eye size={16} /> Visualizar módulo</a><a className="premium-admin-primary" href={studentUrl}><BookOpen size={16} /> Ver como aluno</a></div>
         </header>
 
         <section className="premium-admin-hero-row">
           <div className="premium-admin-hero-copy">
-            <p className="eyebrow">Módulo · {storageProvider.toUpperCase()}</p>
+            <p className="eyebrow">Configurações do módulo · {storageProvider.toUpperCase()}</p>
             <div className="premium-admin-title-row"><h1>{moduleTitle}</h1><span><Pencil size={18} /></span></div>
             <p>{moduleDescription}</p>
             <small>Capas recomendadas: módulo 320x480, thumbnail de aula 1280x720.</small>
-            <nav className="premium-admin-tabs"><a className="active" href="/admin/biblioteca">Biblioteca</a><a href={importUrl}>Importar do Drive</a><a href={studentUrl}>Ver aluno</a></nav>
+            <nav className="premium-admin-tabs"><a className="active" href="#dados">Dados do módulo</a><a href={importUrl}>Importar do Drive</a><a href={studentUrl}>Ver aluno</a></nav>
           </div>
           <div className="premium-cover-panel">
             <AdminModuleCoverUploader moduleId={id} title={moduleTitle} description={module?.description || ''} sortOrder={module?.sort_order || 1} initialCoverUrl={coverUrl} />
@@ -83,7 +61,7 @@ export default async function AdminModulePage({ params }: { params: Promise<{ id
           <article><FilePlus2 size={30} /><span>Capas</span><strong>320x480</strong><p>Proporção ideal para cards verticais premium.</p></article>
         </section>
 
-        <section className="premium-admin-edit-grid">
+        <section id="dados" className="premium-admin-edit-grid">
           <article className="premium-admin-card">
             <p className="eyebrow">Editar módulo</p><h2>Dados principais</h2>
             <form className="admin-form" action={`/admin/biblioteca/${id}/salvar`} method="post" encType="multipart/form-data">
