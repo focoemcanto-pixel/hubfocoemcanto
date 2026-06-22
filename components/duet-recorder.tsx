@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Headphones, Mic, Music2, Pause, Play, RefreshCcw, Send, SlidersHorizontal, Sparkles, UploadCloud, Video, Wand2 } from 'lucide-react';
 import { DuetMixerPanel } from '@/components/duet/duet-mixer-panel';
 import { prepareDuetCamera, type DuetMicMode } from '@/lib/audio/duet-camera';
@@ -22,6 +22,9 @@ type Props = {
 
 const FINAL_RENDER_TIMEOUT_MS = 12000;
 const BACKGROUND_RENDER_TIMEOUT_MS = 20000;
+const DEFAULT_VOICE_VOLUME = 135;
+const DEFAULT_REFERENCE_VOLUME = 45;
+const DEFAULT_PRESET: VoicePreset = 'natural';
 
 export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
   const referenceSource = proxiedVideoUrl(referenceUrl);
@@ -35,6 +38,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
   const [audioSetupUnlocked, setAudioSetupUnlocked] = useState(false);
   const [showMixer, setShowMixer] = useState(false);
   const [renderStatus, setRenderStatus] = useState('');
+  const premiumRenderCacheRef = useRef<{ signature: string; blob: Blob } | null>(null);
 
   const selectedAudioDevice = audioDevices.find((device) => device.deviceId === selectedAudioDeviceId) || null;
   const showBluetoothWarning = Boolean(selectedAudioDevice?.isLikelyHeadset);
@@ -51,6 +55,17 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
     mediaDevices.addEventListener('devicechange', onDeviceChange);
     return () => mediaDevices.removeEventListener('devicechange', onDeviceChange);
   }, []);
+
+  function mixSignature() {
+    return [recorder.voiceVolume, recorder.referenceVolume, recorder.preset, recorder.noiseReduction ? 'nr' : 'raw'].join(':');
+  }
+
+  function needsPremiumRender() {
+    return recorder.voiceVolume !== DEFAULT_VOICE_VOLUME
+      || recorder.referenceVolume !== DEFAULT_REFERENCE_VOLUME
+      || recorder.preset !== DEFAULT_PRESET
+      || recorder.noiseReduction;
+  }
 
   function chooseDevice(deviceId: string, devices = audioDevices) {
     setSelectedAudioDeviceId(deviceId);
@@ -100,6 +115,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
     recorder.visualBlobRef.current = null;
     recorder.voiceBlobRef.current = null;
     recorder.referenceBlobRef.current = null;
+    premiumRenderCacheRef.current = null;
     setCaption('');
     setPostCommunity(false);
     setShowMixer(false);
@@ -246,14 +262,23 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
     const voiceBlob = recorder.voiceBlobRef.current;
     const referenceBlob = recorder.referenceBlobRef.current;
     if (!submissionId || !visualBlob || !voiceBlob || (!referenceBlob && !referenceSource)) return;
+    if (!needsPremiumRender()) {
+      setRenderStatus('');
+      return;
+    }
 
-    setRenderStatus('Publicado. Refinando mix premium em segundo plano...');
+    const signature = mixSignature();
+    setRenderStatus('Publicado. Refinando apenas os ajustes de mix...');
     try {
-      const renderPromise = renderFinalDuetVideo({ visualBlob, voiceBlob, referenceBlob, referenceSource, settings: recorder.settings() });
-      const timeoutPromise = new Promise<Blob>((_, reject) => {
-        window.setTimeout(() => reject(new Error('render_timeout')), BACKGROUND_RENDER_TIMEOUT_MS);
-      });
-      const rendered = await Promise.race([renderPromise, timeoutPromise]);
+      let rendered = premiumRenderCacheRef.current?.signature === signature ? premiumRenderCacheRef.current.blob : null;
+      if (!rendered) {
+        const renderPromise = renderFinalDuetVideo({ visualBlob, voiceBlob, referenceBlob, referenceSource, settings: recorder.settings() });
+        const timeoutPromise = new Promise<Blob>((_, reject) => {
+          window.setTimeout(() => reject(new Error('render_timeout')), BACKGROUND_RENDER_TIMEOUT_MS);
+        });
+        rendered = await Promise.race([renderPromise, timeoutPromise]);
+        if (rendered && rendered.size >= 1000) premiumRenderCacheRef.current = { signature, blob: rendered };
+      }
       if (!rendered || rendered.size < 1000) return;
 
       const fileType = rendered.type || 'video/webm';
@@ -301,7 +326,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
       const json = await response.json().catch(() => null);
       const submissionId = String(json?.id || '');
       recorder.setIsSubmitting(false);
-      setRenderStatus(submissionId ? 'Publicado. Refinando mix premium em segundo plano...' : '');
+      setRenderStatus(submissionId && needsPremiumRender() ? 'Publicado. Refinando apenas os ajustes de mix...' : '');
       recorder.setStep('posted');
       if (submissionId) void renderPremiumInBackground(submissionId);
     } catch {
@@ -365,7 +390,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
 
       {renderStatus && recorder.step !== 'rendering' && recorder.step !== 'posted' ? <p className="duet-render-status">{renderStatus}</p> : null}
       {recorder.step === 'review' ? <div className="duet-mixer-toggle-wrap"><button type="button" className="button secondary" onClick={() => setShowMixer((value) => !value)}><SlidersHorizontal size={16} /> {showMixer ? 'Ocultar mixer' : 'Editar mixagem'}</button></div> : null}
-      {recorder.step === 'review' && showMixer ? <DuetMixerPanel voiceVolume={recorder.voiceVolume} referenceVolume={recorder.referenceVolume} preset={recorder.preset as VoicePreset} canLiveEdit={recorder.canLiveEdit} latencyMs={recorder.latencyMs} noiseReduction={recorder.noiseReduction} onVoiceChange={recorder.setVoiceVolume} onReferenceChange={recorder.setReferenceVolume} onPresetChange={recorder.setPreset} onLatencyChange={recorder.setLatencyMs} onNoiseReductionChange={recorder.setNoiseReduction} onReset={() => { recorder.setVoiceVolume(135); recorder.setReferenceVolume(45); recorder.setPreset('natural'); recorder.setNoiseReduction(false); recorder.setLatencyMs(estimateDuetLatencyMs(selectedAudioDevice?.label)); }} /> : null}
+      {recorder.step === 'review' && showMixer ? <DuetMixerPanel voiceVolume={recorder.voiceVolume} referenceVolume={recorder.referenceVolume} preset={recorder.preset as VoicePreset} canLiveEdit={recorder.canLiveEdit} latencyMs={recorder.latencyMs} noiseReduction={recorder.noiseReduction} onVoiceChange={recorder.setVoiceVolume} onReferenceChange={recorder.setReferenceVolume} onPresetChange={recorder.setPreset} onLatencyChange={recorder.setLatencyMs} onNoiseReductionChange={recorder.setNoiseReduction} onReset={() => { recorder.setVoiceVolume(DEFAULT_VOICE_VOLUME); recorder.setReferenceVolume(DEFAULT_REFERENCE_VOLUME); recorder.setPreset(DEFAULT_PRESET); recorder.setNoiseReduction(false); recorder.setLatencyMs(estimateDuetLatencyMs(selectedAudioDevice?.label)); }} /> : null}
 
       <section className="duet-control-bar premium-duet-control-bar reels-review-actions">
         {recorder.step === 'recording' ? <><span className="recording-dot">● Gravando dueto</span><button className="button danger" onClick={stopRecording}>Finalizar gravação</button></> : null}
@@ -374,7 +399,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
 
       {recorder.step === 'review' ? <section className="duet-review-note premium-duet-note"><CheckCircle2 size={24} /><div><h2>Dueto pronto</h2><p>Por padrão ele fica natural. Abra o mixer apenas se quiser ajustar volume, efeito ou redução de ruído pós-gravação.</p></div></section> : null}
       {recorder.step === 'caption' ? <section className="caption-box duet-caption-box premium-duet-note reels-publish-card"><div><h2>Legenda da comunidade</h2><p>Compartilhe sua prática no feed.</p><textarea value={caption} onChange={(event) => setCaption(event.target.value)} placeholder="Escreva uma legenda para o feed..." /></div><button className="button" onClick={() => submitDuet(caption || 'Minha prática do dueto.', true)} disabled={recorder.isSubmitting}>{recorder.isSubmitting ? (renderStatus || 'Publicando...') : 'Publicar no feed e enviar'}</button></section> : null}
-      {recorder.step === 'posted' ? <section className="posted-box duet-posted-box premium-duet-note"><CheckCircle2 size={28} /><div><h2>Atividade enviada</h2><p>Sua gravação já foi publicada. O Hub pode refinar a mix premium em segundo plano.</p><a className="button secondary" href={`/aluno/aula/${lessonSlug}`}>Voltar para aula</a></div></section> : null}
+      {recorder.step === 'posted' ? <section className="posted-box duet-posted-box premium-duet-note"><CheckCircle2 size={28} /><div><h2>Atividade enviada</h2><p>Sua gravação já foi publicada. Se você ajustar a mix, o Hub refina só essa camada em segundo plano.</p><a className="button secondary" href={`/aluno/aula/${lessonSlug}`}>Voltar para aula</a></div></section> : null}
     </div>
   );
 }
