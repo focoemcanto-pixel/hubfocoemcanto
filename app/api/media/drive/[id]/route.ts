@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 const ACCESS_CACHE_MS = 55 * 60 * 1000;
 const LESSON_ACCESS_CACHE_MS = 5 * 60 * 1000;
@@ -35,7 +36,6 @@ async function canAccessLessonFile(fileId: string) {
   if (!email) return false;
 
   const supabase = createAdminClient();
-
   const [{ data: profile }, { data: lessons }] = await Promise.all([
     supabase.from('profiles').select('id,email').eq('email', email).maybeSingle(),
     supabase
@@ -111,6 +111,28 @@ async function loadAccess() {
   return json.access_token as string;
 }
 
+function safeMediaHeaders(upstream: Response, range: string | null) {
+  const headers = new Headers();
+  headers.set('content-type', upstream.headers.get('content-type') || 'video/mp4');
+  headers.set('accept-ranges', 'bytes');
+  headers.set('cache-control', 'private, max-age=300, stale-while-revalidate=600');
+  headers.set('x-content-type-options', 'nosniff');
+  headers.set('content-disposition', 'inline');
+  headers.set('vary', 'Range');
+
+  const contentRange = upstream.headers.get('content-range');
+  if (contentRange) headers.set('content-range', contentRange);
+
+  // Importante: não repassar content-length em streaming vindo do Drive.
+  // Em Cloudflare/HTTP2 isso pode gerar ERR_HTTP2_PROTOCOL_ERROR quando o stream encerra diferente do header.
+  if (range && upstream.status === 206) {
+    const length = upstream.headers.get('content-length');
+    if (length && contentRange) headers.set('content-length', length);
+  }
+
+  return headers;
+}
+
 export async function GET(request: Request, { params }: Params) {
   try {
     const { id } = await params;
@@ -126,26 +148,15 @@ export async function GET(request: Request, { params }: Params) {
 
     const upstream = await fetch(`https://www.googleapis.com/drive/v3/files/${id}?alt=media&supportsAllDrives=true`, {
       headers: driveHeaders,
-      cf: { cacheTtl: range ? 300 : 900, cacheEverything: false },
-    } as RequestInit & { cf?: { cacheTtl?: number; cacheEverything?: boolean } });
+      cache: 'no-store',
+    });
 
     if (!upstream.ok || !upstream.body) {
-      return NextResponse.json({ error: 'drive_video_unavailable', status: upstream.status }, { status: upstream.status || 500 });
+      const detail = await upstream.text().catch(() => '');
+      return NextResponse.json({ error: 'drive_video_unavailable', status: upstream.status, detail: detail.slice(0, 300) }, { status: upstream.status || 500 });
     }
 
-    const headers = new Headers();
-    headers.set('content-type', upstream.headers.get('content-type') || 'video/mp4');
-    headers.set('accept-ranges', 'bytes');
-    headers.set('cache-control', 'private, max-age=300, stale-while-revalidate=600');
-    headers.set('x-content-type-options', 'nosniff');
-    headers.set('content-disposition', 'inline');
-    headers.set('vary', 'Range');
-    const len = upstream.headers.get('content-length');
-    const rangeHeader = upstream.headers.get('content-range');
-    if (len) headers.set('content-length', len);
-    if (rangeHeader) headers.set('content-range', rangeHeader);
-
-    return new Response(upstream.body, { status: upstream.status, headers });
+    return new Response(upstream.body, { status: upstream.status, headers: safeMediaHeaders(upstream, range) });
   } catch (error) {
     return NextResponse.json({ error: 'drive_proxy_failed', message: error instanceof Error ? error.message : 'unknown_error' }, { status: 500 });
   }
