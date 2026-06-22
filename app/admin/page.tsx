@@ -27,13 +27,14 @@ export default async function AdminPage() {
           <h1>Painel do professor</h1>
           <p className="muted">Gerencie biblioteca, alunos, assinaturas, comunidade e avaliacoes.</p>
         </div>
-        <a className="button" href="/admin/biblioteca">Abrir Biblioteca</a>
+        <a className="button" href="/admin/premium">Abrir Premium</a>
       </section>
 
       <nav className="admin-tabs">
         <a href="/admin">Resumo</a>
         <a href="/admin/biblioteca">Biblioteca</a>
         <a href="/admin/drive">Drive</a>
+        <a href="/admin/premium">Premium</a>
         <a href="/admin/alunos">Alunos</a>
         <a href="/admin/avaliacoes">Avaliacoes</a>
       </nav>
@@ -46,6 +47,12 @@ export default async function AdminPage() {
       </section>
 
       <section className="admin-kicker-grid">
+        <article className="admin-stat">
+          <span>Premium</span>
+          <strong>Kiwify</strong>
+          <p className="muted">Gerencie assinantes ativos, atrasados e removidos.</p>
+          <a className="button secondary" href="/admin/premium">Gerenciar premium</a>
+        </article>
         <article className="admin-stat">
           <span>Conteudo</span>
           <strong>Biblioteca VIP</strong>
