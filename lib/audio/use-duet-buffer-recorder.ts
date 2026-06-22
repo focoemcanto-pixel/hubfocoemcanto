@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { DuetBufferEngine, type VoicePreset } from './duet-buffer-engine';
 import { loadDuetBufferEngine, toggleDuetBufferPlayback } from './duet-engine-loader';
+import { clampLatencyMs } from './duet-latency';
 
 type Step = 'intro' | 'loading' | 'countdown' | 'recording' | 'review' | 'caption' | 'posted' | 'rendering';
 
@@ -63,11 +64,12 @@ export function useDuetBufferRecorder(referenceSource: string, lessonSlug: strin
   const [voiceVolume, setVoiceVolumeState] = useState(135);
   const [referenceVolume, setReferenceVolumeState] = useState(45);
   const [preset, setPresetState] = useState<VoicePreset>('worship');
+  const [latencyMs, setLatencyMsState] = useState(70);
   const [audioReady, setAudioReady] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const settingsRef = useRef({ voiceVolume: 135, referenceVolume: 45, preset: 'worship' as VoicePreset });
+  const settingsRef = useRef({ voiceVolume: 135, referenceVolume: 45, preset: 'worship' as VoicePreset, latencyMs: 70 });
   const cameraRef = useRef<HTMLVideoElement | null>(null);
   const referenceRef = useRef<HTMLVideoElement | null>(null);
   const previewRef = useRef<HTMLVideoElement | null>(null);
@@ -110,6 +112,12 @@ export function useDuetBufferRecorder(referenceSource: string, lessonSlug: strin
     settingsRef.current = { ...settingsRef.current, preset: value };
     setPresetState(value);
     engineRef.current?.applySettings();
+  }
+
+  function setLatencyMs(value: number) {
+    const next = clampLatencyMs(value);
+    settingsRef.current = { ...settingsRef.current, latencyMs: next };
+    setLatencyMsState(next);
   }
 
   function clearDraw() {
@@ -180,9 +188,9 @@ export function useDuetBufferRecorder(referenceSource: string, lessonSlug: strin
   }
 
   function applySettings() {
-    settingsRef.current = { voiceVolume, referenceVolume, preset };
+    settingsRef.current = { voiceVolume, referenceVolume, preset, latencyMs };
     engineRef.current?.applySettings();
   }
 
-  return { step, setStep, count, setCount, previewUrl, setPreviewUrl, visualUrl, setVisualUrl, error, setError, voiceVolume, setVoiceVolume, referenceVolume, setReferenceVolume, preset, setPreset, audioReady, setAudioReady, isPlaying, setIsPlaying, isSubmitting, setIsSubmitting, cameraRef, referenceRef, previewRef, canvasRef, engineRef, chunksRef, visualChunksRef, micChunksRef, referenceChunksRef, mediaRecorderRef, visualRecorderRef, micRecorderRef, referenceRecorderRef, finalBlobRef, visualBlobRef, voiceBlobRef, referenceBlobRef, canRecord, canLiveEdit, settings, cleanup, waitReady, drawFrame, startDraw, clearDraw, applySettings, prepareEngine, togglePlayback, options, mime, isSafariLike, streamRef, audioCtxRef, referenceSource, lessonSlug };
+  return { step, setStep, count, setCount, previewUrl, setPreviewUrl, visualUrl, setVisualUrl, error, setError, voiceVolume, setVoiceVolume, referenceVolume, setReferenceVolume, preset, setPreset, latencyMs, setLatencyMs, audioReady, setAudioReady, isPlaying, setIsPlaying, isSubmitting, setIsSubmitting, cameraRef, referenceRef, previewRef, canvasRef, engineRef, chunksRef, visualChunksRef, micChunksRef, referenceChunksRef, mediaRecorderRef, visualRecorderRef, micRecorderRef, referenceRecorderRef, finalBlobRef, visualBlobRef, voiceBlobRef, referenceBlobRef, canRecord, canLiveEdit, settings, cleanup, waitReady, drawFrame, startDraw, clearDraw, applySettings, prepareEngine, togglePlayback, options, mime, isSafariLike, streamRef, audioCtxRef, referenceSource, lessonSlug };
 }
