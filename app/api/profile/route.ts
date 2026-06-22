@@ -70,20 +70,34 @@ export async function POST(request: Request) {
     avatarUrl = data.publicUrl;
   }
 
-  const richPayload: Record<string, string> = { bio, headline, whatsapp };
-  if (name) richPayload.name = name;
-  if (avatarUrl) richPayload.avatar_url = avatarUrl;
+  const payload: Record<string, string> = { bio, headline, whatsapp, updated_at: new Date().toISOString() };
+  if (name) payload.name = name;
+  if (avatarUrl) payload.avatar_url = avatarUrl;
 
-  const { error } = await supabase.from('profiles').update(richPayload).eq('id', profile.id);
-  if (!error) return reply(request, { ok: true, avatar_url: avatarUrl, name, bio, headline, whatsapp });
+  const { data: updated, error } = await supabase
+    .from('profiles')
+    .update(payload)
+    .eq('id', profile.id)
+    .select('id,name,bio,headline,whatsapp,avatar_url')
+    .maybeSingle();
 
-  if (!missingColumn(error.message)) return reply(request, { ok: false, error: error.message }, 500);
+  if (!error && updated) return reply(request, { ok: true, ...updated });
 
-  const safePayload: Record<string, string> = {};
-  if (name) safePayload.name = name;
-  if (avatarUrl) safePayload.avatar_url = avatarUrl;
-  const { error: safeError } = await supabase.from('profiles').update(safePayload).eq('id', profile.id);
-  if (safeError) return reply(request, { ok: false, error: safeError.message }, 500);
+  if (missingColumn(error?.message)) {
+    const safePayload: Record<string, string> = { updated_at: new Date().toISOString() };
+    if (name) safePayload.name = name;
+    if (avatarUrl) safePayload.avatar_url = avatarUrl;
+    await supabase.from('profiles').update(safePayload).eq('id', profile.id);
+    return reply(
+      request,
+      {
+        ok: false,
+        error: 'schema_perfil_incompleto',
+        detail: 'A tabela profiles ainda não possui as colunas bio/headline/whatsapp no banco de produção. Rode o SQL de perfil para ativar o salvamento completo.',
+      },
+      500
+    );
+  }
 
-  return reply(request, { ok: true, avatar_url: avatarUrl, name, bio: '', headline: '', whatsapp: '', warning: 'Campos extras ainda não existem no banco.' });
+  return reply(request, { ok: false, error: error?.message || 'perfil_nao_salvo' }, 500);
 }
