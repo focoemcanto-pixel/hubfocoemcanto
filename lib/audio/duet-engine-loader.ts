@@ -4,6 +4,7 @@ type Settings = {
   voiceVolume: number;
   referenceVolume: number;
   preset: VoicePreset;
+  latencyMs?: number;
 };
 
 export async function loadDuetBufferEngine(args: {
