@@ -17,6 +17,7 @@ export function ProfileEditor({ name, username, bio, whatsapp, avatarUrl, initia
   const [y, setY] = useState(50);
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [message, setMessage] = useState('');
+  const [formValues, setFormValues] = useState({ name, headline: username, bio, whatsapp });
 
   function chooseFile(next?: File) {
     if (!next) return;
@@ -60,12 +61,18 @@ export function ProfileEditor({ name, username, bio, whatsapp, avatarUrl, initia
     setMessage('Salvando perfil...');
     const response = await fetch('/api/profile', { method: 'POST', headers: { accept: 'application/json', 'x-requested-with': 'fetch' }, body: form });
     const data = await response.json().catch(() => null);
-    if (!response.ok || !data?.ok) { setStatus('error'); setMessage(data?.error || 'Não consegui salvar agora.'); return; }
+    if (!response.ok || !data?.ok) { setStatus('error'); setMessage(data?.detail || data?.error || 'Não consegui salvar agora.'); return; }
     if (data.avatar_url) setPreview(data.avatar_url);
+    setFormValues({
+      name: data.name || String(form.get('name') || ''),
+      headline: data.headline || String(form.get('headline') || ''),
+      bio: data.bio || String(form.get('bio') || ''),
+      whatsapp: data.whatsapp || String(form.get('whatsapp') || ''),
+    });
     setFile(null);
     if (inputRef.current) inputRef.current.value = '';
     setStatus('saved');
-    setMessage('Perfil salvo. A foto já foi aplicada.');
+    setMessage('Perfil salvo. As alterações já foram aplicadas.');
     window.setTimeout(() => setStatus('idle'), 1600);
   }
 
@@ -81,10 +88,10 @@ export function ProfileEditor({ name, username, bio, whatsapp, avatarUrl, initia
           <p>Toque na foto para trocar</p>
         </section>
         <section className="ig-edit-fields">
-          <label>Nome<input name="name" defaultValue={name} placeholder="Seu nome" /></label>
-          <label>Nome de usuário<input name="headline" defaultValue={username} placeholder="ex: marcoscruz" /></label>
-          <label>Bio<textarea name="bio" defaultValue={bio} placeholder="Conte sobre sua voz, ministério, objetivo e o que está treinando..." /></label>
-          <label>WhatsApp<input name="whatsapp" defaultValue={whatsapp} placeholder="Opcional" /></label>
+          <label>Nome<input name="name" value={formValues.name} onChange={(event) => setFormValues((current) => ({ ...current, name: event.target.value }))} placeholder="Seu nome" /></label>
+          <label>Nome de usuário<input name="headline" value={formValues.headline} onChange={(event) => setFormValues((current) => ({ ...current, headline: event.target.value }))} placeholder="ex: marcoscruz" /></label>
+          <label>Bio<textarea name="bio" value={formValues.bio} onChange={(event) => setFormValues((current) => ({ ...current, bio: event.target.value }))} placeholder="Conte sobre sua voz, ministério, objetivo e o que está treinando..." /></label>
+          <label>WhatsApp<input name="whatsapp" value={formValues.whatsapp} onChange={(event) => setFormValues((current) => ({ ...current, whatsapp: event.target.value }))} placeholder="Opcional" /></label>
         </section>
         <button className={`ig-save-profile-button ${status}`} type="submit" disabled={status === 'saving'}>
           {status === 'saving' ? <Loader2 size={17} className="spin" /> : status === 'saved' ? <Check size={17} /> : null}
