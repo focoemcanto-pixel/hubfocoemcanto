@@ -20,6 +20,8 @@ type Props = {
   referenceEmbedUrl?: string | null;
 };
 
+const FINAL_RENDER_TIMEOUT_MS = 12000;
+
 export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
   const referenceSource = proxiedVideoUrl(referenceUrl);
   const recorder = useDuetBufferRecorder(referenceSource, lessonSlug);
@@ -241,13 +243,22 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
     recorder.engineRef.current?.pause(true);
     recorder.setStep('rendering');
     try {
-      const rendered = await renderFinalDuetVideo({ visualBlob, voiceBlob, referenceBlob, referenceSource, settings: recorder.settings() });
+      const renderPromise = renderFinalDuetVideo({ visualBlob, voiceBlob, referenceBlob, referenceSource, settings: recorder.settings() });
+      const timeoutPromise = new Promise<Blob>((_, reject) => {
+        window.setTimeout(() => reject(new Error('render_timeout')), FINAL_RENDER_TIMEOUT_MS);
+      });
+      const rendered = await Promise.race([renderPromise, timeoutPromise]);
       recorder.finalBlobRef.current = rendered;
       recorder.setVisualUrl(null);
       recorder.setPreviewUrl(URL.createObjectURL(rendered));
       return rendered;
-    } catch {
-      recorder.setError(requireRenderedMix ? 'Não consegui renderizar a mix final. Vou enviar a prévia gravada para não perder sua atividade.' : 'Não consegui renderizar a mix final neste navegador. Vou enviar a prévia original.');
+    } catch (error) {
+      const timedOut = error instanceof Error && error.message === 'render_timeout';
+      recorder.setError(timedOut
+        ? 'A mix premium demorou demais. Vou enviar a prévia segura para não travar sua atividade.'
+        : requireRenderedMix
+          ? 'Não consegui renderizar a mix final. Vou enviar a prévia gravada para não perder sua atividade.'
+          : 'Não consegui renderizar a mix final neste navegador. Vou enviar a prévia original.');
       return fallback;
     } finally {
       recorder.setStep('review');
