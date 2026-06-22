@@ -1,11 +1,13 @@
 import type { VoicePreset } from './duet-buffer-engine';
 import { clampLatencyMs } from './duet-latency';
+import { reduceVoiceNoise } from './duet-noise-reduction';
 
 export type FinalRenderSettings = {
   voiceVolume: number;
   referenceVolume: number;
   preset: VoicePreset;
   latencyMs?: number;
+  noiseReduction?: boolean;
 };
 
 export type RenderArgs = {
@@ -63,27 +65,14 @@ function rmsNormalize(buffer: AudioBuffer) {
   const step = Math.max(1, Math.floor(data.length / 30000));
   let sum = 0;
   let count = 0;
-  for (let index = 0; index < data.length; index += step) {
-    sum += data[index] * data[index];
-    count++;
-  }
+  for (let index = 0; index < data.length; index += step) { sum += data[index] * data[index]; count++; }
   const rms = Math.sqrt(sum / Math.max(1, count));
   if (!Number.isFinite(rms) || rms <= 0.0001) return 3.2;
   return Math.max(1.35, Math.min(6.4, 0.22 / rms));
 }
 
 function applyVoicePreset(ctx: AudioContext, input: AudioNode, destination: AudioNode, preset: VoicePreset, voiceGainValue: number) {
-  const gain = ctx.createGain();
-  const highpass = ctx.createBiquadFilter();
-  const body = ctx.createBiquadFilter();
-  const presence = ctx.createBiquadFilter();
-  const air = ctx.createBiquadFilter();
-  const compressor = ctx.createDynamicsCompressor();
-  const delay = ctx.createDelay(0.45);
-  const wet = ctx.createGain();
-  const dry = ctx.createGain();
-  const limiter = ctx.createDynamicsCompressor();
-
+  const gain = ctx.createGain(); const highpass = ctx.createBiquadFilter(); const body = ctx.createBiquadFilter(); const presence = ctx.createBiquadFilter(); const air = ctx.createBiquadFilter(); const compressor = ctx.createDynamicsCompressor(); const delay = ctx.createDelay(0.45); const wet = ctx.createGain(); const dry = ctx.createGain(); const limiter = ctx.createDynamicsCompressor();
   const presetMap = {
     natural: { highpass: 65, body: 0.2, presence: 0.8, air: 0.4, threshold: -18, ratio: 1.8, delay: 0.001, wet: 0, dry: 1 },
     studio: { highpass: 92, body: 2.4, presence: 6.2, air: 4.5, threshold: -32, ratio: 5.8, delay: 0.018, wet: 0.05, dry: 0.95 },
@@ -91,39 +80,16 @@ function applyVoicePreset(ctx: AudioContext, input: AudioNode, destination: Audi
     coral: { highpass: 115, body: 0.6, presence: 3.2, air: 2.2, threshold: -28, ratio: 4, delay: 0.035, wet: 0.36, dry: 0.82 },
   } satisfies Record<VoicePreset, { highpass: number; body: number; presence: number; air: number; threshold: number; ratio: number; delay: number; wet: number; dry: number }>;
   const current = presetMap[preset];
-
   gain.gain.value = voiceGainValue;
-  highpass.type = 'highpass';
-  highpass.frequency.value = current.highpass;
-  body.type = 'peaking';
-  body.frequency.value = 240;
-  body.Q.value = 0.7;
-  body.gain.value = current.body;
-  presence.type = 'peaking';
-  presence.frequency.value = 3300;
-  presence.Q.value = 0.85;
-  presence.gain.value = current.presence;
-  air.type = 'highshelf';
-  air.frequency.value = 7200;
-  air.gain.value = current.air;
-  compressor.threshold.value = current.threshold;
-  compressor.knee.value = 14;
-  compressor.ratio.value = current.ratio;
-  compressor.attack.value = 0.003;
-  compressor.release.value = 0.14;
-  delay.delayTime.value = current.delay;
-  wet.gain.value = current.wet;
-  dry.gain.value = current.dry;
-  limiter.threshold.value = -4.8;
-  limiter.knee.value = 1.5;
-  limiter.ratio.value = 16;
-  limiter.attack.value = 0.0015;
-  limiter.release.value = 0.07;
-
+  highpass.type = 'highpass'; highpass.frequency.value = current.highpass;
+  body.type = 'peaking'; body.frequency.value = 240; body.Q.value = 0.7; body.gain.value = current.body;
+  presence.type = 'peaking'; presence.frequency.value = 3300; presence.Q.value = 0.85; presence.gain.value = current.presence;
+  air.type = 'highshelf'; air.frequency.value = 7200; air.gain.value = current.air;
+  compressor.threshold.value = current.threshold; compressor.knee.value = 14; compressor.ratio.value = current.ratio; compressor.attack.value = 0.003; compressor.release.value = 0.14;
+  delay.delayTime.value = current.delay; wet.gain.value = current.wet; dry.gain.value = current.dry;
+  limiter.threshold.value = -4.8; limiter.knee.value = 1.5; limiter.ratio.value = 16; limiter.attack.value = 0.0015; limiter.release.value = 0.07;
   input.connect(gain).connect(highpass).connect(body).connect(presence).connect(air).connect(compressor);
-  compressor.connect(dry).connect(limiter);
-  compressor.connect(delay).connect(wet).connect(limiter);
-  limiter.connect(destination);
+  compressor.connect(dry).connect(limiter); compressor.connect(delay).connect(wet).connect(limiter); limiter.connect(destination);
 }
 
 export async function renderFinalDuetVideo({ visualBlob, voiceBlob, referenceBlob, referenceSource, settings }: RenderArgs) {
@@ -138,10 +104,11 @@ export async function renderFinalDuetVideo({ visualBlob, voiceBlob, referenceBlo
   await waitReady(visual);
 
   const audioCtx = new AudioCtx({ latencyHint: 'playback', sampleRate: 48000 });
-  const [voiceBuffer, referenceBuffer] = await Promise.all([
+  const [rawVoiceBuffer, referenceBuffer] = await Promise.all([
     decodeBlob(audioCtx, voiceBlob),
     referenceBlob ? decodeBlob(audioCtx, referenceBlob) : decodeUrl(audioCtx, referenceSource || ''),
   ]);
+  const voiceBuffer = settings.noiseReduction ? reduceVoiceNoise(audioCtx, rawVoiceBuffer) : rawVoiceBuffer;
 
   const canvas = document.createElement('canvas');
   canvas.width = isSafariLike() ? 960 : 1280;
@@ -168,37 +135,20 @@ export async function renderFinalDuetVideo({ visualBlob, voiceBlob, referenceBlo
     ...destination.stream.getAudioTracks(),
   ]);
   const mimeType = recorderMimeType();
-  const recorder = new MediaRecorder(outputStream, {
-    ...(mimeType ? { mimeType } : {}),
-    videoBitsPerSecond: isSafariLike() ? 2500000 : 5200000,
-    audioBitsPerSecond: 192000,
-  });
+  const recorder = new MediaRecorder(outputStream, { ...(mimeType ? { mimeType } : {}), videoBitsPerSecond: isSafariLike() ? 2500000 : 5200000, audioBitsPerSecond: 192000 });
   const chunks: Blob[] = [];
-  recorder.ondataavailable = (event) => {
-    if (event.data.size > 0) chunks.push(event.data);
-  };
-  const done = new Promise<Blob>((resolve) => {
-    recorder.onstop = () => resolve(new Blob(chunks, { type: recorder.mimeType || mimeType || 'video/webm' }));
-  });
+  recorder.ondataavailable = (event) => { if (event.data.size > 0) chunks.push(event.data); };
+  const done = new Promise<Blob>((resolve) => { recorder.onstop = () => resolve(new Blob(chunks, { type: recorder.mimeType || mimeType || 'video/webm' })); });
 
   let frame = 0;
-  const draw = () => {
-    if (visual.paused || visual.ended) return;
-    ctx2d.drawImage(visual, 0, 0, canvas.width, canvas.height);
-    frame = requestAnimationFrame(draw);
-  };
-  const stop = () => {
-    try { voiceSource.stop(); } catch {}
-    try { referenceSourceNode.stop(); } catch {}
-    cancelAnimationFrame(frame);
-    if (recorder.state === 'recording') recorder.stop();
-  };
+  const draw = () => { if (visual.paused || visual.ended) return; ctx2d.drawImage(visual, 0, 0, canvas.width, canvas.height); frame = requestAnimationFrame(draw); };
+  const stop = () => { try { voiceSource.stop(); } catch {} try { referenceSourceNode.stop(); } catch {} cancelAnimationFrame(frame); if (recorder.state === 'recording') recorder.stop(); };
 
   visual.currentTime = 0;
   await audioCtx.resume().catch(() => undefined);
   await visual.play().catch(() => undefined);
   draw();
-  recorder.start(1000);
+  recorder.start(250);
   const startAt = audioCtx.currentTime + 0.035;
   const voiceOffset = Math.min(Math.max(0, clampLatencyMs(settings.latencyMs || 0) / 1000), Math.max(0, voiceBuffer.duration - 0.02));
   voiceSource.start(startAt, voiceOffset);
@@ -210,10 +160,5 @@ export async function renderFinalDuetVideo({ visualBlob, voiceBlob, referenceBlo
   return rendered;
 }
 
-export function normalizeVoiceTarget(volume: number) {
-  return Math.max(0, Math.min(3.2, volume / 100));
-}
-
-export function referenceTarget(volume: number) {
-  return Math.max(0, Math.min(1.5, volume / 100));
-}
+export function normalizeVoiceTarget(volume: number) { return Math.max(0, Math.min(3.2, volume / 100)); }
+export function referenceTarget(volume: number) { return Math.max(0, Math.min(1.5, volume / 100)); }
