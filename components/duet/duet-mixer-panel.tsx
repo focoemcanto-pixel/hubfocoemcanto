@@ -9,9 +9,13 @@ type Props = {
   referenceVolume: number;
   preset: VoicePreset;
   canLiveEdit: boolean;
+  latencyMs?: number;
+  noiseReduction?: boolean;
   onVoiceChange: (value: number) => void;
   onReferenceChange: (value: number) => void;
   onPresetChange: (value: VoicePreset) => void;
+  onLatencyChange?: (value: number) => void;
+  onNoiseReductionChange?: (value: boolean) => void;
   onReset: () => void;
 };
 
