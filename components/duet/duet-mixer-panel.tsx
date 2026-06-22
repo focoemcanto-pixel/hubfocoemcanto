@@ -1,6 +1,6 @@
 'use client';
 
-import { Headphones, Mic, Music2 } from 'lucide-react';
+import { Headphones, Mic, Music2, SlidersHorizontal } from 'lucide-react';
 import { duetPresets } from './duet-presets';
 import type { VoicePreset } from '@/lib/audio/duet-buffer-engine';
 
@@ -24,9 +24,11 @@ export function DuetMixerPanel({
   referenceVolume,
   preset,
   canLiveEdit,
+  noiseReduction = false,
   onVoiceChange,
   onReferenceChange,
   onPresetChange,
+  onNoiseReductionChange,
   onReset,
 }: Props) {
   return (
@@ -56,8 +58,15 @@ export function DuetMixerPanel({
           </button>
         ))}
       </div>
+      <button type="button" className={`noise-reduction-toggle compact ${noiseReduction ? 'active' : ''}`} onClick={() => onNoiseReductionChange?.(!noiseReduction)}>
+        <SlidersHorizontal size={18} />
+        <span>
+          <strong>Redução de ruído</strong>
+          <small>{noiseReduction ? 'Ligada no preview e no vídeo final.' : 'Opcional. Use só se houver ruído de fundo.'}</small>
+        </span>
+      </button>
       <p className="smule-note">
-        <Headphones size={15} /> {canLiveEdit ? 'O Hub já aplica tratamento interno. Ajuste apenas volume e efeito se quiser.' : 'Preparando motor de audio profissional...'}
+        <Headphones size={15} /> {canLiveEdit ? 'O Hub já aplica tratamento interno. Ajuste apenas volume, efeito e ruído se precisar.' : 'Preparando motor de audio profissional...'}
       </p>
     </section>
   );
