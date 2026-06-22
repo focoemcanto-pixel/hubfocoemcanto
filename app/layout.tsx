@@ -19,6 +19,7 @@ import './social-profile.css';
 import './edit-profile.css';
 import './student-reviews.css';
 import './notifications-premium.css';
+import './community-publish-menu.css';
 
 export default function RootLayout(props: { children: React.ReactNode }) {
   return (
