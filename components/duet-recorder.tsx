@@ -21,6 +21,7 @@ type Props = {
 };
 
 const FINAL_RENDER_TIMEOUT_MS = 12000;
+const BACKGROUND_RENDER_TIMEOUT_MS = 20000;
 
 export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
   const referenceSource = proxiedVideoUrl(referenceUrl);
@@ -236,45 +237,42 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
   function reset() { recorder.cleanup(); resetLocalState(); recorder.setStep('intro'); }
   async function togglePlayback() { await recorder.togglePlayback(); }
 
-  async function getUploadBlob(requireRenderedMix = false) {
-    const fallback = recorder.finalBlobRef.current;
+  function fallbackUploadBlob() {
+    return recorder.finalBlobRef.current;
+  }
+
+  async function renderPremiumInBackground(submissionId: string) {
     const visualBlob = recorder.visualBlobRef.current;
     const voiceBlob = recorder.voiceBlobRef.current;
     const referenceBlob = recorder.referenceBlobRef.current;
-    if (!visualBlob || !voiceBlob || (!referenceBlob && !referenceSource)) return fallback;
-    recorder.engineRef.current?.pause(true);
-    recorder.setStep('rendering');
-    setRenderStatus('Renderizando mix premium...');
+    if (!submissionId || !visualBlob || !voiceBlob || (!referenceBlob && !referenceSource)) return;
+
+    setRenderStatus('Publicado. Refinando mix premium em segundo plano...');
     try {
       const renderPromise = renderFinalDuetVideo({ visualBlob, voiceBlob, referenceBlob, referenceSource, settings: recorder.settings() });
       const timeoutPromise = new Promise<Blob>((_, reject) => {
-        window.setTimeout(() => reject(new Error('render_timeout')), FINAL_RENDER_TIMEOUT_MS);
+        window.setTimeout(() => reject(new Error('render_timeout')), BACKGROUND_RENDER_TIMEOUT_MS);
       });
       const rendered = await Promise.race([renderPromise, timeoutPromise]);
-      recorder.finalBlobRef.current = rendered;
-      recorder.setVisualUrl(null);
-      recorder.setPreviewUrl(URL.createObjectURL(rendered));
-      setRenderStatus('Mix premium pronta. Enviando...');
-      return rendered;
-    } catch (error) {
-      const timedOut = error instanceof Error && error.message === 'render_timeout';
-      setRenderStatus(timedOut ? 'Demorou demais. Enviando versão segura...' : 'Render premium falhou. Enviando versão segura...');
-      recorder.setError(timedOut
-        ? 'A mix premium demorou demais. Vou enviar a prévia segura para não travar sua atividade.'
-        : requireRenderedMix
-          ? 'Não consegui renderizar a mix final. Vou enviar a prévia gravada para não perder sua atividade.'
-          : 'Não consegui renderizar a mix final neste navegador. Vou enviar a prévia original.');
-      return fallback;
+      if (!rendered || rendered.size < 1000) return;
+
+      const fileType = rendered.type || 'video/webm';
+      const data = new FormData();
+      data.set('submission_id', submissionId);
+      data.set('file', new File([rendered], `${lessonSlug}-dueto-premium.${fileType.includes('mp4') ? 'mp4' : 'webm'}`, { type: fileType }));
+      await fetch('/api/submissions/duet/premium', { method: 'POST', body: data });
+    } catch {
+      // A versão segura já foi publicada. A mix premium é melhoria opcional.
     } finally {
-      recorder.setStep('review');
+      setRenderStatus('');
     }
   }
 
   async function submitDuet(finalCaption: string, forceCommunity = false) {
     recorder.setIsSubmitting(true);
     recorder.setError('');
-    setRenderStatus('Preparando envio...');
-    const blob = await getUploadBlob(forceCommunity);
+    setRenderStatus('Publicando agora...');
+    const blob = fallbackUploadBlob();
     if (!blob) {
       recorder.setIsSubmitting(false);
       setRenderStatus('');
@@ -282,7 +280,6 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
       return;
     }
     try {
-      setRenderStatus('Enviando atividade...');
       const data = new FormData();
       const fileType = blob.type || 'video/webm';
       data.set('lesson_slug', lessonSlug);
@@ -301,9 +298,12 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
         setRenderStatus('');
         return;
       }
+      const json = await response.json().catch(() => null);
+      const submissionId = String(json?.id || '');
       recorder.setIsSubmitting(false);
-      setRenderStatus('');
+      setRenderStatus(submissionId ? 'Publicado. Refinando mix premium em segundo plano...' : '');
       recorder.setStep('posted');
+      if (submissionId) void renderPremiumInBackground(submissionId);
     } catch {
       recorder.setIsSubmitting(false);
       setRenderStatus('');
@@ -369,12 +369,12 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
 
       <section className="duet-control-bar premium-duet-control-bar reels-review-actions">
         {recorder.step === 'recording' ? <><span className="recording-dot">● Gravando dueto</span><button className="button danger" onClick={stopRecording}>Finalizar gravação</button></> : null}
-        {recorder.step === 'review' ? <><button className="button secondary" onClick={reset} disabled={recorder.isSubmitting}><RefreshCcw size={16} /> Regravar</button><label className="community-toggle review-community-toggle"><input type="checkbox" checked={postCommunity} onChange={(event) => setPostCommunity(event.target.checked)} disabled={recorder.isSubmitting} /> Publicar também na comunidade</label><button className="button" onClick={() => postCommunity ? recorder.setStep('caption') : submitDuet('', false)} disabled={recorder.isSubmitting}><UploadCloud size={16} /> {postCommunity ? 'Continuar' : recorder.isSubmitting ? (renderStatus || 'Enviando...') : 'Enviar para avaliação'}</button></> : null}
+        {recorder.step === 'review' ? <><button className="button secondary" onClick={reset} disabled={recorder.isSubmitting}><RefreshCcw size={16} /> Regravar</button><label className="community-toggle review-community-toggle"><input type="checkbox" checked={postCommunity} onChange={(event) => setPostCommunity(event.target.checked)} disabled={recorder.isSubmitting} /> Publicar também na comunidade</label><button className="button" onClick={() => postCommunity ? recorder.setStep('caption') : submitDuet('', false)} disabled={recorder.isSubmitting}><UploadCloud size={16} /> {postCommunity ? 'Continuar' : recorder.isSubmitting ? (renderStatus || 'Publicando...') : 'Enviar para avaliação'}</button></> : null}
       </section>
 
-      {recorder.step === 'review' ? <section className="duet-review-note premium-duet-note"><CheckCircle2 size={24} /><div><h2>Dueto pronto</h2><p>Por padrão ele fica natural. Abra o mixer apenas se quiser ajustar volume, sincronia, efeito ou redução de ruído pós-gravação.</p></div></section> : null}
+      {recorder.step === 'review' ? <section className="duet-review-note premium-duet-note"><CheckCircle2 size={24} /><div><h2>Dueto pronto</h2><p>Por padrão ele fica natural. Abra o mixer apenas se quiser ajustar volume, efeito ou redução de ruído pós-gravação.</p></div></section> : null}
       {recorder.step === 'caption' ? <section className="caption-box duet-caption-box premium-duet-note reels-publish-card"><div><h2>Legenda da comunidade</h2><p>Compartilhe sua prática no feed.</p><textarea value={caption} onChange={(event) => setCaption(event.target.value)} placeholder="Escreva uma legenda para o feed..." /></div><button className="button" onClick={() => submitDuet(caption || 'Minha prática do dueto.', true)} disabled={recorder.isSubmitting}>{recorder.isSubmitting ? (renderStatus || 'Publicando...') : 'Publicar no feed e enviar'}</button></section> : null}
-      {recorder.step === 'posted' ? <section className="posted-box duet-posted-box premium-duet-note"><CheckCircle2 size={28} /><div><h2>Atividade enviada</h2><p>Sua gravação entrou na fila de avaliação do professor.</p><a className="button secondary" href={`/aluno/aula/${lessonSlug}`}>Voltar para aula</a></div></section> : null}
+      {recorder.step === 'posted' ? <section className="posted-box duet-posted-box premium-duet-note"><CheckCircle2 size={28} /><div><h2>Atividade enviada</h2><p>Sua gravação já foi publicada. O Hub pode refinar a mix premium em segundo plano.</p><a className="button secondary" href={`/aluno/aula/${lessonSlug}`}>Voltar para aula</a></div></section> : null}
     </div>
   );
 }
