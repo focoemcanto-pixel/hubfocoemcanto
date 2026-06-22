@@ -9,6 +9,7 @@ export type FinalRenderSettings = {
 type RenderArgs = {
   visualBlob: Blob;
   voiceBlob: Blob;
+  referenceBlob?: Blob | null;
   referenceSource: string;
   settings: FinalRenderSettings;
 };
@@ -111,7 +112,7 @@ function applyVoicePreset(ctx: AudioContext, input: AudioNode, destination: Audi
   limiter.connect(destination);
 }
 
-export async function renderFinalDuetVideo({ visualBlob, voiceBlob, referenceSource, settings }: RenderArgs) {
+export async function renderFinalDuetVideo({ visualBlob, voiceBlob, referenceBlob, referenceSource, settings }: RenderArgs) {
   const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
   if (!AudioCtx) throw new Error('audio_context_missing');
 
@@ -124,7 +125,7 @@ export async function renderFinalDuetVideo({ visualBlob, voiceBlob, referenceSou
   const audioCtx = new AudioCtx({ latencyHint: 'playback', sampleRate: 48000 });
   const [voiceBuffer, referenceBuffer] = await Promise.all([
     decodeBlob(audioCtx, voiceBlob),
-    decodeUrl(audioCtx, referenceSource),
+    referenceBlob ? decodeBlob(audioCtx, referenceBlob) : decodeUrl(audioCtx, referenceSource),
   ]);
 
   const canvas = document.createElement('canvas');
