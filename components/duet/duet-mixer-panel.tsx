@@ -46,21 +46,21 @@ export function DuetMixerPanel({
         </div>
         <button type="button" onClick={onReset}>Reset</button>
       </header>
-      <button type="button" className="noise-reduction-toggle compact active" onClick={onAutoMix} disabled={!canLiveEdit || isAutoMixing}>
+      <button type="button" className="duet-premium-action automix-action" onClick={onAutoMix} disabled={!canLiveEdit || isAutoMixing}>
         <Sparkles size={18} />
         <span>
           <strong>{isAutoMixing ? 'Analisando sua voz...' : 'Melhorar automaticamente'}</strong>
-          <small>{autoMixMessage || 'Equilibra voz e referência sem precisar mexer nos sliders.'}</small>
+          <small>{autoMixMessage || 'Normaliza o ganho das faixas e deixa os volumes prontos.'}</small>
         </span>
       </button>
       <div className="smule-slider-row">
         <span><Mic size={17} /> Voz</span>
-        <input type="range" min="0" max="220" value={voiceVolume} onChange={(event) => onVoiceChange(Number(event.target.value))} />
+        <input type="range" min="0" max="100" value={voiceVolume} onChange={(event) => onVoiceChange(Number(event.target.value))} />
         <strong>{voiceVolume}%</strong>
       </div>
       <div className="smule-slider-row">
-        <span><Music2 size={17} /> Referência</span>
-        <input type="range" min="0" max="120" value={referenceVolume} onChange={(event) => onReferenceChange(Number(event.target.value))} />
+        <span><Music2 size={17} /> Referencia</span>
+        <input type="range" min="0" max="100" value={referenceVolume} onChange={(event) => onReferenceChange(Number(event.target.value))} />
         <strong>{referenceVolume}%</strong>
       </div>
       <div className="smule-preset-grid">
@@ -71,15 +71,15 @@ export function DuetMixerPanel({
           </button>
         ))}
       </div>
-      <button type="button" className={`noise-reduction-toggle compact ${noiseReduction ? 'active' : ''}`} onClick={() => onNoiseReductionChange?.(!noiseReduction)}>
+      <button type="button" className={`duet-premium-action ${noiseReduction ? 'active' : ''}`} onClick={() => onNoiseReductionChange?.(!noiseReduction)}>
         <SlidersHorizontal size={18} />
         <span>
-          <strong>Redução de ruído</strong>
-          <small>{noiseReduction ? 'Ligada no preview e no vídeo final.' : 'Opcional. Use só se houver ruído de fundo.'}</small>
+          <strong>Redutor de ruido</strong>
+          <small>{noiseReduction ? 'Ligado no preview e no video final.' : 'Opcional para ambientes com ruido de fundo.'}</small>
         </span>
       </button>
       <p className="smule-note">
-        <Headphones size={15} /> {canLiveEdit ? 'O Hub já aplica tratamento interno. Use o AutoMix e ajuste manualmente só se quiser.' : 'Preparando motor de audio profissional...'}
+        <Headphones size={15} /> {canLiveEdit ? 'As faixas sao normalizadas por ganho interno. Use os sliders apenas para ajuste fino.' : 'Preparando motor de audio profissional...'}
       </p>
     </section>
   );
