@@ -95,9 +95,11 @@ function applyVoicePreset(ctx: AudioContext, input: AudioNode, destination: Audi
 export async function renderFinalDuetVideo({ visualBlob, voiceBlob, referenceBlob, referenceSource, settings }: RenderArgs) {
   const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
   if (!AudioCtx) throw new Error('audio_context_missing');
+  if (typeof MediaRecorder === 'undefined') throw new Error('media_recorder_missing');
 
   const visual = document.createElement('video');
-  visual.src = URL.createObjectURL(visualBlob);
+  const visualUrl = URL.createObjectURL(visualBlob);
+  visual.src = visualUrl;
   visual.muted = true;
   visual.playsInline = true;
   visual.preload = 'auto';
@@ -126,9 +128,12 @@ export async function renderFinalDuetVideo({ visualBlob, voiceBlob, referenceBlo
   referenceSourceNode.connect(referenceGain).connect(destination);
   applyVoicePreset(audioCtx, voiceSource, destination, settings.preset, normalizeVoiceTarget(settings.voiceVolume) * rmsNormalize(voiceBuffer));
 
-  ctx2d.fillStyle = '#050505';
-  ctx2d.fillRect(0, 0, canvas.width, canvas.height);
-  try { ctx2d.drawImage(visual, 0, 0, canvas.width, canvas.height); } catch {}
+  const paint = () => {
+    ctx2d.fillStyle = '#050505';
+    ctx2d.fillRect(0, 0, canvas.width, canvas.height);
+    try { ctx2d.drawImage(visual, 0, 0, canvas.width, canvas.height); } catch {}
+  };
+  paint();
 
   const outputStream = new MediaStream([
     ...canvas.captureStream(isSafariLike() ? 24 : 30).getVideoTracks(),
@@ -138,25 +143,48 @@ export async function renderFinalDuetVideo({ visualBlob, voiceBlob, referenceBlo
   const recorder = new MediaRecorder(outputStream, { ...(mimeType ? { mimeType } : {}), videoBitsPerSecond: isSafariLike() ? 2500000 : 5200000, audioBitsPerSecond: 192000 });
   const chunks: Blob[] = [];
   recorder.ondataavailable = (event) => { if (event.data.size > 0) chunks.push(event.data); };
-  const done = new Promise<Blob>((resolve) => { recorder.onstop = () => resolve(new Blob(chunks, { type: recorder.mimeType || mimeType || 'video/webm' })); });
+  const done = new Promise<Blob>((resolve) => {
+    recorder.onstop = () => resolve(new Blob(chunks, { type: recorder.mimeType || mimeType || 'video/webm' }));
+  });
 
   let frame = 0;
-  const draw = () => { if (visual.paused || visual.ended) return; ctx2d.drawImage(visual, 0, 0, canvas.width, canvas.height); frame = requestAnimationFrame(draw); };
-  const stop = () => { try { voiceSource.stop(); } catch {} try { referenceSourceNode.stop(); } catch {} cancelAnimationFrame(frame); if (recorder.state === 'recording') recorder.stop(); };
+  let stopped = false;
+  const draw = () => {
+    if (stopped) return;
+    paint();
+    frame = requestAnimationFrame(draw);
+  };
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    try { recorder.requestData(); } catch {}
+    try { voiceSource.stop(); } catch {}
+    try { referenceSourceNode.stop(); } catch {}
+    cancelAnimationFrame(frame);
+    window.setTimeout(() => {
+      if (recorder.state === 'recording') recorder.stop();
+    }, 120);
+  };
 
   visual.currentTime = 0;
   await audioCtx.resume().catch(() => undefined);
-  await visual.play().catch(() => undefined);
-  draw();
   recorder.start(250);
-  const startAt = audioCtx.currentTime + 0.035;
+  draw();
+  const startAt = audioCtx.currentTime + 0.08;
   const voiceOffset = Math.min(Math.max(0, clampLatencyMs(settings.latencyMs || 0) / 1000), Math.max(0, voiceBuffer.duration - 0.02));
   voiceSource.start(startAt, voiceOffset);
-  referenceSourceNode.start(startAt, Math.min(visual.currentTime, Math.max(0, referenceBuffer.duration - 0.02)));
+  referenceSourceNode.start(startAt, 0);
+  const delay = Math.max(0, (startAt - audioCtx.currentTime) * 1000);
+  window.setTimeout(() => {
+    visual.play().catch(() => undefined);
+  }, delay);
   visual.onended = stop;
-  window.setTimeout(stop, Math.max(2500, (visual.duration || 90) * 1000 + 900));
+  const maxDuration = Math.max(1, Math.min(visual.duration || 90, referenceBuffer.duration || 90, Math.max(0.5, voiceBuffer.duration - voiceOffset || 90)));
+  window.setTimeout(stop, maxDuration * 1000 + delay + 350);
   const rendered = await done;
   await audioCtx.close().catch(() => undefined);
+  URL.revokeObjectURL(visualUrl);
+  if (rendered.size < 1000) throw new Error('empty_rendered_duet');
   return rendered;
 }
 
