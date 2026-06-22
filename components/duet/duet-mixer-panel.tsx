@@ -1,6 +1,6 @@
 'use client';
 
-import { Headphones, Mic, Music2 } from 'lucide-react';
+import { Headphones, Mic, Music2, TimerReset } from 'lucide-react';
 import { duetPresets } from './duet-presets';
 import type { VoicePreset } from '@/lib/audio/duet-buffer-engine';
 
@@ -9,9 +9,11 @@ type Props = {
   referenceVolume: number;
   preset: VoicePreset;
   canLiveEdit: boolean;
+  latencyMs?: number;
   onVoiceChange: (value: number) => void;
   onReferenceChange: (value: number) => void;
   onPresetChange: (value: VoicePreset) => void;
+  onLatencyChange?: (value: number) => void;
   onReset: () => void;
 };
 
@@ -20,9 +22,11 @@ export function DuetMixerPanel({
   referenceVolume,
   preset,
   canLiveEdit,
+  latencyMs = 70,
   onVoiceChange,
   onReferenceChange,
   onPresetChange,
+  onLatencyChange,
   onReset,
 }: Props) {
   return (
@@ -44,6 +48,12 @@ export function DuetMixerPanel({
         <input type="range" min="0" max="120" value={referenceVolume} onChange={(event) => onReferenceChange(Number(event.target.value))} />
         <strong>{referenceVolume}%</strong>
       </div>
+      <div className="smule-slider-row duet-latency-row">
+        <span><TimerReset size={17} /> Sincronia</span>
+        <input type="range" min="0" max="240" value={latencyMs} onChange={(event) => onLatencyChange?.(Number(event.target.value))} />
+        <strong>{latencyMs}ms</strong>
+      </div>
+      <p className="smule-note">Se a voz ficar atrasada, aumente a sincronia. Se ficar adiantada, reduza.</p>
       <div className="smule-preset-grid">
         {duetPresets.map((item) => (
           <button type="button" className={preset === item.id ? 'active' : ''} onClick={() => onPresetChange(item.id)} key={item.id}>
@@ -53,7 +63,7 @@ export function DuetMixerPanel({
         ))}
       </div>
       <p className="smule-note">
-        <Headphones size={15} /> {canLiveEdit ? 'Toque no play. Sliders e efeitos atuam no mesmo clock de audio.' : 'Preparando motor de audio profissional...'}
+        <Headphones size={15} /> {canLiveEdit ? 'Toque no play. Sliders, efeitos e sincronia atuam no mesmo clock de audio.' : 'Preparando motor de audio profissional...'}
       </p>
     </section>
   );
