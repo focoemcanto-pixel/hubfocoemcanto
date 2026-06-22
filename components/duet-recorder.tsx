@@ -184,12 +184,15 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
     await recorder.togglePlayback();
   }
 
-  async function getUploadBlob() {
+  async function getUploadBlob(requireRenderedMix = false) {
     const fallback = recorder.finalBlobRef.current;
     const visualBlob = recorder.visualBlobRef.current;
     const voiceBlob = recorder.voiceBlobRef.current;
     const referenceBlob = recorder.referenceBlobRef.current;
-    if (!visualBlob || !voiceBlob || (!referenceBlob && !referenceSource)) return fallback;
+    if (!visualBlob || !voiceBlob || (!referenceBlob && !referenceSource)) {
+      if (requireRenderedMix) return null;
+      return fallback;
+    }
     recorder.engineRef.current?.pause(true);
     recorder.setStep('rendering');
     try {
@@ -198,17 +201,17 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
         voiceBlob,
         referenceBlob,
         referenceSource,
-        settings: {
-          voiceVolume: recorder.voiceVolume,
-          referenceVolume: recorder.referenceVolume,
-          preset: recorder.preset,
-        },
+        settings: recorder.settings(),
       });
       recorder.finalBlobRef.current = rendered;
       recorder.setVisualUrl(null);
       recorder.setPreviewUrl(URL.createObjectURL(rendered));
       return rendered;
     } catch {
+      if (requireRenderedMix) {
+        recorder.setError('Não consegui renderizar a mix final com sua voz. Tente enviar novamente antes de publicar no feed.');
+        return null;
+      }
       recorder.setError('Não consegui renderizar a mix final neste navegador. Vou enviar a prévia original.');
       return fallback;
     } finally {
@@ -219,10 +222,10 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl }: Props) {
   async function submitDuet(finalCaption: string, forceCommunity = false) {
     recorder.setIsSubmitting(true);
     recorder.setError('');
-    const blob = await getUploadBlob();
+    const blob = await getUploadBlob(forceCommunity);
     if (!blob) {
       recorder.setIsSubmitting(false);
-      recorder.setError('Grave o dueto antes de enviar.');
+      if (!recorder.error) recorder.setError('Grave o dueto antes de enviar.');
       return;
     }
     try {
