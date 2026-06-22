@@ -82,10 +82,11 @@ async function createLesson(formData: FormData) {
 export default async function CourseManagePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = createAdminClient();
-  const [{ data: course }, { data: products }, { data: modules }] = await Promise.all([
+  const [{ data: course }, { data: products }, { data: modules }, { data: legacyModules }] = await Promise.all([
     supabase.from('courses').select('*,products(id,name)').eq('id', id).maybeSingle(),
     supabase.from('products').select('id,name').order('created_at'),
     supabase.from('course_modules').select('id,title,description,sort_order,is_active,lessons(id,title,lesson_type,sort_order,allow_submission,allow_community_post,is_active)').eq('course_id', id).order('sort_order', { ascending: true }),
+    supabase.from('modules').select('id,title,description,sort_order,exercises(id,title,media_type,sort_order)').order('sort_order', { ascending: true }),
   ]);
 
   if (!course) {
@@ -93,6 +94,7 @@ export default async function CourseManagePage({ params }: { params: Promise<{ i
   }
 
   const product = relatedProduct(course.products);
+  const visibleModules = (modules || []).length ? modules : (legacyModules || []).map((module: any) => ({ ...module, legacy: true, lessons: module.exercises || [] }));
 
   return (
     <main className="page admin-shell school-admin-shell">
@@ -131,17 +133,17 @@ export default async function CourseManagePage({ params }: { params: Promise<{ i
               <div><p className="eyebrow">Conteúdo</p><h2>Módulos e aulas</h2></div>
             </div>
             <div className="admin-list">
-              {(modules || []).length ? (modules || []).map((module: any) => (
+              {visibleModules.length ? visibleModules.map((module: any) => (
                 <article className="module-board-card" key={module.id}>
                   <div className="module-board-head">
-                    <div><span className="pill">Ordem {module.sort_order || 0}</span><h3>{module.title}</h3><p className="muted">{module.description || 'Sem descrição.'}</p></div>
+                    <div><span className="pill">{module.legacy ? 'Biblioteca atual' : `Ordem ${module.sort_order || 0}`}</span><h3>{module.title}</h3><p className="muted">{module.description || 'Sem descrição.'}</p></div>
                   </div>
                   <div className="lesson-mini-list">
                     {((module.lessons || []) as any[]).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map((lesson) => (
                       <div className="lesson-mini-row" key={lesson.id}>
-                        <span>{lesson.lesson_type}</span>
+                        <span>{lesson.lesson_type || lesson.media_type || 'atividade'}</span>
                         <strong>{lesson.title}</strong>
-                        <small>{lesson.allow_submission ? 'Com envio' : 'Sem envio'} · {lesson.allow_community_post ? 'Comunidade' : 'Privado'}</small>
+                        <small>{module.legacy ? 'Legado VIP' : `${lesson.allow_submission ? 'Com envio' : 'Sem envio'} · ${lesson.allow_community_post ? 'Comunidade' : 'Privado'}`}</small>
                       </div>
                     ))}
                     {!(module.lessons || []).length ? <p className="muted">Nenhuma aula cadastrada neste módulo.</p> : null}
@@ -177,8 +179,8 @@ export default async function CourseManagePage({ params }: { params: Promise<{ i
             </div>
             <label><span>URL do vídeo</span><input name="video_url" placeholder="https://..." /></label>
             <label><span>URL da capa</span><input name="cover_url" placeholder="https://..." /></label>
-            <label className="premium-check"><input type="checkbox" name="allow_submission" /> Permitir envio de atividade</label>
-            <label className="premium-check"><input type="checkbox" name="allow_community_post" /> Permitir publicar na comunidade</label>
+            <label className="premium-check"><input type="checkbox" name="allow_submission" /><span>Permitir envio de atividade</span></label>
+            <label className="premium-check"><input type="checkbox" name="allow_community_post" /><span>Permitir publicar na comunidade</span></label>
             <button className="button premium-button submit-glow" type="submit">Adicionar aula</button>
           </form>
         </aside>
