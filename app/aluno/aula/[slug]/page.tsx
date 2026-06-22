@@ -89,10 +89,10 @@ export default async function StudentLessonPage({ params }: { params: Promise<{ 
         <div className="premium-streak-card"><Flame size={24} /><span>Sequência atual</span><strong>7 dias</strong><p>Continue firme!</p></div>
       </aside>
       <section className="premium-lesson-main">
-        <header className="premium-lesson-topbar"><div /><Link className="premium-brand" href="/aluno" prefetch><span className="brand-wave">▴▾▴</span><strong>FOCO</strong><small>EM CANTO</small></Link><div className="premium-top-actions"><Link href="/aluno/perfil" prefetch><Trophy size={16} /> Conquistas</Link><a href="#lesson-notes"><HelpCircle size={16} /> Ajuda</a><span className="premium-avatar">FC</span></div></header>
+        <header className="premium-lesson-topbar"><div /><Link className="premium-brand" href="/aluno" prefetch aria-label="Ir para o início"><span className="brand-wave">▴▾▴</span><strong>FOCO</strong><small>EM CANTO</small></Link><div className="premium-top-actions"><Link href="/aluno" prefetch><Home size={16} /> Início</Link><Link href="/aluno/perfil" prefetch><Trophy size={16} /> Conquistas</Link><a href="#lesson-notes"><HelpCircle size={16} /> Ajuda</a><Link href="/aluno/perfil" className="premium-avatar" prefetch>FC</Link></div></header>
         <div className="premium-content-grid">
           <section className="premium-watch-column">
-            <p className="premium-breadcrumb">Hub VIP › {module?.title || 'Módulo'}</p>
+            <p className="premium-breadcrumb"><Link href="/aluno" prefetch>Hub VIP</Link> › {module?.slug ? <Link href={`/aluno/biblioteca/${module.slug}`} prefetch>{module.title}</Link> : module?.title || 'Módulo'}</p>
             <div className="premium-player-card"><div className="premium-player-frame"><ContentPlayer title={lesson?.title || 'Conteúdo'} mediaType={lesson?.media_type} mediaUrl={lesson?.media_url || lesson?.audio_url} driveUrl={lesson?.drive_url} /></div></div>
             <section className="premium-lesson-details" id="lesson-action">
               <div className="premium-lesson-header-row"><div><p className="premium-module-label"><Sparkles size={16} /> {module?.title || 'Biblioteca VIP'}</p><h1>{lesson?.title || 'Aula'}</h1><p>{description}</p></div><button className="premium-outline-button" type="button"><Check size={18} />Marcar como concluída</button></div>
