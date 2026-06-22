@@ -43,10 +43,10 @@ function normalizeFilter(value?: string) {
   return allowed.includes(String(value)) ? String(value) : 'todos';
 }
 
-async function safeQuery<T>(query: PromiseLike<{ data: T | null; error: any }>, fallback: T): Promise<T> {
+async function safeQuery(query: PromiseLike<{ data: any; error: any }>, fallback: any[] = []) {
   const { data, error } = await query;
   if (error) return fallback;
-  return data || fallback;
+  return Array.isArray(data) ? data : fallback;
 }
 
 export default async function AdminPremiumPage({ searchParams }: { searchParams?: Promise<SearchParams> }) {
@@ -54,22 +54,20 @@ export default async function AdminPremiumPage({ searchParams }: { searchParams?
   const currentFilter = normalizeFilter(params?.status);
   const supabase = createAdminClient();
 
-  const subscriptions = await safeQuery(
+  const subscriptions = (await safeQuery(
     supabase
       .from('subscriptions')
       .select('id,status,current_period_end,product_name,provider,provider_customer_id,updated_at,profiles(id,name,email,whatsapp,created_at)')
       .order('updated_at', { ascending: false })
-      .limit(1000),
-    [] as Subscription[]
-  );
+      .limit(1000)
+  )) as Subscription[];
 
   const logs = await safeQuery(
     supabase
       .from('kiwify_webhook_events')
       .select('id,event_name,customer_email,product_name,mapped_status,status,error_message,created_at')
       .order('created_at', { ascending: false })
-      .limit(12),
-    [] as any[]
+      .limit(12)
   );
 
   const rows = (subscriptions || []).map((subscription: Subscription) => {
