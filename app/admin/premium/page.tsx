@@ -53,9 +53,7 @@ function accessStatus(subscription?: Subscription | null) {
 function renewalTone(subscription?: Subscription | null) { if (!subscription) return 'danger'; const state = accessStatus(subscription); if (!state.active) return state.tone; const { date } = effectiveRenewalDate(subscription); const days = daysUntilDate(date); if (days === null) return 'pending'; if (days < 0) return 'review'; if (days <= 2) return 'late'; if (days <= 7) return 'pending'; return 'active'; }
 function whatsappLink(phone?: string | null, name?: string | null, state?: string) { const digits = String(phone || '').split('').filter((char) => char >= '0' && char <= '9').join(''); if (!digits) return null; const number = digits.startsWith('55') ? digits : `55${digits}`; const message = state === 'late' ? `Oi ${name || ''}, tudo bem? Vi que uma assinatura da Escola Foco em Canto está atrasada. Quer que eu te envie o link para regularizar?` : `Oi ${name || ''}, tudo bem? Estou conferindo seu acesso na Escola Foco em Canto.`; return `https://wa.me/${number}?text=${encodeURIComponent(message)}`; }
 function eventTone(log?: KiwifyLog | null) { const event = String(log?.event_name || '').toLowerCase(); const status = String(log?.status || '').toLowerCase(); const mapped = String(log?.mapped_status || '').toLowerCase(); if (status === 'unauthorized' || status === 'failed') return 'danger'; if (mapped === 'active' || event.includes('approved') || event.includes('renew')) return 'active'; if (mapped === 'late' || event.includes('late')) return 'late'; if (mapped === 'pending' || event.includes('billet') || event.includes('pix')) return 'pending'; if (event.includes('cancel') || event.includes('refund') || event.includes('reject')) return 'danger'; return 'neutral'; }
-function eventLabel(log?: KiwifyLog | null) { if (!log) return 'sem webhook recebido'; return log.event_name || log.mapped_status || log.status || 'evento recebido'; }
-function money(value: number) { return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0); }
-function compactMoney(value: number) { return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', notation: value >= 10000 ? 'compact' : 'standard', maximumFractionDigits: value >= 10000 ? 1 : 2 }).format(value || 0); }
+function eventLabel(log?: KiwifyLog | null) { if (!log) return 'sem webhook recebido'; const event = String(log.event_name || '').toLowerCase(); if (event.includes('approved')) return 'Compra aprovada'; if (event.includes('renew')) return 'Renovação recebida'; if (event.includes('billet')) return 'Boleto gerado'; if (event.includes('cancel')) return 'Cancelamento recebido'; return log.mapped_status === 'active' ? 'Acesso liberado' : 'Evento recebido'; }
 function normalizeAmount(value: unknown) { if (value === null || value === undefined || value === '') return null; const number = Number(value); if (!Number.isFinite(number)) return null; return number > 100 ? number / 100 : number; }
 function subscriptionAmount(subscription?: Subscription | null) { const raw = subscription?.raw_payload || {}; const candidates = [raw.net_amount, raw.netAmount, raw.commission_amount, raw.commissionAmount, raw.price, raw.amount, raw.value, raw.order?.price, raw.order?.amount, raw.subscription?.price]; for (const candidate of candidates) { const amount = normalizeAmount(candidate); if (amount !== null && amount > 0) return amount; } return isActive(subscription) ? FALLBACK_NET_TICKET : 0; }
 function paymentMethod(subscription?: Subscription | null) { const raw = subscription?.raw_payload || {}; const method = String(raw.payment_method || raw.paymentMethod || raw.payment?.method || raw.order?.payment_method || '').toLowerCase(); if (method.includes('credit') || method.includes('card')) return 'Cartão'; if (method.includes('pix')) return 'PIX'; if (method.includes('boleto') || method.includes('billet')) return 'Boleto'; if (isActive(subscription)) return 'Recorrência'; return 'Pix vencido'; }
@@ -64,7 +62,7 @@ async function safeQuery(query: PromiseLike<{ data: any; error: any }>, fallback
 
 export default async function AdminPremiumPage() {
   const supabase = createAdminClient();
-  const subscriptions = (await safeQuery(supabase.from('subscriptions').select('id,status,current_period_start,current_period_end,product_name,course_key,provider_customer_id,updated_at,raw_payload,profiles(id,name,email,whatsapp,created_at)').order('updated_at', { ascending: false }).limit(1000))) as Subscription[];
+  const subscriptions = (await safeQuery(supabase.from('subscriptions').select('id,status,current_period_start,current_period_end,product_name,course_key,provider_customer_id,updated_at,raw_payload,profiles(id,name,email,whatsapp,created_at)').order('updated_at', { ascending: false }).limit(3000))) as Subscription[];
   const logs = (await safeQuery(supabase.from('kiwify_webhook_events').select('id,event_name,customer_email,product_name,mapped_status,status,error_message,created_at').order('created_at', { ascending: false }).limit(30))) as KiwifyLog[];
 
   const logsByEmail = new Map<string, KiwifyLog>();
@@ -82,80 +80,45 @@ export default async function AdminPremiumPage() {
     const amount = subscriptionAmount(subscription);
     const method = paymentMethod(subscription);
     const courseKey = subscription.course_key || courseKeyFromProduct(subscription.product_name);
-    return { student, subscription, state, renewal: tone, renewalInfo, lastEvent, amount, method, courseKey, courseLabel: courseLabelFromKey(courseKey), whatsapp: whatsappLink(student.whatsapp, student.name, state.tone) };
+    return {
+      key: `${student.id}-${subscription?.id || student.email}`,
+      student,
+      state,
+      renewalTone: tone,
+      renewalDate: renewalInfo.date?.toISOString() || null,
+      renewalDateLabel: dateLabelFromDate(renewalInfo.date),
+      renewalLabel: renewalLabel(renewalInfo.date, renewalInfo.estimated),
+      accessReason: accessReason(subscription),
+      amount,
+      method,
+      productName: subscription?.product_name || 'Produto não informado',
+      courseKey,
+      courseLabel: courseLabelFromKey(courseKey),
+      lastEventLabel: eventLabel(lastEvent),
+      lastEventTone: eventTone(lastEvent),
+      lastEventDate: lastEvent?.created_at ? dateLabel(lastEvent.created_at) : accessReason(subscription),
+      whatsapp: whatsappLink(student.whatsapp, student.name, state.tone),
+      estimated: renewalInfo.estimated,
+      updatedAt: subscription.updated_at || subscription.current_period_start || null,
+    };
   });
 
-  const activeRows = rows.filter((row) => row.state.active);
-  const lateRows = rows.filter((row) => row.state.tone === 'late');
-  const removeRows = rows.filter((row) => row.state.remove);
-  const renewingTodayRows = activeRows.filter((row) => daysUntilDate(row.renewalInfo.date) === 0);
-  const renewing7Rows = activeRows.filter((row) => { const days = daysUntilDate(row.renewalInfo.date); return days !== null && days >= 0 && days <= 7; });
-  const removeEmails = removeRows.map((row) => row.student.email).filter(Boolean).join('\n');
-  const lateEmails = lateRows.map((row) => row.student.email).filter(Boolean).join('\n');
-  const webhookProblems = logs.filter((log) => eventTone(log) === 'danger').length;
-  const monthlyRevenue = activeRows.reduce((sum, row) => sum + row.amount, 0);
-  const averageTicket = activeRows.length ? monthlyRevenue / activeRows.length : 0;
-  const annualProjection = monthlyRevenue * 12;
-  const retention = rows.length ? (activeRows.length / rows.length) * 100 : 0;
-  const cardLikeRows = activeRows.filter((row) => ['Cartão', 'Recorrência'].includes(row.method));
-  const pixRows = activeRows.filter((row) => row.method === 'PIX');
-  const revenue30Days = activeRows.filter((row) => { const days = daysUntilDate(row.renewalInfo.date); return days !== null && days >= 0 && days <= 30; }).reduce((sum, row) => sum + row.amount, 0);
-
-  const clientRows = rows.map((row) => ({
-    key: `${row.student.id}-${row.subscription?.id || row.student.email}`,
-    student: row.student,
-    state: row.state,
-    renewalTone: row.renewal,
-    renewalDateLabel: dateLabelFromDate(row.renewalInfo.date),
-    renewalLabel: renewalLabel(row.renewalInfo.date, row.renewalInfo.estimated),
-    accessReason: accessReason(row.subscription),
-    amountLabel: money(row.amount),
-    method: row.method,
-    productName: row.subscription?.product_name || 'Produto não informado',
-    courseKey: row.courseKey,
-    courseLabel: row.courseLabel,
-    lastEventLabel: eventLabel(row.lastEvent),
-    lastEventTone: eventTone(row.lastEvent),
-    lastEventDate: row.lastEvent?.created_at ? dateLabel(row.lastEvent.created_at) : accessReason(row.subscription),
-    whatsapp: row.whatsapp,
-    estimated: row.renewalInfo.estimated,
-  }));
+  const removeEmails = rows.filter((row) => row.state.remove).map((row) => row.student.email).filter(Boolean).join('\n');
+  const lateEmails = rows.filter((row) => row.state.tone === 'late').map((row) => row.student.email).filter(Boolean).join('\n');
 
   return (
     <main className="page admin-shell premium-admin-page premium-console">
       <section className="premium-console-hero compact-premium-hero">
-        <div><p className="eyebrow">Assinaturas</p><h1>Central de acessos</h1><p>Controle Grupo VIP, Foco em Harmonia, Foco em Canto, Melismas e próximos produtos com filtros por curso.</p></div>
+        <div><p className="eyebrow">Assinaturas</p><h1>Central de receita</h1><p>Receita real por período, cursos, status e movimentações de acesso.</p></div>
         <div className="premium-console-actions"><a href="/admin">Voltar</a></div>
       </section>
-
-      <section className="premium-finance-strip compact-premium-strip">
-        <article><span>Receita recorrente</span><strong>{compactMoney(monthlyRevenue)}</strong><p>{activeRows.length} acessos ativos</p></article>
-        <article><span>Ticket médio</span><strong>{compactMoney(averageTicket)}</strong><p>baseado no CSV/webhook</p></article>
-        <article><span>Previsão 30 dias</span><strong>{compactMoney(revenue30Days || monthlyRevenue)}</strong><p>{renewing7Rows.length} renovam em 7 dias</p></article>
-        <article><span>Projeção anual</span><strong>{compactMoney(annualProjection)}</strong><p>mantendo a base atual</p></article>
-      </section>
-
-      <section className="premium-health-grid compact-premium-health">
-        <article className="premium-health-card active"><span>Ativos</span><strong>{activeRows.length}</strong><p>{cardLikeRows.length} recorrentes/cartão · {pixRows.length} pix</p></article>
-        <article className="premium-health-card"><span>Renovam hoje</span><strong>{renewingTodayRows.length}</strong><p>{renewing7Rows.length} nos próximos 7 dias</p></article>
-        <article className="premium-health-card late"><span>Retenção</span><strong>{retention.toFixed(1)}%</strong><p>{removeRows.length} inativos para revisar</p></article>
-        <article className="premium-health-card danger"><span>Bloquear</span><strong>{removeRows.length}</strong><p>{webhookProblems} webhooks com atenção</p></article>
-      </section>
-
-      <section className="premium-ops-grid">
-        <article className="premium-webhook-card"><div><p className="eyebrow">Webhook Kiwify</p><h2>Um endpoint para todos os cursos</h2><p>Use esta mesma URL na Kiwify para Grupo VIP, Foco em Harmonia, Foco em Canto e futuros produtos.</p></div><code>https://hub.focoemcanto.com/api/kiwify/webhook</code></article>
-        <article className="premium-alert-card"><p className="eyebrow">Alertas</p><h2>{renewing7Rows.length + lateRows.length + removeRows.length + webhookProblems}</h2><p>itens pedindo atenção agora</p></article>
-      </section>
-
-      <section className="premium-main-grid">
-        <AdminPremiumManager rows={clientRows} removeEmails={removeEmails} lateEmails={lateEmails} />
-        <aside className="premium-panel premium-events-panel">
-          <div className="section-heading compact"><div><p className="eyebrow">Kiwify</p><h2>Movimentações</h2></div><span className="pill">{logs.length}</span></div>
-          <div className="premium-event-timeline">
-            {logs.length ? logs.map((log) => <article className={`premium-timeline-item ${eventTone(log)}`} key={log.id}><span /><div><strong>{eventLabel(log)}</strong><p>{log.customer_email || 'sem email'} · {courseLabelFromKey(courseKeyFromProduct(log.product_name))}</p><small>{log.error_message || dateLabel(log.created_at)}</small></div></article>) : <p className="muted">Nenhum webhook registrado ainda.</p>}
-          </div>
-        </aside>
-      </section>
+      <AdminPremiumManager rows={rows} removeEmails={removeEmails} lateEmails={lateEmails} />
+      <aside className="premium-panel premium-events-panel">
+        <div className="section-heading compact"><div><p className="eyebrow">Kiwify</p><h2>Movimentações recentes</h2></div><span className="pill">{logs.length}</span></div>
+        <div className="premium-event-timeline">
+          {logs.length ? logs.map((log) => <article className={`premium-timeline-item ${eventTone(log)}`} key={log.id}><span /><div><strong>{eventLabel(log)}</strong><p>{log.customer_email || 'sem email'} · {courseLabelFromKey(courseKeyFromProduct(log.product_name))}</p><small>{log.error_message || dateLabel(log.created_at)}</small></div></article>) : <p className="muted">Nenhum webhook registrado ainda.</p>}
+        </div>
+      </aside>
     </main>
   );
 }
