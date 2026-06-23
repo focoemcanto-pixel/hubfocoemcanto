@@ -35,9 +35,18 @@ const css = `.premium-student-home{max-width:1180px}.premium-hero{position:relat
 function getRelated(value: unknown) { return Array.isArray(value) ? value[0] || null : value || null; }
 function isRealModule(module: ModuleRow) { return String(module.description || '').toLowerCase().indexOf('importados da pasta') === -1; }
 function productLink(product: Product | undefined, fallback: string) { return product?.member_url || product?.checkout_url || product?.sales_url || product?.external_url || product?.kiwify_url || fallback; }
-function formatResume(seconds?: number | null) { const value = Math.floor(Number(seconds || 0)); return value > 5 ? `${Math.floor(value / 60)}min ${String(value % 60).padStart(2, '0')}s` : 'início da aula'; }
+function formatResume(seconds?: number | null) { const value = Math.floor(Number(seconds || 0)); return value > 5 ? `${Math.floor(value / 60)}min ${String(value % 60).padStart(2, '0')}s` : 'aula aberta'; }
 function hasCourse(subscriptions: Subscription[], courseKey: string) { return subscriptions.some((sub) => sub.course_key === courseKey && isAccessActive(sub.status)); }
 function styleForCover(cover: string) { return cover.startsWith('radial-gradient') ? { background: cover } : { backgroundImage: `url(${cover})` }; }
+function isProgressTableMissing(error: any) { const text = String(error?.message || '').toLowerCase(); return text.includes('does not exist') || text.includes('schema cache') || text.includes('lesson_progress'); }
+async function getProgressRows(supabase: ReturnType<typeof createAdminClient>, profileId?: string) {
+  if (!profileId) return [];
+  const primary = await supabase.from('lesson_progress').select('exercise_id,last_position_seconds,completed,last_watched_at,exercises(id,title,slug,module_id,modules(id,title,slug,cover_url,description,exercises(id)))').eq('profile_id', profileId).order('last_watched_at', { ascending: false }).limit(5);
+  if (primary.data?.length) return primary.data;
+  if (!primary.error || !isProgressTableMissing(primary.error)) return [];
+  const legacy = await supabase.from('exercise_progress').select('exercise_id,completed,completed_at,updated_at,exercises(id,title,slug,module_id,modules(id,title,slug,cover_url,description,exercises(id)))').eq('profile_id', profileId).order('updated_at', { ascending: false }).limit(5);
+  return (legacy.data || []).map((row: any) => ({ ...row, last_position_seconds: 0, last_watched_at: row.updated_at || row.completed_at }));
+}
 
 export default async function StudentPage() {
   const cookieStore = await cookies();
@@ -47,13 +56,13 @@ export default async function StudentPage() {
   const profileResult = email ? await supabase.from('profiles').select('id,name,email').eq('email', email).maybeSingle() : { data: null };
   const profile = (profileResult.data || null) as Profile;
 
-  const [modulesResult, postsResult, submissionsResult, productsResult, subscriptionsResult, progressResult] = await Promise.all([
+  const [modulesResult, postsResult, submissionsResult, productsResult, subscriptionsResult, progressRows] = await Promise.all([
     supabase.from('modules').select('id,title,slug,description,cover_url,sort_order,exercises(id)').eq('is_active', true).order('sort_order'),
     supabase.from('community_posts').select('id,profile_id,exercise_id,caption,media_url,likes_count,comments_count,created_at,profiles(name,avatar_url),exercises(title,slug),submissions(file_url)').order('created_at', { ascending: false }).limit(10),
     supabase.from('submissions').select('profile_id,exercise_id,file_url,created_at').eq('visibility', 'community').order('created_at', { ascending: false }).limit(100),
     supabase.from('products').select('*').order('created_at', { ascending: true }),
     profile?.id ? supabase.from('subscriptions').select('id,course_key,status,product_name').eq('profile_id', profile.id) : Promise.resolve({ data: [] as Subscription[] }),
-    profile?.id ? supabase.from('lesson_progress').select('exercise_id,last_position_seconds,completed,last_watched_at,exercises(id,title,slug,module_id,modules(id,title,slug,cover_url,description,exercises(id)))').eq('profile_id', profile.id).order('last_watched_at', { ascending: false }).limit(5) : Promise.resolve({ data: [] }),
+    getProgressRows(supabase, profile?.id),
   ]);
 
   const modules = ((modulesResult.data || []) as ModuleRow[]).filter(isRealModule);
@@ -61,7 +70,6 @@ export default async function StudentPage() {
   const communitySubmissions = submissionsResult.data || [];
   const products = (productsResult.data || []) as Product[];
   const subscriptions = (subscriptionsResult.data || []) as Subscription[];
-  const progressRows = (progressResult.data || []) as any[];
   const firstName = profile?.name ? profile.name.split(' ')[0] : 'Aluno';
   const findProduct = (terms: string[]) => products.find((product) => terms.some((term) => `${product.name || ''} ${product.slug || ''}`.toLowerCase().includes(term)));
   const vipProduct = findProduct(['grupo vip', 'vip']);
@@ -76,18 +84,21 @@ export default async function StudentPage() {
   const hasEbooks = hasCourse(subscriptions, 'ebooks');
   const courseCards = [
     { title: 'Sala de Atividades VIP', description: 'Duetos, exercícios, comunidade e análise do professor.', unlocked: hasVip, href: hasVip ? '/aluno/biblioteca#sala-vip' : productLink(vipProduct, links.vip), cover: vipProduct?.cover_url || covers[0], action: hasVip ? 'Acessar sala' : 'Assinar VIP' },
-    { title: 'Foco em Harmonia', description: 'Curso completo de segunda voz e divisão vocal.', unlocked: hasHarmonia, href: hasHarmonia ? productLink(harmoniaProduct, links.harmonia) : productLink(harmoniaProduct, links.harmonia), cover: harmoniaProduct?.cover_url || covers[1], action: hasHarmonia ? 'Acessar curso' : 'Comprar curso' },
+    { title: 'Foco em Harmonia', description: 'Curso completo de segunda voz e divisão vocal.', unlocked: hasHarmonia, href: productLink(harmoniaProduct, links.harmonia), cover: harmoniaProduct?.cover_url || covers[1], action: hasHarmonia ? 'Acessar curso' : 'Comprar curso' },
     { title: 'Foco em Canto', description: 'Técnica, extensão, afinação e performance vocal.', unlocked: hasCanto, href: hasCanto ? productLink(cantoProduct, links.canto) : productLink(cantoProduct, links.cantoCheckout), cover: cantoProduct?.cover_url || covers[2], action: hasCanto ? 'Acessar curso' : 'Comprar curso' },
     { title: 'Foco em Melismas', description: 'Agilidade, riffs, runs e ornamentações.', unlocked: hasMelismas, href: productLink(melismasProduct, links.melismas), cover: melismasProduct?.cover_url || covers[3], action: hasMelismas ? 'Acessar curso' : 'Comprar curso' },
     { title: 'Ebooks e Guias', description: 'Materiais complementares para acelerar seus estudos.', unlocked: hasEbooks, href: productLink(ebookProduct, links.ebooks), cover: ebookProduct?.cover_url || covers[4], action: hasEbooks ? 'Acessar materiais' : 'Comprar acesso' },
   ];
-  const continueItems = progressRows.length ? progressRows.map((row, index) => {
+  const continueItems = (progressRows || []).filter((row: any) => {
+    const exercise = getRelated(row.exercises) as any;
+    return Boolean(exercise?.slug && (row.completed || Number(row.last_position_seconds || 0) > 5 || row.last_watched_at));
+  }).map((row: any, index: number) => {
     const exercise = getRelated(row.exercises) as any;
     const mod = getRelated(exercise?.modules) as any;
     const moduleLessons = Array.isArray(mod?.exercises) ? mod.exercises.length : 0;
     const percent = row.completed ? 100 : Math.max(8, Math.min(96, Math.round((Number(row.last_position_seconds || 0) / 600) * 100)));
     return { id: row.exercise_id || exercise?.id || index, href: `/aluno/aula/${exercise?.slug || ''}`, title: exercise?.title || 'Última aula', moduleTitle: mod?.title || 'Sala VIP', cover: mod?.cover_url || covers[index % covers.length], lessons: moduleLessons || 1, percent, badge: index === 0 ? 'Última aula' : row.completed ? 'Concluída' : 'Em andamento', resume: row.completed ? 'aula concluída' : `parou em ${formatResume(row.last_position_seconds)}` };
-  }).filter((item) => item.href !== '/aluno/aula/') : modules.slice(0, 5).map((module, index) => ({ id: module.id, href: hasVip ? `/aluno/biblioteca/${module.slug}` : '/aluno/biblioteca#sala-vip', title: module.title, moduleTitle: 'Sala VIP', cover: module.cover_url || covers[index % covers.length], lessons: module.exercises?.length || 0, percent: hasVip && index === 0 ? 12 : 0, badge: hasVip && index === 0 ? 'Começar aqui' : 'Módulo', resume: hasVip ? 'ainda não iniciado' : 'bloqueado' }));
+  });
 
   const postIds = posts.map((post: any) => post.id).filter(Boolean);
   const authorIds = Array.from(new Set(posts.map((post: any) => post.profile_id).filter(Boolean)));
@@ -119,7 +130,7 @@ export default async function StudentPage() {
           <div className="premium-hero-photo" aria-hidden="true" style={{ '--student-hero-image': `url(${studentHeroImage})` } as CSSProperties} />
         </section>
         <section className="student-course-section"><div className="premium-section-heading"><h2>Meus cursos</h2><Link href="/aluno/biblioteca" prefetch>Ver biblioteca →</Link></div><div className="student-products-grid">{courseCards.map((course) => <a className={`student-product-card ${course.unlocked ? 'unlocked' : 'locked'}`} key={course.title} href={course.href}><span className="student-product-badge">{course.unlocked ? 'Liberado' : '🔒 Bloqueado'}</span><div className="student-product-bg" style={styleForCover(course.cover)} /><div className="student-product-overlay" /><div className="student-product-body"><h3>{course.title}</h3><p>{course.description}</p><span className="student-product-button">{course.action}</span></div></a>)}</div></section>
-        <section className="premium-continue-panel"><div className="premium-section-heading"><h2>Continue de onde parou</h2><Link href="/aluno/biblioteca" prefetch>Ver todos →</Link></div><div className="premium-course-row">{continueItems.map((item) => <Link className="premium-course-card" key={item.id} href={item.href} prefetch><div className="course-cover" style={styleForCover(item.cover)}><span className="course-badge">{item.badge}</span><strong>{item.title}</strong></div><div className="course-resume">{item.moduleTitle} · {item.resume}</div><div className="course-meta"><span>{item.lessons} aulas</span><span>{item.percent}%</span></div><div className="progress"><span style={{ width: `${item.percent}%` }} /></div></Link>)}</div></section>
+        {continueItems.length ? <section className="premium-continue-panel"><div className="premium-section-heading"><h2>Continue de onde parou</h2><Link href="/aluno/biblioteca" prefetch>Ver todos →</Link></div><div className="premium-course-row">{continueItems.map((item) => <Link className="premium-course-card" key={item.id} href={item.href} prefetch><div className="course-cover" style={styleForCover(item.cover)}><span className="course-badge">{item.badge}</span><strong>{item.title}</strong></div><div className="course-resume">{item.moduleTitle} · {item.resume}</div><div className="course-meta"><span>{item.lessons} aulas</span><span>{item.percent}%</span></div><div className="progress"><span style={{ width: `${item.percent}%` }} /></div></Link>)}</div></section> : null}
         <section className="feed-layout premium-community-feed"><div className="section-heading"><div><p className="eyebrow">Comunidade VIP</p><h2>Atividades recentes</h2></div><Link href="/aluno/comunidade" prefetch>Abrir comunidade</Link></div><HomeCommunityFeed initialPosts={feedPosts} /></section>
       </main>
     </AppShell>
