@@ -6,30 +6,55 @@ export const dynamic = 'force-dynamic';
 type Search = { novo?: string; saved?: string; removed?: string; error?: string };
 type Row = Record<string, any>;
 
+function normalizeEmail(value?: string | null) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function pushAccess(map: Map<string, Row[]>, key: string | null | undefined, access: Row) {
+  const normalized = normalizeEmail(key) || String(key || '').trim();
+  if (!normalized) return;
+  map.set(normalized, [...(map.get(normalized) || []), access]);
+}
+
+function uniqueAccesses(accesses: Row[]) {
+  const seen = new Set<string>();
+  return accesses.filter((access) => {
+    const key = access.id || `${access.product_name || ''}-${access.course_key || ''}-${access.status || ''}-${access.provider_customer_id || ''}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export default async function AdminStudentsPage({ searchParams }: { searchParams?: Promise<Search> }) {
   const query = searchParams ? await searchParams : {};
   const supabase = createAdminClient();
   const [{ data: profiles }, { data: accessRows }, { data: products }] = await Promise.all([
-    supabase.from('profiles').select('id,name,email,whatsapp,avatar_url,role,created_at').order('created_at', { ascending: false }).limit(3000),
-    supabase.from('subscriptions').select('id,profile_id,status,course_key,current_period_start,current_period_end,product_name,provider,updated_at').order('updated_at', { ascending: false }).limit(6000),
+    supabase.from('profiles').select('id,name,email,whatsapp,avatar_url,role,created_at').order('created_at', { ascending: false }).limit(5000),
+    supabase.from('subscriptions').select('id,profile_id,status,course_key,current_period_start,current_period_end,product_name,source_product_name,provider,provider_customer_id,updated_at').order('updated_at', { ascending: false }).limit(10000),
     supabase.from('products').select('name').order('created_at', { ascending: false }),
   ]);
 
   const accessByProfile = new Map<string, Row[]>();
+  const accessByEmail = new Map<string, Row[]>();
   ((accessRows || []) as Row[]).forEach((access) => {
-    if (!access.profile_id) return;
-    accessByProfile.set(access.profile_id, [...(accessByProfile.get(access.profile_id) || []), access]);
+    pushAccess(accessByProfile, access.profile_id, access);
+    pushAccess(accessByEmail, access.provider_customer_id, access);
   });
 
-  const list = ((profiles || []) as Row[]).map((student) => ({
-    id: student.id,
-    name: student.name,
-    email: student.email,
-    whatsapp: student.whatsapp,
-    avatar_url: student.avatar_url,
-    created_at: student.created_at,
-    subscriptions: accessByProfile.get(student.id) || [],
-  }));
+  const list = ((profiles || []) as Row[]).map((student) => {
+    const byId = accessByProfile.get(String(student.id)) || [];
+    const byEmail = accessByEmail.get(normalizeEmail(student.email)) || [];
+    return {
+      id: student.id,
+      name: student.name,
+      email: student.email,
+      whatsapp: student.whatsapp,
+      avatar_url: student.avatar_url,
+      created_at: student.created_at,
+      subscriptions: uniqueAccesses([...byId, ...byEmail]),
+    };
+  });
 
   return (
     <main className="admin-page-clean admin-students-page">
