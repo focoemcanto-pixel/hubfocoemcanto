@@ -84,7 +84,7 @@ export function AdminStudentsManager({ students }: Props) {
             <article className="admin-student-row admin-student-manage-row" key={student.id}>
               <div className="admin-student-avatar">{student.avatar_url ? <img src={student.avatar_url} alt="" /> : <span>{String(student.name || student.email || 'A').slice(0, 1).toUpperCase()}</span>}</div>
               <div><h3>{student.name || 'Aluno sem nome'}</h3><p>{student.email || 'Sem e-mail'}{student.whatsapp ? ` · ${student.whatsapp}` : ''}</p><small>{subscription?.product_name || 'Produto não informado'}</small></div>
-              <div className="student-manage-actions"><span className={active ? 'student-status active' : 'student-status'}>{subscription?.status || 'sem assinatura'}</span>{wa ? <a className="admin-clean-button whatsapp" href={wa} target="_blank" rel="noreferrer">WhatsApp</a> : null}<form action="/admin/alunos/excluir" method="post"><input type="hidden" name="id" value={student.id} /><button className="admin-clean-button danger" type="submit">Excluir</button></form></div>
+              <div className="student-manage-actions"><span className={active ? 'student-status active' : 'student-status'}>{subscription?.status || 'sem assinatura'}</span>{wa ? <a className="admin-clean-button whatsapp" href={wa} target="_blank" rel="noreferrer">WhatsApp</a> : null}<form action="/admin/alunos/remover" method="post"><input type="hidden" name="id" value={student.id} /><button className="admin-clean-button danger" type="submit">Excluir</button></form></div>
             </article>
           );
         })}
