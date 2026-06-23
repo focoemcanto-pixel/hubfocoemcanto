@@ -12,8 +12,20 @@ type ResolvedSubmissionContext = {
   profile: { id: string; email?: string | null };
 };
 
+type PersistSubmissionParams = {
+  caption: string;
+  visibility: string;
+  reviewRequested: boolean;
+  fileUrl: string;
+};
+
 function pathPart(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9._-]+/g, '-');
+}
+
+function parseBoolean(value: unknown, fallback = true) {
+  if (value === undefined || value === null || value === '') return fallback;
+  return ['1', 'true', 'yes', 'on'].includes(String(value).toLowerCase());
 }
 
 async function uploadSubmissionFile(supabase: ReturnType<typeof createAdminClient>, objectPath: string, bytes: ArrayBuffer, fileType: string) {
@@ -53,25 +65,34 @@ async function resolveExerciseAndProfile(supabase: ReturnType<typeof createAdmin
   return { exercise, profile: created };
 }
 
-async function persistSubmission(supabase: ReturnType<typeof createAdminClient>, context: ResolvedSubmissionContext, params: { caption: string; visibility: string; fileUrl: string }) {
-  const isCommunity = params.visibility === 'community';
-  const { data: submission, error: submissionError } = await supabase.from('submissions').insert({
-    profile_id: context.profile.id,
-    exercise_id: context.exercise.id,
-    file_url: params.fileUrl,
-    file_type: 'duet_video',
-    note: params.caption || 'Dueto gravado no Hub.',
-    visibility: isCommunity ? 'community' : 'private',
-    status: 'pending_review',
-  }).select('id').single();
+async function persistSubmission(supabase: ReturnType<typeof createAdminClient>, context: ResolvedSubmissionContext, params: PersistSubmissionParams) {
+  const shouldPostCommunity = params.visibility === 'community';
+  const shouldReview = params.reviewRequested;
 
-  if (submissionError || !submission) return NextResponse.json({ error: 'submission_failed', detail: submissionError?.message }, { status: 500 });
+  if (!shouldPostCommunity && !shouldReview) return NextResponse.json({ error: 'missing_destination', detail: 'Escolha postar na comunidade, enviar para avaliação ou fazer os dois.' }, { status: 400 });
 
-  if (isCommunity) {
+  let submissionId: string | null = null;
+
+  if (shouldReview) {
+    const { data: submission, error: submissionError } = await supabase.from('submissions').insert({
+      profile_id: context.profile.id,
+      exercise_id: context.exercise.id,
+      file_url: params.fileUrl,
+      file_type: 'duet_video',
+      note: params.caption || 'Dueto gravado no Hub.',
+      visibility: shouldPostCommunity ? 'community' : 'private',
+      status: 'pending_review',
+    }).select('id').single();
+
+    if (submissionError || !submission) return NextResponse.json({ error: 'submission_failed', detail: submissionError?.message }, { status: 500 });
+    submissionId = submission.id;
+  }
+
+  if (shouldPostCommunity) {
     const { error: postError } = await supabase.from('community_posts').insert({
       profile_id: context.profile.id,
       exercise_id: context.exercise.id,
-      submission_id: submission.id,
+      submission_id: submissionId,
       media_url: params.fileUrl,
       caption: params.caption || 'Minha prática do dueto.',
       category: 'dueto',
@@ -79,10 +100,10 @@ async function persistSubmission(supabase: ReturnType<typeof createAdminClient>,
     if (postError) return NextResponse.json({ error: 'community_post_failed', detail: postError.message }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, id: submission.id });
+  return NextResponse.json({ ok: true, id: submissionId, posted: shouldPostCommunity, review_requested: shouldReview });
 }
 
-async function saveSubmission(params: { lessonSlug: string; caption: string; visibility: string; fileUrl: string }) {
+async function saveSubmission(params: { lessonSlug: string; caption: string; visibility: string; reviewRequested: boolean; fileUrl: string }) {
   const email = (await cookies()).get('hub_access_email')?.value || '';
   if (!email) return NextResponse.json({ error: 'not_authenticated' }, { status: 401 });
   if (!params.lessonSlug || !params.fileUrl) return NextResponse.json({ error: 'missing_payload' }, { status: 400 });
@@ -98,7 +119,7 @@ export async function POST(request: Request) {
     const contentType = request.headers.get('content-type') || '';
     if (contentType.includes('application/json')) {
       const body = await request.json();
-      return saveSubmission({ lessonSlug: String(body.lesson_slug || ''), caption: String(body.caption || '').trim(), visibility: String(body.visibility || 'private'), fileUrl: String(body.file_url || '').trim() });
+      return saveSubmission({ lessonSlug: String(body.lesson_slug || ''), caption: String(body.caption || '').trim(), visibility: String(body.visibility || 'private'), reviewRequested: parseBoolean(body.review_requested, true), fileUrl: String(body.file_url || '').trim() });
     }
 
     const [form, cookieStore] = await Promise.all([request.formData(), cookies()]);
@@ -106,6 +127,7 @@ export async function POST(request: Request) {
     const lessonSlug = String(form.get('lesson_slug') || '');
     const caption = String(form.get('caption') || '').trim();
     const visibility = String(form.get('visibility') || 'private');
+    const reviewRequested = parseBoolean(form.get('review_requested'), true);
     const email = cookieStore.get('hub_access_email')?.value || '';
 
     if (!email) return NextResponse.json({ error: 'not_authenticated' }, { status: 401 });
@@ -128,7 +150,7 @@ export async function POST(request: Request) {
     if (uploadError) return NextResponse.json({ error: 'upload_failed', detail: uploadError.message }, { status: 500 });
 
     const { data: publicFile } = supabase.storage.from(BUCKET).getPublicUrl(objectPath);
-    return persistSubmission(supabase, resolved, { caption, visibility, fileUrl: publicFile.publicUrl });
+    return persistSubmission(supabase, resolved, { caption, visibility, reviewRequested, fileUrl: publicFile.publicUrl });
   } catch (error) {
     return NextResponse.json({ error: 'duet_submission_failed', message: error instanceof Error ? error.message : 'unknown_error' }, { status: 500 });
   }
