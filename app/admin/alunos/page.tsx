@@ -10,7 +10,7 @@ export default async function AdminStudentsPage({ searchParams }: { searchParams
   const query = searchParams ? await searchParams : {};
   const supabase = createAdminClient();
   const [{ data: students }, { data: products }] = await Promise.all([
-    supabase.from('profiles').select('id,name,email,whatsapp,avatar_url,role,created_at,subscriptions(status,current_period_start,current_period_end,product_name,provider,updated_at)').order('created_at', { ascending: false }).limit(800),
+    supabase.from('profiles').select('id,name,email,whatsapp,avatar_url,role,created_at,subscriptions(id,status,course_key,current_period_start,current_period_end,product_name,provider,updated_at)').order('created_at', { ascending: false }).limit(2500),
     supabase.from('products').select('name').order('created_at', { ascending: false }),
   ]);
 
@@ -26,8 +26,8 @@ export default async function AdminStudentsPage({ searchParams }: { searchParams
 
   return (
     <main className="admin-page-clean admin-students-page">
-      <section className="admin-clean-hero">
-        <div><span className="admin-clean-eyebrow">Alunos</span><h1>Alunos e acessos</h1><p>Busque, filtre, cadastre, fale no WhatsApp e acompanhe a jornada completa por curso.</p></div>
+      <section className="admin-clean-hero compact-premium-hero">
+        <div><span className="admin-clean-eyebrow">Alunos</span><h1>Jornada dos alunos</h1><p>Busque, filtre por curso/status/acesso e veja a trajetória completa de cada aluno.</p></div>
         <div className="admin-clean-actions"><a className="admin-clean-button secondary" href="/admin">Voltar</a><a className="admin-clean-button primary" href="#novo-aluno">Novo aluno</a></div>
       </section>
 
