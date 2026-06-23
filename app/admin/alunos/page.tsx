@@ -4,24 +4,31 @@ import { AdminStudentsManager } from '@/components/admin-students-manager';
 export const dynamic = 'force-dynamic';
 
 type Search = { novo?: string; saved?: string; removed?: string; error?: string };
-type Row = any;
+type Row = Record<string, any>;
 
 export default async function AdminStudentsPage({ searchParams }: { searchParams?: Promise<Search> }) {
   const query = searchParams ? await searchParams : {};
   const supabase = createAdminClient();
-  const [{ data: students }, { data: products }] = await Promise.all([
-    supabase.from('profiles').select('id,name,email,whatsapp,avatar_url,role,created_at,subscriptions(id,status,course_key,current_period_start,current_period_end,product_name,provider,updated_at)').order('created_at', { ascending: false }).limit(2500),
+  const [{ data: profiles }, { data: accessRows }, { data: products }] = await Promise.all([
+    supabase.from('profiles').select('id,name,email,whatsapp,avatar_url,role,created_at').order('created_at', { ascending: false }).limit(3000),
+    supabase.from('subscriptions').select('id,profile_id,status,course_key,current_period_start,current_period_end,product_name,provider,updated_at').order('updated_at', { ascending: false }).limit(6000),
     supabase.from('products').select('name').order('created_at', { ascending: false }),
   ]);
 
-  const list = ((students || []) as Row[]).map((student) => ({
+  const accessByProfile = new Map<string, Row[]>();
+  ((accessRows || []) as Row[]).forEach((access) => {
+    if (!access.profile_id) return;
+    accessByProfile.set(access.profile_id, [...(accessByProfile.get(access.profile_id) || []), access]);
+  });
+
+  const list = ((profiles || []) as Row[]).map((student) => ({
     id: student.id,
     name: student.name,
     email: student.email,
     whatsapp: student.whatsapp,
     avatar_url: student.avatar_url,
     created_at: student.created_at,
-    subscriptions: Array.isArray(student.subscriptions) ? student.subscriptions : student.subscriptions ? [student.subscriptions] : [],
+    subscriptions: accessByProfile.get(student.id) || [],
   }));
 
   return (
