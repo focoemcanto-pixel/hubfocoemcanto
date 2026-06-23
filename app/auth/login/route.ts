@@ -1,4 +1,3 @@
-import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { hashPassword, isStrongEnough, verifyPassword } from '@/lib/auth/password';
@@ -47,36 +46,44 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const formData = await request.formData();
-  const email = String(formData.get('email') || '').toLowerCase().trim();
-  const intent = String(formData.get('intent') || 'continue');
-  const password = String(formData.get('password') || '');
-  const confirm = String(formData.get('confirm_password') || '');
+  let email = '';
+  try {
+    const formData = await request.formData();
+    email = String(formData.get('email') || '').toLowerCase().trim();
+    const intent = String(formData.get('intent') || 'continue');
+    const password = String(formData.get('password') || '');
+    const confirm = String(formData.get('confirm_password') || '');
 
-  if (!email || !email.includes('@')) return redirectLogin(request, { erro: 'email' });
+    if (!email || !email.includes('@')) return redirectLogin(request, { erro: 'email' });
 
-  const { profile, error } = await getOrCreateProfile(email);
-  if (error || !profile?.id) return redirectLogin(request, { erro: 'perfil', email });
+    const { profile, error } = await getOrCreateProfile(email);
+    if (error || !profile?.id) return redirectLogin(request, { erro: 'perfil', email });
 
-  const storedHash = String((profile as any).hub_password_hash || '');
-  const supabase = createAdminClient();
+    const storedHash = String((profile as any).hub_password_hash || '');
+    const supabase = createAdminClient();
 
-  if (intent === 'set-password') {
-    if (!isStrongEnough(password)) return redirectLogin(request, { setup: '1', email, erro: 'senha_curta' });
-    if (password !== confirm) return redirectLogin(request, { setup: '1', email, erro: 'senha_diferente' });
-    const nextHash = await hashPassword(password);
-    const { error: updateError } = await supabase.from('profiles').update({ hub_password_hash: nextHash, updated_at: new Date().toISOString() }).eq('id', profile.id);
-    if (updateError) {
-      if (missingPasswordColumn(updateError.message)) return redirectLogin(request, { setup: '1', email, erro: 'schema_senha' });
-      return redirectLogin(request, { setup: '1', email, erro: 'senha' });
+    if (intent === 'set-password') {
+      if (!isStrongEnough(password)) return redirectLogin(request, { setup: '1', email, erro: 'senha_curta' });
+      if (password !== confirm) return redirectLogin(request, { setup: '1', email, erro: 'senha_diferente' });
+      const nextHash = await hashPassword(password);
+      const { error: updateError } = await supabase.from('profiles').update({ hub_password_hash: nextHash, updated_at: new Date().toISOString() }).eq('id', profile.id);
+      if (updateError) {
+        if (missingPasswordColumn(updateError.message)) return redirectLogin(request, { setup: '1', email, erro: 'schema_senha' });
+        return redirectLogin(request, { setup: '1', email, erro: 'senha' });
+      }
+      return setSession(request, email);
     }
-    return setSession(request, email);
-  }
 
-  if (!storedHash) return redirectLogin(request, { setup: '1', email });
-  if (intent !== 'login') return redirectLogin(request, { password: '1', email });
-  if (!password) return redirectLogin(request, { password: '1', email, erro: 'senha_obrigatoria' });
-  const ok = await verifyPassword(password, storedHash);
-  if (!ok) return redirectLogin(request, { password: '1', email, erro: 'senha_incorreta' });
-  return setSession(request, email);
+    if (!storedHash) return redirectLogin(request, { setup: '1', email });
+    if (intent !== 'login') return redirectLogin(request, { password: '1', email });
+    if (!password) return redirectLogin(request, { password: '1', email, erro: 'senha_obrigatoria' });
+    const ok = await verifyPassword(password, storedHash);
+    if (!ok) return redirectLogin(request, { password: '1', email, erro: 'senha_incorreta' });
+    return setSession(request, email);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'login';
+    const setup = email ? '1' : '';
+    const code = missingPasswordColumn(message) ? 'schema_senha' : 'login';
+    return redirectLogin(request, { email, setup, erro: code });
+  }
 }
