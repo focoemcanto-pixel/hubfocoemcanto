@@ -18,6 +18,7 @@ import './admin-premium.css';
 import './admin-product-cover-vertical.css';
 import './academy-login.css';
 import './vip-paywall.css';
+import './vip-lock-modal.css';
 import './instagram-performance.css';
 import './social-profile.css';
 import './edit-profile.css';
