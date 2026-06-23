@@ -14,7 +14,7 @@ function Avatar({ name, url, className = '' }: { name?: string | null; url?: str
 function hasVipSubscription(rows: any[]) { return rows.some((sub) => sub.course_key === 'grupo-vip' && isAccessActive(sub.status)); }
 
 export const dynamic = 'force-dynamic';
-const VIP_CHECKOUT_URL = process.env.NEXT_PUBLIC_VIP_CHECKOUT_URL || '/aluno?assinar=vip';
+const VIP_CHECKOUT_URL = process.env.NEXT_PUBLIC_VIP_CHECKOUT_URL || '/assinar/vip';
 const createPostCss = `.new-post-menu{position:relative}.new-post-menu summary{list-style:none;cursor:pointer}.new-post-menu summary::-webkit-details-marker{display:none}.new-post-menu .new-post-options{display:none}.new-post-menu[open] .new-post-options{position:absolute;right:0;top:calc(100% + 10px);z-index:45;width:285px;display:grid;gap:8px;border:1px solid rgba(245,199,107,.22);border-radius:20px;background:rgba(13,13,19,.96);box-shadow:0 18px 60px rgba(0,0,0,.42);padding:10px;backdrop-filter:blur(16px);animation:newPostMini .14s ease-out}.new-post-menu[open] .new-post-options:after{content:'';position:absolute;right:24px;top:-7px;width:14px;height:14px;transform:rotate(45deg);background:rgba(13,13,19,.96);border-left:1px solid rgba(245,199,107,.22);border-top:1px solid rgba(245,199,107,.22)}.new-post-options a{position:relative;z-index:1;display:grid;grid-template-columns:34px 1fr;gap:2px 10px;align-items:center;border:1px solid rgba(255,255,255,.1);border-radius:16px;background:rgba(255,255,255,.045);padding:12px;color:#fff;text-decoration:none}.new-post-options a svg{grid-row:span 2;color:#f5c76b}.new-post-options a strong{font-size:16px;line-height:1}.new-post-options a small{color:rgba(255,255,255,.58);font-size:12px;line-height:1.25}.new-post-options a:hover{border-color:rgba(245,199,107,.42);background:rgba(245,199,107,.08)}@keyframes newPostMini{from{opacity:0;transform:translateY(-6px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}@media(max-width:520px){.new-post-menu[open] .new-post-options{right:0;top:calc(100% + 8px);width:min(78vw,292px);border-radius:18px}.new-post-options a{padding:12px}.new-post-options a strong{font-size:15px}.new-post-options a small{font-size:11px}}`;
 
 export default async function CommunityPage() {
@@ -30,19 +30,21 @@ export default async function CommunityPage() {
   const currentAvatarUrl = (profile as any)?.avatar_url || null;
   const postIds = (posts || []).map((post: any) => post.id).filter(Boolean);
   const authorIds = Array.from(new Set((posts || []).map((post: any) => post.profile_id).filter(Boolean)));
-  const [{ data: follows }, { data: likes }, { data: saves }, { data: subscriptions }] = profile?.id ? await Promise.all([
+  const [{ data: follows }, { data: likes }, { data: saves }, { data: subscriptions }, { data: authorSubscriptions }] = profile?.id ? await Promise.all([
     authorIds.length ? supabase.from('community_follows').select('following_id').eq('follower_id', profile.id).in('following_id', authorIds) : { data: [] },
     postIds.length ? supabase.from('community_likes').select('post_id').eq('profile_id', profile.id).in('post_id', postIds) : { data: [] },
     postIds.length ? supabase.from('community_saves').select('post_id').eq('profile_id', profile.id).in('post_id', postIds) : { data: [] },
     supabase.from('subscriptions').select('course_key,status').eq('profile_id', profile.id),
-  ]) : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }];
+    authorIds.length ? supabase.from('subscriptions').select('profile_id,course_key,status').eq('course_key', 'grupo-vip').in('profile_id', authorIds) : { data: [] },
+  ]) : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }, { data: [] }];
   const hasVipAccess = hasVipSubscription(subscriptions || []);
+  const vipAuthorIds = new Set((authorSubscriptions || []).filter((sub: any) => isAccessActive(sub.status)).map((sub: any) => sub.profile_id));
   const followingIds = new Set((follows || []).map((follow: any) => follow.following_id));
   const likedPostIds = new Set((likes || []).map((like: any) => like.post_id));
   const savedPostIds = new Set((saves || []).map((save: any) => save.post_id));
   const fallbackSubmissionByKey = new Map<string, string>();
   (communitySubmissions || []).forEach((submission: any) => { const key = `${submission.profile_id}:${submission.exercise_id}`; if (!fallbackSubmissionByKey.has(key) && submission.file_url) fallbackSubmissionByKey.set(key, submission.file_url); });
-  const feedPosts = (posts || []).map((post: any) => { const exercise = related(post.exercises); const author = related(post.profiles); const submission = related(post.submissions); const fallbackMedia = fallbackSubmissionByKey.get(`${post.profile_id}:${post.exercise_id}`) || ''; return { id: post.id, authorId: post.profile_id, authorName: author?.name || 'Aluno VIP', authorAvatarUrl: author?.avatar_url || null, createdAt: post.created_at, exerciseTitle: exercise?.title || (post.exercise_id ? 'Atividade da comunidade' : null), exerciseSlug: exercise?.slug || null, caption: post.caption || 'Compartilhou uma prática.', mediaUrl: post.media_url || submission?.file_url || fallbackMedia || null, likesCount: post.likes_count || 0, commentsCount: post.comments_count || 0, canDelete: Boolean(profile?.id && profile.id === post.profile_id), isFollowing: followingIds.has(post.profile_id), isLiked: likedPostIds.has(post.id), isSaved: savedPostIds.has(post.id) }; });
+  const feedPosts = (posts || []).map((post: any) => { const exercise = related(post.exercises); const author = related(post.profiles); const submission = related(post.submissions); const fallbackMedia = fallbackSubmissionByKey.get(`${post.profile_id}:${post.exercise_id}`) || ''; return { id: post.id, authorId: post.profile_id, authorName: author?.name || 'Aluno VIP', authorAvatarUrl: author?.avatar_url || null, createdAt: post.created_at, exerciseTitle: exercise?.title || (post.exercise_id ? 'Atividade da comunidade' : null), exerciseSlug: exercise?.slug || null, caption: post.caption || 'Compartilhou uma prática.', mediaUrl: post.media_url || submission?.file_url || fallbackMedia || null, likesCount: post.likes_count || 0, commentsCount: post.comments_count || 0, canDelete: Boolean(profile?.id && profile.id === post.profile_id), isFollowing: followingIds.has(post.profile_id), isLiked: likedPostIds.has(post.id), isSaved: savedPostIds.has(post.id), isVipAuthor: vipAuthorIds.has(post.profile_id) }; });
 
   return (
     <AppShell>
