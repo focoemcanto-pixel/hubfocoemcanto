@@ -1,3 +1,4 @@
+import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { hashPassword, isStrongEnough, verifyPassword } from '@/lib/auth/password';
@@ -30,7 +31,7 @@ function setSession(request: Request, email: string) {
   response.cookies.set('hub_access_email', email, {
     httpOnly: true,
     sameSite: 'lax',
-    secure: true,
+    secure: request.url.startsWith('https://'),
     path: '/',
     maxAge: 60 * 60 * 24 * 30,
   });
@@ -39,6 +40,11 @@ function setSession(request: Request, email: string) {
 
 function missingPasswordColumn(message?: string) {
   return !!message && (message.includes('schema cache') || message.includes('hub_password_hash') || message.includes('Could not find'));
+}
+
+export async function GET(request: Request) {
+  const email = (await cookies()).get('hub_access_email')?.value;
+  return NextResponse.redirect(new URL(email ? '/aluno' : '/login', request.url), { status: 303 });
 }
 
 export async function POST(request: Request) {
@@ -69,9 +75,7 @@ export async function POST(request: Request) {
   }
 
   if (!storedHash) return redirectLogin(request, { setup: '1', email });
-
   if (intent !== 'login') return redirectLogin(request, { password: '1', email });
-
   if (!password) return redirectLogin(request, { password: '1', email, erro: 'senha_obrigatoria' });
   const ok = await verifyPassword(password, storedHash);
   if (!ok) return redirectLogin(request, { password: '1', email, erro: 'senha_incorreta' });
