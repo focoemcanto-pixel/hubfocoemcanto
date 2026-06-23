@@ -16,6 +16,8 @@ type ProductRow = {
   courses?: { id: string; slug: string | null }[] | null;
 };
 
+const compactProductsCss = `.admin-products-compact .admin-clean-hero{min-height:220px;padding:34px 36px}.admin-products-compact .admin-clean-hero h1{font-size:clamp(54px,7vw,86px);line-height:.88}.admin-products-compact .admin-course-grid{display:grid!important;grid-template-columns:repeat(auto-fill,minmax(230px,1fr))!important;gap:18px!important;align-items:stretch!important}.admin-products-compact .admin-course-card{min-height:auto!important;height:430px!important;display:flex!important;flex-direction:column!important;border-radius:24px!important;overflow:hidden!important}.admin-products-compact .admin-course-cover{height:245px!important;min-height:245px!important;max-height:245px!important;position:relative!important;overflow:hidden!important;background:#09090d!important}.admin-products-compact .admin-course-cover img{width:100%!important;height:100%!important;object-fit:cover!important;display:block!important}.admin-products-compact .admin-course-cover span{height:100%;display:grid;place-items:center;font-size:34px;color:#f5c76b}.admin-products-compact .admin-course-body{flex:1!important;padding:16px 18px!important;display:flex!important;flex-direction:column!important;gap:10px!important}.admin-products-compact .admin-course-body h2{font-size:22px!important;line-height:1.05!important;margin:0!important;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.admin-products-compact .admin-course-body p{font-size:13px!important;line-height:1.35!important;margin:0!important;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.admin-products-compact .product-meta-line{margin-top:auto!important;padding-top:10px!important}.admin-products-compact .admin-clean-actions{margin-top:4px!important}.admin-products-compact .admin-clean-button{padding:10px 14px!important;border-radius:14px!important}@media(max-width:720px){.admin-products-compact .admin-clean-hero{padding:28px 22px}.admin-products-compact .admin-course-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:12px!important}.admin-products-compact .admin-course-card{height:340px!important;border-radius:18px!important}.admin-products-compact .admin-course-cover{height:185px!important;min-height:185px!important;max-height:185px!important}.admin-products-compact .admin-course-body{padding:12px!important}.admin-products-compact .admin-course-body h2{font-size:18px!important}.admin-products-compact .admin-clean-actions{display:grid!important;grid-template-columns:1fr!important}.admin-products-compact .admin-clean-button.secondary{display:none!important}}`;
+
 function slugify(value: string) {
   return value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || `produto-${Date.now()}`;
 }
@@ -71,7 +73,8 @@ export default async function AdminProductsPage() {
   const products = (data || []) as ProductRow[];
 
   return (
-    <main className="admin-page-clean">
+    <main className="admin-page-clean admin-products-compact">
+      <style dangerouslySetInnerHTML={{ __html: compactProductsCss }} />
       <section className="admin-clean-hero">
         <div>
           <span className="admin-clean-eyebrow">Escola Foco em Canto</span>
