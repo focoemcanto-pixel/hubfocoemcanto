@@ -11,7 +11,7 @@ const VIP_CHECKOUT_URL = process.env.NEXT_PUBLIC_VIP_CHECKOUT_URL || 'https://pa
 
 function isFreeTuningModule(module: any) {
   const value = `${module?.title || ''} ${module?.slug || ''}`.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  return value.includes('firmando') && value.includes('afinacao');
+  return value.includes('firm') && value.includes('afin');
 }
 
 function hasVipSubscription(rows: any[]) {
