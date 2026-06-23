@@ -30,7 +30,7 @@ function drivePreview(url?: string | null) {
 
 function isFreeTuningModule(module: any) {
   const value = `${module?.title || ''} ${module?.slug || ''}`.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  return value.includes('firmando') && value.includes('afinacao');
+  return value.includes('firm') && value.includes('afin');
 }
 
 function hasVipSubscription(rows: any[]) {
