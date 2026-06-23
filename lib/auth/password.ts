@@ -14,10 +14,20 @@ function base64ToBytes(value: string) {
   return bytes;
 }
 
+function toArrayBuffer(bytes: Uint8Array) {
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  return buffer;
+}
+
 async function derive(password: string, salt: Uint8Array) {
-  const encoded = new TextEncoder().encode(password);
+  const encoded = toArrayBuffer(new TextEncoder().encode(password));
   const key = await crypto.subtle.importKey('raw', encoded, 'PBKDF2', false, ['deriveBits']);
-  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations: ITERATIONS }, key, KEY_LENGTH * 8);
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', hash: 'SHA-256', salt: toArrayBuffer(salt), iterations: ITERATIONS },
+    key,
+    KEY_LENGTH * 8,
+  );
   return new Uint8Array(bits);
 }
 
