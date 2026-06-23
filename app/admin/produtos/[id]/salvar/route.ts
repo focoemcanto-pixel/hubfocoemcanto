@@ -104,19 +104,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       }).eq('id', courseId);
       if (courseError) return redirectBack(request, id, 'curso');
     } else {
-      const { error: courseInsertError } = await supabase.from('courses').insert({
-        product_id: id,
-        title: name,
-        slug,
-        description,
-        cover_url: coverUrl,
-        status,
-        sort_order: 0,
-      });
-      if (courseInsertError) return redirectBack(request, id, 'curso');
+      const { data: existingCourse } = await supabase.from('courses').select('id').eq('product_id', id).limit(1).maybeSingle();
+      if (existingCourse?.id) {
+        await supabase.from('courses').update({ title: name, slug, description, cover_url: coverUrl, status, updated_at: new Date().toISOString() }).eq('id', existingCourse.id);
+      } else {
+        const { error: courseInsertError } = await supabase.from('courses').insert({ product_id: id, title: name, slug, description, cover_url: coverUrl, status, sort_order: 0 });
+        if (courseInsertError) return redirectBack(request, id, 'curso');
+      }
     }
 
-    return NextResponse.redirect(new URL(`/admin/produtos/${id}?tab=configuracoes&saved=1`, request.url));
+    return NextResponse.redirect(new URL(`/admin/produtos/${id}?tab=configuracoes`, request.url));
   } catch (error) {
     const message = error instanceof Error ? error.message : 'save-failed';
     if (message === 'cover-too-large') return redirectBack(request, id, 'capa-grande');
