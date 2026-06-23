@@ -1,4 +1,5 @@
 import { getKiwifyCustomer, getKiwifyEventName, getKiwifyProduct, getKiwifySubscription, getKiwifyToken, mapKiwifyStatus, type KiwifyPayload } from '@/lib/kiwify/events';
+import { courseKeyFromProduct } from '@/lib/access/products';
 
 export const dynamic = 'force-dynamic';
 
@@ -100,7 +101,8 @@ async function processSubscription(payload: KiwifyPayload): Promise<ProcessingRe
   const profile = await upsertProfile(email, customer.name, customer.phone);
   if ('error' in profile || !profile.id) return { ok: false, error: profile.error || 'profile_error' };
 
-  const providerSubscriptionId = subscription.id || subscription.orderId || `${email}:kiwify`;
+  const productName = product.name || product.id || 'Kiwify';
+  const providerSubscriptionId = subscription.id || subscription.orderId || `${email}:${courseKeyFromProduct(productName)}`;
   const response = await supabaseRequest('subscriptions?on_conflict=provider_subscription_id', {
     method: 'POST',
     headers: { prefer: 'resolution=merge-duplicates,return=minimal' },
@@ -109,7 +111,9 @@ async function processSubscription(payload: KiwifyPayload): Promise<ProcessingRe
       provider: 'kiwify',
       provider_customer_id: email,
       provider_subscription_id: providerSubscriptionId,
-      product_name: product.name || product.id || 'Kiwify',
+      product_name: productName,
+      source_product_name: productName,
+      course_key: courseKeyFromProduct(productName),
       status,
       current_period_end: subscription.currentPeriodEnd || null,
       raw_payload: payload,
@@ -134,6 +138,7 @@ export async function GET(request: Request) {
       method: 'POST',
       webhook_url: `${new URL(request.url).origin}/api/kiwify/webhook`,
       status: 'ready',
+      products: ['Grupo VIP', 'Foco em Harmonia', 'Foco em Canto', 'Foco em Melismas', 'Ebooks'],
     });
   } catch (error) {
     return json({ ok: false, service: 'Hub Foco em Canto Kiwify Webhook', error: error instanceof Error ? error.message : 'config_error' }, 200);
@@ -147,9 +152,10 @@ export async function POST(request: Request) {
   const product = getKiwifyProduct(payload);
   const subscription = getKiwifySubscription(payload);
   const status = mapKiwifyStatus(eventName, subscription.status);
+  const productName = product.name || product.id || 'Kiwify';
 
   if (!isAuthorized(request, payload)) {
-    await safeLog({ event_name: eventName, customer_email: customer.email, product_name: product.name, status: 'unauthorized', raw_payload: payload, raw_body: raw });
+    await safeLog({ event_name: eventName, customer_email: customer.email, product_name: productName, status: 'unauthorized', raw_payload: payload, raw_body: raw });
     return json({ ok: false, error: 'unauthorized_webhook' }, 200);
   }
 
@@ -163,7 +169,7 @@ export async function POST(request: Request) {
   await safeLog({
     event_name: eventName,
     customer_email: customer.email,
-    product_name: product.name,
+    product_name: productName,
     provider_subscription_id: result.subscriptionId || subscription.id || subscription.orderId,
     mapped_status: status,
     status: result.ok ? 'processed' : 'failed',
@@ -172,5 +178,5 @@ export async function POST(request: Request) {
     raw_body: raw,
   });
 
-  return json({ ok: result.ok, event: eventName, email: customer.email, product: product.name, status, subscription_id: result.subscriptionId, error: result.error }, 200);
+  return json({ ok: result.ok, event: eventName, email: customer.email, product: productName, course_key: courseKeyFromProduct(productName), status, subscription_id: result.subscriptionId, error: result.error }, 200);
 }
