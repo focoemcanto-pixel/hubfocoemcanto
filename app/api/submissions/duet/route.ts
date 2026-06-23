@@ -72,6 +72,7 @@ async function persistSubmission(supabase: ReturnType<typeof createAdminClient>,
   if (!shouldPostCommunity && !shouldReview) return NextResponse.json({ error: 'missing_destination', detail: 'Escolha postar na comunidade, enviar para avaliação ou fazer os dois.' }, { status: 400 });
 
   let submissionId: string | null = null;
+  let communityPostId: string | null = null;
 
   if (shouldReview) {
     const { data: submission, error: submissionError } = await supabase.from('submissions').insert({
@@ -89,18 +90,19 @@ async function persistSubmission(supabase: ReturnType<typeof createAdminClient>,
   }
 
   if (shouldPostCommunity) {
-    const { error: postError } = await supabase.from('community_posts').insert({
+    const { data: post, error: postError } = await supabase.from('community_posts').insert({
       profile_id: context.profile.id,
       exercise_id: context.exercise.id,
       submission_id: submissionId,
       media_url: params.fileUrl,
       caption: params.caption || 'Minha prática do dueto.',
       category: 'dueto',
-    });
+    }).select('id').single();
     if (postError) return NextResponse.json({ error: 'community_post_failed', detail: postError.message }, { status: 500 });
+    communityPostId = post?.id || null;
   }
 
-  return NextResponse.json({ ok: true, id: submissionId, posted: shouldPostCommunity, review_requested: shouldReview });
+  return NextResponse.json({ ok: true, id: submissionId, community_post_id: communityPostId, posted: shouldPostCommunity, review_requested: shouldReview });
 }
 
 async function saveSubmission(params: { lessonSlug: string; caption: string; visibility: string; reviewRequested: boolean; fileUrl: string }) {
