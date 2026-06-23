@@ -1,4 +1,4 @@
-import { BarChart3, CheckCircle2, Clock3, FolderStar, Music2, RefreshCcw, Search, SlidersHorizontal, Sparkles, Star, Zap } from 'lucide-react';
+import { BarChart3, CheckCircle2, Clock3, Music2, RefreshCcw, Search, SlidersHorizontal, Sparkles, Star, Zap } from 'lucide-react';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 export const dynamic = 'force-dynamic';
@@ -68,7 +68,7 @@ export default async function AdminReviewsPage({ searchParams }: { searchParams:
   const approvalRate = total ? Math.round(((approved || 0) / total) * 100) : 0;
 
   return (
-    <main className="reviews-premium-shell reviews-command-center">
+    <main className="reviews-premium-shell reviews-command-center reviews-no-subnav">
       <section className="reviews-premium-hero reviews-gold-hero">
         <div className="reviews-hero-copy">
           <p className="eyebrow"><Sparkles size={16} /> Avaliações</p>
@@ -82,14 +82,6 @@ export default async function AdminReviewsPage({ searchParams }: { searchParams:
 
       {params.sucesso ? <div className="notice success reviews-notice">Ação concluída com sucesso.</div> : null}
       {params.erro ? <div className="notice danger reviews-notice">Erro: {params.erro}</div> : null}
-
-      <nav className="reviews-premium-tabs reviews-top-tabs">
-        <a href="/admin"><BarChart3 size={18} /> Resumo</a>
-        <a href="/admin/biblioteca">Biblioteca</a>
-        <a href="/admin/drive"><FolderStar size={18} /> Drive</a>
-        <a href="/admin/alunos">Alunos</a>
-        <a className="active" href="/admin/avaliacoes"><Star size={18} /> Avaliações</a>
-      </nav>
 
       <section className="reviews-stat-grid reviews-stat-dashboard">
         <article className="reviews-stat"><Clock3 size={28} /><span>Pendentes</span><strong>{pending || 0}</strong><small>Aguardando avaliação</small></article>
