@@ -24,6 +24,7 @@ import './student-reviews.css';
 import './notifications-premium.css';
 import './community-publish-menu.css';
 import './duet-publish-progress.css';
+import './duet-refined-flow.css';
 
 export default function RootLayout(props: { children: React.ReactNode }) {
   return <html lang="pt-BR"><body>{props.children}</body></html>;
