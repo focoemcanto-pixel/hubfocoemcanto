@@ -1,4 +1,5 @@
-import { BarChart3, CheckCircle2, Clock3, Music2, RefreshCcw, Search, SlidersHorizontal, Sparkles, Star, Trash2, Zap } from 'lucide-react';
+import { BarChart3, CheckCircle2, Clock3, Music2, RefreshCcw, Search, SlidersHorizontal, Sparkles, Star, Zap } from 'lucide-react';
+import { DeleteReviewSubmissionButton } from '@/components/admin/delete-review-submission-button';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 export const dynamic = 'force-dynamic';
@@ -124,7 +125,7 @@ export default async function AdminReviewsPage({ searchParams }: { searchParams:
                 <div className="reviews-student-cell"><span className="reviews-avatar">{profile?.avatar_url ? <img src={profile.avatar_url} alt={profileName} /> : initials(profileName)}</span><div><strong>{profileName}</strong><small>{profile?.email || '@aluno'}</small></div></div>
                 <div className="reviews-date-cell"><span>{new Date(item.created_at).toLocaleDateString('pt-BR')}</span><small>{timeAgo(item.created_at)}</small></div>
                 <div><span className={`reviews-status-pill ${statusClass(item.status)}`}>{statusLabel(item.status)}</span></div>
-                <div className="reviews-row-actions"><a href={`/admin/avaliacoes/${item.id}`}>Avaliar</a><form action={`/admin/avaliacoes/${item.id}/excluir`} method="post"><input type="hidden" name="return_to" value={withQuery(status)} /><button className="delete review-delete-icon" title="Excluir envio" type="submit"><Trash2 size={16} /></button></form></div>
+                <div className="reviews-row-actions"><a href={`/admin/avaliacoes/${item.id}`}>Avaliar</a><DeleteReviewSubmissionButton id={item.id} /></div>
               </article>
             );
           })}
