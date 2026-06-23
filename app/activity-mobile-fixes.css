@@ -85,6 +85,171 @@
   background: linear-gradient(135deg, rgba(245, 199, 107, 0.22), rgba(245, 199, 107, 0.07));
 }
 
+.duet-audio-setup-mini {
+  margin: 10px 0 14px;
+  border: 1px solid rgba(245, 199, 107, 0.16);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(255, 255, 255, 0.78);
+  overflow: hidden;
+}
+
+.duet-audio-setup-mini summary {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 12px 14px;
+  color: #f5c76b;
+  font-weight: 800;
+  cursor: pointer;
+  list-style: none;
+}
+
+.duet-audio-setup-mini summary::-webkit-details-marker {
+  display: none;
+}
+
+.duet-audio-setup-mini > div {
+  display: grid;
+  gap: 10px;
+  padding: 0 14px 14px;
+}
+
+.duet-record-primary-row {
+  margin: 18px 0 12px;
+}
+
+.duet-record-primary {
+  min-height: 68px !important;
+  border-radius: 24px !important;
+  font-size: 19px !important;
+  letter-spacing: -0.02em;
+  box-shadow: 0 18px 48px rgba(245, 179, 62, 0.26) !important;
+}
+
+.duet-after-record-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0 14px;
+}
+
+.duet-after-record-actions .button {
+  flex: 1;
+  min-height: 46px;
+  border-radius: 999px !important;
+  font-size: 14px !important;
+  padding: 10px 13px !important;
+}
+
+.duet-publish-choice-card {
+  margin-top: 14px;
+  padding: 18px !important;
+  border-radius: 24px !important;
+}
+
+.duet-publish-choice-head h2 {
+  margin: 0 0 4px;
+  font-size: clamp(22px, 6vw, 30px);
+  letter-spacing: -0.04em;
+}
+
+.duet-publish-choice-head p {
+  margin: 0 0 14px;
+  color: rgba(255, 255, 255, 0.66);
+}
+
+.duet-publish-check {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: center;
+  gap: 12px;
+  min-height: 78px;
+  padding: 14px;
+  border: 1px solid rgba(245, 199, 107, 0.16);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.035);
+  color: #fff;
+  cursor: pointer;
+  transition: border-color .2s ease, background .2s ease, transform .2s ease;
+}
+
+.duet-publish-check + .duet-publish-check {
+  margin-top: 10px;
+}
+
+.duet-publish-check input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.duet-publish-check svg {
+  color: #f5c76b;
+}
+
+.duet-publish-check small {
+  display: block;
+  margin-top: 3px;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.duet-check-box {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 2px solid rgba(245, 199, 107, 0.62);
+  border-radius: 10px;
+  color: transparent;
+  font-weight: 1000;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.duet-publish-check.active {
+  border-color: rgba(245, 199, 107, 0.55);
+  background: linear-gradient(135deg, rgba(245, 199, 107, 0.16), rgba(255, 255, 255, 0.045));
+}
+
+.duet-publish-check.active .duet-check-box {
+  color: #111;
+  background: linear-gradient(135deg, #ffe39b, #f0ad32);
+  border-color: transparent;
+}
+
+.duet-publish-submit {
+  margin-top: 14px;
+  min-height: 56px !important;
+  border-radius: 18px !important;
+}
+
+.duet-posted-actions-card {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.duet-posted-actions-card > svg {
+  color: #f5c76b;
+  flex: 0 0 auto;
+}
+
+.duet-posted-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.duet-posted-actions .button {
+  min-height: 46px;
+  border-radius: 999px !important;
+  padding: 11px 16px !important;
+}
+
 @media (max-width: 760px) {
   .bottom-nav {
     width: min(420px, calc(100% - 28px)) !important;
@@ -114,7 +279,7 @@
     display: grid !important;
     grid-template-columns: 1fr !important;
     gap: 16px !important;
-    margin-bottom: 18px !important;
+    margin-bottom: 12px !important;
   }
 
   .premium-duet-header h1 {
@@ -125,32 +290,22 @@
   }
 
   .premium-duet-steps {
-    display: grid !important;
-    grid-template-columns: repeat(3, 1fr) !important;
-    gap: 8px !important;
-    margin-top: 18px !important;
-  }
-
-  .premium-duet-steps span {
-    justify-content: center;
-    padding: 10px 8px !important;
-    font-size: 14px !important;
-    gap: 6px !important;
+    display: none !important;
   }
 
   .premium-duet-instruction {
     max-width: none !important;
-    padding: 18px !important;
-    border-radius: 24px !important;
+    padding: 16px !important;
+    border-radius: 22px !important;
   }
 
   .premium-duet-instruction p {
-    font-size: 16px !important;
-    line-height: 1.38 !important;
+    font-size: 15px !important;
+    line-height: 1.35 !important;
   }
 
   .premium-duet-stage {
-    margin-top: 18px !important;
+    margin-top: 12px !important;
     min-height: auto !important;
     border-radius: 26px !important;
     overflow: visible !important;
@@ -232,5 +387,32 @@
   .community-toggle {
     width: 100%;
     justify-content: center;
+  }
+
+  .duet-audio-setup-mini {
+    margin-top: 0;
+  }
+
+  .duet-record-primary-row {
+    margin-top: 14px;
+  }
+
+  .duet-record-primary {
+    min-height: 66px !important;
+    font-size: 18px !important;
+  }
+
+  .duet-publish-choice-card {
+    padding: 16px !important;
+  }
+
+  .duet-publish-check {
+    min-height: 76px;
+    padding: 13px;
+  }
+
+  .duet-posted-actions {
+    display: grid;
+    grid-template-columns: 1fr;
   }
 }
