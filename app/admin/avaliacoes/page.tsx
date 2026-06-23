@@ -28,12 +28,7 @@ export default async function AdminReviewsPage({ searchParams }: { searchParams:
   const status = params.status || 'pending_review';
   const supabase = createAdminClient();
 
-  let query = supabase
-    .from('submissions')
-    .select('id,note,file_url,file_type,visibility,status,created_at,profiles(name,email,avatar_url),exercises(title,modules(title))')
-    .order('created_at', { ascending: false })
-    .limit(120);
-
+  let query = supabase.from('submissions').select('id,note,file_url,file_type,visibility,status,created_at,profiles(name,email,avatar_url),exercises(title,modules(title))').order('created_at', { ascending: false }).limit(120);
   if (status !== 'all') query = query.eq('status', status);
 
   const [{ data: submissions }, { count: pending }, { count: approved }, { count: rework }, { count: total }] = await Promise.all([
@@ -44,24 +39,21 @@ export default async function AdminReviewsPage({ searchParams }: { searchParams:
     supabase.from('submissions').select('*', { count: 'exact', head: true }),
   ]);
 
-  const demo = (submissions || [])[0] as any;
-  const demoExercise = related(demo?.exercises);
-
   return (
     <main className="reviews-premium-shell">
       <section className="reviews-premium-hero">
-        <div>
+        <div style={{ maxWidth: 900 }}>
           <p className="eyebrow">Avaliações</p>
           <h1>Fila premium de atividades.</h1>
-          <p>Corrija duetos, acompanhe a evolução dos alunos e remova envios duplicados ou incorretos com segurança.</p>
-        </div>
+          <p>Analise duetos, acompanhe a evolução dos alunos, aprove atividades em segundos e mantenha sua comunidade organizada com uma experiência digna de uma plataforma premium.</p>
 
-        <article className="reviews-demo-card">
-          {demo?.file_url ? <video src={demo.file_url} muted playsInline preload="metadata" /> : <div className="reviews-thumb"><span>prévia</span></div>}
-          <h3>{demoExercise?.title || 'Card demonstrativo'}</h3>
-          <p className="muted">Visual de avaliação com vídeo, aluno, status e ações rápidas.</p>
-          <div className="reviews-demo-actions"><span>Avaliar</span><span>Excluir</span></div>
-        </article>
+          <div style={{ display:'flex', gap:'18px', flexWrap:'wrap', marginTop:'28px' }}>
+            <div className="reviews-stat"><span>Pendentes</span><strong>{pending || 0}</strong></div>
+            <div className="reviews-stat"><span>Aprovadas</span><strong>{approved || 0}</strong></div>
+            <div className="reviews-stat"><span>Refações</span><strong>{rework || 0}</strong></div>
+            <div className="reviews-stat"><span>Total</span><strong>{total || 0}</strong></div>
+          </div>
+        </div>
       </section>
 
       {params.sucesso ? <div className="notice success" style={{ marginTop: 16 }}>Ação concluída com sucesso.</div> : null}
@@ -75,19 +67,12 @@ export default async function AdminReviewsPage({ searchParams }: { searchParams:
         <a className="active" href="/admin/avaliacoes">Avaliações</a>
       </nav>
 
-      <section className="reviews-stat-grid">
-        <article className="reviews-stat"><span>Pendentes</span><strong>{pending || 0}</strong></article>
-        <article className="reviews-stat"><span>Aprovadas</span><strong>{approved || 0}</strong></article>
-        <article className="reviews-stat"><span>Refações</span><strong>{rework || 0}</strong></article>
-        <article className="reviews-stat"><span>Total</span><strong>{total || 0}</strong></article>
-      </section>
-
       <section className="reviews-board">
         <div className="reviews-board-head">
           <div>
             <p className="eyebrow">Correção</p>
             <h2>Envios recebidos</h2>
-            <p className="muted">Use a fila para avaliar, aprovar, pedir refação ou excluir envios incorretos.</p>
+            <p className="muted">Avalie, aprove ou solicite refação sem sair da fila.</p>
           </div>
           <div className="reviews-filter-pills">
             {filters.map((item) => (
@@ -123,7 +108,6 @@ export default async function AdminReviewsPage({ searchParams }: { searchParams:
               </article>
             );
           })}
-          {!submissions?.length ? <div className="reviews-empty"><h3>Nenhuma atividade encontrada</h3><p className="muted">Quando novos duetos forem enviados, eles aparecerão aqui.</p></div> : null}
         </div>
       </section>
     </main>
