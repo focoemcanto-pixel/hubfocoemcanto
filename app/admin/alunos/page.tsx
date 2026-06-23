@@ -5,6 +5,15 @@ export const dynamic = 'force-dynamic';
 
 type Search = { novo?: string; saved?: string; removed?: string; error?: string };
 type Row = Record<string, any>;
+type StudentItem = {
+  id: string;
+  name?: string | null;
+  email?: string | null;
+  whatsapp?: string | null;
+  avatar_url?: string | null;
+  created_at?: string | null;
+  subscriptions?: Row[];
+};
 
 function normalizeEmail(value?: string | null) {
   return String(value || '').trim().toLowerCase();
@@ -70,14 +79,14 @@ export default async function AdminStudentsPage({ searchParams }: { searchParams
     if (email) profileByEmail.set(email, profile);
   });
 
-  const studentByKey = new Map<string, Row>();
+  const studentByKey = new Map<string, StudentItem>();
   profiles.forEach((student) => {
     const key = String(student.id || normalizeEmail(student.email));
     if (!key) return;
     const byId = accessByProfile.get(String(student.id).toLowerCase()) || [];
     const byEmail = accessByEmail.get(normalizeEmail(student.email)) || [];
     studentByKey.set(key, {
-      id: student.id,
+      id: String(student.id || normalizeEmail(student.email)),
       name: student.name,
       email: student.email,
       whatsapp: student.whatsapp,
@@ -95,7 +104,7 @@ export default async function AdminStudentsPage({ searchParams }: { searchParams
     const byEmail = accessByEmail.get(normalizeEmail(access.provider_customer_id)) || [];
     const email = profile?.email || access.provider_customer_id || null;
     studentByKey.set(key, {
-      id: profile?.id || key,
+      id: key,
       name: profile?.name || email?.split('@')[0] || 'Aluno sem nome',
       email,
       whatsapp: profile?.whatsapp || null,
@@ -105,7 +114,7 @@ export default async function AdminStudentsPage({ searchParams }: { searchParams
     });
   });
 
-  const list = Array.from(studentByKey.values()).sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+  const list: StudentItem[] = Array.from(studentByKey.values()).sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
 
   return (
     <main className="admin-page-clean admin-students-page">
