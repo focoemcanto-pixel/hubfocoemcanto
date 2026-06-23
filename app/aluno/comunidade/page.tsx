@@ -4,14 +4,17 @@ import { Bell, BookOpen, FileText, Headphones, Home, Plus, Send, User, Users, Vi
 import { AppShell } from '@/components/app-shell';
 import { HomeCommunityFeed } from '@/components/home-community-feed';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { isAccessActive } from '@/lib/access/products';
 
 type Related = { title?: string; name?: string; slug?: string; file_url?: string; avatar_url?: string } | null;
 function related(value: unknown): Related { if (Array.isArray(value)) return (value[0] || null) as Related; return (value || null) as Related; }
 function initials(name?: string | null) { const value = String(name || 'Aluno').trim(); return value.split(' ').slice(0, 2).map((part) => part[0]).join('').toUpperCase(); }
 function firstNameOf(name?: string | null) { return String(name || 'Marcos').trim().split(' ')[0] || 'Marcos'; }
 function Avatar({ name, url, className = '' }: { name?: string | null; url?: string | null; className?: string }) { return <span className={className}>{url ? <img src={url} alt={name || 'Perfil'} /> : <span>{initials(name)}</span>}</span>; }
+function hasVipSubscription(rows: any[]) { return rows.some((sub) => sub.course_key === 'grupo-vip' && isAccessActive(sub.status)); }
 
 export const dynamic = 'force-dynamic';
+const VIP_CHECKOUT_URL = process.env.NEXT_PUBLIC_VIP_CHECKOUT_URL || '/aluno?assinar=vip';
 
 export default async function CommunityPage() {
   const cookieStore = await cookies();
@@ -26,11 +29,13 @@ export default async function CommunityPage() {
   const currentAvatarUrl = (profile as any)?.avatar_url || null;
   const postIds = (posts || []).map((post: any) => post.id).filter(Boolean);
   const authorIds = Array.from(new Set((posts || []).map((post: any) => post.profile_id).filter(Boolean)));
-  const [{ data: follows }, { data: likes }, { data: saves }] = profile?.id ? await Promise.all([
+  const [{ data: follows }, { data: likes }, { data: saves }, { data: subscriptions }] = profile?.id ? await Promise.all([
     authorIds.length ? supabase.from('community_follows').select('following_id').eq('follower_id', profile.id).in('following_id', authorIds) : { data: [] },
     postIds.length ? supabase.from('community_likes').select('post_id').eq('profile_id', profile.id).in('post_id', postIds) : { data: [] },
     postIds.length ? supabase.from('community_saves').select('post_id').eq('profile_id', profile.id).in('post_id', postIds) : { data: [] },
-  ]) : [{ data: [] }, { data: [] }, { data: [] }];
+    supabase.from('subscriptions').select('course_key,status').eq('profile_id', profile.id),
+  ]) : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }];
+  const hasVipAccess = hasVipSubscription(subscriptions || []);
   const followingIds = new Set((follows || []).map((follow: any) => follow.following_id));
   const likedPostIds = new Set((likes || []).map((like: any) => like.post_id));
   const savedPostIds = new Set((saves || []).map((save: any) => save.post_id));
@@ -48,9 +53,9 @@ export default async function CommunityPage() {
         </aside>
         <section className="community-main-feed">
           <header className="community-feed-topbar"><div><p className="eyebrow">Comunidade VIP</p><h1>Compartilhe sua evolução.</h1><p>Publique sua prática, receba apoio dos alunos e acompanhe o crescimento do grupo.</p></div><div className="community-top-actions"><Link className="community-bell" href="/aluno/notificacoes" aria-label="Notificações"><Bell size={20} /></Link><Link className="community-current-avatar-link" href="/aluno/perfil" aria-label="Perfil"><Avatar className="community-current-avatar" name={firstName} url={currentAvatarUrl} /></Link></div></header>
-          <section className="community-create-strip"><div className="community-tabs"><a className="active" href="/aluno/comunidade">Para você</a><a href="/aluno/comunidade">Recentes</a><a href="/aluno/comunidade">Seguindo</a></div><details className="new-post-menu"><summary><Plus size={30} /><span>Nova publicação</span></summary><div className="new-post-options"><a href="#nova-publicacao"><FileText size={22} /><strong>Texto</strong><small>Compartilhe uma ideia, dúvida ou conquista.</small></a><Link href="/aluno/biblioteca"><Video size={22} /><strong>Dueto/atividade</strong><small>Escolha o módulo, grave e publique pelo envio.</small></Link></div></details></section>
+          <section className="community-create-strip"><div className="community-tabs"><a className="active" href="#feed-comunidade">Para você</a><a href="#feed-comunidade">Recentes</a><a href="#feed-comunidade">Seguindo</a></div><details className="new-post-menu"><summary><Plus size={30} /><span>Nova publicação</span></summary><div className="new-post-options"><a href="#nova-publicacao"><FileText size={22} /><strong>Texto</strong><small>Compartilhe uma ideia, dúvida ou conquista.</small></a><Link href="/aluno/biblioteca"><Video size={22} /><strong>Dueto/atividade</strong><small>Escolha o módulo, grave e publique pelo envio.</small></Link></div></details></section>
           <section id="nova-publicacao" className="community-composer-instagram text-only-composer"><div className="composer-topline"><div className="avatar-ring mini"><Avatar name={firstName} url={currentAvatarUrl} /></div><strong>{firstName}</strong><small>Publicação de texto</small></div><form action="/api/community/posts" method="post"><textarea name="caption" placeholder="O que você treinou hoje? Compartilhe uma prática, dúvida, testemunho ou conquista..." /><div className="composer-actions-instagram"><span>Para publicar vídeo de dueto, escolha uma aula na biblioteca e envie a atividade.</span><button type="submit"><Send size={18} /> Publicar texto</button></div></form></section>
-          <section className="community-social-feed"><HomeCommunityFeed initialPosts={feedPosts} /></section>
+          <section id="feed-comunidade" className="community-social-feed"><HomeCommunityFeed initialPosts={feedPosts} hasVipAccess={hasVipAccess} vipCheckoutUrl={VIP_CHECKOUT_URL} /></section>
         </section>
       </main>
     </AppShell>
