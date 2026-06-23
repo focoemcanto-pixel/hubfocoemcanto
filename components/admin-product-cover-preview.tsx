@@ -27,12 +27,12 @@ export function AdminProductCoverPreview({ initialUrl, fallback }: Props) {
   }
 
   return (
-    <aside className="product-cover-editor">
+    <aside className="product-cover-editor product-cover-editor-vertical">
       <span className="admin-clean-eyebrow">Capa do produto</span>
-      <div className="product-cover-preview live-preview">
+      <div className="product-cover-preview product-cover-preview-vertical live-preview">
         {preview ? <img src={preview} alt="Prévia da capa" /> : <strong>{fallback}</strong>}
       </div>
-      <p>Recomendado: 1280x720 para vitrine e checkout. Ao escolher o arquivo, a prévia aparece aqui antes de salvar.</p>
+      <p>Recomendado: imagem vertical 1080x1350 ou 4:5, igual aos cards exibidos na home do aluno. Ao escolher o arquivo, a prévia aparece aqui antes de salvar.</p>
       <label className="admin-upload-drop">
         Enviar capa
         <input name="cover_file" type="file" accept="image/png,image/jpeg,image/webp" onChange={onFileChange} />
