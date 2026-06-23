@@ -1,5 +1,6 @@
 import { cookies } from 'next/headers';
 import Link from 'next/link';
+import type { ReactElement } from 'react';
 import { Lock, Sparkles } from 'lucide-react';
 import { DuetRecorder } from '@/components/duet-recorder';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -14,7 +15,7 @@ const DuetRecorderWithAccess = DuetRecorder as unknown as (props: {
   referenceUrl?: string | null;
   referenceEmbedUrl?: string | null;
   canSendForReview?: boolean;
-}) => JSX.Element;
+}) => ReactElement;
 
 function driveFileId(url?: string | null) {
   if (!url) return null;
