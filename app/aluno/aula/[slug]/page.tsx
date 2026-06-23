@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { cookies } from 'next/headers';
 import {
   ArrowLeft,
   ArrowRight,
@@ -18,6 +19,7 @@ import {
   X,
 } from 'lucide-react';
 import { ContentPlayer } from '@/components/content-player';
+import { LessonProgressButton } from '@/components/lesson-progress-button';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 export const dynamic = 'force-dynamic';
@@ -48,6 +50,8 @@ const navItems = [
 
 export default async function StudentLessonPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
+  const cookieStore = await cookies();
+  const email = cookieStore.get('hub_access_email')?.value;
   const supabase = createAdminClient();
   const { data: lesson } = await supabase
     .from('exercises')
@@ -57,9 +61,14 @@ export default async function StudentLessonPage({ params }: { params: Promise<{ 
 
   const module = Array.isArray(lesson?.modules) ? lesson?.modules[0] : lesson?.modules;
 
-  const [{ data: rawModules }, { data: currentModuleLessons }] = await Promise.all([
+  const { data: profile } = email
+    ? await supabase.from('profiles').select('id').eq('email', email).maybeSingle()
+    : { data: null };
+
+  const [{ data: rawModules }, { data: currentModuleLessons }, { data: progressRow }] = await Promise.all([
     supabase.from('modules').select('id,title,slug,description,sort_order,exercises(id,title,slug,sort_order)').eq('is_active', true).order('sort_order'),
-    lesson?.module_id ? supabase.from('exercises').select('id,title,slug,sort_order').eq('module_id', lesson.module_id).order('sort_order') : { data: [] },
+    lesson?.module_id ? supabase.from('exercises').select('id,title,slug,sort_order').eq('module_id', lesson.module_id).order('sort_order') : Promise.resolve({ data: [] }),
+    profile?.id && lesson?.id ? supabase.from('lesson_progress').select('completed,last_position_seconds').eq('profile_id', profile.id).eq('exercise_id', lesson.id).maybeSingle() : Promise.resolve({ data: null }),
   ]);
 
   const modules = (rawModules || []).filter(isRealModule);
@@ -71,6 +80,8 @@ export default async function StudentLessonPage({ params }: { params: Promise<{ 
   const totalLessons = lessonsInCurrentModule.length || 1;
   const progress = Math.min(100, Math.max(8, Math.round((currentPosition / totalLessons) * 100)));
   const description = cleanDescription(lesson?.description) || cleanDescription(module?.description) || 'Assista à referência e pratique junto. Quando estiver pronto, grave sua resposta para avaliação.';
+  const savedPosition = Number(progressRow?.last_position_seconds || 0);
+  const completed = Boolean(progressRow?.completed);
 
   return (
     <main className="premium-lesson-page route-surface">
@@ -93,9 +104,9 @@ export default async function StudentLessonPage({ params }: { params: Promise<{ 
         <div className="premium-content-grid">
           <section className="premium-watch-column">
             <p className="premium-breadcrumb"><Link href="/aluno" prefetch>Hub VIP</Link> › {module?.slug ? <Link href={`/aluno/biblioteca/${module.slug}`} prefetch>{module.title}</Link> : module?.title || 'Módulo'}</p>
-            <div className="premium-player-card"><div className="premium-player-frame"><ContentPlayer title={lesson?.title || 'Conteúdo'} mediaType={lesson?.media_type} mediaUrl={lesson?.media_url || lesson?.audio_url} driveUrl={lesson?.drive_url} /></div></div>
+            <div className="premium-player-card"><div className="premium-player-frame"><ContentPlayer title={lesson?.title || 'Conteúdo'} mediaType={lesson?.media_type} mediaUrl={lesson?.media_url || lesson?.audio_url} driveUrl={lesson?.drive_url} lessonId={lesson?.id} initialPositionSeconds={savedPosition} /></div></div>
             <section className="premium-lesson-details" id="lesson-action">
-              <div className="premium-lesson-header-row"><div><p className="premium-module-label"><Sparkles size={16} /> {module?.title || 'Biblioteca VIP'}</p><h1>{lesson?.title || 'Aula'}</h1><p>{description}</p></div><button className="premium-outline-button" type="button"><Check size={18} />Marcar como concluída</button></div>
+              <div className="premium-lesson-header-row"><div><p className="premium-module-label"><Sparkles size={16} /> {module?.title || 'Biblioteca VIP'}</p><h1>{lesson?.title || 'Aula'}</h1><p>{description}</p>{savedPosition > 5 && !completed ? <small className="muted">Retomando de aproximadamente {Math.floor(savedPosition / 60)}min {savedPosition % 60}s.</small> : null}</div>{lesson?.id ? <LessonProgressButton exerciseId={lesson.id} initialCompleted={completed} /> : null}</div>
               <div className="premium-progress-block"><div className="premium-progress-head"><span>Progresso do módulo</span><strong>{currentPosition} de {totalLessons} aulas</strong></div><div className="premium-progress"><span style={{ width: `${progress}%` }} /></div></div>
               <div className="premium-action-row compact"><Link className="premium-primary-button" href={`/aluno/atividade/${lesson?.slug || ''}`} prefetch><Headphones size={18} />Realizar atividade</Link><div className="premium-next-actions">{previousLesson ? <Link className="premium-round" href={`/aluno/aula/${previousLesson.slug}`} prefetch aria-label="Aula anterior"><ArrowLeft size={20} /></Link> : <span className="premium-round disabled"><ArrowLeft size={20} /></span>}{nextLesson ? <Link className="premium-round" href={`/aluno/aula/${nextLesson.slug}`} prefetch aria-label="Próxima aula"><ArrowRight size={20} /></Link> : <span className="premium-round disabled"><ArrowRight size={20} /></span>}</div></div>
               <div className="premium-tip-card" id="lesson-notes"><Sparkles size={20} /><div><strong>Dica do professor</strong><p>Use fone para ouvir a referência e captar melhor sua voz antes de gravar sua execução.</p></div></div>
