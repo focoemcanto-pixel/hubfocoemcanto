@@ -3,9 +3,7 @@
 import { useState } from 'react';
 import { Trash2 } from 'lucide-react';
 
-type Props = {
-  id: string;
-};
+type Props = { id: string };
 
 export function DeleteReviewSubmissionButton({ id }: Props) {
   const [isDeleting, setIsDeleting] = useState(false);
@@ -17,11 +15,9 @@ export function DeleteReviewSubmissionButton({ id }: Props) {
     if (!ok) return;
     setIsDeleting(true);
     try {
-      const response = await fetch(`/admin/avaliacoes/${id}/excluir`, {
-        method: 'POST',
-        headers: { 'x-hub-ajax': '1' },
-        body: new FormData(),
-      });
+      const form = new FormData();
+      form.set('return_to', '/admin/avaliacoes');
+      const response = await fetch(`/admin/avaliacoes/${id}/excluir`, { method: 'POST', headers: { 'x-hub-ajax': '1' }, body: form });
       if (!response.ok) throw new Error('delete_failed');
       setIsHidden(true);
     } catch {
@@ -33,8 +29,15 @@ export function DeleteReviewSubmissionButton({ id }: Props) {
   if (isHidden) return null;
 
   return (
-    <button className="delete review-delete-icon" title="Excluir envio" type="button" onClick={handleDelete} disabled={isDeleting}>
-      <Trash2 size={16} />
+    <button
+      className="review-delete-visible"
+      title="Excluir envio"
+      type="button"
+      onClick={handleDelete}
+      disabled={isDeleting}
+      style={{ position: 'relative', zIndex: 9, display: 'inline-flex', alignItems: 'center', gap: 8, border: '1px solid rgba(255,91,91,.35)', borderRadius: 14, padding: '11px 14px', background: 'rgba(255,91,91,.12)', color: '#ff9a9a', fontWeight: 900, cursor: isDeleting ? 'wait' : 'pointer' }}
+    >
+      <Trash2 size={16} /> {isDeleting ? 'Excluindo...' : 'Excluir'}
     </button>
   );
 }
