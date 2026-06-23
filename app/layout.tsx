@@ -15,6 +15,7 @@ import './profile-premium.css';
 import './admin-reviews-premium.css';
 import './admin-review-detail-premium.css';
 import './admin-premium.css';
+import './admin-product-cover-vertical.css';
 import './instagram-performance.css';
 import './social-profile.css';
 import './edit-profile.css';
