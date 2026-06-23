@@ -37,6 +37,17 @@ function cleanDescription(text?: string | null) {
   return value;
 }
 
+async function getProgress(supabase: ReturnType<typeof createAdminClient>, profileId?: string, lessonId?: string) {
+  if (!profileId || !lessonId) return null;
+  const primary = await supabase.from('lesson_progress').select('completed,last_position_seconds').eq('profile_id', profileId).eq('exercise_id', lessonId).maybeSingle();
+  if (primary.data) return primary.data;
+  const message = String(primary.error?.message || '').toLowerCase();
+  if (!message.includes('does not exist') && !message.includes('schema cache') && !message.includes('lesson_progress')) return null;
+  const legacy = await supabase.from('exercise_progress').select('completed,updated_at').eq('profile_id', profileId).eq('exercise_id', lessonId).maybeSingle();
+  if (!legacy.data) return null;
+  return { completed: legacy.data.completed, last_position_seconds: 0 };
+}
+
 const navItems = [
   { href: '/aluno', label: 'Início', icon: Home },
   { href: '/aluno/biblioteca', label: 'Trilhas', icon: Sparkles },
@@ -65,10 +76,10 @@ export default async function StudentLessonPage({ params }: { params: Promise<{ 
     ? await supabase.from('profiles').select('id').eq('email', email).maybeSingle()
     : { data: null };
 
-  const [{ data: rawModules }, { data: currentModuleLessons }, { data: progressRow }] = await Promise.all([
+  const [{ data: rawModules }, { data: currentModuleLessons }, progressRow] = await Promise.all([
     supabase.from('modules').select('id,title,slug,description,sort_order,exercises(id,title,slug,sort_order)').eq('is_active', true).order('sort_order'),
     lesson?.module_id ? supabase.from('exercises').select('id,title,slug,sort_order').eq('module_id', lesson.module_id).order('sort_order') : Promise.resolve({ data: [] }),
-    profile?.id && lesson?.id ? supabase.from('lesson_progress').select('completed,last_position_seconds').eq('profile_id', profile.id).eq('exercise_id', lesson.id).maybeSingle() : Promise.resolve({ data: null }),
+    getProgress(supabase, profile?.id, lesson?.id),
   ]);
 
   const modules = (rawModules || []).filter(isRealModule);
