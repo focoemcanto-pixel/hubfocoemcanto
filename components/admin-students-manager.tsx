@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { COURSE_ACCESS, accessStatusGroup, courseKeyFromProduct, courseShortLabelFromKey, isAccessActive } from '@/lib/access/products';
+import { COURSE_ACCESS, accessStatusGroup, courseKeyFromProduct, courseShortLabelFromKey, isAccessActive, normalizeCourseKey } from '@/lib/access/products';
 
 type Subscription = { status?: string | null; course_key?: string | null; product_name?: string | null; current_period_end?: string | null; current_period_start?: string | null; updated_at?: string | null };
 type Student = { id: string; name?: string | null; email?: string | null; whatsapp?: string | null; avatar_url?: string | null; created_at?: string | null; subscriptions?: Subscription[] };
@@ -13,7 +13,7 @@ function onlyDigits(value?: string | null) { return String(value || '').split(''
 function whatsappLink(value?: string | null, name?: string | null) { const digits = onlyDigits(value); if (!digits) return ''; const withCountry = digits.startsWith('55') ? digits : `55${digits}`; return `https://wa.me/${withCountry}?text=${encodeURIComponent(`Oi ${name || ''}, tudo bem? Estou conferindo seu acesso na Escola Foco em Canto.`)}`; }
 function dateLabel(value?: string | null) { if (!value) return 'Sem data'; const date = new Date(value); return Number.isNaN(date.getTime()) ? 'Sem data' : new Intl.DateTimeFormat('pt-BR').format(date); }
 function latestSubscription(student: Student) { return [...(student.subscriptions || [])].sort((a, b) => new Date(b.updated_at || b.current_period_start || 0).getTime() - new Date(a.updated_at || a.current_period_start || 0).getTime())[0] || null; }
-function subCourseKey(sub?: Subscription | null) { return sub?.course_key || courseKeyFromProduct(sub?.product_name); }
+function subCourseKey(sub?: Subscription | null) { const fromKey = normalizeCourseKey(sub?.course_key); return fromKey !== 'outros' ? fromKey : courseKeyFromProduct(sub?.product_name); }
 function hasCourse(student: Student, key: string) { return (student.subscriptions || []).some((sub) => subCourseKey(sub) === key && isAccessActive(sub.status)); }
 function studentStatusGroup(student: Student) { const subs = student.subscriptions || []; if (!subs.length) return 'sem_acesso'; if (subs.some((sub) => isAccessActive(sub.status))) return 'ativos'; if (subs.some((sub) => accessStatusGroup(sub.status) === 'atrasados')) return 'atrasados'; if (subs.some((sub) => accessStatusGroup(sub.status) === 'pendentes')) return 'pendentes'; return 'inativos'; }
 function progressFor(student: Student) { const active = (student.subscriptions || []).filter((sub) => isAccessActive(sub.status)).length; return Math.min(100, active * 34); }
