@@ -10,7 +10,7 @@ export default async function AdminStudentsPage({ searchParams }: { searchParams
   const query = searchParams ? await searchParams : {};
   const supabase = createAdminClient();
   const [{ data: students }, { data: products }] = await Promise.all([
-    supabase.from('profiles').select('id,name,email,whatsapp,avatar_url,role,created_at,subscriptions(status,current_period_end,product_name)').order('created_at', { ascending: false }).limit(500),
+    supabase.from('profiles').select('id,name,email,whatsapp,avatar_url,role,created_at,subscriptions(status,current_period_start,current_period_end,product_name,provider,updated_at)').order('created_at', { ascending: false }).limit(800),
     supabase.from('products').select('name').order('created_at', { ascending: false }),
   ]);
 
@@ -20,13 +20,14 @@ export default async function AdminStudentsPage({ searchParams }: { searchParams
     email: student.email,
     whatsapp: student.whatsapp,
     avatar_url: student.avatar_url,
-    subscription: Array.isArray(student.subscriptions) ? student.subscriptions[0] : student.subscriptions,
+    created_at: student.created_at,
+    subscriptions: Array.isArray(student.subscriptions) ? student.subscriptions : student.subscriptions ? [student.subscriptions] : [],
   }));
 
   return (
     <main className="admin-page-clean admin-students-page">
       <section className="admin-clean-hero">
-        <div><span className="admin-clean-eyebrow">Alunos</span><h1>Alunos e acessos</h1><p>Busque, filtre, cadastre, fale no WhatsApp e remova alunos do Hub.</p></div>
+        <div><span className="admin-clean-eyebrow">Alunos</span><h1>Alunos e acessos</h1><p>Busque, filtre, cadastre, fale no WhatsApp e acompanhe a jornada completa por curso.</p></div>
         <div className="admin-clean-actions"><a className="admin-clean-button secondary" href="/admin">Voltar</a><a className="admin-clean-button primary" href="#novo-aluno">Novo aluno</a></div>
       </section>
 
