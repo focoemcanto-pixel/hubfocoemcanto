@@ -1,8 +1,9 @@
+import { BarChart3, CheckCircle2, Clock3, FolderStar, Music2, RefreshCcw, Search, SlidersHorizontal, Sparkles, Star, Zap } from 'lucide-react';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 export const dynamic = 'force-dynamic';
 
-type Related = { title?: string; name?: string; email?: string; modules?: unknown } | null;
+type Related = { title?: string; name?: string; email?: string; modules?: unknown; avatar_url?: string } | null;
 
 function related(value: unknown): Related {
   if (Array.isArray(value)) return (value[0] || null) as Related;
@@ -16,11 +17,34 @@ function statusLabel(value?: string | null) {
   return 'Pendente';
 }
 
+function statusClass(value?: string | null) {
+  if (value === 'approved') return 'approved';
+  if (value === 'needs_rework') return 'rework';
+  if (value === 'reviewed') return 'reviewed';
+  return 'pending';
+}
+
+function initials(name?: string | null) {
+  const value = String(name || 'Aluno').trim();
+  return value.split(' ').slice(0, 2).map((part) => part[0]).join('').toUpperCase();
+}
+
+function timeAgo(value?: string | null) {
+  if (!value) return 'agora';
+  const diff = Math.max(0, Date.now() - new Date(value).getTime());
+  const min = Math.floor(diff / 60000);
+  if (min < 1) return 'agora';
+  if (min < 60) return `há ${min}min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `há ${h}h`;
+  return new Date(value).toLocaleDateString('pt-BR');
+}
+
 const filters = [
+  { label: 'Todas', value: 'all' },
   { label: 'Pendentes', value: 'pending_review' },
   { label: 'Aprovadas', value: 'approved' },
-  { label: 'Refação', value: 'needs_rework' },
-  { label: 'Todas', value: 'all' },
+  { label: 'Refações', value: 'needs_rework' },
 ];
 
 export default async function AdminReviewsPage({ searchParams }: { searchParams: Promise<{ status?: string; sucesso?: string; erro?: string }> }) {
@@ -39,76 +63,103 @@ export default async function AdminReviewsPage({ searchParams }: { searchParams:
     supabase.from('submissions').select('*', { count: 'exact', head: true }),
   ]);
 
-  return (
-    <main className="reviews-premium-shell">
-      <section className="reviews-premium-hero">
-        <div style={{ maxWidth: 900 }}>
-          <p className="eyebrow">Avaliações</p>
-          <h1>Fila premium de atividades.</h1>
-          <p>Analise duetos, acompanhe a evolução dos alunos, aprove atividades em segundos e mantenha sua comunidade organizada com uma experiência digna de uma plataforma premium.</p>
+  const pendingItems = (submissions || []).filter((item: any) => item.status === 'pending_review');
+  const nextPending = pendingItems[0] || (submissions || [])[0];
+  const approvalRate = total ? Math.round(((approved || 0) / total) * 100) : 0;
 
-          <div style={{ display:'flex', gap:'18px', flexWrap:'wrap', marginTop:'28px' }}>
-            <div className="reviews-stat"><span>Pendentes</span><strong>{pending || 0}</strong></div>
-            <div className="reviews-stat"><span>Aprovadas</span><strong>{approved || 0}</strong></div>
-            <div className="reviews-stat"><span>Refações</span><strong>{rework || 0}</strong></div>
-            <div className="reviews-stat"><span>Total</span><strong>{total || 0}</strong></div>
-          </div>
+  return (
+    <main className="reviews-premium-shell reviews-command-center">
+      <section className="reviews-premium-hero reviews-gold-hero">
+        <div className="reviews-hero-copy">
+          <p className="eyebrow"><Sparkles size={16} /> Avaliações</p>
+          <h1>Fila premium <span>de atividades</span></h1>
+          <p>Avalie com eficiência, acompanhe a evolução dos alunos e mantenha sua fila organizada com uma experiência de plataforma premium.</p>
+        </div>
+        <div className="reviews-hero-orb" aria-hidden="true">
+          <div className="reviews-orb-ring"><Star size={58} fill="currentColor" /></div>
         </div>
       </section>
 
-      {params.sucesso ? <div className="notice success" style={{ marginTop: 16 }}>Ação concluída com sucesso.</div> : null}
-      {params.erro ? <div className="notice danger" style={{ marginTop: 16 }}>Erro: {params.erro}</div> : null}
+      {params.sucesso ? <div className="notice success reviews-notice">Ação concluída com sucesso.</div> : null}
+      {params.erro ? <div className="notice danger reviews-notice">Erro: {params.erro}</div> : null}
 
-      <nav className="reviews-premium-tabs">
-        <a href="/admin">Resumo</a>
+      <nav className="reviews-premium-tabs reviews-top-tabs">
+        <a href="/admin"><BarChart3 size={18} /> Resumo</a>
         <a href="/admin/biblioteca">Biblioteca</a>
-        <a href="/admin/drive">Drive</a>
+        <a href="/admin/drive"><FolderStar size={18} /> Drive</a>
         <a href="/admin/alunos">Alunos</a>
-        <a className="active" href="/admin/avaliacoes">Avaliações</a>
+        <a className="active" href="/admin/avaliacoes"><Star size={18} /> Avaliações</a>
       </nav>
 
-      <section className="reviews-board">
+      <section className="reviews-stat-grid reviews-stat-dashboard">
+        <article className="reviews-stat"><Clock3 size={28} /><span>Pendentes</span><strong>{pending || 0}</strong><small>Aguardando avaliação</small></article>
+        <article className="reviews-stat"><CheckCircle2 size={28} /><span>Aprovadas</span><strong>{approved || 0}</strong><small>Prontas</small></article>
+        <article className="reviews-stat"><RefreshCcw size={28} /><span>Refações</span><strong>{rework || 0}</strong><small>Para revisar</small></article>
+        <article className="reviews-stat"><BarChart3 size={28} /><span>Total</span><strong>{total || 0}</strong><small>{approvalRate}% aprovadas</small></article>
+      </section>
+
+      <section className="reviews-board reviews-premium-table">
         <div className="reviews-board-head">
           <div>
             <p className="eyebrow">Correção</p>
             <h2>Envios recebidos</h2>
-            <p className="muted">Avalie, aprove ou solicite refação sem sair da fila.</p>
+            <p className="muted">Use a fila para avaliar, aprovar, pedir refação ou excluir envios incorretos.</p>
           </div>
-          <div className="reviews-filter-pills">
-            {filters.map((item) => (
-              <a className={status === item.value ? 'active' : ''} href={`/admin/avaliacoes?status=${item.value}`} key={item.value}>{item.label}</a>
-            ))}
+          <div className="reviews-board-tools">
+            <div className="reviews-filter-pills">
+              {filters.map((item) => (
+                <a className={status === item.value ? 'active' : ''} href={`/admin/avaliacoes?status=${item.value}`} key={item.value}>{item.label}{item.value === 'needs_rework' ? <b>{rework || 0}</b> : null}</a>
+              ))}
+            </div>
+            <div className="reviews-search"><Search size={18} /><span>Buscar por aluno ou atividade...</span></div>
+            <button className="reviews-filter-button" type="button" aria-label="Filtros"><SlidersHorizontal size={20} /></button>
           </div>
         </div>
 
+        <div className="reviews-table-head"><span>Atividade</span><span>Aluno</span><span>Data</span><span>Status</span><span>Ação</span></div>
         <div className="reviews-queue">
           {(submissions || []).map((item: any) => {
             const exercise = related(item.exercises);
             const module = related(exercise?.modules);
             const profile = related(item.profiles);
+            const profileName = profile?.name || profile?.email || 'Aluno VIP';
             return (
-              <article className="reviews-submission-card" key={item.id}>
-                <div className="reviews-thumb">
-                  {item.file_url ? <video src={item.file_url} muted playsInline preload="metadata" /> : <span>sem vídeo</span>}
+              <article className={`reviews-submission-card ${statusClass(item.status)}`} key={item.id}>
+                <a className="reviews-card-click" href={`/admin/avaliacoes/${item.id}`} aria-label="Avaliar atividade" />
+                <div className="reviews-activity-cell">
+                  <div className="reviews-thumb">
+                    {item.file_url ? <video src={item.file_url} muted playsInline preload="metadata" /> : <span>sem vídeo</span>}
+                    <em>▶</em>
+                  </div>
+                  <div>
+                    <h3>{exercise?.title || 'Atividade enviada'}</h3>
+                    <p>Dueto • {module?.title || 'Módulo'}</p>
+                    <div className="reviews-tags"><span><Music2 size={13} /> Música</span><span>Segunda voz</span></div>
+                  </div>
                 </div>
-                <div className="reviews-card-main">
-                  <span className="reviews-status-pill">{statusLabel(item.status)}</span>
-                  <h3>{exercise?.title || 'Atividade enviada'}</h3>
-                  <p>{profile?.name || profile?.email || 'Aluno'} • {module?.title || 'Módulo'}</p>
-                  <p className="note">{item.note || 'Envio sem observação do aluno.'}</p>
+                <div className="reviews-student-cell">
+                  <span className="reviews-avatar">{profile?.avatar_url ? <img src={profile.avatar_url} alt={profileName} /> : initials(profileName)}</span>
+                  <div><strong>{profileName}</strong><small>{profile?.email || '@aluno'}</small></div>
                 </div>
+                <div className="reviews-date-cell"><span>{new Date(item.created_at).toLocaleDateString('pt-BR')}</span><small>{timeAgo(item.created_at)}</small></div>
+                <div><span className={`reviews-status-pill ${statusClass(item.status)}`}>{statusLabel(item.status)}</span></div>
                 <div className="reviews-row-actions">
-                  <small>{new Date(item.created_at).toLocaleString('pt-BR')}</small>
                   <a href={`/admin/avaliacoes/${item.id}`}>Avaliar</a>
                   <form action={`/admin/avaliacoes/${item.id}/excluir`} method="post">
                     <input type="hidden" name="return_to" value={`/admin/avaliacoes?status=${status}`} />
-                    <button className="delete" type="submit">Excluir envio</button>
+                    <button className="delete" type="submit">•••</button>
                   </form>
                 </div>
               </article>
             );
           })}
+          {!submissions?.length ? <div className="reviews-empty"><h3>Tudo em dia</h3><p className="muted">Nenhuma atividade encontrada nesta fila.</p></div> : null}
         </div>
+      </section>
+
+      <section className="reviews-bottom-cta">
+        <span><Sparkles size={20} /> Mantenha sua fila em dia e impulsione a evolução dos seus alunos.</span>
+        {nextPending ? <a href={`/admin/avaliacoes/${nextPending.id}`}><Zap size={18} fill="currentColor" /> Avaliar agora</a> : <a href="/admin/avaliacoes">Fila vazia</a>}
       </section>
     </main>
   );
