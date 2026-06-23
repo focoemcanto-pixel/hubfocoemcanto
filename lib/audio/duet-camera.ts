@@ -5,6 +5,11 @@ type PrepareDuetCameraOptions = {
   micMode?: DuetMicMode;
 };
 
+function isIOSLike() {
+  if (typeof navigator === 'undefined') return false;
+  return /iPad|iPhone|iPod/.test(navigator.userAgent);
+}
+
 function centerMicAudio(stream: MediaStream) {
   const audioTrack = stream.getAudioTracks()[0];
   if (!audioTrack) return stream;
@@ -28,6 +33,7 @@ function centerMicAudio(stream: MediaStream) {
 
 export async function prepareDuetCamera(camera: HTMLVideoElement | null, options: PrepareDuetCameraOptions = {}) {
   const isCleanMode = options.micMode === 'clean';
+  const ios = isIOSLike();
   const audio: MediaTrackConstraints = {
     echoCancellation: isCleanMode,
     noiseSuppression: isCleanMode,
@@ -36,16 +42,14 @@ export async function prepareDuetCamera(camera: HTMLVideoElement | null, options
     channelCount: 1,
   };
 
-  if (options.audioDeviceId) {
-    audio.deviceId = { exact: options.audioDeviceId };
-  }
+  if (options.audioDeviceId) audio.deviceId = { exact: options.audioDeviceId };
 
   const rawStream = await navigator.mediaDevices.getUserMedia({
     video: {
       facingMode: 'user',
-      width: { ideal: 720, max: 1280 },
-      height: { ideal: 720, max: 1280 },
-      frameRate: { ideal: 24, max: 30 },
+      width: ios ? { ideal: 540, max: 720 } : { ideal: 720, max: 1280 },
+      height: ios ? { ideal: 540, max: 720 } : { ideal: 720, max: 1280 },
+      frameRate: ios ? { ideal: 24, max: 24 } : { ideal: 24, max: 30 },
     },
     audio,
   });
