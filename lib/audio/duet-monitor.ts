@@ -3,12 +3,15 @@ export function buildDuetMonitorAudio(reference: HTMLVideoElement, stream: Media
   if (!AudioCtx) return stream.getAudioTracks();
 
   const context = new AudioCtx({ latencyHint: 'playback' });
+  context.resume().catch(() => undefined);
   const destination = context.createMediaStreamDestination();
   const referenceDestination = context.createMediaStreamDestination();
 
   try {
     const microphone = context.createMediaStreamSource(stream);
-    microphone.connect(destination);
+    const micGain = context.createGain();
+    micGain.gain.value = 1;
+    microphone.connect(micGain).connect(destination);
   } catch {}
 
   try {
