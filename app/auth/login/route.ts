@@ -43,8 +43,7 @@ function missingPasswordColumn(message?: string) {
 }
 
 export async function GET(request: Request) {
-  const email = (await cookies()).get('hub_access_email')?.value;
-  return NextResponse.redirect(new URL(email ? '/aluno' : '/login', request.url), { status: 303 });
+  return NextResponse.redirect(new URL('/aluno', request.url), { status: 303 });
 }
 
 export async function POST(request: Request) {
