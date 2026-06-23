@@ -40,6 +40,7 @@ function effectiveRenewalDate(subscription?: Subscription | null) {
 }
 function dateLabel(value?: string | null) { const date = normalizeDate(value); return date ? new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(date) : 'Sem data'; }
 function dateLabelFromDate(date?: Date | null) { return date ? new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(date) : 'Sem data'; }
+function money(value: number) { return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0); }
 function daysUntilDate(date?: Date | null) { if (!date) return null; const start = new Date(); start.setHours(0, 0, 0, 0); const target = new Date(date); target.setHours(0, 0, 0, 0); return Math.ceil((target.getTime() - start.getTime()) / 86400000); }
 function renewalLabel(date?: Date | null, estimated = false) { const days = daysUntilDate(date); if (days === null) return 'sem data de renovação'; const prefix = estimated ? 'estimada · ' : ''; if (days < 0) return `${prefix}vencido há ${Math.abs(days)} dias`; if (days === 0) return `${prefix}renova hoje`; if (days === 1) return `${prefix}renova amanhã`; return `${prefix}renova em ${days} dias`; }
 function accessStatus(subscription?: Subscription | null) {
@@ -51,7 +52,7 @@ function accessStatus(subscription?: Subscription | null) {
   return { label: 'inativo', tone: 'danger', active: false, remove: true, action: 'bloquear acesso' };
 }
 function renewalTone(subscription?: Subscription | null) { if (!subscription) return 'danger'; const state = accessStatus(subscription); if (!state.active) return state.tone; const { date } = effectiveRenewalDate(subscription); const days = daysUntilDate(date); if (days === null) return 'pending'; if (days < 0) return 'review'; if (days <= 2) return 'late'; if (days <= 7) return 'pending'; return 'active'; }
-function whatsappLink(phone?: string | null, name?: string | null, state?: string) { const digits = String(phone || '').split('').filter((char) => char >= '0' && char <= '9').join(''); if (!digits) return null; const number = digits.startsWith('55') ? digits : `55${digits}`; const message = state === 'late' ? `Oi ${name || ''}, tudo bem? Vi que uma assinatura da Escola Foco em Canto está atrasada. Quer que eu te envie o link para regularizar?` : `Oi ${name || ''}, tudo bem? Estou conferindo seu acesso na Escola Foco em Canto.`; return `https://wa.me/${number}?text=${encodeURIComponent(message)}`; }
+function whatsappLink(_phone?: string | null) { return null; }
 function eventTone(log?: KiwifyLog | null) { const event = String(log?.event_name || '').toLowerCase(); const status = String(log?.status || '').toLowerCase(); const mapped = String(log?.mapped_status || '').toLowerCase(); if (status === 'unauthorized' || status === 'failed') return 'danger'; if (mapped === 'active' || event.includes('approved') || event.includes('renew')) return 'active'; if (mapped === 'late' || event.includes('late')) return 'late'; if (mapped === 'pending' || event.includes('billet') || event.includes('pix')) return 'pending'; if (event.includes('cancel') || event.includes('refund') || event.includes('reject')) return 'danger'; return 'neutral'; }
 function eventLabel(log?: KiwifyLog | null) { if (!log) return 'sem webhook recebido'; const event = String(log.event_name || '').toLowerCase(); if (event.includes('approved')) return 'Compra aprovada'; if (event.includes('renew')) return 'Renovação recebida'; if (event.includes('billet')) return 'Boleto gerado'; if (event.includes('cancel')) return 'Cancelamento recebido'; return log.mapped_status === 'active' ? 'Acesso liberado' : 'Evento recebido'; }
 function normalizeAmount(value: unknown) { if (value === null || value === undefined || value === '') return null; const number = Number(value); if (!Number.isFinite(number)) return null; return number > 100 ? number / 100 : number; }
@@ -90,6 +91,7 @@ export default async function AdminPremiumPage() {
       renewalLabel: renewalLabel(renewalInfo.date, renewalInfo.estimated),
       accessReason: accessReason(subscription),
       amount,
+      amountLabel: money(amount),
       method,
       productName: subscription?.product_name || 'Produto não informado',
       courseKey,
@@ -97,7 +99,7 @@ export default async function AdminPremiumPage() {
       lastEventLabel: eventLabel(lastEvent),
       lastEventTone: eventTone(lastEvent),
       lastEventDate: lastEvent?.created_at ? dateLabel(lastEvent.created_at) : accessReason(subscription),
-      whatsapp: whatsappLink(student.whatsapp, student.name, state.tone),
+      whatsapp: whatsappLink(student.whatsapp),
       estimated: renewalInfo.estimated,
       updatedAt: subscription.updated_at || subscription.current_period_start || null,
     };
