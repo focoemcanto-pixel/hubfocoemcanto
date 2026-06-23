@@ -8,6 +8,8 @@ type ContentPlayerProps = {
   mediaType?: string | null;
   driveUrl?: string | null;
   mediaUrl?: string | null;
+  lessonId?: string | null;
+  initialPositionSeconds?: number | null;
 };
 
 function getDriveFileId(url?: string | null) {
@@ -24,11 +26,23 @@ function isAllowedInternalMedia(url: string) {
   return url.startsWith('/api/media/drive/') || url.startsWith('/api/media/library/') || url.startsWith('/storage/v1/object/');
 }
 
-export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl }: ContentPlayerProps) {
+async function saveProgress(lessonId: string | null | undefined, positionSeconds: number, completed = false) {
+  if (!lessonId) return;
+  await fetch('/api/student/progress', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ exerciseId: lessonId, positionSeconds, completed }),
+  }).catch(() => undefined);
+}
+
+export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, initialPositionSeconds = 0 }: ContentPlayerProps) {
   const [isReady, setIsReady] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
   const [isBuffering, setIsBuffering] = useState(true);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const lastSavedAtRef = useRef(0);
+  const restoredRef = useRef(false);
 
   const { source, type } = useMemo(() => {
     const rawSource = driveUrl || mediaUrl || '';
@@ -43,6 +57,7 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl }: ContentP
     setIsReady(false);
     setHasStarted(false);
     setIsBuffering(true);
+    restoredRef.current = false;
     const video = videoRef.current;
     if (!video || !source || type === 'audio') return;
     video.load();
@@ -52,6 +67,23 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl }: ContentP
     }, 250);
     return () => window.clearTimeout(timer);
   }, [source, type]);
+
+  function restorePosition(element: HTMLMediaElement | null) {
+    if (!element || restoredRef.current) return;
+    const position = Math.floor(initialPositionSeconds || 0);
+    if (position > 5 && Number.isFinite(element.duration) && position < element.duration - 8) {
+      element.currentTime = position;
+    }
+    restoredRef.current = true;
+  }
+
+  function handleTimeUpdate(element: HTMLMediaElement | null) {
+    if (!element || !lessonId) return;
+    const now = Date.now();
+    if (now - lastSavedAtRef.current < 10000) return;
+    lastSavedAtRef.current = now;
+    saveProgress(lessonId, element.currentTime, false);
+  }
 
   if (!source) {
     return (
@@ -65,7 +97,18 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl }: ContentP
   if (type === 'audio') {
     return (
       <div className="lesson-player premium-audio-player">
-        <audio controls controlsList="nodownload noplaybackrate" src={source} preload="auto" style={{ width: '100%' }} />
+        <audio
+          ref={audioRef}
+          controls
+          controlsList="nodownload noplaybackrate"
+          src={source}
+          preload="auto"
+          style={{ width: '100%' }}
+          onLoadedMetadata={() => restorePosition(audioRef.current)}
+          onPlay={() => saveProgress(lessonId, audioRef.current?.currentTime || 0, false)}
+          onTimeUpdate={() => handleTimeUpdate(audioRef.current)}
+          onEnded={() => saveProgress(lessonId, audioRef.current?.duration || 0, true)}
+        />
       </div>
     );
   }
@@ -94,11 +137,13 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl }: ContentP
         controlsList="nodownload noplaybackrate"
         playsInline
         preload="auto"
-        onLoadedMetadata={() => setIsReady(true)}
+        onLoadedMetadata={() => { setIsReady(true); restorePosition(videoRef.current); }}
         onCanPlay={() => { setIsReady(true); setIsBuffering(false); }}
         onWaiting={() => setIsBuffering(true)}
-        onPlaying={() => { setHasStarted(true); setIsBuffering(false); }}
+        onPlaying={() => { setHasStarted(true); setIsBuffering(false); saveProgress(lessonId, videoRef.current?.currentTime || 0, false); }}
         onPlay={() => setHasStarted(true)}
+        onTimeUpdate={() => handleTimeUpdate(videoRef.current)}
+        onEnded={() => saveProgress(lessonId, videoRef.current?.duration || 0, true)}
       />
     </div>
   );
