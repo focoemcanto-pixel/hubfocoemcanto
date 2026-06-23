@@ -15,6 +15,18 @@ function wantsJson(request: Request) {
   return request.headers.get('accept')?.includes('application/json');
 }
 
+async function followCounts(supabase: ReturnType<typeof createAdminClient>, followerId: string, followingId: string) {
+  const [{ count: targetFollowers }, { count: meFollowing }] = await Promise.all([
+    supabase.from('community_follows').select('id', { count: 'exact', head: true }).eq('following_id', followingId),
+    supabase.from('community_follows').select('id', { count: 'exact', head: true }).eq('follower_id', followerId),
+  ]);
+
+  return {
+    target_followers_count: targetFollowers || 0,
+    me_following_count: meFollowing || 0,
+  };
+}
+
 export async function POST(request: Request) {
   const form = await request.formData();
   const followingId = String(form.get('following_id') || '').trim();
@@ -37,35 +49,34 @@ export async function POST(request: Request) {
   }
 
   if (profile.id === followingId) {
+    const counts = await followCounts(supabase, profile.id, followingId).catch(() => ({ target_followers_count: 0, me_following_count: 0 }));
     return wantsJson(request)
-      ? NextResponse.json({ ok: true, following: false, self: true })
+      ? NextResponse.json({ ok: true, following: false, self: true, ...counts })
       : NextResponse.redirect(new URL(returnTo, request.url));
   }
 
   if (nextValue) {
     const { error } = await supabase
       .from('community_follows')
-      .upsert({ follower_id: profile.id, following_id: followingId }, { onConflict: 'follower_id,following_id', ignoreDuplicates: true });
+      .upsert({ follower_id: profile.id, following_id: followingId }, { onConflict: 'follower_id,following_id', ignoreDuplicates: false });
 
     if (error) {
       return wantsJson(request)
         ? NextResponse.json({ error: 'follow_failed', detail: error.message }, { status: 500 })
         : NextResponse.redirect(new URL(returnTo, request.url));
     }
-
-    return wantsJson(request)
-      ? NextResponse.json({ ok: true, following: true })
-      : NextResponse.redirect(new URL(returnTo, request.url));
+  } else {
+    const { error } = await supabase.from('community_follows').delete().eq('follower_id', profile.id).eq('following_id', followingId);
+    if (error) {
+      return wantsJson(request)
+        ? NextResponse.json({ error: 'unfollow_failed', detail: error.message }, { status: 500 })
+        : NextResponse.redirect(new URL(returnTo, request.url));
+    }
   }
 
-  const { error } = await supabase.from('community_follows').delete().eq('follower_id', profile.id).eq('following_id', followingId);
-  if (error) {
-    return wantsJson(request)
-      ? NextResponse.json({ error: 'unfollow_failed', detail: error.message }, { status: 500 })
-      : NextResponse.redirect(new URL(returnTo, request.url));
-  }
+  const counts = await followCounts(supabase, profile.id, followingId).catch(() => ({ target_followers_count: 0, me_following_count: 0 }));
 
   return wantsJson(request)
-    ? NextResponse.json({ ok: true, following: false })
+    ? NextResponse.json({ ok: true, following: nextValue, ...counts })
     : NextResponse.redirect(new URL(returnTo, request.url));
 }
