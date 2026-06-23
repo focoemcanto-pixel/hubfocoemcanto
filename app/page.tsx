@@ -1,76 +1,97 @@
-const modules = [
-  { title: 'Segunda Voz', text: 'Aprenda a sustentar outra linha vocal sem voltar para a melodia principal.' },
-  { title: 'Firmar Afinação', text: 'Treinos objetivos para estabilidade, centro tonal e segurança vocal.' },
-  { title: 'Intuição Vocal', text: 'Desenvolva percepção para encontrar caminhos de divisão vocal com naturalidade.' },
-  { title: 'Duetos Guiados', text: 'Pratique com materiais preparados para cantar junto e enviar sua execução.' },
-];
+import { GraduationCap, Lock, Mail, PlayCircle, ShieldCheck, Sparkles, Star, Users, Waves } from 'lucide-react';
 
-const steps = [
-  'Assista aos vídeos e ouça os áudios de treino.',
-  'Grave sua execução pelo celular ou envie um link.',
-  'Receba avaliação com estrelas e comentário do professor.',
-];
+type LoginSearch = { email?: string; setup?: string; password?: string; erro?: string };
 
-export default function HomePage() {
+function message(code?: string) {
+  if (!code) return '';
+  const map: Record<string, string> = {
+    email: 'Informe um e-mail válido.',
+    perfil: 'Não consegui preparar seu perfil agora. Tente novamente.',
+    senha_curta: 'A senha precisa ter pelo menos 6 caracteres.',
+    senha_diferente: 'As senhas não conferem.',
+    schema_senha: 'Falta ativar a coluna de senha no banco. Rode a migração de login seguro.',
+    senha: 'Não consegui salvar sua senha. Tente novamente.',
+    senha_obrigatoria: 'Digite sua senha para entrar.',
+    senha_incorreta: 'Senha incorreta. Tente novamente.',
+  };
+  return map[code] || 'Não foi possível continuar. Tente novamente.';
+}
+
+const courses = ['Técnica Vocal do Zero', 'Ressonância e Projeção', 'Afinação na Prática', 'Interpretação com Verdade', 'Exercícios Avançados', 'Criatividade e Improviso'];
+
+export default async function HomePage({ searchParams }: { searchParams?: Promise<LoginSearch> }) {
+  const params = searchParams ? await searchParams : {};
+  const email = String(params.email || '');
+  const setup = params.setup === '1';
+  const passwordMode = params.password === '1';
+  const error = message(params.erro);
+
   return (
-    <main className="marketing-page">
-      <nav className="marketing-nav">
-        <strong>Hub Foco em Canto</strong>
-        <div>
-          <a href="/login">Entrar</a>
-          <a className="button" href="/cadastro">Criar acesso</a>
-        </div>
-      </nav>
-
-      <section className="hero-grid">
-        <div className="hero-copy">
-          <p className="eyebrow">Grupo VIP Foco em Harmonia</p>
-          <h1 className="hero-title">Uma experiência premium para evoluir na divisão vocal.</h1>
-          <p className="hero-subtitle">O conteúdo que antes ficava espalhado no Drive agora vira uma jornada guiada com trilhas, exercícios, envios, avaliações e comunidade.</p>
-          <div className="hero-actions">
-            <a className="button" href="/login">Acessar meu Hub</a>
-            <a className="button secondary" href="#como-funciona">Ver como funciona</a>
+    <main className="academy-login-page">
+      <section className="academy-login-shell">
+        <aside className="academy-login-brand">
+          <div className="academy-logo-mark"><Waves size={36} /></div>
+          <div className="academy-wordmark"><strong>Foco em Canto</strong><span>Academy</span></div>
+          <h1>Sua voz. <span>Seu caminho.</span></h1>
+          <p>A plataforma completa para transformar técnica, expressão e talento em propósito.</p>
+          <div className="academy-benefits">
+            <article><GraduationCap size={24} /><div><strong>Todos os cursos</strong><span>Aprenda no seu ritmo com acesso à escola.</span></div></article>
+            <article><PlayCircle size={24} /><div><strong>Aulas e exercícios</strong><span>Conteúdo prático para evoluir sempre.</span></div></article>
+            <article><Users size={24} /><div><strong>Comunidade exclusiva</strong><span>Compartilhe vídeos, curta e comente.</span></div></article>
+            <article><Star size={24} /><div><strong>Evolução contínua</strong><span>Novos conteúdos para levar sua voz mais longe.</span></div></article>
           </div>
-        </div>
-
-        <div className="phone-preview" aria-label="Preview do app">
-          <div className="phone-top" />
-          <div className="phone-card highlight">
-            <span>Continue sua jornada</span>
-            <strong>Segunda Voz</strong>
-            <div className="progress"><span style={{ width: '42%' }} /></div>
-            <small>14 de 35 exercícios</small>
+          <div className="academy-course-grid" aria-hidden="true">
+            {courses.map((course, index) => <div className="academy-mini-course" key={course}><small>Curso</small><strong>{course}</strong><span>{index + 8}</span></div>)}
           </div>
-          <div className="phone-card"><strong>Maranata</strong><small>Enviar atividade</small></div>
-          <div className="phone-card"><strong>Dueto guiado</strong><small>Avaliação pendente</small></div>
-          <div className="phone-nav"><span /> <span /> <span /> <span /> <span /></div>
-        </div>
+        </aside>
+
+        <section className="academy-login-panel">
+          <div className="academy-login-panel-inner">
+            <p className="academy-eyebrow"><Sparkles size={16} /> Acesso seguro</p>
+            <h2>{setup ? 'Crie sua senha de acesso' : passwordMode ? 'Bem-vindo(a) de volta' : 'Entre na Foco em Canto Academy'}</h2>
+            <p className="academy-muted">
+              {setup
+                ? 'Este será seu acesso definitivo. Depois disso, ninguém entra apenas sabendo seu e-mail.'
+                : passwordMode
+                  ? 'Encontramos seu cadastro. Confirme sua senha para continuar sua evolução.'
+                  : 'Faça login para acessar seus cursos, comunidade e atividades.'}
+            </p>
+            {error ? <div className="academy-login-error">{error}</div> : null}
+
+            {setup ? (
+              <form className="academy-login-form" action="/auth/login" method="post">
+                <input type="hidden" name="intent" value="set-password" />
+                <label><span>E-mail</span><div><Mail size={20} /><input name="email" type="email" required defaultValue={email} placeholder="seu@email.com" /></div></label>
+                <label><span>Nova senha</span><div><Lock size={20} /><input name="password" type="password" required minLength={6} placeholder="mínimo 6 caracteres" /></div></label>
+                <label><span>Confirmar senha</span><div><Lock size={20} /><input name="confirm_password" type="password" required minLength={6} placeholder="repita a senha" /></div></label>
+                <button className="academy-primary-button" type="submit">Criar senha e entrar <span>→</span></button>
+              </form>
+            ) : passwordMode ? (
+              <form className="academy-login-form" action="/auth/login" method="post">
+                <input type="hidden" name="intent" value="login" />
+                <label><span>E-mail</span><div><Mail size={20} /><input name="email" type="email" required defaultValue={email} placeholder="seu@email.com" /></div></label>
+                <label><span>Senha <a href="/">Usar outro e-mail</a></span><div><Lock size={20} /><input name="password" type="password" required placeholder="sua senha" /></div></label>
+                <button className="academy-outline-button" type="submit">Entrar <span>→</span></button>
+              </form>
+            ) : (
+              <form className="academy-login-form" action="/auth/login" method="post">
+                <input type="hidden" name="intent" value="continue" />
+                <label><span>E-mail</span><div><Mail size={20} /><input name="email" type="email" required defaultValue={email} placeholder="seu@email.com" /></div></label>
+                <button className="academy-primary-button" type="submit">Continuar <span>→</span></button>
+              </form>
+            )}
+
+            <div className="academy-first-access"><ShieldCheck size={48} /><div><strong>Primeiro acesso?</strong><p>Vamos criar sua conta e você escolherá uma senha segura.</p></div></div>
+            <p className="academy-security"><Lock size={16} /> Seus dados estão protegidos com segurança.</p>
+          </div>
+        </section>
       </section>
 
-      <section className="section-panel">
-        <p className="eyebrow">Trilhas principais</p>
-        <h2>Organização com cara de aplicativo, não de pasta.</h2>
-        <div className="grid">
-          {modules.map((module) => (
-            <article className="card feature-card" key={module.title}>
-              <h3>{module.title}</h3>
-              <p className="muted">{module.text}</p>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="section-panel" id="como-funciona">
-        <p className="eyebrow">Como funciona</p>
-        <h2>Do treino à avaliação em poucos passos.</h2>
-        <div className="grid">
-          {steps.map((step, index) => (
-            <article className="card feature-card" key={step}>
-              <p className="stat">0{index + 1}</p>
-              <p>{step}</p>
-            </article>
-          ))}
-        </div>
+      <section className="academy-login-stats">
+        <div><Users size={28} /><strong>+30.000</strong><span>alunos</span></div>
+        <div><PlayCircle size={28} /><strong>+500</strong><span>aulas</span></div>
+        <div><Star size={28} /><strong>24/7</strong><span>acesso</span></div>
+        <div><Waves size={28} /><strong>Transforme</strong><span>sua voz</span></div>
       </section>
     </main>
   );
