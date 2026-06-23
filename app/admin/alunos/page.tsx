@@ -11,7 +11,7 @@ function normalizeEmail(value?: string | null) {
 }
 
 function pushAccess(map: Map<string, Row[]>, key: string | null | undefined, access: Row) {
-  const normalized = normalizeEmail(key) || String(key || '').trim();
+  const normalized = String(key || '').trim().toLowerCase();
   if (!normalized) return;
   map.set(normalized, [...(map.get(normalized) || []), access]);
 }
@@ -26,26 +26,57 @@ function uniqueAccesses(accesses: Row[]) {
   });
 }
 
+async function fetchAllRows(
+  supabase: ReturnType<typeof createAdminClient>,
+  table: string,
+  select: string,
+  orderColumn: string,
+  ascending = false,
+) {
+  const pageSize = 1000;
+  const rows: Row[] = [];
+  for (let from = 0; from < 20000; from += pageSize) {
+    const to = from + pageSize - 1;
+    const { data, error } = await supabase.from(table).select(select).order(orderColumn, { ascending }).range(from, to);
+    if (error) break;
+    const chunk = (data || []) as Row[];
+    rows.push(...chunk);
+    if (chunk.length < pageSize) break;
+  }
+  return rows;
+}
+
 export default async function AdminStudentsPage({ searchParams }: { searchParams?: Promise<Search> }) {
   const query = searchParams ? await searchParams : {};
   const supabase = createAdminClient();
-  const [{ data: profiles }, { data: accessRows }, { data: products }] = await Promise.all([
-    supabase.from('profiles').select('id,name,email,whatsapp,avatar_url,role,created_at').order('created_at', { ascending: false }).limit(5000),
-    supabase.from('subscriptions').select('id,profile_id,status,course_key,current_period_start,current_period_end,product_name,source_product_name,provider,provider_customer_id,updated_at').order('updated_at', { ascending: false }).limit(10000),
+  const [profiles, accessRows, { data: products }] = await Promise.all([
+    fetchAllRows(supabase, 'profiles', 'id,name,email,whatsapp,avatar_url,role,created_at', 'created_at', false),
+    fetchAllRows(supabase, 'subscriptions', 'id,profile_id,status,course_key,current_period_start,current_period_end,product_name,source_product_name,provider,provider_customer_id,updated_at', 'updated_at', false),
     supabase.from('products').select('name').order('created_at', { ascending: false }),
   ]);
 
   const accessByProfile = new Map<string, Row[]>();
   const accessByEmail = new Map<string, Row[]>();
-  ((accessRows || []) as Row[]).forEach((access) => {
+  accessRows.forEach((access) => {
     pushAccess(accessByProfile, access.profile_id, access);
     pushAccess(accessByEmail, access.provider_customer_id, access);
   });
 
-  const list = ((profiles || []) as Row[]).map((student) => {
-    const byId = accessByProfile.get(String(student.id)) || [];
+  const profileById = new Map<string, Row>();
+  const profileByEmail = new Map<string, Row>();
+  profiles.forEach((profile) => {
+    if (profile.id) profileById.set(String(profile.id), profile);
+    const email = normalizeEmail(profile.email);
+    if (email) profileByEmail.set(email, profile);
+  });
+
+  const studentByKey = new Map<string, Row>();
+  profiles.forEach((student) => {
+    const key = String(student.id || normalizeEmail(student.email));
+    if (!key) return;
+    const byId = accessByProfile.get(String(student.id).toLowerCase()) || [];
     const byEmail = accessByEmail.get(normalizeEmail(student.email)) || [];
-    return {
+    studentByKey.set(key, {
       id: student.id,
       name: student.name,
       email: student.email,
@@ -53,8 +84,28 @@ export default async function AdminStudentsPage({ searchParams }: { searchParams
       avatar_url: student.avatar_url,
       created_at: student.created_at,
       subscriptions: uniqueAccesses([...byId, ...byEmail]),
-    };
+    });
   });
+
+  accessRows.forEach((access) => {
+    const profile = profileById.get(String(access.profile_id)) || profileByEmail.get(normalizeEmail(access.provider_customer_id));
+    const key = String(profile?.id || access.profile_id || normalizeEmail(access.provider_customer_id));
+    if (!key || studentByKey.has(key)) return;
+    const byId = accessByProfile.get(String(access.profile_id || '').toLowerCase()) || [];
+    const byEmail = accessByEmail.get(normalizeEmail(access.provider_customer_id)) || [];
+    const email = profile?.email || access.provider_customer_id || null;
+    studentByKey.set(key, {
+      id: profile?.id || key,
+      name: profile?.name || email?.split('@')[0] || 'Aluno sem nome',
+      email,
+      whatsapp: profile?.whatsapp || null,
+      avatar_url: profile?.avatar_url || null,
+      created_at: profile?.created_at || access.updated_at || null,
+      subscriptions: uniqueAccesses([...byId, ...byEmail]),
+    });
+  });
+
+  const list = Array.from(studentByKey.values()).sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
 
   return (
     <main className="admin-page-clean admin-students-page">
