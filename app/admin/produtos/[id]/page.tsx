@@ -17,6 +17,11 @@ function slugify(value: string) {
   return value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || `item-${Date.now()}`;
 }
 
+async function nextModuleOrder(supabase: ReturnType<typeof createAdminClient>) {
+  const { data } = await supabase.from('modules').select('sort_order').order('sort_order', { ascending: false }).limit(1).maybeSingle();
+  return Number(data?.sort_order || 0) + 1;
+}
+
 async function createModule(formData: FormData) {
   'use server';
   const supabase = createAdminClient();
@@ -27,17 +32,72 @@ async function createModule(formData: FormData) {
   const storageProvider = String(formData.get('storage_provider') || 'drive');
   if (!productId || !courseId || !title) return;
 
+  const submittedOrder = Number(formData.get('sort_order') || 0);
+  const sortOrder = submittedOrder > 0 ? submittedOrder : await nextModuleOrder(supabase);
+
   const { data: module } = await supabase.from('modules').insert({
     title,
     slug: `${slugify(title)}-${Date.now()}`,
     description,
-    sort_order: Number(formData.get('sort_order') || 0),
+    sort_order: sortOrder,
     storage_provider: storageProvider,
     is_active: true,
   }).select('id').single();
 
-  if (module?.id) await supabase.from('course_module_links').insert({ course_id: courseId, module_id: module.id, sort_order: Number(formData.get('sort_order') || 0) });
+  if (module?.id) await supabase.from('course_module_links').insert({ course_id: courseId, module_id: module.id, sort_order: sortOrder });
   revalidatePath(`/admin/produtos/${productId}`);
+  revalidatePath('/aluno');
+  revalidatePath('/aluno/biblioteca');
+}
+
+async function moveModule(formData: FormData) {
+  'use server';
+  const supabase = createAdminClient();
+  const productId = String(formData.get('product_id') || '');
+  const courseId = String(formData.get('course_id') || '');
+  const moduleId = String(formData.get('module_id') || '');
+  const direction = String(formData.get('direction') || 'up');
+  if (!moduleId) return;
+
+  const { data: modulesData } = await supabase
+    .from('modules')
+    .select('id,sort_order,is_active,description')
+    .eq('is_active', true)
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true });
+
+  let list = ((modulesData || []) as Row[]).filter((module) => !String(module.description || '').toLowerCase().includes('importados da pasta'));
+
+  if (courseId) {
+    const { data: linksData } = await supabase.from('course_module_links').select('module_id,sort_order').eq('course_id', courseId).order('sort_order', { ascending: true });
+    const linkOrder = new Map(((linksData || []) as Row[]).map((link) => [String(link.module_id), Number(link.sort_order || 0)]));
+    if (linkOrder.size) list = list.filter((module) => linkOrder.has(String(module.id))).sort((a, b) => (linkOrder.get(String(a.id)) || Number(a.sort_order || 0)) - (linkOrder.get(String(b.id)) || Number(b.sort_order || 0)));
+  }
+
+  const index = list.findIndex((module) => String(module.id) === moduleId);
+  const targetIndex = direction === 'down' ? index + 1 : index - 1;
+  if (index < 0 || targetIndex < 0 || targetIndex >= list.length) return;
+
+  const current = list[index];
+  const target = list[targetIndex];
+  const currentOrder = Number(current.sort_order || index + 1);
+  const targetOrder = Number(target.sort_order || targetIndex + 1);
+
+  await Promise.all([
+    supabase.from('modules').update({ sort_order: targetOrder }).eq('id', current.id),
+    supabase.from('modules').update({ sort_order: currentOrder }).eq('id', target.id),
+  ]);
+
+  if (courseId) {
+    await Promise.all([
+      supabase.from('course_module_links').update({ sort_order: targetOrder }).eq('course_id', courseId).eq('module_id', current.id),
+      supabase.from('course_module_links').update({ sort_order: currentOrder }).eq('course_id', courseId).eq('module_id', target.id),
+    ]);
+  }
+
+  if (productId) revalidatePath(`/admin/produtos/${productId}`);
+  revalidatePath('/aluno');
+  revalidatePath('/aluno/biblioteca');
 }
 
 async function deleteLesson(formData: FormData) {
@@ -62,6 +122,8 @@ async function deleteModule(formData: FormData) {
   if (courseId) await supabase.from('course_module_links').delete().eq('course_id', courseId).eq('module_id', moduleId);
   await supabase.from('modules').update({ is_active: false, sort_order: 9999 }).eq('id', moduleId);
   if (productId) revalidatePath(`/admin/produtos/${productId}`);
+  revalidatePath('/aluno');
+  revalidatePath('/aluno/biblioteca');
 }
 
 function matchesProduct(subscription: Row, product: Row, isVipProduct: boolean) {
@@ -88,16 +150,21 @@ export default async function ProductEditPage({ params, searchParams }: { params
   const courseId = course?.id || '';
   const isVipProduct = String(product.slug || '').includes('grupo-vip') || String(product.name || '').toLowerCase().includes('grupo vip');
   const [{ data: links }, { data: allModules }, { data: profiles }, { data: subscriptions }] = await Promise.all([
-    courseId ? supabase.from('course_module_links').select('module_id,sort_order').eq('course_id', courseId).order('sort_order') : Promise.resolve({ data: [] }),
-    supabase.from('modules').select('id,title,slug,description,sort_order,cover_url,is_active,exercises(id,title,slug,media_type,sort_order)').order('sort_order'),
+    courseId ? supabase.from('course_module_links').select('module_id,sort_order').eq('course_id', courseId).order('sort_order', { ascending: true }) : Promise.resolve({ data: [] }),
+    supabase.from('modules').select('id,title,slug,description,sort_order,cover_url,is_active,exercises(id,title,slug,media_type,sort_order)').order('sort_order', { ascending: true }).order('created_at', { ascending: true }),
     supabase.from('profiles').select('id,name,email,whatsapp,avatar_url,role,created_at').order('created_at', { ascending: false }),
     supabase.from('subscriptions').select('profile_id,status,product_name,current_period_end,created_at').order('created_at', { ascending: false }),
   ]);
 
+  const linkOrder = new Map(((links || []) as Row[]).map((link) => [String(link.module_id), Number(link.sort_order || 0)]));
   const linkedIds = new Set(((links || []) as Row[]).map((link) => link.module_id));
   const cleanModules = ((allModules || []) as Row[]).filter((module) => module.is_active !== false).filter((module) => !String(module.description || '').toLowerCase().includes('importados da pasta'));
   const linkedModules = cleanModules.filter((module) => linkedIds.has(module.id));
-  const modules = isVipProduct ? (linkedModules.length ? linkedModules : cleanModules) : linkedModules;
+  const modules = (isVipProduct ? (linkedModules.length ? linkedModules : cleanModules) : linkedModules).sort((a, b) => {
+    const aOrder = linkOrder.get(String(a.id)) || Number(a.sort_order || 0);
+    const bOrder = linkOrder.get(String(b.id)) || Number(b.sort_order || 0);
+    return aOrder - bOrder;
+  });
   const tabHref = (tab: string) => `/admin/produtos/${product.id}?tab=${tab}`;
 
   const subsByProfile = new Map<string, Row[]>();
@@ -137,19 +204,26 @@ export default async function ProductEditPage({ params, searchParams }: { params
             <input type="hidden" name="course_id" value={courseId} />
             <label>Nome do modulo<input name="title" placeholder="Ex: Introducao" required /></label>
             <label>Descricao<textarea name="description" placeholder="O que o aluno vera neste modulo?" /></label>
-            <div className="admin-clean-form-row"><label>Origem<select name="storage_provider" defaultValue="drive"><option value="drive">Google Drive</option><option value="r2">Cloudflare R2</option></select></label><label>Ordem<input name="sort_order" type="number" defaultValue="0" /></label></div>
+            <div className="admin-clean-form-row"><label>Origem<select name="storage_provider" defaultValue="drive"><option value="drive">Google Drive</option><option value="r2">Cloudflare R2</option></select></label><label>Ordem<input name="sort_order" type="number" placeholder="automático" /></label></div>
             <button className="admin-clean-button primary" type="submit">Criar modulo</button>
           </form>
 
           <div className="admin-member-modules">
-            {modules.map((module) => {
+            {modules.map((module, index) => {
               const lessons = ((module.exercises || []) as Row[]).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
               const importUrl = `/admin/conteudos/selecionar-drive?module=${module.id}`;
+              const displayOrder = String(index + 1).padStart(2, '0');
               return (
                 <article className="admin-member-module" key={module.id}>
                   <div className="admin-member-module-head">
-                    <div><span className="admin-clean-pill">drive · {lessons.length} conteudos</span><h3>{module.title}</h3><p>{module.description || 'Sem descricao.'}</p></div>
-                    <div className="admin-clean-actions"><a className="admin-clean-button secondary" href={`/admin/biblioteca/${module.id}?product=${product.id}`}>Editar modulo</a><AdminLoadingLink className="admin-clean-button primary" href={importUrl} loadingLabel="Abrindo Drive...">+ Aula</AdminLoadingLink><form action={deleteModule}><input type="hidden" name="product_id" value={product.id} /><input type="hidden" name="course_id" value={courseId} /><input type="hidden" name="module_id" value={module.id} /><button className="admin-clean-button danger" type="submit">Excluir modulo</button></form></div>
+                    <div><span className="admin-clean-pill">{displayOrder} · drive · {lessons.length} conteudos</span><h3>{module.title}</h3><p>{module.description || 'Sem descricao.'}</p></div>
+                    <div className="admin-clean-actions">
+                      <form action={moveModule}><input type="hidden" name="product_id" value={product.id} /><input type="hidden" name="course_id" value={courseId} /><input type="hidden" name="module_id" value={module.id} /><input type="hidden" name="direction" value="up" /><button className="admin-clean-button secondary" type="submit" disabled={index === 0} title="Subir módulo">↑</button></form>
+                      <form action={moveModule}><input type="hidden" name="product_id" value={product.id} /><input type="hidden" name="course_id" value={courseId} /><input type="hidden" name="module_id" value={module.id} /><input type="hidden" name="direction" value="down" /><button className="admin-clean-button secondary" type="submit" disabled={index === modules.length - 1} title="Descer módulo">↓</button></form>
+                      <a className="admin-clean-button secondary" href={`/admin/biblioteca/${module.id}?product=${product.id}`}>Editar modulo</a>
+                      <AdminLoadingLink className="admin-clean-button primary" href={importUrl} loadingLabel="Abrindo Drive...">+ Aula</AdminLoadingLink>
+                      <form action={deleteModule}><input type="hidden" name="product_id" value={product.id} /><input type="hidden" name="course_id" value={courseId} /><input type="hidden" name="module_id" value={module.id} /><button className="admin-clean-button danger" type="submit">Excluir modulo</button></form>
+                    </div>
                   </div>
                   <div className="admin-lesson-list">
                     {lessons.map((lesson) => <div className="admin-lesson-row" key={lesson.id}><span className="admin-drag-dot">::</span><AdminInlineLessonName moduleId={module.id} lessonId={lesson.id} initialTitle={lesson.title || ''} /><small>{lesson.media_type || 'video'}</small><div className="admin-lesson-actions"><a href={`/aluno/aula/${lesson.slug}`} title="Abrir aula">Abrir</a><a href={`/admin/conteudos/exercicios/${lesson.id}/editar`} title="Editar aula">Editar</a><form action={deleteLesson}><input type="hidden" name="product_id" value={product.id} /><input type="hidden" name="lesson_id" value={lesson.id} /><button type="submit" title="Excluir aula">Excluir</button></form></div></div>)}
