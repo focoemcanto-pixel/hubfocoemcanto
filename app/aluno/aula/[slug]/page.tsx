@@ -10,6 +10,7 @@ import {
   Headphones,
   HelpCircle,
   Home,
+  Lock,
   Mic,
   Play,
   Sparkles,
@@ -21,8 +22,11 @@ import {
 import { ContentPlayer } from '@/components/content-player';
 import { LessonProgressButton } from '@/components/lesson-progress-button';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { isAccessActive } from '@/lib/access/products';
 
 export const dynamic = 'force-dynamic';
+
+const VIP_CHECKOUT_URL = process.env.NEXT_PUBLIC_VIP_CHECKOUT_URL || 'https://pay.kiwify.com.br/HHr4eyM';
 
 function isRealModule(module: any) {
   const description = String(module.description || '').toLowerCase();
@@ -35,6 +39,18 @@ function cleanDescription(text?: string | null) {
   if (!value) return '';
   if (value.toLowerCase().includes('material importado do google drive')) return '';
   return value;
+}
+
+function hasVipSubscription(rows: any[]) {
+  return rows.some((sub) => sub.course_key === 'grupo-vip' && isAccessActive(sub.status));
+}
+
+function VipLessonLocked() {
+  return (
+    <main className="premium-lesson-page route-surface vip-lesson-locked-page">
+      <section className="vip-lock-backdrop static"><section className="vip-lock-modal"><div className="vip-lock-icon"><Lock size={30} /></div><p className="eyebrow"><Sparkles size={14} /> Exclusivo VIP</p><h3>Essa aula é para assinantes da Sala de Atividades VIP</h3><p>Assine para acessar exercícios, enviar atividades para avaliação, postar duetos na comunidade, receber correções do professor e evoluir com acompanhamento.</p><ul><li>Exercícios guiados</li><li>Envio para avaliação</li><li>Duetos na comunidade</li><li>Correções do professor</li></ul><a className="vip-lock-cta" href={VIP_CHECKOUT_URL}>Assinar e desbloquear agora</a><Link className="vip-lock-later" href="/aluno/comunidade">Voltar para comunidade</Link></section></section>
+    </main>
+  );
 }
 
 async function getProgress(supabase: ReturnType<typeof createAdminClient>, profileId?: string, lessonId?: string) {
@@ -75,6 +91,8 @@ export default async function StudentLessonPage({ params }: { params: Promise<{ 
   const { data: profile } = email
     ? await supabase.from('profiles').select('id').eq('email', email).maybeSingle()
     : { data: null };
+  const { data: subscriptions } = profile?.id ? await supabase.from('subscriptions').select('course_key,status').eq('profile_id', profile.id) : { data: [] };
+  if (!hasVipSubscription(subscriptions || [])) return <VipLessonLocked />;
 
   const [{ data: rawModules }, { data: currentModuleLessons }, progressRow] = await Promise.all([
     supabase.from('modules').select('id,title,slug,description,sort_order,exercises(id,title,slug,sort_order)').eq('is_active', true).order('sort_order'),
