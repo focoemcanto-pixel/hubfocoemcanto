@@ -1,56 +1,138 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { Camera, Check, Loader2, X } from 'lucide-react';
+import { Camera, Check, Loader2, RotateCcw, X } from 'lucide-react';
 
 type Props = { name: string; username: string; bio: string; whatsapp: string; avatarUrl: string; initials: string };
+type Point = { x: number; y: number };
+
+const cropCss = `.ig-crop-modal{position:fixed;inset:0;z-index:120;background:rgba(0,0,0,.72);backdrop-filter:blur(18px);display:grid;place-items:end center}.ig-crop-sheet{width:min(100%,560px);max-height:92vh;overflow:auto;border:1px solid rgba(255,255,255,.14);border-radius:34px 34px 0 0;background:#07070d;color:#fff;box-shadow:0 -24px 100px rgba(0,0,0,.55);padding:18px 22px 28px}.ig-crop-sheet header{display:grid;grid-template-columns:56px 1fr 84px;align-items:center;gap:10px;margin-bottom:24px}.ig-crop-sheet header strong{text-align:center;font-size:24px;letter-spacing:-.03em}.ig-crop-sheet header button{border:0;background:transparent;color:#fff;font-weight:900;font-size:16px;padding:10px;border-radius:14px}.ig-crop-sheet header button:last-child{color:#2d9cff}.ig-crop-stage{display:grid;place-items:center;padding:8px 0 18px}.ig-crop-circle{position:relative;width:min(78vw,340px);height:min(78vw,340px);border-radius:50%;overflow:hidden;border:4px solid #fff;background:#111;touch-action:none;user-select:none;cursor:grab;box-shadow:0 24px 80px rgba(0,0,0,.36)}.ig-crop-circle:active{cursor:grabbing}.ig-crop-image{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;will-change:transform;transform-origin:center center;-webkit-user-drag:none;user-select:none;pointer-events:none}.ig-crop-help{text-align:center;color:rgba(255,255,255,.64);font-weight:750;line-height:1.45;margin:6px auto 0;max-width:340px}.ig-crop-actions{display:flex;justify-content:center;gap:10px;margin-top:16px}.ig-crop-soft-button{display:inline-flex;align-items:center;gap:8px;border:1px solid rgba(255,255,255,.14);border-radius:999px;background:rgba(255,255,255,.06);color:#fff;padding:11px 14px;font-weight:900}.ig-crop-mask-hint{position:absolute;inset:10px;border-radius:50%;border:1px solid rgba(255,255,255,.38);pointer-events:none}.ig-crop-safe-area{height:18px}@media(min-width:720px){.ig-crop-modal{place-items:center}.ig-crop-sheet{border-radius:34px;max-height:90vh}}@media(max-width:520px){.ig-crop-sheet{padding:16px 18px 26px}.ig-crop-sheet header{grid-template-columns:44px 1fr 78px}.ig-crop-sheet header strong{font-size:21px}.ig-crop-circle{width:min(82vw,340px);height:min(82vw,340px)}}`;
 
 export function ProfileEditor({ name, username, bio, whatsapp, avatarUrl, initials }: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
+  const circleRef = useRef<HTMLDivElement | null>(null);
+  const dragRef = useRef<{ start: Point; position: Point } | null>(null);
+  const touchRef = useRef<{ distance: number; zoom: number; position: Point; center: Point } | null>(null);
+  const lastTapRef = useRef(0);
   const [preview, setPreview] = useState(avatarUrl);
   const [file, setFile] = useState<File | null>(null);
   const [cropSource, setCropSource] = useState('');
   const [cropFileName, setCropFileName] = useState('avatar.jpg');
   const [zoom, setZoom] = useState(1.08);
-  const [x, setX] = useState(50);
-  const [y, setY] = useState(50);
+  const [position, setPosition] = useState<Point>({ x: 0, y: 0 });
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [message, setMessage] = useState('');
   const [formValues, setFormValues] = useState({ name, headline: username, bio, whatsapp });
+
+  function clampZoom(value: number) { return Math.max(1, Math.min(3.2, value)); }
+  function clampPosition(next: Point, nextZoom = zoom) {
+    const circle = circleRef.current;
+    const size = circle?.clientWidth || 340;
+    const limit = (size * (nextZoom - 1)) / 2 + 70;
+    return { x: Math.max(-limit, Math.min(limit, next.x)), y: Math.max(-limit, Math.min(limit, next.y)) };
+  }
+  function resetCrop() { setZoom(1.08); setPosition({ x: 0, y: 0 }); }
+  function touchPoint(touch: React.Touch) { return { x: touch.clientX, y: touch.clientY }; }
+  function distance(a: Point, b: Point) { return Math.hypot(a.x - b.x, a.y - b.y); }
+  function midpoint(a: Point, b: Point) { return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; }
 
   function chooseFile(next?: File) {
     if (!next) return;
     setCropFileName(next.name || 'avatar.jpg');
     setCropSource(URL.createObjectURL(next));
-    setZoom(1.08); setX(50); setY(50);
+    resetCrop();
     setStatus('idle'); setMessage('');
+  }
+
+  function handlePointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.pointerType === 'touch') return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragRef.current = { start: { x: event.clientX, y: event.clientY }, position };
+  }
+  function handlePointerMove(event: React.PointerEvent<HTMLDivElement>) {
+    if (!dragRef.current || event.pointerType === 'touch') return;
+    const dx = event.clientX - dragRef.current.start.x;
+    const dy = event.clientY - dragRef.current.start.y;
+    setPosition(clampPosition({ x: dragRef.current.position.x + dx, y: dragRef.current.position.y + dy }));
+  }
+  function handlePointerUp(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.pointerType !== 'touch') dragRef.current = null;
+  }
+  function handleTouchStart(event: React.TouchEvent<HTMLDivElement>) {
+    const now = Date.now();
+    if (event.touches.length === 1) {
+      const point = touchPoint(event.touches[0]);
+      dragRef.current = { start: point, position };
+      if (now - lastTapRef.current < 280) resetCrop();
+      lastTapRef.current = now;
+    }
+    if (event.touches.length === 2) {
+      event.preventDefault();
+      const a = touchPoint(event.touches[0]);
+      const b = touchPoint(event.touches[1]);
+      touchRef.current = { distance: distance(a, b), zoom, position, center: midpoint(a, b) };
+    }
+  }
+  function handleTouchMove(event: React.TouchEvent<HTMLDivElement>) {
+    if (event.touches.length === 2 && touchRef.current) {
+      event.preventDefault();
+      const a = touchPoint(event.touches[0]);
+      const b = touchPoint(event.touches[1]);
+      const center = midpoint(a, b);
+      const nextZoom = clampZoom(touchRef.current.zoom * (distance(a, b) / touchRef.current.distance));
+      const nextPosition = clampPosition({ x: touchRef.current.position.x + (center.x - touchRef.current.center.x), y: touchRef.current.position.y + (center.y - touchRef.current.center.y) }, nextZoom);
+      setZoom(nextZoom);
+      setPosition(nextPosition);
+      return;
+    }
+    if (event.touches.length === 1 && dragRef.current) {
+      event.preventDefault();
+      const point = touchPoint(event.touches[0]);
+      setPosition(clampPosition({ x: dragRef.current.position.x + point.x - dragRef.current.start.x, y: dragRef.current.position.y + point.y - dragRef.current.start.y }));
+    }
+  }
+  function handleTouchEnd() { dragRef.current = null; touchRef.current = null; }
+  function handleWheel(event: React.WheelEvent<HTMLDivElement>) {
+    event.preventDefault();
+    const nextZoom = clampZoom(zoom + (event.deltaY > 0 ? -0.08 : 0.08));
+    setZoom(nextZoom);
+    setPosition((current) => clampPosition(current, nextZoom));
   }
 
   async function applyCrop() {
     const img = imageRef.current;
-    if (!img) return;
-    const size = 720;
+    const circle = circleRef.current;
+    if (!img || !circle) return;
+    const outputSize = 720;
+    const stageSize = circle.clientWidth || 340;
     const canvas = document.createElement('canvas');
-    canvas.width = size; canvas.height = size;
+    canvas.width = outputSize; canvas.height = outputSize;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    const naturalWidth = img.naturalWidth || size;
-    const naturalHeight = img.naturalHeight || size;
-    const sourceSize = Math.min(naturalWidth, naturalHeight) / zoom;
-    const maxX = naturalWidth - sourceSize;
-    const maxY = naturalHeight - sourceSize;
-    const sx = Math.max(0, Math.min(maxX, (x / 100) * maxX));
-    const sy = Math.max(0, Math.min(maxY, (y / 100) * maxY));
+    const naturalWidth = img.naturalWidth || outputSize;
+    const naturalHeight = img.naturalHeight || outputSize;
+    const baseScale = Math.max(stageSize / naturalWidth, stageSize / naturalHeight);
+    const drawScale = baseScale * zoom * (outputSize / stageSize);
+    ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(img, sx, sy, sourceSize, sourceSize, 0, 0, size, size);
+    ctx.fillStyle = '#05050a';
+    ctx.fillRect(0, 0, outputSize, outputSize);
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(outputSize / 2, outputSize / 2, outputSize / 2, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.translate(outputSize / 2 + position.x * (outputSize / stageSize), outputSize / 2 + position.y * (outputSize / stageSize));
+    ctx.scale(drawScale, drawScale);
+    ctx.drawImage(img, -naturalWidth / 2, -naturalHeight / 2);
+    ctx.restore();
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.9));
     if (!blob) return;
     const cropped = new File([blob], cropFileName.replace(/\.[^.]+$/, '') + '-perfil.jpg', { type: 'image/jpeg' });
     setFile(cropped);
     setPreview(URL.createObjectURL(cropped));
     setCropSource('');
-    setMessage('Foto enquadrada. Salve para aplicar no perfil.');
+    setMessage('Foto pronta. Toque em salvar para aplicar no perfil.');
   }
 
   async function save(event: React.FormEvent<HTMLFormElement>) {
@@ -78,6 +160,7 @@ export function ProfileEditor({ name, username, bio, whatsapp, avatarUrl, initia
 
   return (
     <>
+      <style dangerouslySetInnerHTML={{ __html: cropCss }} />
       <form className="ig-edit-form" onSubmit={save}>
         <section className="ig-edit-avatar-block">
           <button className="ig-edit-avatar" type="button" onClick={() => inputRef.current?.click()}>
@@ -99,7 +182,34 @@ export function ProfileEditor({ name, username, bio, whatsapp, avatarUrl, initia
         </button>
         {message ? <p className={`ig-editor-status ${status}`}>{message}</p> : null}
       </form>
-      {cropSource ? <div className="ig-crop-modal"><div className="ig-crop-sheet"><header><button type="button" onClick={() => setCropSource('')}><X size={22} /></button><strong>Editar foto</strong><button type="button" onClick={applyCrop}>Concluir</button></header><div className="ig-crop-stage"><div className="ig-crop-circle"><img ref={imageRef} src={cropSource} alt="Enquadrar foto" style={{ transform: `scale(${zoom})`, objectPosition: `${x}% ${y}%` }} /></div></div><div className="ig-crop-controls"><label>Zoom<input type="range" min="1" max="2.6" step="0.01" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} /></label><label>Horizontal<input type="range" min="0" max="100" value={x} onChange={(event) => setX(Number(event.target.value))} /></label><label>Vertical<input type="range" min="0" max="100" value={y} onChange={(event) => setY(Number(event.target.value))} /></label></div></div></div> : null}
+      {cropSource ? (
+        <div className="ig-crop-modal">
+          <div className="ig-crop-sheet">
+            <header><button type="button" onClick={() => setCropSource('')} aria-label="Cancelar"><X size={28} /></button><strong>Editar foto</strong><button type="button" onClick={applyCrop}>Concluir</button></header>
+            <div className="ig-crop-stage">
+              <div
+                ref={circleRef}
+                className="ig-crop-circle"
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+                onPointerCancel={handlePointerUp}
+                onTouchStart={handleTouchStart}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={handleTouchEnd}
+                onWheel={handleWheel}
+                onDoubleClick={resetCrop}
+              >
+                <img ref={imageRef} className="ig-crop-image" src={cropSource} alt="Enquadrar foto" style={{ transform: `translate(${position.x}px, ${position.y}px) scale(${zoom})` }} />
+                <span className="ig-crop-mask-hint" />
+              </div>
+              <p className="ig-crop-help">Arraste para posicionar. Use dois dedos para ampliar ou reduzir. Toque duas vezes para recentralizar.</p>
+              <div className="ig-crop-actions"><button className="ig-crop-soft-button" type="button" onClick={resetCrop}><RotateCcw size={16} /> Reposicionar</button></div>
+            </div>
+            <div className="ig-crop-safe-area" />
+          </div>
+        </div>
+      ) : null}
     </>
   );
 }
