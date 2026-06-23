@@ -1,6 +1,7 @@
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { isAccessActive } from '@/lib/access/products';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,6 +11,7 @@ let bucketReady = false;
 type ResolvedSubmissionContext = {
   exercise: { id: string };
   profile: { id: string; email?: string | null };
+  canRequestReview: boolean;
 };
 
 type PersistSubmissionParams = {
@@ -26,6 +28,10 @@ function pathPart(value: string) {
 function parseBoolean(value: unknown, fallback = true) {
   if (value === undefined || value === null || value === '') return fallback;
   return ['1', 'true', 'yes', 'on'].includes(String(value).toLowerCase());
+}
+
+function hasVipSubscription(rows: any[]) {
+  return rows.some((sub) => sub.course_key === 'grupo-vip' && isAccessActive(sub.status));
 }
 
 async function uploadSubmissionFile(supabase: ReturnType<typeof createAdminClient>, objectPath: string, bytes: ArrayBuffer, fileType: string) {
@@ -53,23 +59,31 @@ async function resolveExerciseAndProfile(supabase: ReturnType<typeof createAdmin
   if (!exercise?.id) return { error: NextResponse.json({ error: 'exercise_not_found' }, { status: 404 }) };
   if (profileQueryError) return { error: NextResponse.json({ error: 'profile_query_failed', detail: profileQueryError.message }, { status: 500 }) };
 
-  if (profile?.id) return { exercise, profile };
+  let currentProfile = profile;
+  if (!currentProfile?.id) {
+    const { data: created, error: profileError } = await supabase
+      .from('profiles')
+      .insert({ email, name: email.split('@')[0], role: 'student' })
+      .select('id,email')
+      .single();
 
-  const { data: created, error: profileError } = await supabase
-    .from('profiles')
-    .insert({ email, name: email.split('@')[0], role: 'student' })
-    .select('id,email')
-    .single();
+    if (profileError || !created) return { error: NextResponse.json({ error: 'profile_failed', detail: profileError?.message }, { status: 500 }) };
+    currentProfile = created;
+  }
 
-  if (profileError || !created) return { error: NextResponse.json({ error: 'profile_failed', detail: profileError?.message }, { status: 500 }) };
-  return { exercise, profile: created };
+  const { data: subscriptions } = await supabase.from('subscriptions').select('course_key,status').eq('profile_id', currentProfile.id);
+  return { exercise, profile: currentProfile, canRequestReview: hasVipSubscription(subscriptions || []) };
 }
 
 async function persistSubmission(supabase: ReturnType<typeof createAdminClient>, context: ResolvedSubmissionContext, params: PersistSubmissionParams) {
   const shouldPostCommunity = params.visibility === 'community';
-  const shouldReview = params.reviewRequested;
+  const shouldReview = context.canRequestReview && params.reviewRequested;
 
-  if (!shouldPostCommunity && !shouldReview) return NextResponse.json({ error: 'missing_destination', detail: 'Escolha postar na comunidade, enviar para avaliação ou fazer os dois.' }, { status: 400 });
+  if (params.reviewRequested && !context.canRequestReview) {
+    if (!shouldPostCommunity) return NextResponse.json({ error: 'vip_required', detail: 'Avaliação do professor é exclusiva para assinantes VIP.' }, { status: 403 });
+  }
+
+  if (!shouldPostCommunity && !shouldReview) return NextResponse.json({ error: 'missing_destination', detail: 'Escolha postar na comunidade ou envie para avaliação sendo assinante VIP.' }, { status: 400 });
 
   let submissionId: string | null = null;
   let communityPostId: string | null = null;
