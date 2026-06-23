@@ -8,6 +8,13 @@ import { isAccessActive } from '@/lib/access/products';
 export const dynamic = 'force-dynamic';
 
 const VIP_CHECKOUT_URL = process.env.NEXT_PUBLIC_VIP_CHECKOUT_URL || 'https://pay.kiwify.com.br/HHr4eyM';
+const DuetRecorderWithAccess = DuetRecorder as unknown as (props: {
+  lessonTitle: string;
+  lessonSlug: string;
+  referenceUrl?: string | null;
+  referenceEmbedUrl?: string | null;
+  canSendForReview?: boolean;
+}) => JSX.Element;
 
 function driveFileId(url?: string | null) {
   if (!url) return null;
@@ -59,7 +66,7 @@ export default async function ActivityPage({ params }: { params: Promise<{ slug:
         <a href={`/aluno/aula/${lesson?.slug || slug}`}>← Voltar para aula</a>
         <strong>{module?.title || 'Atividade VIP'}</strong>
       </header>
-      <DuetRecorder
+      <DuetRecorderWithAccess
         lessonTitle={lesson?.title || 'Atividade'}
         lessonSlug={lesson?.slug || slug}
         referenceUrl={referenceUrl}
