@@ -6,12 +6,13 @@ import { HomeCommunityFeed } from '@/components/home-community-feed';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { isAccessActive } from '@/lib/access/products';
 
-type Related = { title?: string; name?: string; slug?: string; file_url?: string; avatar_url?: string } | null;
+type Related = { title?: string; name?: string; slug?: string; file_url?: string; avatar_url?: string; status?: string } | null;
 function related(value: unknown): Related { if (Array.isArray(value)) return (value[0] || null) as Related; return (value || null) as Related; }
 function initials(name?: string | null) { const value = String(name || 'Aluno').trim(); return value.split(' ').slice(0, 2).map((part) => part[0]).join('').toUpperCase(); }
 function firstNameOf(name?: string | null) { return String(name || 'Marcos').trim().split(' ')[0] || 'Marcos'; }
 function Avatar({ name, url, className = '' }: { name?: string | null; url?: string | null; className?: string }) { return <span className={className}>{url ? <img src={url} alt={name || 'Perfil'} /> : <span>{initials(name)}</span>}</span>; }
 function hasVipSubscription(rows: any[]) { return rows.some((sub) => sub.course_key === 'grupo-vip' && isAccessActive(sub.status)); }
+function isEvaluatedStatus(status?: string | null) { return ['reviewed', 'approved', 'evaluated', 'completed', 'done'].includes(String(status || '').toLowerCase()); }
 
 export const dynamic = 'force-dynamic';
 const VIP_CHECKOUT_URL = process.env.NEXT_PUBLIC_VIP_CHECKOUT_URL || '/assinar/vip';
@@ -22,8 +23,8 @@ export default async function CommunityPage() {
   const email = cookieStore.get('hub_access_email')?.value;
   const supabase = createAdminClient();
   const [{ data: posts }, { data: communitySubmissions }, { data: profile }] = await Promise.all([
-    supabase.from('community_posts').select('id,profile_id,exercise_id,caption,media_url,likes_count,comments_count,created_at,profiles(name,avatar_url),exercises(title,slug),submissions(file_url)').order('created_at', { ascending: false }).limit(30),
-    supabase.from('submissions').select('profile_id,exercise_id,file_url,created_at').eq('visibility', 'community').order('created_at', { ascending: false }).limit(100),
+    supabase.from('community_posts').select('id,profile_id,exercise_id,caption,media_url,likes_count,comments_count,created_at,profiles(name,avatar_url),exercises(title,slug),submissions(file_url,status)').order('created_at', { ascending: false }).limit(30),
+    supabase.from('submissions').select('profile_id,exercise_id,file_url,status,created_at').eq('visibility', 'community').order('created_at', { ascending: false }).limit(100),
     email ? supabase.from('profiles').select('id,name,email,avatar_url').eq('email', email).maybeSingle() : { data: null },
   ]);
   const firstName = firstNameOf(profile?.name);
@@ -42,9 +43,9 @@ export default async function CommunityPage() {
   const followingIds = new Set((follows || []).map((follow: any) => follow.following_id));
   const likedPostIds = new Set((likes || []).map((like: any) => like.post_id));
   const savedPostIds = new Set((saves || []).map((save: any) => save.post_id));
-  const fallbackSubmissionByKey = new Map<string, string>();
-  (communitySubmissions || []).forEach((submission: any) => { const key = `${submission.profile_id}:${submission.exercise_id}`; if (!fallbackSubmissionByKey.has(key) && submission.file_url) fallbackSubmissionByKey.set(key, submission.file_url); });
-  const feedPosts = (posts || []).map((post: any) => { const exercise = related(post.exercises); const author = related(post.profiles); const submission = related(post.submissions); const fallbackMedia = fallbackSubmissionByKey.get(`${post.profile_id}:${post.exercise_id}`) || ''; return { id: post.id, authorId: post.profile_id, authorName: author?.name || 'Aluno VIP', authorAvatarUrl: author?.avatar_url || null, createdAt: post.created_at, exerciseTitle: exercise?.title || (post.exercise_id ? 'Atividade da comunidade' : null), exerciseSlug: exercise?.slug || null, caption: post.caption || 'Compartilhou uma prática.', mediaUrl: post.media_url || submission?.file_url || fallbackMedia || null, likesCount: post.likes_count || 0, commentsCount: post.comments_count || 0, canDelete: Boolean(profile?.id && profile.id === post.profile_id), isFollowing: followingIds.has(post.profile_id), isLiked: likedPostIds.has(post.id), isSaved: savedPostIds.has(post.id), isVipAuthor: vipAuthorIds.has(post.profile_id) }; });
+  const fallbackSubmissionByKey = new Map<string, any>();
+  (communitySubmissions || []).forEach((submission: any) => { const key = `${submission.profile_id}:${submission.exercise_id}`; if (!fallbackSubmissionByKey.has(key) && submission.file_url) fallbackSubmissionByKey.set(key, submission); });
+  const feedPosts = (posts || []).map((post: any) => { const exercise = related(post.exercises); const author = related(post.profiles); const submission = related(post.submissions); const fallbackSubmission = fallbackSubmissionByKey.get(`${post.profile_id}:${post.exercise_id}`); const mediaUrl = post.media_url || submission?.file_url || fallbackSubmission?.file_url || null; const status = submission?.status || fallbackSubmission?.status || ''; return { id: post.id, authorId: post.profile_id, authorName: author?.name || 'Aluno VIP', authorAvatarUrl: author?.avatar_url || null, createdAt: post.created_at, exerciseTitle: exercise?.title || (post.exercise_id ? 'Atividade da comunidade' : null), exerciseSlug: exercise?.slug || null, caption: post.caption || 'Compartilhou uma prática.', mediaUrl, likesCount: post.likes_count || 0, commentsCount: post.comments_count || 0, canDelete: Boolean(profile?.id && profile.id === post.profile_id), isFollowing: followingIds.has(post.profile_id), isLiked: likedPostIds.has(post.id), isSaved: savedPostIds.has(post.id), isVipAuthor: vipAuthorIds.has(post.profile_id), isEvaluated: isEvaluatedStatus(status) }; });
 
   return (
     <AppShell>
