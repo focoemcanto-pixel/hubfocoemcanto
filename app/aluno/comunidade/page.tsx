@@ -15,6 +15,7 @@ function hasVipSubscription(rows: any[]) { return rows.some((sub) => sub.course_
 
 export const dynamic = 'force-dynamic';
 const VIP_CHECKOUT_URL = process.env.NEXT_PUBLIC_VIP_CHECKOUT_URL || '/aluno?assinar=vip';
+const createPostCss = `.new-post-menu summary{list-style:none;cursor:pointer}.new-post-menu summary::-webkit-details-marker{display:none}.new-post-menu[open]::before{content:'';position:fixed;inset:0;z-index:70;background:rgba(0,0,0,.68);backdrop-filter:blur(12px)}.new-post-menu[open] .new-post-options{position:fixed;z-index:75;left:50%;top:50%;transform:translate(-50%,-50%);width:min(92vw,470px);display:grid;gap:14px;border:1px solid rgba(245,199,107,.22);border-radius:30px;background:linear-gradient(145deg,#17171f,#09090f);box-shadow:0 32px 120px rgba(0,0,0,.62);padding:18px}.new-post-options:before{content:'Criar publicação';display:block;color:#fff;font-size:26px;font-weight:1000;letter-spacing:-.04em;margin:2px 2px 4px}.new-post-options a{display:grid;grid-template-columns:48px 1fr;gap:6px 14px;align-items:center;border:1px solid rgba(255,255,255,.12);border-radius:22px;background:rgba(255,255,255,.045);padding:18px;color:#fff;text-decoration:none}.new-post-options a svg{grid-row:span 2;color:#f5c76b}.new-post-options a strong{font-size:21px}.new-post-options a small{color:rgba(255,255,255,.62);line-height:1.35}`;
 
 export default async function CommunityPage() {
   const cookieStore = await cookies();
@@ -46,6 +47,7 @@ export default async function CommunityPage() {
   return (
     <AppShell>
       <main className="community-instagram-page">
+        <style dangerouslySetInnerHTML={{ __html: createPostCss }} />
         <aside className="community-side-nav">
           <Link className="community-brand" href="/aluno" prefetch><Headphones size={30} /><span>FOCO<small>EM CANTO</small></span></Link>
           <nav><Link href="/aluno" prefetch><Home size={28} /><span>Início</span></Link><Link href="/aluno/biblioteca" prefetch><BookOpen size={28} /><span>Biblioteca</span></Link><Link className="active" href="/aluno/comunidade" prefetch><Users size={28} /><span>Comunidade</span></Link><Link href="/aluno/perfil" prefetch><User size={28} /><span>Perfil</span></Link></nav>
