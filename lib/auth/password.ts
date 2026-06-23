@@ -1,57 +1,52 @@
-const ITERATIONS = 120000;
-const KEY_LENGTH = 32;
+const ITERATIONS = 32000;
 
-function bytesToBase64(bytes: Uint8Array) {
-  let binary = '';
-  bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
-  return btoa(binary);
+function bytesToHex(bytes: Uint8Array) {
+  return Array.from(bytes).map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
-function base64ToBytes(value: string) {
-  const binary = atob(value);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+function hexToBytes(value: string) {
+  const bytes = new Uint8Array(value.length / 2);
+  for (let index = 0; index < bytes.length; index += 1) bytes[index] = parseInt(value.slice(index * 2, index * 2 + 2), 16);
   return bytes;
 }
 
-function toArrayBuffer(bytes: Uint8Array) {
-  const buffer = new ArrayBuffer(bytes.byteLength);
-  new Uint8Array(buffer).set(bytes);
-  return buffer;
+function randomSalt() {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return bytesToHex(bytes);
 }
 
-async function derive(password: string, salt: Uint8Array) {
-  const encoded = toArrayBuffer(new TextEncoder().encode(password));
-  const key = await crypto.subtle.importKey('raw', encoded, 'PBKDF2', false, ['deriveBits']);
-  const bits = await crypto.subtle.deriveBits(
-    { name: 'PBKDF2', hash: 'SHA-256', salt: toArrayBuffer(salt), iterations: ITERATIONS },
-    key,
-    KEY_LENGTH * 8,
-  );
-  return new Uint8Array(bits);
+async function sha256Hex(value: string) {
+  const data = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  return bytesToHex(new Uint8Array(digest));
 }
 
-function timingSafeEqual(a: Uint8Array, b: Uint8Array) {
+async function derive(password: string, salt: string) {
+  let hash = await sha256Hex(`${salt}:${password}`);
+  for (let index = 0; index < ITERATIONS; index += 1) hash = await sha256Hex(`${salt}:${hash}:${password}`);
+  return hash;
+}
+
+function timingSafeEqual(a: string, b: string) {
   if (a.length !== b.length) return false;
   let diff = 0;
-  for (let index = 0; index < a.length; index += 1) diff |= a[index] ^ b[index];
+  for (let index = 0; index < a.length; index += 1) diff |= a.charCodeAt(index) ^ b.charCodeAt(index);
   return diff === 0;
 }
 
 export async function hashPassword(password: string) {
-  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const salt = randomSalt();
   const hash = await derive(password, salt);
-  return `pbkdf2_sha256$${ITERATIONS}$${bytesToBase64(salt)}$${bytesToBase64(hash)}`;
+  return `hub_sha256_v1$${ITERATIONS}$${salt}$${hash}`;
 }
 
 export async function verifyPassword(password: string, stored?: string | null) {
   if (!stored) return false;
-  const [scheme, iterations, saltValue, hashValue] = stored.split('$');
-  if (scheme !== 'pbkdf2_sha256' || Number(iterations) !== ITERATIONS || !saltValue || !hashValue) return false;
-  const salt = base64ToBytes(saltValue);
-  const expected = base64ToBytes(hashValue);
+  const [scheme, iterations, salt, hash] = stored.split('$');
+  if (scheme !== 'hub_sha256_v1' || Number(iterations) !== ITERATIONS || !salt || !hash) return false;
   const actual = await derive(password, salt);
-  return timingSafeEqual(actual, expected);
+  return timingSafeEqual(actual, hash);
 }
 
 export function isStrongEnough(password: string) {
