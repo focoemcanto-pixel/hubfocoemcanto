@@ -22,7 +22,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return NextResponse.redirect(new URL(`${editUrl}?erro=dados`, request.url));
   }
 
-  const { error } = await supabase.from('exercises').update({
+  const { error: baseError } = await supabase.from('exercises').update({
     title,
     slug: `${slugify(title)}-${id.slice(0, 6)}`,
     module_id,
@@ -32,14 +32,22 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     media_url: drive_url,
     description,
     objective,
-    trim_start_seconds,
-    trim_end_seconds,
     updated_at: new Date().toISOString(),
   }).eq('id', id);
 
-  if (error) {
-    console.error('Erro ao salvar exercício', error.message);
+  if (baseError) {
+    console.error('Erro ao salvar dados do exercício', baseError.message);
     return NextResponse.redirect(new URL(`${editUrl}?erro=salvar`, request.url));
+  }
+
+  const { error: trimError } = await supabase
+    .from('exercises')
+    .update({ trim_start_seconds, trim_end_seconds })
+    .eq('id', id);
+
+  if (trimError) {
+    console.error('Erro ao salvar corte do exercício', trimError.message);
+    return NextResponse.redirect(new URL(`${editUrl}?erro=corte`, request.url));
   }
 
   return NextResponse.redirect(new URL(`${editUrl}?sucesso=salvo`, request.url));
