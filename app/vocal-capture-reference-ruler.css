@@ -1,0 +1,114 @@
+@media (max-width: 760px) {
+  body.vocal-capture-active {
+    overflow: hidden !important;
+    background: #020304 !important;
+  }
+
+  .vocal-stage.grid.range-capture {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100vw !important;
+    height: 100dvh !important;
+    min-height: 100dvh !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    overflow: hidden !important;
+    box-shadow: none !important;
+    background: #020304 !important;
+    z-index: 2147483647 !important;
+  }
+
+  .range-capture .premium-vocal-meter,
+  .range-capture .vocal-meter {
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100vw !important;
+    height: 100dvh !important;
+    min-height: 100dvh !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    overflow: hidden !important;
+  }
+
+  .range-capture .premium-vocal-meter .vocal-meter-panel {
+    position: absolute !important;
+    inset: 0 !important;
+    display: grid !important;
+    grid-template-columns: 142px minmax(0, 1fr) !important;
+    gap: 0 !important;
+  }
+
+  .range-capture .premium-vocal-meter .vocal-meter-scale {
+    position: relative !important;
+    width: 142px !important;
+    height: calc(100dvh - 284px) !important;
+    margin: calc(176px + env(safe-area-inset-top)) 0 calc(108px + env(safe-area-inset-bottom)) !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    overflow: visible !important;
+  }
+
+  .range-capture .premium-vocal-meter .vocal-meter-scale::before {
+    content: '' !important;
+    position: absolute !important;
+    top: 0 !important;
+    bottom: 0 !important;
+    left: 88px !important;
+    width: 3px !important;
+    background: linear-gradient(180deg, #67e8f9 0%, #67e8f9 52%, #f5c76b 52%, #f5c76b 100%) !important;
+    box-shadow: 0 0 16px rgba(103, 232, 249, .48) !important;
+  }
+
+  .range-capture .premium-vocal-meter .vocal-meter-scale::after {
+    content: '' !important;
+    position: absolute !important;
+    top: 0 !important;
+    bottom: 0 !important;
+    left: 88px !important;
+    width: 30px !important;
+    opacity: .86 !important;
+    background: repeating-linear-gradient(to bottom, rgba(255,255,255,.22) 0 1px, transparent 1px calc((100dvh - 284px) / 24)) !important;
+  }
+
+  .range-capture .premium-vocal-meter .vocal-meter-scale > span {
+    left: 30px !important;
+    transform: translateY(-50%) !important;
+    color: rgba(255,255,255,.68) !important;
+    font-size: 14px !important;
+    line-height: 1 !important;
+    font-weight: 800 !important;
+    letter-spacing: -.04em !important;
+    white-space: nowrap !important;
+    z-index: 2 !important;
+  }
+
+  .range-capture .premium-vocal-meter .vocal-meter-scale > span.octave {
+    left: 28px !important;
+    color: rgba(255,255,255,.96) !important;
+    font-size: 20px !important;
+    font-weight: 1000 !important;
+  }
+
+  .range-capture .premium-vocal-meter .active-note {
+    left: 64px !important;
+    width: 50px !important;
+    height: 50px !important;
+    border-radius: 999px !important;
+    background: #67e8f9 !important;
+    box-shadow: 0 0 28px rgba(103,232,249,.9), 0 0 64px rgba(103,232,249,.55) !important;
+    z-index: 10 !important;
+  }
+
+  .range-capture .premium-vocal-meter .marker {
+    left: 88px !important;
+    width: 42px !important;
+    height: 3px !important;
+    border-radius: 999px !important;
+    z-index: 9 !important;
+  }
+}
