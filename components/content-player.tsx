@@ -35,6 +35,37 @@ async function saveProgress(lessonId: string | null | undefined, positionSeconds
   }).catch(() => undefined);
 }
 
+function installLessonsPanelToggle() {
+  const styleId = 'fc-lessons-panel-toggle-style';
+  if (!document.getElementById(styleId)) {
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.textContent = '[class*="modules-actions"]{display:flex;align-items:center;gap:8px}.fc-lessons-toggle{display:inline-flex;align-items:center;justify-content:center;width:42px;height:42px;border-radius:999px;border:1px solid rgba(245,199,107,.22);background:rgba(255,255,255,.045);color:#f5c76b;font-size:24px;font-weight:900;line-height:1}.fc-lessons-collapsed [class*="module-list"]{display:none}.fc-lessons-collapsed{max-height:110px!important;overflow:hidden}.fc-lessons-collapsed [class*="modules-head"]{border-bottom:0!important}';
+    document.head.appendChild(style);
+  }
+  document.querySelectorAll<HTMLElement>('[class*="modules-panel"]').forEach((panel) => {
+    if (panel.dataset.fcToggleReady === '1') return;
+    const head = panel.querySelector<HTMLElement>('[class*="modules-head"]');
+    if (!head) return;
+    const closeLink = head.querySelector<HTMLAnchorElement>('a:last-child');
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'fc-lessons-toggle';
+    toggle.setAttribute('aria-label', 'Minimizar aulas');
+    toggle.textContent = '⌃';
+    toggle.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const collapsed = panel.classList.toggle('fc-lessons-collapsed');
+      toggle.textContent = collapsed ? '⌄' : '⌃';
+      toggle.setAttribute('aria-label', collapsed ? 'Exibir aulas' : 'Minimizar aulas');
+    });
+    if (closeLink) head.insertBefore(toggle, closeLink);
+    else head.appendChild(toggle);
+    panel.dataset.fcToggleReady = '1';
+  });
+}
+
 export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, initialPositionSeconds = 0 }: ContentPlayerProps) {
   const [isReady, setIsReady] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
@@ -52,6 +83,12 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
       source: driveFileId ? `/api/media/drive/${driveFileId}` : isAllowedInternalMedia(rawSource) ? rawSource : '',
     };
   }, [driveUrl, mediaUrl, mediaType]);
+
+  useEffect(() => {
+    installLessonsPanelToggle();
+    const timer = window.setTimeout(installLessonsPanelToggle, 350);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     setIsReady(false);
