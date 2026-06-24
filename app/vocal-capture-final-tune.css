@@ -71,41 +71,65 @@
   }
 
   body.vocal-capture-active .mvr-visual {
-    left: 92px !important;
-    right: -118px !important;
-    top: calc(154px + env(safe-area-inset-top)) !important;
-    height: calc(100dvh - 356px) !important;
+    left: 66px !important;
+    right: -86px !important;
+    top: calc(140px + env(safe-area-inset-top)) !important;
+    height: calc(100dvh - 320px) !important;
   }
 
   body.vocal-capture-active .mvr-visual img {
-    right: -20vw !important;
-    top: 0 !important;
-    width: 136vw !important;
-    height: 104% !important;
+    right: -6vw !important;
+    top: -2% !important;
+    width: 130vw !important;
+    height: 112% !important;
     object-position: center top !important;
-    opacity: .79 !important;
+    opacity: .82 !important;
   }
 
   body.vocal-capture-active .mvr-aura {
-    inset: 0 -8% 8% -2% !important;
+    inset: -4% -2% 2% -6% !important;
+    filter: blur(28px) !important;
+    opacity: .95 !important;
+  }
+
+  body.vocal-capture-active .mvr-glow {
+    z-index: 4 !important;
   }
 
   body.vocal-capture-active .mvr-glow.chest {
-    filter: blur(11px) drop-shadow(0 0 34px rgba(245,199,107,.86)) !important;
+    left: 56% !important;
+    top: 56% !important;
+    width: 31% !important;
+    height: 19% !important;
+    filter: blur(12px) drop-shadow(0 0 38px rgba(245,199,107,.9)) !important;
+  }
+
+  body.vocal-capture-active .mvr-glow.mix {
+    left: 55% !important;
+    top: 38% !important;
+    width: 25% !important;
+    height: 16% !important;
+  }
+
+  body.vocal-capture-active .mvr-glow.head {
+    left: 55% !important;
+    top: 24% !important;
+    width: 19% !important;
+    height: 13% !important;
   }
 
   body.vocal-capture-active .mvr-visual .head {
-    right: 15vw !important;
-    top: 18% !important;
+    right: 22vw !important;
+    top: 21% !important;
   }
 
   body.vocal-capture-active .mvr-visual .mix {
-    right: 12vw !important;
-    top: 35% !important;
+    right: 18vw !important;
+    top: 38% !important;
   }
 
   body.vocal-capture-active .mvr-visual .chest {
-    right: 11vw !important;
-    top: 50% !important;
+    right: 18vw !important;
+    top: 53% !important;
   }
 }
