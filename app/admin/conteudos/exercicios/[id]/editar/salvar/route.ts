@@ -16,12 +16,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const objective = String(formData.get('objective') || '').trim();
   const trim_start_seconds = Math.max(0, Math.floor(Number(formData.get('trim_start_seconds') || 0)));
   const trim_end_seconds = Math.max(0, Math.floor(Number(formData.get('trim_end_seconds') || 0)));
+  const editUrl = `/admin/conteudos/exercicios/${id}/editar`;
 
   if (!title || !module_id) {
-    return NextResponse.redirect(new URL(`/admin/conteudos/exercicios/${id}/editar?erro=dados`, request.url));
+    return NextResponse.redirect(new URL(`${editUrl}?erro=dados`, request.url));
   }
 
-  await supabase.from('exercises').update({
+  const { error } = await supabase.from('exercises').update({
     title,
     slug: `${slugify(title)}-${id.slice(0, 6)}`,
     module_id,
@@ -31,13 +32,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     media_url: drive_url,
     description,
     objective,
+    trim_start_seconds,
+    trim_end_seconds,
     updated_at: new Date().toISOString(),
   }).eq('id', id);
 
-  await supabase.from('exercises').update({
-    trim_start_seconds,
-    trim_end_seconds,
-  }).eq('id', id);
+  if (error) {
+    console.error('Erro ao salvar exercício', error.message);
+    return NextResponse.redirect(new URL(`${editUrl}?erro=salvar`, request.url));
+  }
 
-  return NextResponse.redirect(new URL('/admin/conteudos/sincronizar-biblioteca?sucesso=editado', request.url));
+  return NextResponse.redirect(new URL(`${editUrl}?sucesso=salvo`, request.url));
 }
