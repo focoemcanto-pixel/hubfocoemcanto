@@ -1,0 +1,125 @@
+@media (max-width: 760px) {
+  .vocal-stage.grid.range-capture {
+    background:
+      radial-gradient(circle at 60% 47%, rgba(48, 205, 220, .18), transparent 31%),
+      radial-gradient(circle at 62% 60%, rgba(245, 199, 107, .18), transparent 28%),
+      linear-gradient(180deg, #05070a 0%, #020304 78%, #020304 100%) !important;
+  }
+
+  .range-capture .wireframe-body-wrap {
+    position: absolute !important;
+    inset: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    display: block !important;
+  }
+
+  .range-capture .wireframe-body-wrap .body-aura {
+    position: absolute !important;
+    inset: 22% -10% 14% 26% !important;
+    border-radius: 999px !important;
+    opacity: .86 !important;
+    filter: blur(24px) !important;
+    background: radial-gradient(ellipse at center, rgba(103,232,249,.16), rgba(103,232,249,.04) 44%, transparent 72%) !important;
+  }
+
+  .range-capture .wireframe-body-wrap .vocal-body-base {
+    position: absolute !important;
+    right: -18vw !important;
+    top: calc(205px + env(safe-area-inset-top)) !important;
+    width: 112vw !important;
+    height: calc(100dvh - 370px) !important;
+    object-fit: contain !important;
+    object-position: center top !important;
+    opacity: .75 !important;
+    mix-blend-mode: screen !important;
+    filter: drop-shadow(0 0 24px rgba(236,254,255,.16)) !important;
+    z-index: 2 !important;
+  }
+
+  .range-capture .wireframe-body-wrap .register-label {
+    right: 7vw !important;
+    font-size: 14px !important;
+    font-weight: 950 !important;
+    color: rgba(255,255,255,.56) !important;
+    letter-spacing: .04em !important;
+    text-transform: uppercase !important;
+    z-index: 5 !important;
+  }
+
+  .range-capture .wireframe-body-wrap .label-head {
+    top: 29% !important;
+  }
+
+  .range-capture .wireframe-body-wrap .label-mix {
+    top: 39% !important;
+  }
+
+  .range-capture .wireframe-body-wrap .label-chest {
+    top: 50% !important;
+    color: #f5c76b !important;
+    text-shadow: 0 0 18px rgba(245,199,107,.75) !important;
+  }
+
+  .range-capture .wireframe-body-wrap .body-glow-zone,
+  .range-capture .wireframe-body-wrap .body-live-glow {
+    left: 63% !important;
+    transform: translateX(-50%) !important;
+    max-width: 26% !important;
+    max-height: 13% !important;
+    z-index: 4 !important;
+  }
+
+  .range-capture .wireframe-body-wrap .body-glow-zone.head,
+  .range-capture .wireframe-body-wrap .body-live-glow.head {
+    top: 25% !important;
+    width: 13% !important;
+    height: 8% !important;
+  }
+
+  .range-capture .wireframe-body-wrap .body-glow-zone.mix,
+  .range-capture .wireframe-body-wrap .body-live-glow.mix {
+    top: 35% !important;
+    width: 17% !important;
+    height: 10% !important;
+  }
+
+  .range-capture .wireframe-body-wrap .body-glow-zone.chest,
+  .range-capture .wireframe-body-wrap .body-live-glow.chest {
+    top: 48% !important;
+    width: 24% !important;
+    height: 12% !important;
+    opacity: .65 !important;
+    background: radial-gradient(ellipse at center, rgba(255,235,170,.95), rgba(245,199,107,.5) 38%, transparent 72%) !important;
+    filter: blur(10px) drop-shadow(0 0 30px rgba(245,199,107,.85)) !important;
+  }
+
+  .range-capture .wireframe-body-wrap .body-note-badge {
+    left: 50% !important;
+    bottom: calc(160px + env(safe-area-inset-bottom)) !important;
+    transform: translateX(-6%) !important;
+    padding: 10px 18px !important;
+    border-radius: 18px !important;
+    background: rgba(0,0,0,.54) !important;
+    border: 1px solid rgba(255,255,255,.14) !important;
+    text-align: center !important;
+    z-index: 10 !important;
+    backdrop-filter: blur(14px) !important;
+  }
+
+  .range-capture .wireframe-body-wrap .body-note-badge small {
+    color: rgba(255,255,255,.58) !important;
+    font-size: 11px !important;
+    font-weight: 900 !important;
+    letter-spacing: .13em !important;
+  }
+
+  .range-capture .wireframe-body-wrap .body-note-badge strong {
+    color: #67e8f9 !important;
+    font-size: 36px !important;
+    line-height: 1 !important;
+    letter-spacing: -.05em !important;
+  }
+}
