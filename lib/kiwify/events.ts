@@ -15,6 +15,8 @@ export type KiwifyPayload = {
   type?: KiwifyEventType;
   webhook_event_type?: KiwifyEventType;
   token?: string;
+  webhook_token?: string;
+  secret?: string;
   customer?: { name?: string; email?: string; phone?: string; mobile?: string };
   subscription?: { id?: string; status?: string; current_period_end?: string; next_payment?: string; end_date?: string };
   product?: { id?: string; name?: string };
@@ -23,6 +25,8 @@ export type KiwifyPayload = {
     event?: KiwifyEventType;
     type?: KiwifyEventType;
     token?: string;
+    webhook_token?: string;
+    secret?: string;
     customer?: { name?: string; email?: string; phone?: string; mobile?: string };
     subscription?: { id?: string; status?: string; current_period_end?: string; next_payment?: string; end_date?: string };
     product?: { id?: string; name?: string };
@@ -41,8 +45,12 @@ export type KiwifyPayload = {
   [key: string]: any;
 };
 
+function clean(value: string | undefined) {
+  return value?.trim().replace(/^['"]|['"]$/g, '');
+}
+
 function pick(...values: unknown[]) {
-  return values.find((value) => typeof value === 'string' && value.trim()) as string | undefined;
+  return clean(values.find((value) => typeof value === 'string' && value.trim()) as string | undefined);
 }
 
 function searchDeep(value: unknown, keys: string[]): string | undefined {
@@ -94,7 +102,15 @@ export function getKiwifySubscription(payload: KiwifyPayload) {
 }
 
 export function getKiwifyToken(payload: KiwifyPayload) {
-  return pick(payload.token, payload.data?.token, searchDeep(payload, ['token', 'webhook_token']));
+  return pick(
+    payload.token,
+    payload.webhook_token,
+    payload.secret,
+    payload.data?.token,
+    payload.data?.webhook_token,
+    payload.data?.secret,
+    searchDeep(payload, ['token', 'webhook_token', 'webhook_secret', 'kiwify_token', 'kiwify_webhook_token', 'secret'])
+  );
 }
 
 export function mapKiwifyStatus(eventName: string, explicitStatus?: string) {
