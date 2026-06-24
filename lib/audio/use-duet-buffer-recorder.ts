@@ -127,6 +127,7 @@ export function useDuetBufferRecorder(referenceSource: string, lessonSlug: strin
   const audioCtxRef = useRef<AudioContext | null>(null);
   const drawRef = useRef<number | null>(null);
   const timerRef = useRef<number | null>(null);
+  const referenceGuardCleanupRef = useRef<(() => void) | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const visualRecorderRef = useRef<MediaRecorder | null>(null);
   const micRecorderRef = useRef<MediaRecorder | null>(null);
@@ -149,7 +150,7 @@ export function useDuetBufferRecorder(referenceSource: string, lessonSlug: strin
   function setPreset(value: VoicePreset) { settingsRef.current = { ...settingsRef.current, preset: value }; setPresetState(value); engineRef.current?.applySettings(); }
   function setLatencyMs(value: number) { const next = clampLatencyMs(value); settingsRef.current = { ...settingsRef.current, latencyMs: next }; setLatencyMsState(next); }
   function setNoiseReduction(value: boolean) { settingsRef.current = { ...settingsRef.current, noiseReduction: value }; setNoiseReductionState(value); }
-  function clearDraw() { if (drawRef.current) cancelAnimationFrame(drawRef.current); if (timerRef.current) window.clearInterval(timerRef.current); drawRef.current = null; timerRef.current = null; }
+  function clearDraw() { if (drawRef.current) cancelAnimationFrame(drawRef.current); if (timerRef.current) window.clearInterval(timerRef.current); referenceGuardCleanupRef.current?.(); referenceGuardCleanupRef.current = null; drawRef.current = null; timerRef.current = null; }
   function cleanup() { clearDraw(); engineRef.current?.destroy(); engineRef.current = null; setAudioReady(false); setIsPlaying(false); setReferenceStatus(''); streamRef.current?.getTracks().forEach((track) => track.stop()); audioCtxRef.current?.close().catch(() => undefined); }
 
   function drawFrame() {
@@ -166,6 +167,7 @@ export function useDuetBufferRecorder(referenceSource: string, lessonSlug: strin
 
   function startDraw() {
     clearDraw();
+    referenceGuardCleanupRef.current = attachReferenceStallGuard();
     if (isSafariLike()) {
       timerRef.current = window.setInterval(drawFrame, 42);
       drawFrame();
