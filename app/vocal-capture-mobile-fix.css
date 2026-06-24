@@ -1,1 +1,22 @@
-/* mobile vocal capture fix placeholder */
+@media (max-width: 760px) {
+  .vocal-stage.grid.range-capture {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100vw !important;
+    height: 100dvh !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    overflow: hidden !important;
+    box-shadow: none !important;
+  }
+
+  .range-capture .range-copy {
+    position: absolute !important;
+    inset: 0 !important;
+    z-index: 100 !important;
+    pointer-events: none !important;
+  }
+}
