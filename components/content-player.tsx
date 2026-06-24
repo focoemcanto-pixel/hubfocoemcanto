@@ -10,6 +10,8 @@ type ContentPlayerProps = {
   mediaUrl?: string | null;
   lessonId?: string | null;
   initialPositionSeconds?: number | null;
+  trimStartSeconds?: number | null;
+  trimEndSeconds?: number | null;
 };
 
 function getDriveFileId(url?: string | null) {
@@ -88,7 +90,7 @@ function installLessonsPanelToggle() {
   });
 }
 
-export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, initialPositionSeconds = 0 }: ContentPlayerProps) {
+export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, initialPositionSeconds = 0, trimStartSeconds = 0, trimEndSeconds = 0 }: ContentPlayerProps) {
   const [isReady, setIsReady] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
   const [isBuffering, setIsBuffering] = useState(true);
@@ -96,6 +98,8 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const lastSavedAtRef = useRef(0);
   const restoredRef = useRef(false);
+  const trimStart = Math.max(0, Number(trimStartSeconds || 0));
+  const trimEnd = Math.max(0, Number(trimEndSeconds || 0));
 
   const { source, type } = useMemo(() => {
     const rawSource = driveUrl || mediaUrl || '';
@@ -129,15 +133,21 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
 
   function restorePosition(element: HTMLMediaElement | null) {
     if (!element || restoredRef.current) return;
-    const position = Math.floor(initialPositionSeconds || 0);
-    if (position > 5 && Number.isFinite(element.duration) && position < element.duration - 8) {
-      element.currentTime = position;
-    }
+    const saved = Math.floor(initialPositionSeconds || 0);
+    const position = Math.max(trimStart, saved > trimStart ? saved : trimStart);
+    if (position > 0 && Number.isFinite(element.duration) && position < element.duration - 1) element.currentTime = position;
     restoredRef.current = true;
   }
 
   function handleTimeUpdate(element: HTMLMediaElement | null) {
-    if (!element || !lessonId) return;
+    if (!element) return;
+    if (trimEnd > trimStart && element.currentTime >= trimEnd) {
+      element.pause();
+      element.currentTime = trimStart;
+      saveProgress(lessonId, trimEnd, true);
+      return;
+    }
+    if (!lessonId) return;
     const now = Date.now();
     if (now - lastSavedAtRef.current < 10000) return;
     lastSavedAtRef.current = now;
@@ -183,7 +193,7 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
         </div>
       ) : null}
       {isReady && !hasStarted ? (
-        <button className="premium-video-start" type="button" onClick={() => { setHasStarted(true); videoRef.current?.play().catch(() => undefined); }} aria-label="Reproduzir aula">
+        <button className="premium-video-start" type="button" onClick={() => { setHasStarted(true); if (videoRef.current && videoRef.current.currentTime < trimStart) videoRef.current.currentTime = trimStart; videoRef.current?.play().catch(() => undefined); }} aria-label="Reproduzir aula">
           <Play size={32} fill="currentColor" />
         </button>
       ) : null}
