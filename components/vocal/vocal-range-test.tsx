@@ -28,6 +28,7 @@ export function VocalRangeTest({ profileId, authUserId, initialProfile }: Props)
   const [tessituraSteps, setTessituraSteps] = useState<any[]>([]);
   const audioRef = useRef<{ ctx: AudioContext; analyser: AnalyserNode; stream: MediaStream; raf: number } | null>(null);
   const stableRef = useRef<{ midi: number | null; since: number }>({ midi: null, since: 0 });
+  const stepRef = useRef<Step>(step);
 
   const result = useMemo(() => classifyVoice({ tessituraLowMidi: tessLow, tessituraHighMidi: tessHigh, lowestMidi: lowest?.midi, highestMidi: highest?.midi, gender }), [tessLow, tessHigh, lowest, highest, gender]);
   const validation = useMemo(() => {
@@ -56,7 +57,12 @@ export function VocalRangeTest({ profileId, authUserId, initialProfile }: Props)
           setCurrentFrequency(freq); setCurrentMidi(midi);
           const now = performance.now();
           if (stableRef.current.midi === midi) {
-            if (now - stableRef.current.since > 380) setStableMidi(midi);
+            if (now - stableRef.current.since > 260) {
+              setStableMidi(midi);
+              const item = { midi, note: midiToBrazilianNoteName(midi), frequency: freq };
+              if (stepRef.current === 'lowest') setLowest((old) => !old || item.midi < old.midi ? item : old);
+              if (stepRef.current === 'highest') setHighest((old) => !old || item.midi > old.midi ? item : old);
+            }
           } else stableRef.current = { midi, since: now };
         }
         audioRef.current!.raf = requestAnimationFrame(tick);
@@ -68,9 +74,9 @@ export function VocalRangeTest({ profileId, authUserId, initialProfile }: Props)
     }
   }
 
+  useEffect(() => { stepRef.current = step; }, [step]);
   useEffect(() => () => stopMic(), []);
   function stopMic() { const a = audioRef.current; if (!a) return; cancelAnimationFrame(a.raf); a.stream.getTracks().forEach((t) => t.stop()); a.ctx.close(); audioRef.current = null; }
-  function capture(kind: 'low' | 'high') { if (!stableMidi || !currentFrequency) return; const item = { midi: stableMidi, note: midiToBrazilianNoteName(stableMidi), frequency: currentFrequency }; kind === 'low' ? setLowest((old) => !old || item.midi < old.midi ? item : old) : setHighest((old) => !old || item.midi > old.midi ? item : old); }
   function playNote(midi: number) { const ctx = new AudioContext(); const osc = ctx.createOscillator(); const gain = ctx.createGain(); osc.type = 'triangle'; osc.frequency.value = midiToFrequency(midi); gain.gain.setValueAtTime(0.0001, ctx.currentTime); gain.gain.exponentialRampToValueAtTime(0.08, ctx.currentTime + 0.04); gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.9); osc.connect(gain).connect(ctx.destination); osc.start(); osc.stop(ctx.currentTime + 1); }
   function resetAll() { setLowest(null); setHighest(null); setTessHigh(null); setTessLow(null); setSaveMessage(''); setTessituraSteps([]); setStep('intro'); stopMic(); }
   async function save() {
@@ -82,11 +88,10 @@ export function VocalRangeTest({ profileId, authUserId, initialProfile }: Props)
     setSaveMessage(response.ok ? 'Mapa Vocal salvo no seu perfil.' : 'Não foi possível salvar agora. Tente novamente.');
   }
 
-  const canCapture = stableMidi != null;
   return <div className="vocal-test-shell">
     <style>{css}</style>
     {step === 'intro' && <section className="vocal-stage hero"><Sparkles size={34} /><h1>Vamos criar seu Mapa Vocal</h1><p>Esse teste identifica sua extensão, sua tessitura confortável e uma tendência vocal aproximada.</p><p className="tip">Não force. Técnica vocal é consciência, não violência.</p>{micError && <strong className="error">{micError}</strong>}<button onClick={startMic} aria-label="Iniciar avaliação vocal"><Mic2 /> Iniciar avaliação</button></section>}
-    {(step === 'lowest' || step === 'highest') && <section className="vocal-stage grid"><div><p className="eyebrow">{step === 'lowest' ? 'Etapa 1' : 'Etapa 2'}</p><h1>{step === 'lowest' ? 'Cante sua nota mais grave' : 'Cante sua nota mais aguda'}</h1><p>{step === 'lowest' ? 'Emita a nota mais grave que você consegue sustentar por alguns segundos, sem forçar.' : 'Busque sua nota mais alta possível, sem dor e sem tensão excessiva.'}</p><div className="readout"><strong>{currentMidi ? midiToBrazilianNoteName(currentMidi) : '—'}</strong><span>{currentFrequency ? `${currentFrequency.toFixed(1)} Hz` : 'Aguardando voz'}</span><small>{canCapture ? 'Pitch estável detectado' : 'Sustente por alguns instantes para capturar'}</small></div><div className="actions"><button disabled={!canCapture} onClick={() => capture(step === 'lowest' ? 'low' : 'high')}><Check /> Capturar nota</button><button onClick={() => step === 'lowest' ? setLowest(null) : setHighest(null)}><RefreshCw /> Refazer</button><button disabled={step === 'lowest' ? !lowest : !highest} onClick={() => step === 'lowest' ? setStep('highest') : setStep('confirm-range')}>Continuar</button></div></div><VocalNoteMeter currentMidi={currentMidi} lowestMidi={lowest?.midi} highestMidi={highest?.midi} /></section>}
+    {(step === 'lowest' || step === 'highest') && <section className="vocal-stage grid"><div><p className="eyebrow">{step === 'lowest' ? 'Etapa 1' : 'Etapa 2'}</p><h1>{step === 'lowest' ? 'Cante e alcance sua nota mais grave' : 'Cante e alcance sua nota mais aguda'}</h1><p>{step === 'lowest' ? 'Emita a nota mais grave que você consegue sustentar por alguns segundos, sem forçar.' : 'Busque sua nota mais alta possível, sem dor e sem tensão excessiva.'}</p><div className="readout"><strong>{currentMidi ? midiToBrazilianNoteName(currentMidi) : '—'}</strong><span>{currentFrequency ? `${currentFrequency.toFixed(1)} Hz` : 'Aguardando voz'}</span><small>{step === 'lowest' ? (lowest ? `Mais grave registrada: ${lowest.note}` : 'Sustente a voz para o sistema registrar na régua') : (highest ? `Mais aguda registrada: ${highest.note}` : 'Sustente a voz para o sistema registrar na régua')}</small></div><div className="actions"><button disabled={step === 'lowest' ? !lowest : !highest} onClick={() => step === 'lowest' ? setStep('highest') : setStep('confirm-range')}><Check /> {step === 'lowest' ? 'Confirmar grave' : 'Confirmar agudo'}</button><button onClick={() => step === 'lowest' ? setLowest(null) : setHighest(null)}><RefreshCw /> Refazer</button></div></div><VocalNoteMeter currentMidi={currentMidi} lowestMidi={lowest?.midi} highestMidi={highest?.midi} /></section>}
     {step === 'confirm-range' && lowest && highest && <section className="vocal-stage hero"><h1>Confirmar alcance vocal?</h1><div className="range-big">{lowest.note} ↔ {highest.note}</div><p>Extensão mostra tudo que você consegue alcançar hoje.</p><div className="actions"><button onClick={() => setStep('lowest')}><RefreshCw /> Refazer</button><button onClick={() => { stopMic(); setTessHigh(highest.midi); setTessLow(lowest.midi); setStep('tess-high'); }}><Check /> Confirmar</button></div></section>}
     {step === 'tess-high' && highest && tessHigh != null && <Tessitura title="Agora vamos encontrar seu agudo confortável" text="O sistema vai partir da sua nota mais alta. Cante uma frase curta nessa nota e diga se ela saiu com conforto e qualidade." midi={tessHigh} lowestMidi={lowest?.midi} highestMidi={highest?.midi} phrase="Eu consigo cantar com qualidade" downLabel="Descer meio tom" onPlay={playNote} onMove={() => { setTessHigh(Math.max(lowest?.midi ?? 24, tessHigh - 1)); setTessituraSteps((s) => [...s, { area: 'high', action: 'down', midi: tessHigh - 1 }]); }} onConfirm={() => setStep('tess-low')} />}
     {step === 'tess-low' && lowest && tessLow != null && <Tessitura title="Agora vamos encontrar seu grave confortável" text="Cante a frase com presença e clareza. Se estiver soproso, fraco ou desconfortável, suba meio tom." midi={tessLow} lowestMidi={lowest?.midi} highestMidi={highest?.midi} phrase="Eu consigo cantar com qualidade" downLabel="Subir meio tom" icon="up" onPlay={playNote} onMove={() => { setTessLow(Math.min(highest?.midi ?? 96, tessLow + 1)); setTessituraSteps((s) => [...s, { area: 'low', action: 'up', midi: tessLow + 1 }]); }} onConfirm={() => setStep('gender')} />}
