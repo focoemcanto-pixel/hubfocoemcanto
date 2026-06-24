@@ -28,6 +28,7 @@ import './community-publish-menu.css';
 import './duet-publish-progress.css';
 import './duet-refined-flow.css';
 import './profile-icon-alignment.css';
+import './vocal-capture-mobile-fix.css';
 
 export default function RootLayout(props: { children: React.ReactNode }) {
   return <html lang="pt-BR"><body>{props.children}</body></html>;
