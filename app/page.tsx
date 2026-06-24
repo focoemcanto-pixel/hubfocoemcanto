@@ -17,7 +17,7 @@ function message(code?: string) {
   return map[code] || 'Não foi possível continuar. Tente novamente.';
 }
 
-const courses = ['Técnica Vocal do Zero', 'Ressonância e Projeção', 'Afinação na Prática', 'Interpretação com Verdade', 'Exercícios Avançados', 'Criatividade e Improviso'];
+const courses = ['Firmar Afinação', 'Aprendendo a Segunda Voz', 'Duetos para Treino', 'Desenvolver Intuição', 'Sala VIP', 'Comunidade'];
 
 export default async function HomePage({ searchParams }: { searchParams?: Promise<LoginSearch> }) {
   const params = searchParams ? await searchParams : {};
@@ -27,34 +27,34 @@ export default async function HomePage({ searchParams }: { searchParams?: Promis
   const error = message(params.erro);
 
   return (
-    <main className="academy-login-page">
-      <section className="academy-login-shell">
-        <aside className="academy-login-brand">
+    <main className="academy-login-page hub-login-page">
+      <section className="academy-login-shell hub-login-shell">
+        <aside className="academy-login-brand hub-login-brand">
           <div className="academy-logo-mark"><Waves size={36} /></div>
-          <div className="academy-wordmark"><strong>Foco em Canto</strong><span>Academy</span></div>
-          <h1>Sua voz. <span>Seu caminho.</span></h1>
-          <p>A plataforma completa para transformar técnica, expressão e talento em propósito.</p>
+          <div className="academy-wordmark"><strong>Foco em Canto</strong><span>Hub Vocal</span></div>
+          <h1>Sua voz. <span>Seu treino.</span></h1>
+          <p>O hub completo para assistir aulas, gravar duetos, postar na comunidade e evoluir com direção.</p>
           <div className="academy-benefits">
-            <article><GraduationCap size={24} /><div><strong>Todos os cursos</strong><span>Aprenda no seu ritmo com acesso à escola.</span></div></article>
-            <article><PlayCircle size={24} /><div><strong>Aulas e exercícios</strong><span>Conteúdo prático para evoluir sempre.</span></div></article>
-            <article><Users size={24} /><div><strong>Comunidade exclusiva</strong><span>Compartilhe vídeos, curta e comente.</span></div></article>
-            <article><Star size={24} /><div><strong>Evolução contínua</strong><span>Novos conteúdos para levar sua voz mais longe.</span></div></article>
+            <article><GraduationCap size={24} /><div><strong>Sala de Atividades VIP</strong><span>Um módulo gratuito e todos os módulos para assinantes.</span></div></article>
+            <article><PlayCircle size={24} /><div><strong>Aulas e duetos</strong><span>Pratique com vídeos reais e publique sua evolução.</span></div></article>
+            <article><Users size={24} /><div><strong>Comunidade vocal</strong><span>Curta, comente, siga alunos e compartilhe vídeos.</span></div></article>
+            <article><Star size={24} /><div><strong>Avaliação do professor</strong><span>Assinantes VIP enviam atividades para correção individual.</span></div></article>
           </div>
           <div className="academy-course-grid" aria-hidden="true">
-            {courses.map((course, index) => <div className="academy-mini-course" key={course}><small>Curso</small><strong>{course}</strong><span>{index + 8}</span></div>)}
+            {courses.map((course, index) => <div className="academy-mini-course" key={course}><small>{index === 0 ? 'Grátis' : 'VIP'}</small><strong>{course}</strong><span>{index + 1}</span></div>)}
           </div>
         </aside>
 
         <section className="academy-login-panel">
           <div className="academy-login-panel-inner">
             <p className="academy-eyebrow"><Sparkles size={16} /> Acesso seguro</p>
-            <h2>{setup ? 'Crie sua senha de acesso' : passwordMode ? 'Bem-vindo(a) de volta' : 'Entre na Foco em Canto Academy'}</h2>
+            <h2>{setup ? 'Crie sua senha de acesso' : passwordMode ? 'Bem-vindo(a) de volta' : 'Entre no Hub Foco em Canto'}</h2>
             <p className="academy-muted">
               {setup
                 ? 'Este será seu acesso definitivo. Depois disso, ninguém entra apenas sabendo seu e-mail.'
                 : passwordMode
-                  ? 'Encontramos seu cadastro. Confirme sua senha para continuar sua evolução.'
-                  : 'Faça login para acessar seus cursos, comunidade e atividades.'}
+                  ? 'Encontramos seu cadastro. Digite sua senha para continuar seu treino.'
+                  : 'Faça login para acessar biblioteca, comunidade e atividades.'}
             </p>
             {error ? <div className="academy-login-error">{error}</div> : null}
 
@@ -81,17 +81,17 @@ export default async function HomePage({ searchParams }: { searchParams?: Promis
               </form>
             )}
 
-            <div className="academy-first-access"><ShieldCheck size={48} /><div><strong>Primeiro acesso?</strong><p>Vamos criar sua conta e você escolherá uma senha segura.</p></div></div>
-            <p className="academy-security"><Lock size={16} /> Seus dados estão protegidos com segurança.</p>
+            <div className="academy-first-access"><ShieldCheck size={48} /><div><strong>Primeiro acesso?</strong><p>Informe seu e-mail, crie sua senha e entre no hub.</p></div></div>
+            <p className="academy-security"><Lock size={16} /> Seu acesso fica protegido por senha.</p>
           </div>
         </section>
       </section>
 
       <section className="academy-login-stats">
-        <div><Users size={28} /><strong>+30.000</strong><span>alunos</span></div>
-        <div><PlayCircle size={28} /><strong>+500</strong><span>aulas</span></div>
-        <div><Star size={28} /><strong>24/7</strong><span>acesso</span></div>
-        <div><Waves size={28} /><strong>Transforme</strong><span>sua voz</span></div>
+        <div><Users size={28} /><strong>Comunidade</strong><span>poste duetos</span></div>
+        <div><PlayCircle size={28} /><strong>Firmar Afinação</strong><span>módulo grátis</span></div>
+        <div><Star size={28} /><strong>VIP</strong><span>avaliação</span></div>
+        <div><Waves size={28} /><strong>Evolua</strong><span>todos os dias</span></div>
       </section>
     </main>
   );
