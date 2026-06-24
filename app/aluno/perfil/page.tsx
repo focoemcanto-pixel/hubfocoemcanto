@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { cookies } from 'next/headers';
-import { BarChart3, Bookmark, BookOpen, ChevronRight, Clock3, Crown, Edit3, LogOut, PlaySquare, Settings, ShieldCheck, Star, UserRoundCheck, Users } from 'lucide-react';
+import { BarChart3, Bookmark, BookOpen, Clock3, Crown, Edit3, LogOut, PlaySquare, Settings, ShieldCheck, Star, UserRoundCheck, Users } from 'lucide-react';
 import { AppShell } from '@/components/app-shell';
 import { VocalProfileCard } from '@/components/vocal/vocal-profile-card';
 import { createClient } from '@/lib/supabase/server';
@@ -8,6 +8,11 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { isAccessActive } from '@/lib/access/products';
 
 export const dynamic = 'force-dynamic';
+
+const PROFILE_SELECT = 'id,name,email,bio,headline,avatar_url';
+const VOCAL_PROFILE_SELECT = 'classification,classification_confidence,lowest_note,highest_note,tessitura_low_note,tessitura_high_note,updated_at';
+const SUBSCRIPTION_SELECT = 'course_key,product_slug,slug,status,ends_at,expires_at,current_period_end';
+const PRODUCT_SELECT = 'checkout_url,sales_url,external_url,kiwify_url,member_url';
 
 function initials(name?: string | null) {
   return String(name || 'Aluno').trim().split(' ').slice(0, 2).map((part) => part[0]).join('').toUpperCase();
@@ -62,7 +67,7 @@ export default async function ProfilePage() {
   const cookieStore = await cookies();
   const { data: { user } } = await supabase.auth.getUser();
   const accessEmail = cookieStore.get('hub_access_email')?.value || user?.email || '';
-  const { data: profile } = accessEmail ? await admin.from('profiles').select('*').eq('email', accessEmail).maybeSingle() : user ? await admin.from('profiles').select('*').eq('auth_user_id', user.id).maybeSingle() : { data: null };
+  const { data: profile } = accessEmail ? await admin.from('profiles').select(PROFILE_SELECT).eq('email', accessEmail).maybeSingle() : user ? await admin.from('profiles').select(PROFILE_SELECT).eq('auth_user_id', user.id).maybeSingle() : { data: null };
   const profileAny = (profile || {}) as any;
   const profileId = profileAny?.id;
 
@@ -73,11 +78,11 @@ export default async function ProfilePage() {
     profileId ? safeCount(admin.from('submissions').select('id', { count: 'exact', head: true }).eq('profile_id', profileId)) : 0,
     profileId ? safeCount(admin.from('submissions').select('id', { count: 'exact', head: true }).eq('profile_id', profileId).in('status', ['reviewed', 'approved', 'needs_rework'])) : 0,
     profileId ? safeCount(admin.from('submissions').select('id', { count: 'exact', head: true }).eq('profile_id', profileId).eq('status', 'pending_review')) : 0,
-    profileId ? safeQuery<any>(admin.from('vocal_profiles').select('*').eq('profile_id', profileId).maybeSingle(), null) : null,
+    profileId ? safeQuery<any>(admin.from('vocal_profiles').select(VOCAL_PROFILE_SELECT).eq('profile_id', profileId).maybeSingle(), null) : null,
   ]);
 
-  const subscriptions = profileId ? await safeQuery<any[]>(admin.from('subscriptions').select('*').eq('profile_id', profileId), []) : [];
-  const vipProduct = await safeQuery<any>(admin.from('products').select('*').or('slug.ilike.%vip%,name.ilike.%vip%').limit(1).maybeSingle(), null);
+  const subscriptions = profileId ? await safeQuery<any[]>(admin.from('subscriptions').select(SUBSCRIPTION_SELECT).eq('profile_id', profileId), []) : [];
+  const vipProduct = await safeQuery<any>(admin.from('products').select(PRODUCT_SELECT).or('slug.ilike.%vip%,name.ilike.%vip%').limit(1).maybeSingle(), null);
   const vipSubscription = subscriptions.find((sub: any) => ['grupo-vip', 'vip', 'foco-vip'].includes(String(sub.course_key || sub.product_slug || sub.slug || '').toLowerCase()) && isAccessActive(sub.status));
   const isVip = Boolean(vipSubscription);
   const vipCheckout = productLink(vipProduct, process.env.NEXT_PUBLIC_VIP_CHECKOUT_URL || '/aluno/biblioteca');
@@ -93,7 +98,7 @@ export default async function ProfilePage() {
         <section className="premium-profile-hero">
           <div className="premium-profile-head">
             <Link className="premium-profile-avatar" href="/aluno/perfil/editar" aria-label="Editar foto de perfil">
-              {profileAny?.avatar_url ? <img src={profileAny.avatar_url} alt={name} /> : <span>{initials(name)}</span>}
+              {profileAny?.avatar_url ? <img src={profileAny.avatar_url} alt={name} loading="lazy" /> : <span>{initials(name)}</span>}
               <b><Edit3 size={18} /></b>
             </Link>
 
