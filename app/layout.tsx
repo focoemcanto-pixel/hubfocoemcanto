@@ -33,6 +33,7 @@ import './vocal-capture-reference-ruler.css';
 import './vocal-capture-reference-title.css';
 import './vocal-capture-reference-controls.css';
 import './vocal-capture-reference-body.css';
+import './vocal-capture-final-lock.css';
 
 export default function RootLayout(props: { children: React.ReactNode }) {
   return <html lang="pt-BR"><body>{props.children}</body></html>;
