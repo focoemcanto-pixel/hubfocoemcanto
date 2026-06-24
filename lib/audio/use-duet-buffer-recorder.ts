@@ -27,14 +27,38 @@ function options(type?: string, audioOnly = false): MediaRecorderOptions {
   return result;
 }
 
+function bufferedAhead(media: HTMLMediaElement) {
+  try {
+    const current = media.currentTime || 0;
+    for (let index = 0; index < media.buffered.length; index += 1) {
+      const start = media.buffered.start(index);
+      const end = media.buffered.end(index);
+      if (current >= start && current <= end) return Math.max(0, end - current);
+      if (current < start) return Math.max(0, end - start);
+    }
+  } catch {}
+  return 0;
+}
+
+function targetBufferSeconds(media: HTMLMediaElement) {
+  const duration = Number.isFinite(media.duration) ? media.duration : 0;
+  if (!duration || duration < 12) return 4;
+  return Math.min(12, Math.max(6, duration * 0.22));
+}
+
 function waitReady(media: HTMLMediaElement) {
   return new Promise<void>((resolve, reject) => {
-    const enough = () => media.readyState >= (isSafariLike() ? 4 : 3);
+    const enough = () => {
+      if (media.readyState < (isSafariLike() ? 3 : 2)) return false;
+      const duration = Number.isFinite(media.duration) ? media.duration : 0;
+      if (!duration || duration <= 8) return true;
+      return bufferedAhead(media) >= targetBufferSeconds(media) || media.readyState >= 4;
+    };
     if (enough()) return resolve();
     let settled = false;
-    const timeout = window.setTimeout(() => cleanup(() => resolve()), isSafariLike() ? 26000 : 18000);
+    const timeout = window.setTimeout(() => cleanup(() => resolve()), isSafariLike() ? 30000 : 24000);
     const ok = () => { if (enough()) cleanup(resolve); };
-    const canPlay = () => cleanup(resolve);
+    const canPlayThrough = () => cleanup(resolve);
     const fail = () => cleanup(() => reject(new Error('media_error')));
     const cleanup = (cb: () => void) => {
       if (settled) return;
@@ -42,15 +66,19 @@ function waitReady(media: HTMLMediaElement) {
       window.clearTimeout(timeout);
       media.removeEventListener('loadedmetadata', ok);
       media.removeEventListener('canplay', ok);
-      media.removeEventListener('canplaythrough', canPlay);
+      media.removeEventListener('canplaythrough', canPlayThrough);
       media.removeEventListener('progress', ok);
+      media.removeEventListener('loadeddata', ok);
+      media.removeEventListener('suspend', ok);
       media.removeEventListener('error', fail);
       cb();
     };
     media.addEventListener('loadedmetadata', ok);
+    media.addEventListener('loadeddata', ok);
     media.addEventListener('canplay', ok);
-    media.addEventListener('canplaythrough', canPlay, { once: true });
+    media.addEventListener('canplaythrough', canPlayThrough, { once: true });
     media.addEventListener('progress', ok);
+    media.addEventListener('suspend', ok);
     media.addEventListener('error', fail, { once: true });
   });
 }
@@ -62,6 +90,14 @@ function drawCover(ctx: CanvasRenderingContext2D, media: HTMLVideoElement, x: nu
   const sw = width / scale;
   const sh = height / scale;
   ctx.drawImage(media, (vw - sw) / 2, (vh - sh) / 2, sw, sh, x, y, width, height);
+}
+
+function drawCoverUnmirroredSelfie(ctx: CanvasRenderingContext2D, media: HTMLVideoElement, x: number, y: number, width: number, height: number) {
+  ctx.save();
+  ctx.translate(x + width, y);
+  ctx.scale(-1, 1);
+  drawCover(ctx, media, 0, 0, width, height);
+  ctx.restore();
 }
 
 export function useDuetBufferRecorder(referenceSource: string, lessonSlug: string) {
@@ -78,6 +114,8 @@ export function useDuetBufferRecorder(referenceSource: string, lessonSlug: strin
   const [audioReady, setAudioReady] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [referenceStatus, setReferenceStatus] = useState('');
+  const [lowDataMode, setLowDataMode] = useState(false);
 
   const settingsRef = useRef({ voiceVolume: 100, referenceVolume: 100, preset: 'natural' as VoicePreset, latencyMs: 70, noiseReduction: false });
   const cameraRef = useRef<HTMLVideoElement | null>(null);
@@ -112,7 +150,7 @@ export function useDuetBufferRecorder(referenceSource: string, lessonSlug: strin
   function setLatencyMs(value: number) { const next = clampLatencyMs(value); settingsRef.current = { ...settingsRef.current, latencyMs: next }; setLatencyMsState(next); }
   function setNoiseReduction(value: boolean) { settingsRef.current = { ...settingsRef.current, noiseReduction: value }; setNoiseReductionState(value); }
   function clearDraw() { if (drawRef.current) cancelAnimationFrame(drawRef.current); if (timerRef.current) window.clearInterval(timerRef.current); drawRef.current = null; timerRef.current = null; }
-  function cleanup() { clearDraw(); engineRef.current?.destroy(); engineRef.current = null; setAudioReady(false); setIsPlaying(false); streamRef.current?.getTracks().forEach((track) => track.stop()); audioCtxRef.current?.close().catch(() => undefined); }
+  function cleanup() { clearDraw(); engineRef.current?.destroy(); engineRef.current = null; setAudioReady(false); setIsPlaying(false); setReferenceStatus(''); streamRef.current?.getTracks().forEach((track) => track.stop()); audioCtxRef.current?.close().catch(() => undefined); }
 
   function drawFrame() {
     const canvas = canvasRef.current, camera = cameraRef.current, reference = referenceRef.current;
@@ -123,7 +161,7 @@ export function useDuetBufferRecorder(referenceSource: string, lessonSlug: strin
     ctx.fillStyle = '#050505';
     ctx.fillRect(0, 0, w, h);
     if (reference.readyState >= 2 && reference.videoWidth > 0) drawCover(ctx, reference, 0, 0, half, h);
-    if (camera.readyState >= 2 && camera.videoWidth > 0) drawCover(ctx, camera, half, 0, half, h);
+    if (camera.readyState >= 2 && camera.videoWidth > 0) drawCoverUnmirroredSelfie(ctx, camera, half, 0, half, h);
   }
 
   function startDraw() {
@@ -134,12 +172,41 @@ export function useDuetBufferRecorder(referenceSource: string, lessonSlug: strin
       return;
     }
     let last = 0;
-    const frameMs = 1000 / 30;
+    const frameMs = 1000 / (lowDataMode ? 24 : 30);
     const draw = (now = 0) => {
       if (now - last >= frameMs) { drawFrame(); last = now; }
       drawRef.current = requestAnimationFrame(draw);
     };
     draw();
+  }
+
+  function attachReferenceStallGuard() {
+    const reference = referenceRef.current;
+    if (!reference) return () => undefined;
+    let stallCount = 0;
+    const recovering = () => {
+      stallCount += 1;
+      if (stallCount >= 2) setLowDataMode(true);
+      setReferenceStatus('Conexão oscilando. Ajustando reprodução da referência...');
+      reference.playbackRate = 0.98;
+      reference.play().catch(() => undefined);
+    };
+    const recovered = () => {
+      if (!reference.paused && reference.readyState >= 3) setReferenceStatus('');
+    };
+    reference.addEventListener('waiting', recovering);
+    reference.addEventListener('stalled', recovering);
+    reference.addEventListener('suspend', recovered);
+    reference.addEventListener('canplay', recovered);
+    reference.addEventListener('playing', recovered);
+    return () => {
+      reference.removeEventListener('waiting', recovering);
+      reference.removeEventListener('stalled', recovering);
+      reference.removeEventListener('suspend', recovered);
+      reference.removeEventListener('canplay', recovered);
+      reference.removeEventListener('playing', recovered);
+      reference.playbackRate = 1;
+    };
   }
 
   async function prepareEngine(voiceBlob: Blob, referenceBlob?: Blob | null) {
@@ -152,5 +219,5 @@ export function useDuetBufferRecorder(referenceSource: string, lessonSlug: strin
   async function togglePlayback() { const playing = await toggleDuetBufferPlayback({ engine: engineRef.current, video: previewRef.current, canLiveEdit }); setIsPlaying(Boolean(playing)); }
   function applySettings() { settingsRef.current = { voiceVolume, referenceVolume, preset, latencyMs, noiseReduction }; engineRef.current?.applySettings(); }
 
-  return { step, setStep, count, setCount, previewUrl, setPreviewUrl, visualUrl, setVisualUrl, error, setError, voiceVolume, setVoiceVolume, referenceVolume, setReferenceVolume, preset, setPreset, latencyMs, setLatencyMs, noiseReduction, setNoiseReduction, audioReady, setAudioReady, isPlaying, setIsPlaying, isSubmitting, setIsSubmitting, cameraRef, referenceRef, previewRef, canvasRef, engineRef, chunksRef, visualChunksRef, micChunksRef, referenceChunksRef, mediaRecorderRef, visualRecorderRef, micRecorderRef, referenceRecorderRef, finalBlobRef, visualBlobRef, voiceBlobRef, referenceBlobRef, canRecord, canLiveEdit, settings, cleanup, waitReady, drawFrame, startDraw, clearDraw, applySettings, prepareEngine, togglePlayback, options, mime, isSafariLike, streamRef, audioCtxRef, referenceSource, lessonSlug };
+  return { step, setStep, count, setCount, previewUrl, setPreviewUrl, visualUrl, setVisualUrl, error, setError, voiceVolume, setVoiceVolume, referenceVolume, setReferenceVolume, preset, setPreset, latencyMs, setLatencyMs, noiseReduction, setNoiseReduction, audioReady, setAudioReady, isPlaying, setIsPlaying, isSubmitting, setIsSubmitting, referenceStatus, setReferenceStatus, lowDataMode, setLowDataMode, cameraRef, referenceRef, previewRef, canvasRef, engineRef, chunksRef, visualChunksRef, micChunksRef, referenceChunksRef, mediaRecorderRef, visualRecorderRef, micRecorderRef, referenceRecorderRef, finalBlobRef, visualBlobRef, voiceBlobRef, referenceBlobRef, canRecord, canLiveEdit, settings, cleanup, waitReady, drawFrame, startDraw, clearDraw, applySettings, prepareEngine, togglePlayback, options, mime, isSafariLike, streamRef, audioCtxRef, referenceSource, lessonSlug, attachReferenceStallGuard, bufferedAhead, targetBufferSeconds };
 }
