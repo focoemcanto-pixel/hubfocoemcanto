@@ -40,7 +40,7 @@ export default async function StudentModulePage({ params }: { params: Promise<{ 
 
   const { data: profile } = email ? await supabase.from('profiles').select('id').eq('email', email).maybeSingle() : { data: null };
   const { data: subscriptions } = profile?.id ? await supabase.from('subscriptions').select('course_key,status').eq('profile_id', profile.id) : { data: [] };
-  const hasAccess = hasVipSubscription(subscriptions || []) || isFreeTuningModule(module);
+  const hasAccess = hasVipSubscription(subscriptions || []) || isFreeTuningModule(module) || isFreeTuningModule({ title: slug, slug });
 
   if (!hasAccess) return <LockedModule title={module?.title} />;
 
