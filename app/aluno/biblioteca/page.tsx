@@ -5,6 +5,8 @@ import { isAccessActive } from '@/lib/access/products';
 
 export const dynamic = 'force-dynamic';
 
+const PRODUCT_SELECT = 'id,name,slug,cover_url,member_url,checkout_url,sales_url,external_url,kiwify_url';
+
 const covers = [
   'radial-gradient(circle at 60% 18%,rgba(245,199,107,.34),transparent 35%),linear-gradient(145deg,#342414,#07070b)',
   'radial-gradient(circle at 64% 18%,rgba(142,92,255,.34),transparent 36%),linear-gradient(145deg,#211334,#07070b)',
@@ -41,11 +43,11 @@ export default async function StudentLibraryPage() {
   const cookieStore = await cookies();
   const email = cookieStore.get('hub_access_email')?.value;
   const supabase = createAdminClient();
-  const { data: profile } = email ? await supabase.from('profiles').select('id,name,email').eq('email', email).maybeSingle() : { data: null as any };
+  const { data: profile } = email ? await supabase.from('profiles').select('id').eq('email', email).maybeSingle() : { data: null as any };
   const [{ data }, { data: products }, { data: subscriptions }] = await Promise.all([
     supabase.from('modules').select('id,title,slug,description,cover_url,sort_order,exercises(id)').eq('is_active', true).order('sort_order'),
-    supabase.from('products').select('*').order('created_at', { ascending: true }),
-    profile?.id ? supabase.from('subscriptions').select('id,course_key,status,product_name').eq('profile_id', profile.id) : Promise.resolve({ data: [] }),
+    supabase.from('products').select(PRODUCT_SELECT).order('created_at', { ascending: true }),
+    profile?.id ? supabase.from('subscriptions').select('course_key,status').eq('profile_id', profile.id) : Promise.resolve({ data: [] }),
   ]);
   const modules = (data || []).filter(isRealModule);
   const activeSubs = (subscriptions || []).filter((sub: any) => isAccessActive(sub.status));
