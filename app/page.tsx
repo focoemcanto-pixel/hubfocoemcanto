@@ -1,5 +1,7 @@
 import { GraduationCap, Lock, Mail, PlayCircle, ShieldCheck, Sparkles, Star, Users } from 'lucide-react';
-import { FocoAcademyLogo, focoAcademyLogoCss } from '@/components/foco-academy-logo';
+import { DynamicBrandLogo, dynamicBrandLogoCss } from '@/components/dynamic-brand-logo';
+import { focoAcademyLogoCss } from '@/components/foco-academy-logo';
+import { getAdminSettings } from '@/lib/data/admin-settings';
 
 type LoginSearch = { email?: string; setup?: string; password?: string; erro?: string };
 
@@ -22,6 +24,7 @@ const courses = ['Firmar Afinação', 'Aprendendo a Segunda Voz', 'Duetos para T
 
 export default async function HomePage({ searchParams }: { searchParams?: Promise<LoginSearch> }) {
   const params = searchParams ? await searchParams : {};
+  const settings = await getAdminSettings();
   const email = String(params.email || '');
   const setup = params.setup === '1';
   const passwordMode = params.password === '1';
@@ -29,10 +32,10 @@ export default async function HomePage({ searchParams }: { searchParams?: Promis
 
   return (
     <main className="academy-login-page hub-login-page">
-      <style dangerouslySetInnerHTML={{ __html: focoAcademyLogoCss }} />
+      <style dangerouslySetInnerHTML={{ __html: `${focoAcademyLogoCss}${dynamicBrandLogoCss}` }} />
       <section className="academy-login-shell hub-login-shell">
         <aside className="academy-login-brand hub-login-brand">
-          <div className="academy-brand-lockup"><FocoAcademyLogo /></div>
+          <div className="academy-brand-lockup"><DynamicBrandLogo settings={settings} /></div>
           <h1>Sua voz. <span>Seu treino.</span></h1>
           <p>O hub completo para assistir aulas, gravar duetos, postar na comunidade e evoluir com direção.</p>
           <div className="academy-benefits">
@@ -92,7 +95,7 @@ export default async function HomePage({ searchParams }: { searchParams?: Promis
         <div><Users size={28} /><strong>Comunidade</strong><span>poste duetos</span></div>
         <div><PlayCircle size={28} /><strong>Firmar Afinação</strong><span>módulo grátis</span></div>
         <div><Star size={28} /><strong>VIP</strong><span>avaliação</span></div>
-        <div><FocoAcademyLogo compact /><strong>Evolua</strong><span>todos os dias</span></div>
+        <div><DynamicBrandLogo settings={settings} compact /><strong>Evolua</strong><span>todos os dias</span></div>
       </section>
     </main>
   );
