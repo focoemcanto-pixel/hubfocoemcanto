@@ -14,6 +14,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const drive_url = String(formData.get('drive_url') || '').trim();
   const description = String(formData.get('description') || '').trim();
   const objective = String(formData.get('objective') || '').trim();
+  const trim_start_seconds = Math.max(0, Math.floor(Number(formData.get('trim_start_seconds') || 0)));
+  const trim_end_seconds = Math.max(0, Math.floor(Number(formData.get('trim_end_seconds') || 0)));
 
   if (!title || !module_id) {
     return NextResponse.redirect(new URL(`/admin/conteudos/exercicios/${id}/editar?erro=dados`, request.url));
@@ -30,6 +32,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     description,
     objective,
     updated_at: new Date().toISOString(),
+  }).eq('id', id);
+
+  await supabase.from('exercises').update({
+    trim_start_seconds,
+    trim_end_seconds,
   }).eq('id', id);
 
   return NextResponse.redirect(new URL('/admin/conteudos/sincronizar-biblioteca?sucesso=editado', request.url));
