@@ -2,10 +2,15 @@ import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { slugify } from '@/lib/google/drive-utils';
 
+function wantsJson(request: Request) {
+  return request.headers.get('accept')?.includes('application/json') || request.headers.get('x-requested-with') === 'fetch';
+}
+
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const formData = await request.formData();
   const supabase = createAdminClient();
+  const json = wantsJson(request);
 
   const title = String(formData.get('title') || '').trim();
   const module_id = String(formData.get('module_id') || '');
@@ -19,10 +24,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const editUrl = `/admin/conteudos/exercicios/${id}/editar`;
 
   if (!title || !module_id) {
+    if (json) return NextResponse.json({ ok: false, error: 'Preencha título e módulo.' }, { status: 400 });
     return NextResponse.redirect(new URL(`${editUrl}?erro=dados`, request.url));
   }
 
-  const { error: baseError } = await supabase.from('exercises').update({
+  const { error } = await supabase.from('exercises').update({
     title,
     slug: `${slugify(title)}-${id.slice(0, 6)}`,
     module_id,
@@ -32,23 +38,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     media_url: drive_url,
     description,
     objective,
+    trim_start_seconds,
+    trim_end_seconds,
     updated_at: new Date().toISOString(),
   }).eq('id', id);
 
-  if (baseError) {
-    console.error('Erro ao salvar dados do exercício', baseError.message);
+  if (error) {
+    console.error('Erro ao salvar exercício', error.message);
+    if (json) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
     return NextResponse.redirect(new URL(`${editUrl}?erro=salvar`, request.url));
   }
 
-  const { error: trimError } = await supabase
-    .from('exercises')
-    .update({ trim_start_seconds, trim_end_seconds })
-    .eq('id', id);
-
-  if (trimError) {
-    console.error('Erro ao salvar corte do exercício', trimError.message);
-    return NextResponse.redirect(new URL(`${editUrl}?erro=corte`, request.url));
-  }
-
+  if (json) return NextResponse.json({ ok: true, trim_start_seconds, trim_end_seconds });
   return NextResponse.redirect(new URL(`${editUrl}?sucesso=salvo`, request.url));
 }
