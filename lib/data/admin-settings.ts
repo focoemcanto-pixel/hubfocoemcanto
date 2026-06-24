@@ -1,5 +1,10 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 
+export interface BrandingAssetSize {
+  width: number;
+  height: number;
+}
+
 export interface AdminSettings {
   branding: {
     appName: string;
@@ -9,6 +14,11 @@ export interface AdminSettings {
     loginImageUrl?: string;
     heroImageUrl?: string;
     ogImageUrl?: string;
+    logoSize: BrandingAssetSize;
+    faviconSize: BrandingAssetSize;
+    loginImageSize: BrandingAssetSize;
+    heroImageSize: BrandingAssetSize;
+    ogImageSize: BrandingAssetSize;
   };
 }
 
@@ -25,12 +35,34 @@ const DEFAULT_SETTINGS: AdminSettings = {
     loginImageUrl: '',
     heroImageUrl: '',
     ogImageUrl: '',
+    logoSize: { width: 260, height: 78 },
+    faviconSize: { width: 512, height: 512 },
+    loginImageSize: { width: 1200, height: 1600 },
+    heroImageSize: { width: 1920, height: 900 },
+    ogImageSize: { width: 1200, height: 630 },
   },
 };
 
-function mergeSettings(payload: Partial<AdminSettings> | null | undefined): AdminSettings {
+function safeSize(value: unknown, fallback: BrandingAssetSize): BrandingAssetSize {
+  const source = value && typeof value === 'object' ? value as Partial<BrandingAssetSize> : {};
   return {
-    branding: { ...DEFAULT_SETTINGS.branding, ...(payload?.branding ?? {}) },
+    width: Math.max(40, Math.min(4000, Number(source.width || fallback.width))),
+    height: Math.max(20, Math.min(4000, Number(source.height || fallback.height))),
+  };
+}
+
+function mergeSettings(payload: Partial<AdminSettings> | null | undefined): AdminSettings {
+  const branding = payload?.branding ?? {} as Partial<AdminSettings['branding']>;
+  return {
+    branding: {
+      ...DEFAULT_SETTINGS.branding,
+      ...branding,
+      logoSize: safeSize(branding.logoSize, DEFAULT_SETTINGS.branding.logoSize),
+      faviconSize: safeSize(branding.faviconSize, DEFAULT_SETTINGS.branding.faviconSize),
+      loginImageSize: safeSize(branding.loginImageSize, DEFAULT_SETTINGS.branding.loginImageSize),
+      heroImageSize: safeSize(branding.heroImageSize, DEFAULT_SETTINGS.branding.heroImageSize),
+      ogImageSize: safeSize(branding.ogImageSize, DEFAULT_SETTINGS.branding.ogImageSize),
+    },
   };
 }
 
