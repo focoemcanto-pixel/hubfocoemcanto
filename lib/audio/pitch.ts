@@ -1,4 +1,5 @@
 export type VoiceGender = 'masculino' | 'feminino' | 'nao_informar' | null | undefined;
+export type VocalRegister = 'chest' | 'mix' | 'head';
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const BRAZILIAN_NOTE_NAMES = ['Dó', 'Dó#', 'Ré', 'Ré#', 'Mi', 'Fá', 'Fá#', 'Sol', 'Sol#', 'Lá', 'Lá#', 'Si'];
@@ -14,7 +15,7 @@ const BRAZILIAN_NOTE_BY_SCIENTIFIC: Record<string, string> = {
   'G#': 'Sol#',
   A: 'Lá',
   'A#': 'Lá#',
-  B: 'Si',
+  B: 'Si'
 };
 
 export function autoCorrelate(buffer: Float32Array, sampleRate: number): number | null {
@@ -119,6 +120,33 @@ export function noteNameToMidi(note: string): number | null {
   const index = NOTE_NAMES.indexOf(noteName);
   if (index < 0) return null;
   return (Number(octaveText) + 1) * 12 + index;
+}
+
+export function getVocalRegister(midi?: number | null, gender?: VoiceGender): VocalRegister | null {
+  if (midi == null) return null;
+
+  if (gender === 'masculino') {
+    if (midi <= 64) return 'chest';
+    if (midi <= 71) return 'mix';
+    return 'head';
+  }
+
+  if (gender === 'feminino') {
+    if (midi <= 65) return 'chest';
+    if (midi <= 74) return 'mix';
+    return 'head';
+  }
+
+  if (midi <= 64) return 'chest';
+  if (midi <= 72) return 'mix';
+  return 'head';
+}
+
+export function getVocalRegisterLabel(register?: VocalRegister | null): string {
+  if (register === 'chest') return 'Peito';
+  if (register === 'mix') return 'Voz mista';
+  if (register === 'head') return 'Cabeça';
+  return '—';
 }
 
 export function classifyVoice(params: { tessituraLowMidi?: number | null; tessituraHighMidi?: number | null; lowestMidi?: number | null; highestMidi?: number | null; gender?: VoiceGender; }): { classification: string; confidence: number } {
