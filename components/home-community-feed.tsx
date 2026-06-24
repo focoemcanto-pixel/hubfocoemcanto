@@ -35,22 +35,56 @@ export function HomeCommunityFeed({ initialPosts, hasVipAccess = false, vipCheck
   const [removing, setRemoving] = useState<string | null>(null);
   const [vipModal, setVipModal] = useState(false);
   const refs = useRef<Record<string, HTMLVideoElement | null>>({});
+  const visibleRatios = useRef<Record<string, number>>({});
+  const playRaf = useRef<number | null>(null);
 
   useEffect(() => { document.body.classList.toggle('comments-open', !!sheet || vipModal); return () => document.body.classList.remove('comments-open'); }, [sheet, vipModal]);
   useEffect(() => {
+    const playMostVisible = () => {
+      playRaf.current = null;
+      let activeId: string | null = null;
+      let activeRatio = 0;
+      Object.entries(visibleRatios.current).forEach(([id, ratio]) => {
+        if (ratio > activeRatio) {
+          activeId = id;
+          activeRatio = ratio;
+        }
+      });
+      Object.entries(refs.current).forEach(([id, video]) => {
+        if (!video) return;
+        if (id === activeId && activeRatio >= 0.32) {
+          video.preload = 'auto';
+          video.play().catch(() => undefined);
+        } else {
+          video.pause();
+          video.preload = 'metadata';
+        }
+      });
+    };
+
+    const schedulePlayMostVisible = () => {
+      if (playRaf.current !== null) return;
+      playRaf.current = window.requestAnimationFrame(playMostVisible);
+    };
+
     const videos = Object.values(refs.current).filter(Boolean) as HTMLVideoElement[];
-    const io = new IntersectionObserver((entries) => entries.forEach((entry) => {
-      const video = entry.target as HTMLVideoElement;
-      if (entry.isIntersecting) {
-        video.preload = 'auto';
-        video.play().catch(() => undefined);
-      } else {
-        video.pause();
-        video.preload = 'metadata';
-      }
-    }), { rootMargin: '320px 0px', threshold: .32 });
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        const video = entry.target as HTMLVideoElement;
+        const id = video.dataset.postId;
+        if (!id) return;
+        visibleRatios.current[id] = entry.isIntersecting ? entry.intersectionRatio : 0;
+      });
+      schedulePlayMostVisible();
+    }, { rootMargin: '220px 0px', threshold: [0, .15, .32, .5, .75, 1] });
     videos.forEach((video) => io.observe(video));
-    return () => io.disconnect();
+    return () => {
+      io.disconnect();
+      if (playRaf.current !== null) window.cancelAnimationFrame(playRaf.current);
+      playRaf.current = null;
+      visibleRatios.current = {};
+      Object.values(refs.current).forEach((video) => video?.pause());
+    };
   }, [posts]);
   useEffect(() => { if (sheet) loadComments(sheet); }, [sheet]);
 
@@ -81,7 +115,7 @@ export function HomeCommunityFeed({ initialPosts, hasVipAccess = false, vipCheck
         {reposted[post.id] ? <div className="repost-ribbon"><Repeat2 size={14} /> Você repostou essa prática</div> : null}
         {post.isEvaluated ? <div className="teacher-evaluated-ribbon"><Sparkles size={13} /> Avaliado pelo professor</div> : null}
         <header className="home-post-head instagram-post-head"><div className="instagram-author-avatar">{post.authorAvatarUrl ? <img src={post.authorAvatarUrl} alt={post.authorName} loading="lazy" /> : <span>{initials(post.authorName)}</span>}</div><div className="instagram-author-copy"><strong>{post.authorName}{post.isVipAuthor ? <VerifiedBadge /> : null}</strong><span>{timeAgo(post.createdAt)}{post.isVipAuthor ? ' · VIP' : ''}</span></div>{!post.canDelete ? <button className={`instagram-follow-button ${following[post.authorId || post.id] ? 'following' : ''}`} type="button" onClick={() => followAuthor(post.authorId)}>{following[post.authorId || post.id] ? 'Seguindo' : 'Seguir'}</button> : null}<div className="home-post-options"><button className="home-post-menu" type="button" onClick={() => setMenu(menu === post.id ? null : post.id)}><MoreHorizontal size={28} /></button>{menu === post.id ? <div className="post-options-popover instagram-options-sheet"><Link href={`/aluno/comunidade#post-${post.id}`}>Ver publicação</Link>{post.exerciseSlug ? hasVipAccess ? <Link href={`/aluno/aula/${post.exerciseSlug}`}>Ver aula vinculada</Link> : <button type="button" onClick={openVipModal}>Ver aula vinculada</button> : null}<button type="button" onClick={() => repeatPost(post.id)}>{reposted[post.id] ? 'Remover repost' : 'Repostar'}</button><button type="button" onClick={() => sharePost(post.id)}>Compartilhar/copiar link</button>{post.canDelete ? <button className="danger-option" type="button" onClick={() => deletePost(post.id)}><Trash2 size={18} /> Excluir publicação</button> : null}</div> : null}</div></header>
-        <div className={`home-post-media instagram-reel-media ${isTextOnly ? 'text-post-media' : ''}`}>{post.mediaUrl ? <><span className={`feed-video-placeholder ${videoReady[post.id] ? 'ready' : ''}`} aria-hidden />{videoBuffering[post.id] ? <span className="feed-video-loader" aria-hidden /> : null}<video ref={(node) => { refs.current[post.id] = node; }} className={`community-feed-video ${videoReady[post.id] ? 'ready' : ''} ${videoBuffering[post.id] ? 'is-buffering' : ''}`} src={post.mediaUrl} muted={!soundOn[post.id]} loop playsInline preload="metadata" onLoadedData={(event) => { markVideoReady(post.id); if (!soundOn[post.id]) event.currentTarget.play().catch(() => undefined); }} onCanPlay={() => markVideoReady(post.id)} onPlaying={() => markVideoReady(post.id)} onWaiting={() => markVideoWaiting(post.id)} onStalled={() => markVideoWaiting(post.id)} onError={() => markVideoReady(post.id)} /><button className="home-sound-toggle instagram-sound-toggle" type="button" onClick={() => toggleSound(post.id)}>{soundOn[post.id] ? <Volume2 size={20} /> : <VolumeX size={20} />}</button>{post.exerciseTitle ? <div className="instagram-music-chip">♪ {post.exerciseTitle}</div> : null}</> : <div className="community-text-card"><span className="community-text-type">{textKind(caption)}</span><p className={`community-text-main ${textClass(caption)}`}>{caption}</p><div className="community-text-footer"><span className="community-text-dot" /> Publicação da comunidade</div></div>}</div>
+        <div className={`home-post-media instagram-reel-media ${isTextOnly ? 'text-post-media' : ''}`}>{post.mediaUrl ? <><span className={`feed-video-placeholder ${videoReady[post.id] ? 'ready' : ''}`} aria-hidden />{videoBuffering[post.id] ? <span className="feed-video-loader" aria-hidden /> : null}<video ref={(node) => { refs.current[post.id] = node; }} data-post-id={post.id} className={`community-feed-video ${videoReady[post.id] ? 'ready' : ''} ${videoBuffering[post.id] ? 'is-buffering' : ''}`} src={post.mediaUrl} muted={!soundOn[post.id]} loop playsInline preload="metadata" onLoadedData={(event) => { markVideoReady(post.id); if (!soundOn[post.id]) event.currentTarget.play().catch(() => undefined); }} onCanPlay={() => markVideoReady(post.id)} onPlaying={() => markVideoReady(post.id)} onWaiting={() => markVideoWaiting(post.id)} onStalled={() => markVideoWaiting(post.id)} onError={() => markVideoReady(post.id)} /><button className="home-sound-toggle instagram-sound-toggle" type="button" onClick={() => toggleSound(post.id)}>{soundOn[post.id] ? <Volume2 size={20} /> : <VolumeX size={20} />}</button>{post.exerciseTitle ? <div className="instagram-music-chip">♪ {post.exerciseTitle}</div> : null}</> : <div className="community-text-card"><span className="community-text-type">{textKind(caption)}</span><p className={`community-text-main ${textClass(caption)}`}>{caption}</p><div className="community-text-footer"><span className="community-text-dot" /> Publicação da comunidade</div></div>}</div>
         <div className="home-icon-actions instagram-action-row"><div className="instagram-action-left"><button type="button" className={liked[post.id] ? 'liked reaction-pop' : ''} onClick={() => likePost(post.id)}><Heart size={30} fill={liked[post.id] ? 'currentColor' : 'none'} /></button><button type="button" onClick={() => setSheet(post.id)}><MessageCircle size={30} /></button><button type="button" onClick={() => sharePost(post.id)}><Send size={30} /></button><button type="button" className={reposted[post.id] ? 'active-action reaction-pop' : ''} onClick={() => repeatPost(post.id)}><Repeat2 size={29} /></button></div><button type="button" className={`save-button ${saved[post.id] ? 'active-action reaction-pop' : ''}`} onClick={() => savePost(post.id)}><Bookmark size={31} fill={saved[post.id] ? 'currentColor' : 'none'} /></button></div>
         <div className="instagram-engagement-line"><strong>{post.likesCount}</strong> curtidas</div>{isTextOnly ? null : <p className="home-post-caption instagram-bottom-caption"><strong>{post.authorName}{post.isVipAuthor ? <VerifiedBadge /> : null}</strong> {caption}</p>}<button type="button" className="instagram-view-comments" onClick={() => setSheet(post.id)}>Ver todos os {post.commentsCount} comentários</button>{(comments[post.id] || []).slice(-2).map((c, i) => <p className="home-local-comments" key={c.id || i}><strong>{c.authorName}</strong> {c.text}</p>)}
       </article>;
