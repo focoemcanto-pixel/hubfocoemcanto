@@ -12,11 +12,18 @@ const STUDENT_ROUTES = [
   '/aluno/salvos',
 ];
 
+type WindowWithIdleCallback = Window & typeof globalThis & {
+  requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number;
+  cancelIdleCallback?: (handle: number) => void;
+};
+
 export function StudentRoutePrefetcher() {
   const router = useRouter();
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+
+    const browserWindow = window as WindowWithIdleCallback;
 
     const prefetchRoutes = () => {
       STUDENT_ROUTES.forEach((route) => {
@@ -28,15 +35,15 @@ export function StudentRoutePrefetcher() {
       });
     };
 
-    const runWhenIdle = 'requestIdleCallback' in window
-      ? window.requestIdleCallback(prefetchRoutes, { timeout: 1800 })
-      : window.setTimeout(prefetchRoutes, 700);
+    const runWhenIdle = typeof browserWindow.requestIdleCallback === 'function'
+      ? browserWindow.requestIdleCallback(prefetchRoutes, { timeout: 1800 })
+      : browserWindow.setTimeout(prefetchRoutes, 700);
 
     return () => {
-      if ('cancelIdleCallback' in window && typeof runWhenIdle === 'number') {
-        window.cancelIdleCallback(runWhenIdle);
-      } else if (typeof runWhenIdle === 'number') {
-        window.clearTimeout(runWhenIdle);
+      if (typeof browserWindow.cancelIdleCallback === 'function') {
+        browserWindow.cancelIdleCallback(runWhenIdle);
+      } else {
+        browserWindow.clearTimeout(runWhenIdle);
       }
     };
   }, [router]);
