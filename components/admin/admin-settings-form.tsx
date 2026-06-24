@@ -4,6 +4,14 @@ import { useState } from 'react';
 import { BrandingPipelineManager } from '@/components/admin/branding-pipeline-manager';
 import type { AdminSettings, BrandingAssetSize } from '@/lib/data/admin-settings';
 
+const DEFAULT_ASSET_SIZES = {
+  logo: { width: 260, height: 78 },
+  favicon: { width: 512, height: 512 },
+  login: { width: 1200, height: 1600 },
+  hero: { width: 1920, height: 900 },
+  og: { width: 1200, height: 630 },
+} satisfies Record<string, BrandingAssetSize>;
+
 function parseSize(value: FormDataEntryValue | null, fallback: BrandingAssetSize): BrandingAssetSize {
   if (typeof value !== 'string' || !value) return fallback;
   try {
@@ -22,6 +30,12 @@ export function AdminSettingsForm({ settings }: { settings: AdminSettings }) {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const logoSize = settings.branding.logoSize || DEFAULT_ASSET_SIZES.logo;
+  const faviconSize = settings.branding.faviconSize || DEFAULT_ASSET_SIZES.favicon;
+  const loginImageSize = settings.branding.loginImageSize || DEFAULT_ASSET_SIZES.login;
+  const heroImageSize = settings.branding.heroImageSize || DEFAULT_ASSET_SIZES.hero;
+  const ogImageSize = settings.branding.ogImageSize || DEFAULT_ASSET_SIZES.og;
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);
@@ -29,22 +43,21 @@ export function AdminSettingsForm({ settings }: { settings: AdminSettings }) {
     setError(null);
 
     const formData = new FormData(event.currentTarget);
-    const payload: AdminSettings = {
-      branding: {
-        appName: String(formData.get('appName') || 'Foco em Canto Academy'),
-        logoUrl: String(formData.get('logoUrl') || ''),
-        faviconUrl: String(formData.get('faviconUrl') || ''),
-        primaryColor: String(formData.get('primaryColor') || '#D4AF37'),
-        loginImageUrl: String(formData.get('loginImageUrl') || ''),
-        heroImageUrl: String(formData.get('heroImageUrl') || ''),
-        ogImageUrl: String(formData.get('ogImageUrl') || ''),
-        logoSize: parseSize(formData.get('logoSizeJson'), settings.branding.logoSize),
-        faviconSize: parseSize(formData.get('faviconSizeJson'), settings.branding.faviconSize),
-        loginImageSize: parseSize(formData.get('loginImageSizeJson'), settings.branding.loginImageSize),
-        heroImageSize: parseSize(formData.get('heroImageSizeJson'), settings.branding.heroImageSize),
-        ogImageSize: parseSize(formData.get('ogImageSizeJson'), settings.branding.ogImageSize),
-      },
+    const branding: AdminSettings['branding'] = {
+      appName: String(formData.get('appName') || 'Foco em Canto Academy'),
+      logoUrl: String(formData.get('logoUrl') || ''),
+      faviconUrl: String(formData.get('faviconUrl') || ''),
+      primaryColor: String(formData.get('primaryColor') || '#D4AF37'),
+      loginImageUrl: String(formData.get('loginImageUrl') || ''),
+      heroImageUrl: String(formData.get('heroImageUrl') || ''),
+      ogImageUrl: String(formData.get('ogImageUrl') || ''),
+      logoSize: parseSize(formData.get('logoSizeJson'), logoSize),
+      faviconSize: parseSize(formData.get('faviconSizeJson'), faviconSize),
+      loginImageSize: parseSize(formData.get('loginImageSizeJson'), loginImageSize),
+      heroImageSize: parseSize(formData.get('heroImageSizeJson'), heroImageSize),
+      ogImageSize: parseSize(formData.get('ogImageSizeJson'), ogImageSize),
     };
+    const payload: AdminSettings = { branding };
 
     try {
       const response = await fetch('/api/admin/settings', {
@@ -76,11 +89,11 @@ export function AdminSettingsForm({ settings }: { settings: AdminSettings }) {
           ogImageUrl: settings.branding.ogImageUrl || '',
         }}
         initialSizes={{
-          logo: settings.branding.logoSize,
-          favicon: settings.branding.faviconSize,
-          login: settings.branding.loginImageSize,
-          hero: settings.branding.heroImageSize,
-          og: settings.branding.ogImageSize,
+          logo: logoSize,
+          favicon: faviconSize,
+          login: loginImageSize,
+          hero: heroImageSize,
+          og: ogImageSize,
         }}
       />
       <div className="branding-field-grid">
