@@ -1,4 +1,5 @@
-import { GraduationCap, Lock, Mail, PlayCircle, ShieldCheck, Sparkles, Star, Users, Waves } from 'lucide-react';
+import { GraduationCap, Lock, Mail, PlayCircle, ShieldCheck, Sparkles, Star, Users } from 'lucide-react';
+import { FocoAcademyLogo, focoAcademyLogoCss } from '@/components/foco-academy-logo';
 
 type LoginSearch = { email?: string; setup?: string; password?: string; erro?: string };
 
@@ -28,10 +29,10 @@ export default async function HomePage({ searchParams }: { searchParams?: Promis
 
   return (
     <main className="academy-login-page hub-login-page">
+      <style dangerouslySetInnerHTML={{ __html: focoAcademyLogoCss }} />
       <section className="academy-login-shell hub-login-shell">
         <aside className="academy-login-brand hub-login-brand">
-          <div className="academy-logo-mark"><Waves size={36} /></div>
-          <div className="academy-wordmark"><strong>Foco em Canto</strong><span>Hub Vocal</span></div>
+          <div className="academy-brand-lockup"><FocoAcademyLogo /></div>
           <h1>Sua voz. <span>Seu treino.</span></h1>
           <p>O hub completo para assistir aulas, gravar duetos, postar na comunidade e evoluir com direção.</p>
           <div className="academy-benefits">
@@ -91,7 +92,7 @@ export default async function HomePage({ searchParams }: { searchParams?: Promis
         <div><Users size={28} /><strong>Comunidade</strong><span>poste duetos</span></div>
         <div><PlayCircle size={28} /><strong>Firmar Afinação</strong><span>módulo grátis</span></div>
         <div><Star size={28} /><strong>VIP</strong><span>avaliação</span></div>
-        <div><Waves size={28} /><strong>Evolua</strong><span>todos os dias</span></div>
+        <div><FocoAcademyLogo compact /><strong>Evolua</strong><span>todos os dias</span></div>
       </section>
     </main>
   );
