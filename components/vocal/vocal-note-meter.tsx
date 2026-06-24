@@ -26,7 +26,7 @@ export function VocalNoteMeter({ currentMidi, lowestMidi, highestMidi, minMidi =
           {highestMidi != null && <b className="marker high" style={{ top: `${percent(highestMidi)}%` }}>agudo {midiToBrazilianNoteName(highestMidi)}</b>}
           {currentMidi != null && <i className="active-note" style={{ top: `${percent(currentMidi)}%` }} aria-label={`Nota atual ${midiToBrazilianNoteName(currentMidi)}`} />}
         </div>
-        <WireframeBody activeRegion={activeRegion} currentLabel={currentMidi != null ? midiToBrazilianNoteName(currentMidi) : undefined} />
+        <WireframeBody activeRegion={activeRegion} currentMidi={currentMidi} currentLabel={currentMidi != null ? midiToBrazilianNoteName(currentMidi) : undefined} />
       </div>
     </div>
   );
