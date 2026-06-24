@@ -1,20 +1,13 @@
-import { midiToBrazilianNoteName } from '@/lib/audio/pitch';
+import { getVocalRegister, midiToBrazilianNoteName, type VoiceGender } from '@/lib/audio/pitch';
 import { WireframeBody } from './wireframe-body';
 
-type Props = { currentMidi?: number | null; lowestMidi?: number | null; highestMidi?: number | null; minMidi?: number; maxMidi?: number };
+type Props = { currentMidi?: number | null; lowestMidi?: number | null; highestMidi?: number | null; minMidi?: number; maxMidi?: number; gender?: VoiceGender };
 
-function regionFromMidi(midi?: number | null) {
-  if (midi == null) return null;
-  if (midi >= 72) return 'head';
-  if (midi >= 55) return 'mix';
-  return 'chest';
-}
-
-export function VocalNoteMeter({ currentMidi, lowestMidi, highestMidi, minMidi = 12, maxMidi = 84 }: Props) {
+export function VocalNoteMeter({ currentMidi, lowestMidi, highestMidi, minMidi = 12, maxMidi = 84, gender }: Props) {
   const clamp = (midi: number) => Math.max(minMidi, Math.min(maxMidi, midi));
   const percent = (midi: number) => 100 - ((clamp(midi) - minMidi) / (maxMidi - minMidi)) * 100;
   const labels = Array.from({ length: maxMidi - minMidi + 1 }, (_, index) => maxMidi - index);
-  const activeRegion = regionFromMidi(currentMidi);
+  const activeRegion = getVocalRegister(currentMidi, gender);
 
   return (
     <div className="vocal-meter premium-vocal-meter" aria-label="Medidor visual de notas e registros vocais">
