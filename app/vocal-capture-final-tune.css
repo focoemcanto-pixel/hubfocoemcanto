@@ -157,36 +157,39 @@
 
   body.vocal-capture-active .mvr-back,
   body.vocal-capture-active .mvr-retry {
-    width: 52px !important;
-    height: 52px !important;
-    min-height: 52px !important;
-    bottom: calc(58px + env(safe-area-inset-bottom)) !important;
-    font-size: 22px !important;
-    background: rgba(255,255,255,.04) !important;
-    border-color: rgba(255,255,255,.12) !important;
+    width: 46px !important;
+    height: 46px !important;
+    min-height: 46px !important;
+    bottom: calc(62px + env(safe-area-inset-bottom)) !important;
+    font-size: 20px !important;
+    background: rgba(255,255,255,.038) !important;
+    border-color: rgba(255,255,255,.11) !important;
+    box-shadow: 0 10px 24px rgba(0,0,0,.22) !important;
   }
 
   body.vocal-capture-active .mvr-back {
-    left: 38px !important;
+    left: calc(50% - 166px) !important;
   }
 
   body.vocal-capture-active .mvr-retry {
-    right: 38px !important;
+    right: auto !important;
+    left: calc(50% + 120px) !important;
   }
 
   body.vocal-capture-active .mvr-retry svg {
-    width: 23px !important;
-    height: 23px !important;
+    width: 21px !important;
+    height: 21px !important;
   }
 
   body.vocal-capture-active .mvr-main {
-    width: min(44vw, 350px) !important;
-    min-width: 210px !important;
-    height: 48px !important;
-    min-height: 48px !important;
-    bottom: calc(60px + env(safe-area-inset-bottom)) !important;
+    width: 224px !important;
+    min-width: 224px !important;
+    max-width: 224px !important;
+    height: 46px !important;
+    min-height: 46px !important;
+    bottom: calc(62px + env(safe-area-inset-bottom)) !important;
     font-size: 12.5px !important;
-    padding: 0 16px !important;
-    box-shadow: 0 14px 34px rgba(232,173,52,.16) !important;
+    padding: 0 14px !important;
+    box-shadow: 0 12px 30px rgba(232,173,52,.14) !important;
   }
 }
