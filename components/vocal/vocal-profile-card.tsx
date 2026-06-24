@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { Mic2, RefreshCw, Sparkles } from 'lucide-react';
+import { formatBrazilianNote } from '@/lib/audio/pitch';
 
 type VocalProfile = { classification?: string | null; classification_confidence?: number | null; lowest_note?: string | null; highest_note?: string | null; tessitura_low_note?: string | null; tessitura_high_note?: string | null; updated_at?: string | null } | null;
 
@@ -21,8 +22,8 @@ export function VocalProfileCard({ vocalProfile }: { vocalProfile: VocalProfile 
       {hasResult ? <>
         <div className="vocal-profile-card__grid">
           <article><small>Tendência vocal</small><strong>{vocalProfile?.classification || 'Indefinida'}</strong></article>
-          <article><small>Extensão</small><strong>{vocalProfile?.lowest_note} → {vocalProfile?.highest_note}</strong></article>
-          <article><small>Tessitura</small><strong>{vocalProfile?.tessitura_low_note || '—'} → {vocalProfile?.tessitura_high_note || '—'}</strong></article>
+          <article><small>Extensão</small><strong>{formatBrazilianNote(vocalProfile?.lowest_note)} → {formatBrazilianNote(vocalProfile?.highest_note)}</strong></article>
+          <article><small>Tessitura</small><strong>{formatBrazilianNote(vocalProfile?.tessitura_low_note)} → {formatBrazilianNote(vocalProfile?.tessitura_high_note)}</strong></article>
           <article><small>Atualizado</small><strong>{formatDate(vocalProfile?.updated_at)}</strong></article>
         </div>
         <p>Classificação aproximada: leitura inicial para orientar seus estudos, não uma sentença definitiva.</p>
