@@ -40,29 +40,51 @@ function installLessonsPanelToggle() {
   if (!document.getElementById(styleId)) {
     const style = document.createElement('style');
     style.id = styleId;
-    style.textContent = '[class*="modules-actions"]{display:flex;align-items:center;gap:8px}.fc-lessons-toggle{display:inline-flex;align-items:center;justify-content:center;width:42px;height:42px;border-radius:999px;border:1px solid rgba(245,199,107,.22);background:rgba(255,255,255,.045);color:#f5c76b;font-size:24px;font-weight:900;line-height:1}.fc-lessons-collapsed [class*="module-list"]{display:none}.fc-lessons-collapsed{max-height:110px!important;overflow:hidden}.fc-lessons-collapsed [class*="modules-head"]{border-bottom:0!important}';
+    style.textContent = '[class*="modules-actions"]{display:flex;align-items:center;gap:8px}.fc-lessons-toggle,.fc-module-toggle{display:inline-flex;align-items:center;justify-content:center;border-radius:999px;border:1px solid rgba(245,199,107,.22);background:rgba(255,255,255,.045);color:#f5c76b;font-weight:900;line-height:1}.fc-lessons-toggle{width:42px;height:42px;font-size:24px}.fc-module-toggle{width:34px;height:34px;font-size:18px;margin-left:auto}.fc-lessons-collapsed [class*="module-list"]{display:none}.fc-lessons-collapsed{max-height:110px!important;overflow:hidden}.fc-lessons-collapsed [class*="modules-head"]{border-bottom:0!important}.fc-module-collapsed [class*="lessons-list"]{display:none}.fc-module-collapsed{padding-bottom:0!important}.fc-module-collapsed [class*="module-title"]{margin-bottom:0!important}';
     document.head.appendChild(style);
   }
   document.querySelectorAll<HTMLElement>('[class*="modules-panel"]').forEach((panel) => {
-    if (panel.dataset.fcToggleReady === '1') return;
-    const head = panel.querySelector<HTMLElement>('[class*="modules-head"]');
-    if (!head) return;
-    const closeLink = head.querySelector<HTMLAnchorElement>('a:last-child');
-    const toggle = document.createElement('button');
-    toggle.type = 'button';
-    toggle.className = 'fc-lessons-toggle';
-    toggle.setAttribute('aria-label', 'Minimizar aulas');
-    toggle.textContent = '⌃';
-    toggle.addEventListener('click', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      const collapsed = panel.classList.toggle('fc-lessons-collapsed');
-      toggle.textContent = collapsed ? '⌄' : '⌃';
-      toggle.setAttribute('aria-label', collapsed ? 'Exibir aulas' : 'Minimizar aulas');
+    if (panel.dataset.fcPanelToggleReady !== '1') {
+      const head = panel.querySelector<HTMLElement>('[class*="modules-head"]');
+      const closeLink = head?.querySelector<HTMLAnchorElement>('a:last-child');
+      if (head) {
+        const toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.className = 'fc-lessons-toggle';
+        toggle.setAttribute('aria-label', 'Minimizar painel de aulas');
+        toggle.textContent = '^';
+        toggle.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          const collapsed = panel.classList.toggle('fc-lessons-collapsed');
+          toggle.textContent = collapsed ? 'v' : '^';
+          toggle.setAttribute('aria-label', collapsed ? 'Exibir painel de aulas' : 'Minimizar painel de aulas');
+        });
+        if (closeLink) head.insertBefore(toggle, closeLink);
+        else head.appendChild(toggle);
+        panel.dataset.fcPanelToggleReady = '1';
+      }
+    }
+    panel.querySelectorAll<HTMLElement>('[class*="module-group"]').forEach((group) => {
+      if (group.dataset.fcModuleToggleReady === '1') return;
+      const title = group.querySelector<HTMLElement>('[class*="module-title"]');
+      const list = group.querySelector<HTMLElement>('[class*="lessons-list"]');
+      if (!title || !list) return;
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'fc-module-toggle';
+      button.setAttribute('aria-label', 'Minimizar aulas deste módulo');
+      button.textContent = '^';
+      button.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const collapsed = group.classList.toggle('fc-module-collapsed');
+        button.textContent = collapsed ? 'v' : '^';
+        button.setAttribute('aria-label', collapsed ? 'Exibir aulas deste módulo' : 'Minimizar aulas deste módulo');
+      });
+      title.appendChild(button);
+      group.dataset.fcModuleToggleReady = '1';
     });
-    if (closeLink) head.insertBefore(toggle, closeLink);
-    else head.appendChild(toggle);
-    panel.dataset.fcToggleReady = '1';
   });
 }
 
