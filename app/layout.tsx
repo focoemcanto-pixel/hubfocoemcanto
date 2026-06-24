@@ -29,6 +29,7 @@ import './duet-publish-progress.css';
 import './duet-refined-flow.css';
 import './profile-icon-alignment.css';
 import './vocal-capture-mobile-fix.css';
+import './vocal-capture-reference-ruler.css';
 
 export default function RootLayout(props: { children: React.ReactNode }) {
   return <html lang="pt-BR"><body>{props.children}</body></html>;
