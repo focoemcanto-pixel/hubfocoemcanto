@@ -36,6 +36,7 @@ import './vocal-capture-reference-body.css';
 import './vocal-capture-final-lock.css';
 import './vocal-capture-mobile-polish.css';
 import './vocal-capture-final-tune.css';
+import './vocal-tessitura-stage.css';
 
 export default function RootLayout(props: { children: React.ReactNode }) {
   return <html lang="pt-BR"><body>{props.children}</body></html>;
