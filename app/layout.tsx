@@ -32,6 +32,7 @@ import './vocal-capture-mobile-fix.css';
 import './vocal-capture-reference-ruler.css';
 import './vocal-capture-reference-title.css';
 import './vocal-capture-reference-controls.css';
+import './vocal-capture-reference-body.css';
 
 export default function RootLayout(props: { children: React.ReactNode }) {
   return <html lang="pt-BR"><body>{props.children}</body></html>;
