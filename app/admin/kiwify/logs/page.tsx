@@ -1,4 +1,6 @@
+import { revalidatePath } from 'next/cache';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { isAccessActive } from '@/lib/access/products';
 
 export const dynamic = 'force-dynamic';
 
@@ -7,6 +9,19 @@ type Row = any;
 async function safeData(query: PromiseLike<{ data: any; error: any }>) {
   const { data, error } = await query;
   return error ? [] : Array.isArray(data) ? data : [];
+}
+
+async function markKiwifyLogResolved(formData: FormData) {
+  'use server';
+  const id = String(formData.get('id') || '');
+  if (!id) return;
+  const supabase = createAdminClient();
+  await supabase
+    .from('kiwify_webhook_events')
+    .update({ status: 'processed', error_message: null })
+    .eq('id', id);
+  revalidatePath('/admin/kiwify/logs');
+  revalidatePath('/admin/premium');
 }
 
 function timeAgo(value?: string | null) {
@@ -43,16 +58,8 @@ function businessStatus(log: Row) {
   return 'Recebido';
 }
 
-function syncState(log: Row) {
-  const status = String(log.status || '').toLowerCase();
-  if (status === 'processed') return { label: 'Sincronizado', tone: 'ok', description: 'Atualizou aluno/assinatura no Hub.' };
-  if (status === 'unauthorized') return { label: 'Recebido pela Kiwify', tone: 'warn', description: 'Compra existe na Kiwify, mas este evento não atualizou o Hub porque o token do webhook não conferiu.' };
-  if (status === 'failed') return { label: 'Não sincronizado', tone: 'bad', description: 'O Hub recebeu o evento, mas não conseguiu atualizar aluno/assinatura.' };
-  return { label: 'Recebido', tone: 'neutral', description: 'Evento registrado para conferência.' };
-}
-
-function statusTone(log: Row) {
-  return syncState(log).tone;
+function customerEmail(log: Row) {
+  return String(log.customer_email || log.raw_payload?.Customer?.email || log.raw_payload?.customer?.email || log.raw_payload?.email || 'sem e-mail').toLowerCase();
 }
 
 function productName(log: Row) {
@@ -60,8 +67,39 @@ function productName(log: Row) {
   return value || 'Produto não identificado';
 }
 
-function customerEmail(log: Row) {
-  return log.customer_email || log.raw_payload?.Customer?.email || log.raw_payload?.customer?.email || log.raw_payload?.email || 'sem e-mail';
+function productKey(value?: string | null) {
+  return String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function buildActiveAccessMap(subscriptions: Row[]) {
+  const map = new Set<string>();
+  for (const sub of subscriptions) {
+    const email = String(sub.provider_customer_id || sub.profiles?.email || '').toLowerCase();
+    if (!email || !isAccessActive(sub.status)) continue;
+    map.add(email);
+    const product = productKey(sub.product_name);
+    if (product) map.add(`${email}::${product}`);
+  }
+  return map;
+}
+
+function isResolvedByCurrentAccess(log: Row, activeAccess: Set<string>) {
+  const email = customerEmail(log);
+  if (!email || email === 'sem e-mail') return false;
+  const product = productKey(productName(log));
+  return activeAccess.has(`${email}::${product}`) || activeAccess.has(email);
+}
+
+function syncState(log: Row, resolvedByAccess = false) {
+  const status = String(log.status || '').toLowerCase();
+  if (status === 'processed' || resolvedByAccess) return { label: 'Resolvido no Hub', tone: 'ok', description: resolvedByAccess ? 'Este evento antigo ficou com alerta, mas o aluno já possui acesso ativo no Hub.' : 'Atualizou aluno/assinatura no Hub.' };
+  if (status === 'unauthorized') return { label: 'Recebido para revisão', tone: 'warn', description: 'Evento recebido, mas não sincronizado automaticamente na época. Verifique ou marque como resolvido se o acesso já estiver correto.' };
+  if (status === 'failed') return { label: 'Não sincronizado', tone: 'bad', description: 'O Hub recebeu o evento, mas não conseguiu atualizar aluno/assinatura.' };
+  return { label: 'Recebido', tone: 'neutral', description: 'Evento registrado para conferência.' };
+}
+
+function statusTone(log: Row, resolvedByAccess = false) {
+  return syncState(log, resolvedByAccess).tone;
 }
 
 function payloadPreview(log: Row) {
@@ -69,9 +107,10 @@ function payloadPreview(log: Row) {
   return JSON.stringify(payload, null, 2);
 }
 
-function humanError(log: Row) {
+function humanError(log: Row, resolvedByAccess = false) {
   const status = String(log.status || '').toLowerCase();
-  if (status === 'unauthorized') return 'Token do webhook diferente do configurado no Hub. A venda pode estar correta na Kiwify, mas este evento não sincronizou automaticamente.';
+  if (resolvedByAccess) return '';
+  if (status === 'unauthorized') return 'Evento antigo pendente de revisão. A correção do token vale para os próximos webhooks; este registro pode ser marcado como resolvido se o acesso já estiver ok.';
   if (!log.error_message) return '';
   const error = String(log.error_message);
   if (error.includes('customer_email_missing')) return 'A Kiwify não enviou o e-mail do comprador neste evento.';
@@ -81,16 +120,17 @@ function humanError(log: Row) {
 }
 
 const css = `
-.kiwify-logs-page{max-width:1280px;margin:0 auto;color:#f8f7fb}.kiwify-logs-hero{display:flex;justify-content:space-between;gap:18px;align-items:flex-end;border:1px solid rgba(245,199,107,.22);border-radius:26px;padding:34px;background:radial-gradient(circle at 80% 0,rgba(245,199,107,.16),transparent 42%),linear-gradient(145deg,rgba(255,255,255,.055),rgba(255,255,255,.02));box-shadow:0 30px 90px rgba(0,0,0,.32);margin-bottom:18px}.kiwify-logs-hero h1{font-size:clamp(42px,6vw,76px);line-height:.95;margin:8px 0;letter-spacing:-.055em}.kiwify-eyebrow{display:block;text-transform:uppercase;letter-spacing:.24em;color:#f5c76b;font-weight:950;font-size:12px}.kiwify-muted{color:rgba(248,247,251,.62)}.kiwify-actions{display:flex;gap:10px;flex-wrap:wrap}.kiwify-btn{display:inline-flex;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,.16);border-radius:14px;padding:12px 18px;color:#fff;text-decoration:none;font-weight:900;background:rgba(255,255,255,.04)}.kiwify-btn.gold{background:linear-gradient(135deg,#ffd978,#c99a35);border:0;color:#171007}.kiwify-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px}.kiwify-kpis article,.kiwify-panel{border:1px solid rgba(245,199,107,.18);border-radius:20px;background:linear-gradient(145deg,rgba(255,255,255,.052),rgba(255,255,255,.018));padding:18px}.kiwify-kpis span{display:block;text-transform:uppercase;letter-spacing:.16em;color:#f5c76b;font-size:11px;font-weight:950}.kiwify-kpis strong{display:block;font-size:34px;margin-top:8px}.kiwify-panel h2{font-size:28px;margin:0 0 14px}.kiwify-panel-note{border:1px solid rgba(245,199,107,.18);border-radius:16px;background:rgba(245,199,107,.06);padding:12px 14px;color:rgba(248,247,251,.76);margin:0 0 16px}.kiwify-log-list{display:grid;gap:12px}.kiwify-log-row{display:grid;grid-template-columns:170px 1.1fr 1fr 1.1fr auto;gap:14px;align-items:center;border:1px solid rgba(255,255,255,.1);border-radius:18px;padding:14px;background:rgba(255,255,255,.035)}.kiwify-log-row strong{display:block}.kiwify-log-row small{display:block;color:rgba(248,247,251,.55);margin-top:4px}.kiwify-status{display:inline-flex;border-radius:999px;padding:8px 12px;font-weight:950;font-size:12px;white-space:nowrap}.kiwify-status.ok{background:rgba(47,216,100,.13);color:#65f085}.kiwify-status.bad{background:rgba(255,86,86,.13);color:#ff8d8d}.kiwify-status.warn{background:rgba(245,199,107,.15);color:#ffd978}.kiwify-status.neutral{background:rgba(255,255,255,.08);color:#ddd}.payload-box{white-space:pre-wrap;word-break:break-word;border:1px solid rgba(255,255,255,.1);border-radius:14px;background:#090910;padding:12px;color:#cfcfea;max-height:260px;overflow:auto;margin-top:10px}details summary{cursor:pointer;color:#f5c76b;font-weight:900}.kiwify-sync-description{max-width:320px}.kiwify-sync-description strong{font-size:15px}.kiwify-sync-description small{line-height:1.3}.kiwify-error-text{color:#ffd978!important}@media(max-width:900px){.kiwify-logs-hero{display:block}.kiwify-actions{margin-top:16px}.kiwify-kpis{grid-template-columns:1fr 1fr}.kiwify-log-row{grid-template-columns:1fr}.kiwify-btn{width:100%}}@media(max-width:560px){.kiwify-kpis{grid-template-columns:1fr}.kiwify-logs-hero{padding:24px}.kiwify-logs-hero h1{font-size:40px}}
+.kiwify-logs-page{max-width:1280px;margin:0 auto;color:#f8f7fb}.kiwify-logs-hero{display:flex;justify-content:space-between;gap:18px;align-items:flex-end;border:1px solid rgba(245,199,107,.22);border-radius:26px;padding:34px;background:radial-gradient(circle at 80% 0,rgba(245,199,107,.16),transparent 42%),linear-gradient(145deg,rgba(255,255,255,.055),rgba(255,255,255,.02));box-shadow:0 30px 90px rgba(0,0,0,.32);margin-bottom:18px}.kiwify-logs-hero h1{font-size:clamp(42px,6vw,76px);line-height:.95;margin:8px 0;letter-spacing:-.055em}.kiwify-eyebrow{display:block;text-transform:uppercase;letter-spacing:.24em;color:#f5c76b;font-weight:950;font-size:12px}.kiwify-muted{color:rgba(248,247,251,.62)}.kiwify-actions{display:flex;gap:10px;flex-wrap:wrap}.kiwify-btn{display:inline-flex;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,.16);border-radius:14px;padding:12px 18px;color:#fff;text-decoration:none;font-weight:900;background:rgba(255,255,255,.04)}.kiwify-btn.gold{background:linear-gradient(135deg,#ffd978,#c99a35);border:0;color:#171007}.kiwify-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px}.kiwify-kpis article,.kiwify-panel{border:1px solid rgba(245,199,107,.18);border-radius:20px;background:linear-gradient(145deg,rgba(255,255,255,.052),rgba(255,255,255,.018));padding:18px}.kiwify-kpis span{display:block;text-transform:uppercase;letter-spacing:.16em;color:#f5c76b;font-size:11px;font-weight:950}.kiwify-kpis strong{display:block;font-size:34px;margin-top:8px}.kiwify-panel h2{font-size:28px;margin:0 0 14px}.kiwify-panel-note{border:1px solid rgba(245,199,107,.18);border-radius:16px;background:rgba(245,199,107,.06);padding:12px 14px;color:rgba(248,247,251,.76);margin:0 0 16px}.kiwify-log-list{display:grid;gap:12px}.kiwify-log-row{display:grid;grid-template-columns:170px 1.1fr 1fr 1.1fr auto;gap:14px;align-items:center;border:1px solid rgba(255,255,255,.1);border-radius:18px;padding:14px;background:rgba(255,255,255,.035)}.kiwify-log-row strong{display:block}.kiwify-log-row small{display:block;color:rgba(248,247,251,.55);margin-top:4px}.kiwify-status{display:inline-flex;border-radius:999px;padding:8px 12px;font-weight:950;font-size:12px;white-space:nowrap}.kiwify-status.ok{background:rgba(47,216,100,.13);color:#65f085}.kiwify-status.bad{background:rgba(255,86,86,.13);color:#ff8d8d}.kiwify-status.warn{background:rgba(245,199,107,.15);color:#ffd978}.kiwify-status.neutral{background:rgba(255,255,255,.08);color:#ddd}.payload-box{white-space:pre-wrap;word-break:break-word;border:1px solid rgba(255,255,255,.1);border-radius:14px;background:#090910;padding:12px;color:#cfcfea;max-height:260px;overflow:auto;margin-top:10px}details summary{cursor:pointer;color:#f5c76b;font-weight:900}.kiwify-sync-description{max-width:320px}.kiwify-sync-description strong{font-size:15px}.kiwify-sync-description small{line-height:1.3}.kiwify-error-text{color:#ffd978!important}.kiwify-resolve-form{margin-top:10px}.kiwify-resolve-btn{border:1px solid rgba(245,199,107,.32);border-radius:999px;background:rgba(245,199,107,.1);color:#ffd978;font-weight:950;padding:8px 12px;cursor:pointer}@media(max-width:900px){.kiwify-logs-hero{display:block}.kiwify-actions{margin-top:16px}.kiwify-kpis{grid-template-columns:1fr 1fr}.kiwify-log-row{grid-template-columns:1fr}.kiwify-btn{width:100%}}@media(max-width:560px){.kiwify-kpis{grid-template-columns:1fr}.kiwify-logs-hero{padding:24px}.kiwify-logs-hero h1{font-size:40px}}
 `;
 
 export default async function KiwifyLogsPage() {
   const supabase = createAdminClient();
   const logs = await safeData(supabase.from('kiwify_webhook_events').select('id,event_name,customer_email,product_name,provider_subscription_id,mapped_status,status,error_message,raw_payload,raw_body,created_at').order('created_at', { ascending: false }).limit(150));
-  const processed = logs.filter((log: Row) => String(log.status).toLowerCase() === 'processed').length;
-  const notSynced = logs.filter((log: Row) => ['failed', 'unauthorized'].includes(String(log.status).toLowerCase())).length;
+  const subscriptions = await safeData(supabase.from('subscriptions').select('status,product_name,provider_customer_id,profiles(email)').limit(5000));
+  const activeAccess = buildActiveAccessMap(subscriptions);
+  const processed = logs.filter((log: Row) => String(log.status).toLowerCase() === 'processed' || isResolvedByCurrentAccess(log, activeAccess)).length;
+  const notSynced = logs.filter((log: Row) => ['failed', 'unauthorized'].includes(String(log.status).toLowerCase()) && !isResolvedByCurrentAccess(log, activeAccess)).length;
   const receivedPurchases = logs.filter((log: Row) => ['Acesso ativo', 'Aguardando pagamento'].includes(businessStatus(log))).length;
-  const last = logs[0] as Row | undefined;
 
   return (
     <>
@@ -104,23 +144,25 @@ export default async function KiwifyLogsPage() {
         <section className="kiwify-kpis">
           <article><span>Eventos recebidos</span><strong>{logs.length}</strong><small className="kiwify-muted">últimos registros da Kiwify</small></article>
           <article><span>Compras/renovações</span><strong>{receivedPurchases}</strong><small className="kiwify-muted">eventos comerciais recebidos</small></article>
-          <article><span>Sincronizados</span><strong>{processed}</strong><small className="kiwify-muted">atualizaram alunos/assinaturas</small></article>
-          <article><span>Precisam configurar</span><strong>{notSynced}</strong><small className="kiwify-muted">token ou banco precisam revisão</small></article>
+          <article><span>Resolvidos</span><strong>{processed}</strong><small className="kiwify-muted">sincronizados ou já ativos no Hub</small></article>
+          <article><span>Precisam revisão</span><strong>{notSynced}</strong><small className="kiwify-muted">eventos antigos ou falhas pendentes</small></article>
         </section>
 
         <section className="kiwify-panel">
           <h2>Eventos recebidos</h2>
-          <p className="kiwify-panel-note">Importante: uma compra pode estar aprovada corretamente na Kiwify mesmo quando aparece como “precisa configurar” aqui. Isso indica apenas que o Hub não conseguiu sincronizar automaticamente aquele evento.</p>
+          <p className="kiwify-panel-note">A correção do token vale para os próximos webhooks. Eventos antigos que já possuem aluno ativo no Hub aparecem como resolvidos; os demais podem ser revisados ou marcados como resolvidos manualmente.</p>
           <div className="kiwify-log-list">
             {logs.map((log: Row) => {
-              const sync = syncState(log);
-              const error = humanError(log);
+              const resolvedByAccess = isResolvedByCurrentAccess(log, activeAccess);
+              const sync = syncState(log, resolvedByAccess);
+              const error = humanError(log, resolvedByAccess);
+              const needsReview = ['failed', 'unauthorized'].includes(String(log.status).toLowerCase()) && !resolvedByAccess;
               return (
                 <article className="kiwify-log-row" key={log.id}>
-                  <span className={`kiwify-status ${statusTone(log)}`}>{sync.label}</span>
+                  <span className={`kiwify-status ${statusTone(log, resolvedByAccess)}`}>{sync.label}</span>
                   <div><strong>{eventLabel(log.event_name)}</strong><small>{timeAgo(log.created_at)}</small></div>
                   <div><strong>{customerEmail(log)}</strong><small>{productName(log)}</small></div>
-                  <div className="kiwify-sync-description"><strong>{businessStatus(log)}</strong><small>{sync.description}</small>{error ? <small className="kiwify-error-text">{error}</small> : null}</div>
+                  <div className="kiwify-sync-description"><strong>{businessStatus(log)}</strong><small>{sync.description}</small>{error ? <small className="kiwify-error-text">{error}</small> : null}{needsReview ? <form className="kiwify-resolve-form" action={markKiwifyLogResolved}><input type="hidden" name="id" value={log.id} /><button className="kiwify-resolve-btn" type="submit">Marcar resolvido</button></form> : null}</div>
                   <details><summary>Detalhes técnicos</summary><pre className="payload-box">{payloadPreview(log)}</pre>{log.error_message ? <pre className="payload-box">{String(log.error_message)}</pre> : null}</details>
                 </article>
               );
