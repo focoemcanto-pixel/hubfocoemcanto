@@ -13,6 +13,7 @@ const navItems = [
   { href: '/admin/premium', label: 'Assinaturas', icon: 'S' },
   { href: '/admin/avaliacoes', label: 'Avaliacoes', icon: 'V' },
   { href: '/admin/comunidade', label: 'Comunidade', icon: 'C' },
+  { href: '/admin/configuracoes/branding', label: 'Branding', icon: 'B' },
   { href: '/admin/configuracoes', label: 'Configuracoes', icon: 'G' },
 ];
 
