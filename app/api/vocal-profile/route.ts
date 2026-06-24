@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { midiToNoteName, midiToFrequency } from '@/lib/audio/pitch';
+import { midiToBrazilianNoteName, midiToFrequency, formatBrazilianNote } from '@/lib/audio/pitch';
 
 export async function POST(request: Request) {
   try {
@@ -17,15 +17,15 @@ export async function POST(request: Request) {
     const payload = {
       profile_id: body.profileId,
       auth_user_id: body.authUserId || null,
-      lowest_note: lowest.note,
+      lowest_note: formatBrazilianNote(lowest.midi ?? lowest.note),
       lowest_midi: lowest.midi,
       lowest_frequency: lowest.frequency,
-      highest_note: highest.note,
+      highest_note: formatBrazilianNote(highest.midi ?? highest.note),
       highest_midi: highest.midi,
       highest_frequency: highest.frequency,
-      tessitura_low_note: midiToNoteName(tessLow),
+      tessitura_low_note: midiToBrazilianNoteName(tessLow),
       tessitura_low_midi: tessLow,
-      tessitura_high_note: midiToNoteName(tessHigh),
+      tessitura_high_note: midiToBrazilianNoteName(tessHigh),
       tessitura_high_midi: tessHigh,
       classification: body.classification || 'Indefinida',
       classification_confidence: body.confidence || 0.55,

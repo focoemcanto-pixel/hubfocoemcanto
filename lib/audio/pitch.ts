@@ -1,6 +1,21 @@
 export type VoiceGender = 'masculino' | 'feminino' | 'nao_informar' | null | undefined;
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const BRAZILIAN_NOTE_NAMES = ['Dó', 'Dó#', 'Ré', 'Ré#', 'Mi', 'Fá', 'Fá#', 'Sol', 'Sol#', 'Lá', 'Lá#', 'Si'];
+const BRAZILIAN_NOTE_BY_SCIENTIFIC: Record<string, string> = {
+  C: 'Dó',
+  'C#': 'Dó#',
+  D: 'Ré',
+  'D#': 'Ré#',
+  E: 'Mi',
+  F: 'Fá',
+  'F#': 'Fá#',
+  G: 'Sol',
+  'G#': 'Sol#',
+  A: 'Lá',
+  'A#': 'Lá#',
+  B: 'Si',
+};
 
 export function autoCorrelate(buffer: Float32Array, sampleRate: number): number | null {
   const size = buffer.length;
@@ -59,12 +74,40 @@ export function midiToFrequency(midi: number): number {
   return 440 * 2 ** ((midi - 69) / 12);
 }
 
-export function midiToNoteName(midi: number): string {
+export function midiToScientificNoteName(midi: number): string {
   const rounded = Math.round(midi);
   const note = NOTE_NAMES[((rounded % 12) + 12) % 12];
   const octave = Math.floor(rounded / 12) - 1;
   return `${note}${octave}`;
 }
+
+export function midiToBrazilianNoteName(midi: number): string {
+  const rounded = Math.round(midi);
+  const note = BRAZILIAN_NOTE_NAMES[((rounded % 12) + 12) % 12];
+  const scientificOctave = Math.floor(rounded / 12) - 1;
+  return `${note}${scientificOctave - 1}`;
+}
+
+export function formatBrazilianNote(noteOrMidi: string | number | null | undefined): string {
+  if (noteOrMidi == null || noteOrMidi === '') return '—';
+  if (typeof noteOrMidi === 'number') return midiToBrazilianNoteName(noteOrMidi);
+
+  const note = noteOrMidi.trim();
+  const midi = noteNameToMidi(note);
+  if (midi != null) return midiToBrazilianNoteName(midi);
+
+  const match = note.toUpperCase().match(/^([A-G])(#|B)?(-?\d+)$/);
+  if (!match) return noteOrMidi;
+
+  const [, letter, accidental = '', octaveText] = match;
+  const normalized = `${letter}${accidental === 'B' ? 'b' : accidental}`;
+  const flats: Record<string, string> = { Db: 'C#', Eb: 'D#', Gb: 'F#', Ab: 'G#', Bb: 'A#' };
+  const scientificNote = flats[normalized] || normalized;
+  const brazilianNote = BRAZILIAN_NOTE_BY_SCIENTIFIC[scientificNote];
+  return brazilianNote ? `${brazilianNote}${Number(octaveText) - 1}` : noteOrMidi;
+}
+
+export const midiToNoteName = midiToScientificNoteName;
 
 export function noteNameToMidi(note: string): number | null {
   const match = note.trim().toUpperCase().match(/^([A-G])(#|B)?(-?\d+)$/);
