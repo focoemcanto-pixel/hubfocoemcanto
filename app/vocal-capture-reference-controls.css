@@ -1,0 +1,91 @@
+@media (max-width: 760px) {
+  .range-capture .range-copy .actions {
+    position: absolute !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: calc(68px + env(safe-area-inset-bottom)) !important;
+    height: 70px !important;
+    display: block !important;
+    pointer-events: auto !important;
+    z-index: 120 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .range-capture .range-copy .actions button:first-child {
+    position: absolute !important;
+    left: 50% !important;
+    bottom: 0 !important;
+    transform: translateX(-50%) !important;
+    width: min(52vw, 420px) !important;
+    min-width: 210px !important;
+    height: 58px !important;
+    min-height: 58px !important;
+    border-radius: 999px !important;
+    padding: 0 24px !important;
+    background: linear-gradient(180deg, #ffe29a, #e8ad34) !important;
+    color: #120d05 !important;
+    font-size: 18px !important;
+    font-weight: 1000 !important;
+    line-height: 1 !important;
+    white-space: nowrap !important;
+    box-shadow: 0 20px 44px rgba(232, 173, 52, .24) !important;
+  }
+
+  .range-capture .range-copy .actions button:nth-child(2) {
+    position: absolute !important;
+    right: 34px !important;
+    bottom: -6px !important;
+    width: 70px !important;
+    min-width: 70px !important;
+    height: 70px !important;
+    min-height: 70px !important;
+    border-radius: 999px !important;
+    padding: 0 !important;
+    font-size: 0 !important;
+    background: rgba(255,255,255,.055) !important;
+    border: 1px solid rgba(255,255,255,.16) !important;
+    color: #fff !important;
+    backdrop-filter: blur(14px) !important;
+  }
+
+  .range-capture .range-copy .actions button:nth-child(2) svg {
+    width: 30px !important;
+    height: 30px !important;
+    margin: 0 !important;
+  }
+
+  .range-capture .capture-back {
+    position: absolute !important;
+    left: 34px !important;
+    top: auto !important;
+    bottom: calc(62px + env(safe-area-inset-bottom)) !important;
+    width: 70px !important;
+    height: 70px !important;
+    min-height: 70px !important;
+    border-radius: 999px !important;
+    padding: 0 !important;
+    background: rgba(255,255,255,.055) !important;
+    border: 1px solid rgba(255,255,255,.16) !important;
+    color: #fff !important;
+    font-size: 32px !important;
+    line-height: 1 !important;
+    z-index: 130 !important;
+    backdrop-filter: blur(14px) !important;
+  }
+
+  .range-capture .capture-result {
+    position: absolute !important;
+    left: 50% !important;
+    right: auto !important;
+    bottom: calc(150px + env(safe-area-inset-bottom)) !important;
+    transform: translateX(-50%) !important;
+    width: min(72vw, 360px) !important;
+    z-index: 118 !important;
+    border-radius: 18px !important;
+    background: rgba(0,0,0,.54) !important;
+    border: 1px solid rgba(255,255,255,.12) !important;
+    backdrop-filter: blur(14px) !important;
+    text-align: center !important;
+  }
+}
