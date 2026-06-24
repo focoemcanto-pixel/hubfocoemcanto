@@ -2,7 +2,20 @@
 
 import { useState } from 'react';
 import { BrandingPipelineManager } from '@/components/admin/branding-pipeline-manager';
-import type { AdminSettings } from '@/lib/data/admin-settings';
+import type { AdminSettings, BrandingAssetSize } from '@/lib/data/admin-settings';
+
+function parseSize(value: FormDataEntryValue | null, fallback: BrandingAssetSize): BrandingAssetSize {
+  if (typeof value !== 'string' || !value) return fallback;
+  try {
+    const parsed = JSON.parse(value) as Partial<BrandingAssetSize>;
+    return {
+      width: Math.max(40, Math.min(4000, Number(parsed.width || fallback.width))),
+      height: Math.max(20, Math.min(4000, Number(parsed.height || fallback.height))),
+    };
+  } catch {
+    return fallback;
+  }
+}
 
 export function AdminSettingsForm({ settings }: { settings: AdminSettings }) {
   const [saving, setSaving] = useState(false);
@@ -25,6 +38,11 @@ export function AdminSettingsForm({ settings }: { settings: AdminSettings }) {
         loginImageUrl: String(formData.get('loginImageUrl') || ''),
         heroImageUrl: String(formData.get('heroImageUrl') || ''),
         ogImageUrl: String(formData.get('ogImageUrl') || ''),
+        logoSize: parseSize(formData.get('logoSizeJson'), settings.branding.logoSize),
+        faviconSize: parseSize(formData.get('faviconSizeJson'), settings.branding.faviconSize),
+        loginImageSize: parseSize(formData.get('loginImageSizeJson'), settings.branding.loginImageSize),
+        heroImageSize: parseSize(formData.get('heroImageSizeJson'), settings.branding.heroImageSize),
+        ogImageSize: parseSize(formData.get('ogImageSizeJson'), settings.branding.ogImageSize),
       },
     };
 
@@ -56,6 +74,13 @@ export function AdminSettingsForm({ settings }: { settings: AdminSettings }) {
           loginImageUrl: settings.branding.loginImageUrl || '',
           heroImageUrl: settings.branding.heroImageUrl || '',
           ogImageUrl: settings.branding.ogImageUrl || '',
+        }}
+        initialSizes={{
+          logo: settings.branding.logoSize,
+          favicon: settings.branding.faviconSize,
+          login: settings.branding.loginImageSize,
+          hero: settings.branding.heroImageSize,
+          og: settings.branding.ogImageSize,
         }}
       />
       <div className="branding-field-grid">
