@@ -71,23 +71,23 @@
   }
 
   body.vocal-capture-active .mvr-visual {
-    left: 66px !important;
-    right: -86px !important;
+    left: 48px !important;
+    right: -78px !important;
     top: calc(140px + env(safe-area-inset-top)) !important;
     height: calc(100dvh - 320px) !important;
   }
 
   body.vocal-capture-active .mvr-visual img {
-    right: -6vw !important;
+    right: -2vw !important;
     top: -2% !important;
-    width: 130vw !important;
+    width: 128vw !important;
     height: 112% !important;
     object-position: center top !important;
     opacity: .82 !important;
   }
 
   body.vocal-capture-active .mvr-aura {
-    inset: -4% -2% 2% -6% !important;
+    inset: -4% 0 2% -10% !important;
     filter: blur(28px) !important;
     opacity: .95 !important;
   }
@@ -97,7 +97,7 @@
   }
 
   body.vocal-capture-active .mvr-glow.chest {
-    left: 56% !important;
+    left: 54% !important;
     top: 56% !important;
     width: 31% !important;
     height: 19% !important;
@@ -105,31 +105,73 @@
   }
 
   body.vocal-capture-active .mvr-glow.mix {
-    left: 55% !important;
+    left: 53% !important;
     top: 38% !important;
     width: 25% !important;
     height: 16% !important;
   }
 
   body.vocal-capture-active .mvr-glow.head {
-    left: 55% !important;
+    left: 53% !important;
     top: 24% !important;
     width: 19% !important;
     height: 13% !important;
   }
 
+  body.vocal-capture-active .mvr-visual span {
+    left: 72vw !important;
+    right: auto !important;
+    width: 84px !important;
+    max-width: 84px !important;
+    overflow: hidden !important;
+    text-overflow: clip !important;
+    white-space: nowrap !important;
+    font-size: 12px !important;
+    letter-spacing: .04em !important;
+    z-index: 8 !important;
+  }
+
   body.vocal-capture-active .mvr-visual .head {
-    right: 22vw !important;
     top: 21% !important;
   }
 
   body.vocal-capture-active .mvr-visual .mix {
-    right: 18vw !important;
     top: 38% !important;
   }
 
   body.vocal-capture-active .mvr-visual .chest {
-    right: 18vw !important;
     top: 53% !important;
+  }
+
+  body.vocal-capture-active .mvr-back,
+  body.vocal-capture-active .mvr-retry {
+    width: 58px !important;
+    height: 58px !important;
+    min-height: 58px !important;
+    bottom: calc(54px + env(safe-area-inset-bottom)) !important;
+    font-size: 26px !important;
+  }
+
+  body.vocal-capture-active .mvr-back {
+    left: 34px !important;
+  }
+
+  body.vocal-capture-active .mvr-retry {
+    right: 34px !important;
+  }
+
+  body.vocal-capture-active .mvr-retry svg {
+    width: 25px !important;
+    height: 25px !important;
+  }
+
+  body.vocal-capture-active .mvr-main {
+    width: min(49vw, 390px) !important;
+    min-width: 230px !important;
+    height: 52px !important;
+    min-height: 52px !important;
+    bottom: calc(57px + env(safe-area-inset-bottom)) !important;
+    font-size: 13px !important;
+    padding: 0 18px !important;
   }
 }
