@@ -94,28 +94,40 @@
 
   body.vocal-capture-active .mvr-glow {
     z-index: 4 !important;
+    pointer-events: none !important;
+    mix-blend-mode: normal !important;
+    border-radius: 999px !important;
+    overflow: hidden !important;
+    opacity: .92 !important;
+    will-change: top, left, width, height, opacity !important;
+    backface-visibility: hidden !important;
+    transform: translate3d(-50%, -50%, 0) !important;
+    filter: blur(14px) !important;
+    box-shadow: none !important;
   }
 
   body.vocal-capture-active .mvr-glow.chest {
     left: 54% !important;
     top: 56% !important;
-    width: 31% !important;
-    height: 19% !important;
-    filter: blur(12px) drop-shadow(0 0 38px rgba(245,199,107,.9)) !important;
+    width: 30% !important;
+    height: 18% !important;
+    background: radial-gradient(ellipse at center, rgba(255,244,185,.72) 0%, rgba(245,199,107,.42) 34%, rgba(245,199,107,.18) 54%, rgba(245,199,107,0) 76%) !important;
   }
 
   body.vocal-capture-active .mvr-glow.mix {
     left: 53% !important;
     top: 38% !important;
-    width: 25% !important;
-    height: 16% !important;
+    width: 24% !important;
+    height: 15% !important;
+    background: radial-gradient(ellipse at center, rgba(235,254,255,.68) 0%, rgba(103,232,249,.34) 38%, rgba(103,232,249,.12) 58%, rgba(103,232,249,0) 78%) !important;
   }
 
   body.vocal-capture-active .mvr-glow.head {
     left: 53% !important;
     top: 24% !important;
-    width: 19% !important;
-    height: 13% !important;
+    width: 18% !important;
+    height: 12% !important;
+    background: radial-gradient(ellipse at center, rgba(255,255,255,.64) 0%, rgba(167,139,250,.32) 40%, rgba(167,139,250,.1) 58%, rgba(167,139,250,0) 78%) !important;
   }
 
   body.vocal-capture-active .mvr-visual span {
@@ -145,33 +157,36 @@
 
   body.vocal-capture-active .mvr-back,
   body.vocal-capture-active .mvr-retry {
-    width: 58px !important;
-    height: 58px !important;
-    min-height: 58px !important;
-    bottom: calc(54px + env(safe-area-inset-bottom)) !important;
-    font-size: 26px !important;
+    width: 52px !important;
+    height: 52px !important;
+    min-height: 52px !important;
+    bottom: calc(58px + env(safe-area-inset-bottom)) !important;
+    font-size: 22px !important;
+    background: rgba(255,255,255,.04) !important;
+    border-color: rgba(255,255,255,.12) !important;
   }
 
   body.vocal-capture-active .mvr-back {
-    left: 34px !important;
+    left: 38px !important;
   }
 
   body.vocal-capture-active .mvr-retry {
-    right: 34px !important;
+    right: 38px !important;
   }
 
   body.vocal-capture-active .mvr-retry svg {
-    width: 25px !important;
-    height: 25px !important;
+    width: 23px !important;
+    height: 23px !important;
   }
 
   body.vocal-capture-active .mvr-main {
-    width: min(49vw, 390px) !important;
-    min-width: 230px !important;
-    height: 52px !important;
-    min-height: 52px !important;
-    bottom: calc(57px + env(safe-area-inset-bottom)) !important;
-    font-size: 13px !important;
-    padding: 0 18px !important;
+    width: min(44vw, 350px) !important;
+    min-width: 210px !important;
+    height: 48px !important;
+    min-height: 48px !important;
+    bottom: calc(60px + env(safe-area-inset-bottom)) !important;
+    font-size: 12.5px !important;
+    padding: 0 16px !important;
+    box-shadow: 0 14px 34px rgba(232,173,52,.16) !important;
   }
 }
