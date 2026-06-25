@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Mic2, RefreshCw, Sparkles } from 'lucide-react';
+import { Pencil, Sparkles } from 'lucide-react';
 import { formatBrazilianNote } from '@/lib/audio/pitch';
 
 type VocalProfile = { classification?: string | null; classification_confidence?: number | null; lowest_note?: string | null; highest_note?: string | null; tessitura_low_note?: string | null; tessitura_high_note?: string | null; updated_at?: string | null } | null;
@@ -13,23 +13,21 @@ function formatDate(value?: string | null) {
 export function VocalProfileCard({ vocalProfile }: { vocalProfile: VocalProfile }) {
   const hasResult = Boolean(vocalProfile?.lowest_note && vocalProfile?.highest_note);
   return (
-    <section className="vocal-profile-card">
+    <section className="vocal-profile-card vocal-profile-card--compact">
       <div className="vocal-profile-card__glow" />
       <header>
-        <span><Mic2 size={22} /></span>
-        <div><p>Perfil Vocal</p><h2>{hasResult ? 'Seu Mapa Vocal' : 'Crie seu Mapa Vocal'}</h2></div>
+        <div><p>Perfil Vocal</p><h2>{hasResult ? 'Mapa vocal' : 'Crie seu Mapa Vocal'}</h2></div>
+        <Link className="vocal-profile-card__edit" href="/aluno/perfil-vocal" aria-label={hasResult ? 'Refazer mapa vocal' : 'Fazer avaliação vocal'}>{hasResult ? <Pencil size={16} /> : <Sparkles size={16} />}</Link>
       </header>
       {hasResult ? <>
-        <div className="vocal-profile-card__grid">
-          <article><small>Tendência vocal</small><strong>{vocalProfile?.classification || 'Indefinida'}</strong></article>
-          <article><small>Extensão</small><strong>{formatBrazilianNote(vocalProfile?.lowest_note)} → {formatBrazilianNote(vocalProfile?.highest_note)}</strong></article>
-          <article><small>Tessitura</small><strong>{formatBrazilianNote(vocalProfile?.tessitura_low_note)} → {formatBrazilianNote(vocalProfile?.tessitura_high_note)}</strong></article>
-          <article><small>Atualizado</small><strong>{formatDate(vocalProfile?.updated_at)}</strong></article>
+        <div className="vocal-profile-card__summary">
+          <strong>{vocalProfile?.classification || 'Indefinida'}</strong>
+          <span>{formatBrazilianNote(vocalProfile?.lowest_note)} → {formatBrazilianNote(vocalProfile?.highest_note)}</span>
+          <span>Tessitura: {formatBrazilianNote(vocalProfile?.tessitura_low_note)} → {formatBrazilianNote(vocalProfile?.tessitura_high_note)}</span>
         </div>
-        <p>Classificação aproximada: leitura inicial para orientar seus estudos, não uma sentença definitiva.</p>
-        <Link href="/aluno/perfil-vocal"><RefreshCw size={18} /> Refazer avaliação</Link>
+        <small className="vocal-profile-card__date">Atualizado em {formatDate(vocalProfile?.updated_at)}</small>
       </> : <>
-        <p>Descubra sua extensão, tessitura confortável e tendência vocal com uma avaliação guiada pelo microfone.</p>
+        <p>Descubra sua extensão e tessitura confortável.</p>
         <Link href="/aluno/perfil-vocal"><Sparkles size={18} /> Fazer avaliação vocal</Link>
       </>}
     </section>
