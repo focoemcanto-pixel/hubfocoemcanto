@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { Fragment } from 'react';
 import { AppShell } from '@/components/app-shell';
 import { dailyTrainingSteps } from '@/lib/training-center';
 
@@ -17,7 +18,12 @@ export default function DailyProgressPage() {
           <p className="eyebrow">Progresso do dia</p>
           <h1>Dia 5</h1>
           <div className="progress-track">
-            {dailyTrainingSteps.map((step) => <><div className={`progress-dot ${step.exerciseNumber <= completed ? 'done' : step.exerciseNumber === completed + 1 ? 'current' : ''}`} key={step.exerciseNumber}>{step.exerciseNumber <= completed ? '✓' : step.exerciseNumber}</div>{step.exerciseNumber < dailyTrainingSteps.length ? <div className="progress-line" /> : null}</>)}
+            {dailyTrainingSteps.map((step) => (
+              <Fragment key={step.exerciseNumber}>
+                <div className={`progress-dot ${step.exerciseNumber <= completed ? 'done' : step.exerciseNumber === completed + 1 ? 'current' : ''}`}>{step.exerciseNumber <= completed ? '✓' : step.exerciseNumber}</div>
+                {step.exerciseNumber < dailyTrainingSteps.length ? <div className="progress-line" /> : null}
+              </Fragment>
+            ))}
           </div>
           <div className="summary-grid">
             <div className="summary-card"><strong>{totalPoints}</strong><span>Pontos</span></div>
