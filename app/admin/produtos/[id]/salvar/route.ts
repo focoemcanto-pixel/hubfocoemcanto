@@ -16,6 +16,13 @@ function parseMoney(value: FormDataEntryValue | null) {
   return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
 }
 
+function normalizeUrl(value: string) {
+  const raw = value.trim();
+  if (!raw) return '';
+  if (/^https?:\/\//i.test(raw)) return raw;
+  return `https://${raw}`;
+}
+
 function redirectTo(request: Request, id: string, params: Record<string, string>) {
   const url = new URL(`/admin/produtos/${id}`, request.url);
   url.searchParams.set('tab', 'configuracoes');
@@ -71,6 +78,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const billingType = String(formData.get('billing_type') || 'one_time');
     const removeCover = String(formData.get('remove_cover') || '') === '1';
     const price = parseMoney(formData.get('price'));
+    const redirectUrl = normalizeUrl(String(formData.get('redirect_url') || formData.get('sales_page_url') || '').trim());
     let coverUrl = removeCover ? '' : String(formData.get('cover_url') || '').trim();
 
     if (!name) return redirectTo(request, id, { error: 'nome' });
@@ -90,20 +98,35 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       type: billingType === 'recurring' ? 'subscription' : 'course',
       price_cents: Math.round(price * 100),
       cover_url: coverUrl,
+      redirect_url: redirectUrl,
+      sales_page_url: redirectUrl,
+      sales_url: redirectUrl,
+      external_url: redirectUrl,
     };
-    const productResult = await safeUpdate('products', id, { ...baseProductPayload, updated_at: new Date().toISOString() }, baseProductPayload);
+    const fallbackProductPayload = {
+      name,
+      slug,
+      description,
+      status,
+      billing_type: billingType,
+      type: billingType === 'recurring' ? 'subscription' : 'course',
+      price_cents: Math.round(price * 100),
+      cover_url: coverUrl,
+    };
+    const productResult = await safeUpdate('products', id, { ...baseProductPayload, updated_at: new Date().toISOString() }, fallbackProductPayload);
     if (productResult.error) return redirectTo(request, id, { error: 'produto', detail: productResult.error.message.slice(0, 80) });
 
-    const baseCoursePayload = { title: name, slug, description, cover_url: coverUrl, status };
+    const baseCoursePayload = { title: name, slug, description, cover_url: coverUrl, status, redirect_url: redirectUrl, sales_page_url: redirectUrl, sales_url: redirectUrl, external_url: redirectUrl };
+    const fallbackCoursePayload = { title: name, slug, description, cover_url: coverUrl, status };
     if (courseId) {
-      const courseResult = await safeUpdate('courses', courseId, { ...baseCoursePayload, updated_at: new Date().toISOString() }, baseCoursePayload);
+      const courseResult = await safeUpdate('courses', courseId, { ...baseCoursePayload, updated_at: new Date().toISOString() }, fallbackCoursePayload);
       if (courseResult.error) return redirectTo(request, id, { error: 'curso', detail: courseResult.error.message.slice(0, 80) });
     } else {
       const { data: existingCourse } = await supabase.from('courses').select('id').eq('product_id', id).limit(1).maybeSingle();
       if (existingCourse?.id) {
-        await safeUpdate('courses', existingCourse.id, { ...baseCoursePayload, updated_at: new Date().toISOString() }, baseCoursePayload);
+        await safeUpdate('courses', existingCourse.id, { ...baseCoursePayload, updated_at: new Date().toISOString() }, fallbackCoursePayload);
       } else {
-        const insertResult = await supabase.from('courses').insert({ product_id: id, ...baseCoursePayload, sort_order: 0 });
+        const insertResult = await supabase.from('courses').insert({ product_id: id, ...fallbackCoursePayload, sort_order: 0 });
         if (insertResult.error) return redirectTo(request, id, { error: 'curso', detail: insertResult.error.message.slice(0, 80) });
       }
     }
