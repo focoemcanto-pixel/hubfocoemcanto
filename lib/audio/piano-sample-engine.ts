@@ -1,41 +1,73 @@
 const SAMPLE_BASE_URL = 'https://raw.githubusercontent.com/focoemcanto-pixel/piano-sound-samples/master/sound_keyboard_staff/';
-const REFERENCE_SAMPLE = 'C.mp3';
-const REFERENCE_MIDI = 36;
 
-let referenceBuffer: AudioBuffer | null = null;
-let referenceLoading: Promise<AudioBuffer> | null = null;
+const cache = new Map<string, AudioBuffer>();
+const loading = new Map<string, Promise<AudioBuffer>>();
 const activeSources = new Set<AudioBufferSourceNode>();
 const activeGains = new Set<GainNode>();
+
+type SampleRef = { midi: number; file: string };
 
 function midiToFrequency(midi: number) {
   return 440 * Math.pow(2, (midi - 69) / 12);
 }
 
-async function loadReferenceSample(context: AudioContext) {
-  if (referenceBuffer) return referenceBuffer;
-  if (referenceLoading) return referenceLoading;
+function buildSampleRefs(): SampleRef[] {
+  const refs: SampleRef[] = [];
+  const upper = ['C', 'Cs', 'D', 'Ds', 'E', 'F', 'Fs', 'G', 'Gs', 'A', 'As', 'B'];
+  const lower = ['cc', 'ccs', 'd', 'ds', 'e', 'f', 'fs', 'g', 'gs', 'aa', 'aas', 'b'];
 
-  referenceLoading = fetch(`${SAMPLE_BASE_URL}${REFERENCE_SAMPLE}`)
+  upper.forEach((name, index) => refs.push({ midi: 36 + index, file: `${name}.mp3` }));
+  lower.forEach((name, index) => refs.push({ midi: 48 + index, file: `${name}.mp3` }));
+
+  for (let octaveIndex = 1; octaveIndex <= 5; octaveIndex += 1) {
+    lower.forEach((name, index) => refs.push({ midi: 48 + octaveIndex * 12 + index, file: `${name}${octaveIndex}.mp3` }));
+  }
+
+  return refs;
+}
+
+const SAMPLE_REFS = buildSampleRefs();
+const FALLBACK_SAMPLE = SAMPLE_REFS.find((sample) => sample.midi === 60) ?? SAMPLE_REFS[0];
+
+function closestSample(midiValue: number) {
+  return SAMPLE_REFS.reduce((best, sample) => {
+    const currentDistance = Math.abs(sample.midi - midiValue);
+    const bestDistance = Math.abs(best.midi - midiValue);
+    return currentDistance < bestDistance ? sample : best;
+  }, FALLBACK_SAMPLE);
+}
+
+async function loadSample(context: AudioContext, fileName: string) {
+  const cached = cache.get(fileName);
+  if (cached) return cached;
+
+  const pending = loading.get(fileName);
+  if (pending) return pending;
+
+  const request = fetch(`${SAMPLE_BASE_URL}${fileName}`)
     .then((response) => {
-      if (!response.ok) throw new Error(`Sample não encontrado: ${REFERENCE_SAMPLE}`);
+      if (!response.ok) throw new Error(`Sample não encontrado: ${fileName}`);
       return response.arrayBuffer();
     })
     .then((arrayBuffer) => context.decodeAudioData(arrayBuffer.slice(0)))
     .then((buffer) => {
-      referenceBuffer = buffer;
-      referenceLoading = null;
+      cache.set(fileName, buffer);
+      loading.delete(fileName);
       return buffer;
     })
     .catch((error) => {
-      referenceLoading = null;
+      loading.delete(fileName);
       throw error;
     });
 
-  return referenceLoading;
+  loading.set(fileName, request);
+  return request;
 }
 
-export async function preloadPianoSamples(context: AudioContext) {
-  await loadReferenceSample(context);
+export async function preloadPianoSamples(context: AudioContext, midis?: number[]) {
+  const targets = midis?.length ? midis : [48, 52, 55, 60, 64, 67, 72, 76, 79];
+  const files = Array.from(new Set(targets.map((midi) => closestSample(midi).file)));
+  await Promise.allSettled(files.map((file) => loadSample(context, file)));
 }
 
 export function stopPianoSamples(context?: AudioContext) {
@@ -56,7 +88,16 @@ export function stopPianoSamples(context?: AudioContext) {
 }
 
 export async function playPianoSample(context: AudioContext, midiValue: number, at: number, end: number, velocity = 1) {
-  const buffer = await loadReferenceSample(context);
+  const sample = closestSample(midiValue);
+  let buffer: AudioBuffer;
+
+  try {
+    buffer = await loadSample(context, sample.file);
+  } catch {
+    const fallback = closestSample(60);
+    buffer = await loadSample(context, fallback.file);
+  }
+
   const source = context.createBufferSource();
   const gain = context.createGain();
   const compressor = context.createDynamicsCompressor();
@@ -65,36 +106,36 @@ export async function playPianoSample(context: AudioContext, midiValue: number, 
   const air = context.createBiquadFilter();
 
   source.buffer = buffer;
-  source.playbackRate.value = midiToFrequency(midiValue) / midiToFrequency(REFERENCE_MIDI);
+  source.playbackRate.value = midiToFrequency(midiValue) / midiToFrequency(sample.midi);
 
   body.type = 'lowshelf';
-  body.frequency.value = 180;
-  body.gain.value = 2.7;
+  body.frequency.value = 170;
+  body.gain.value = 2.2;
 
   presence.type = 'peaking';
-  presence.frequency.value = 2400;
-  presence.Q.value = 0.9;
-  presence.gain.value = 1.6;
+  presence.frequency.value = 2500;
+  presence.Q.value = 0.85;
+  presence.gain.value = 1.1;
 
   air.type = 'highshelf';
-  air.frequency.value = 5400;
-  air.gain.value = -1.5;
+  air.frequency.value = 5600;
+  air.gain.value = -1.2;
 
   compressor.threshold.value = -7;
   compressor.knee.value = 16;
-  compressor.ratio.value = 2.6;
+  compressor.ratio.value = 2.4;
   compressor.attack.value = 0.004;
-  compressor.release.value = 0.28;
+  compressor.release.value = 0.26;
 
   const startAt = Math.max(context.currentTime + 0.008, at);
   const noteLength = Math.max(0.42, end - startAt);
-  const releaseAt = startAt + Math.min(noteLength, 0.72);
-  const stopAt = Math.max(startAt + 0.72, end + 0.42);
+  const releaseAt = startAt + Math.min(noteLength, 0.78);
+  const stopAt = Math.max(startAt + 0.76, end + 0.46);
 
   gain.gain.setValueAtTime(0.0001, startAt);
-  gain.gain.exponentialRampToValueAtTime(1.35 * velocity, startAt + 0.014);
-  gain.gain.exponentialRampToValueAtTime(0.72 * velocity, startAt + 0.18);
-  gain.gain.setValueAtTime(0.5 * velocity, releaseAt);
+  gain.gain.exponentialRampToValueAtTime(1.32 * velocity, startAt + 0.014);
+  gain.gain.exponentialRampToValueAtTime(0.68 * velocity, startAt + 0.2);
+  gain.gain.setValueAtTime(0.46 * velocity, releaseAt);
   gain.gain.exponentialRampToValueAtTime(0.0001, stopAt);
 
   source.connect(body);
