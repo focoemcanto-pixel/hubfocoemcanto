@@ -113,22 +113,18 @@ async function loadAccess() {
 
 function safeMediaHeaders(upstream: Response, range: string | null) {
   const headers = new Headers();
-  headers.set('content-type', upstream.headers.get('content-type') || 'video/mp4');
+  const upstreamType = upstream.headers.get('content-type') || '';
+  headers.set('content-type', upstreamType.includes('octet-stream') ? 'video/mp4' : upstreamType || 'video/mp4');
   headers.set('accept-ranges', 'bytes');
   headers.set('cache-control', 'private, max-age=300, stale-while-revalidate=600');
-  headers.set('x-content-type-options', 'nosniff');
-  headers.set('content-disposition', 'inline');
+  headers.set('content-disposition', 'inline; filename="lesson-video.mp4"');
   headers.set('vary', 'Range');
+  headers.set('access-control-expose-headers', 'Content-Length, Content-Range, Accept-Ranges');
 
   const contentRange = upstream.headers.get('content-range');
+  const contentLength = upstream.headers.get('content-length');
   if (contentRange) headers.set('content-range', contentRange);
-
-  // Importante: não repassar content-length em streaming vindo do Drive.
-  // Em Cloudflare/HTTP2 isso pode gerar ERR_HTTP2_PROTOCOL_ERROR quando o stream encerra diferente do header.
-  if (range && upstream.status === 206) {
-    const length = upstream.headers.get('content-length');
-    if (length && contentRange) headers.set('content-length', length);
-  }
+  if (contentLength) headers.set('content-length', contentLength);
 
   return headers;
 }
@@ -143,7 +139,7 @@ export async function GET(request: Request, { params }: Params) {
     if (!access) return NextResponse.json({ error: 'drive_not_connected' }, { status: 401 });
 
     const range = request.headers.get('range');
-    const driveHeaders: Record<string, string> = { authorization: `Bearer ${access}` };
+    const driveHeaders: Record<string, string> = { authorization: `Bearer ${access}`, accept: 'video/mp4,video/*,*/*' };
     if (range) driveHeaders.range = range;
 
     const upstream = await fetch(`https://www.googleapis.com/drive/v3/files/${id}?alt=media&supportsAllDrives=true`, {
