@@ -4,257 +4,28 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, Play, X } from 'lucide-react';
 
-type ContentPlayerProps = {
-  title?: string | null;
-  mediaType?: string | null;
-  driveUrl?: string | null;
-  mediaUrl?: string | null;
-  lessonId?: string | null;
-  initialPositionSeconds?: number | null;
-  trimStartSeconds?: number | null;
-  trimEndSeconds?: number | null;
-  nextLessonSlug?: string | null;
-  nextLessonTitle?: string | null;
-};
+type ContentPlayerProps = { title?: string | null; mediaType?: string | null; driveUrl?: string | null; mediaUrl?: string | null; lessonId?: string | null; initialPositionSeconds?: number | null; trimStartSeconds?: number | null; trimEndSeconds?: number | null; nextLessonSlug?: string | null; nextLessonTitle?: string | null };
+type NextTarget = { href: string; title: string } | null;
 
-function getDriveFileId(url?: string | null) {
-  if (!url) return null;
-  const patterns = [/\/file\/d\/([a-zA-Z0-9_-]+)/, /id=([a-zA-Z0-9_-]+)/, /\/d\/([a-zA-Z0-9_-]+)/];
-  for (const pattern of patterns) {
-    const match = url.match(pattern);
-    if (match?.[1]) return match[1];
-  }
-  return null;
-}
-
-function isAllowedInternalMedia(url: string) {
-  return url.startsWith('/api/media/drive/') || url.startsWith('/api/media/library/') || url.startsWith('/storage/v1/object/');
-}
-
-async function saveProgress(lessonId: string | null | undefined, positionSeconds: number, completed = false) {
-  if (!lessonId) return;
-  await fetch('/api/student/progress', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ exerciseId: lessonId, positionSeconds, completed }),
-  }).catch(() => undefined);
-}
-
-function installLessonsPanelToggle() {
-  const styleId = 'fc-lessons-panel-toggle-style';
-  if (!document.getElementById(styleId)) {
-    const style = document.createElement('style');
-    style.id = styleId;
-    style.textContent = '[class*="modules-actions"]{display:flex;align-items:center;gap:8px}.fc-lessons-toggle,.fc-module-toggle{display:inline-flex;align-items:center;justify-content:center;border-radius:999px;border:1px solid rgba(245,199,107,.22);background:rgba(255,255,255,.045);color:#f5c76b;font-weight:900;line-height:1}.fc-lessons-toggle{width:42px;height:42px;font-size:24px}.fc-module-toggle{width:34px;height:34px;font-size:18px;margin-left:auto}.fc-lessons-collapsed [class*="module-list"]{display:none}.fc-lessons-collapsed{max-height:110px!important;overflow:hidden}.fc-lessons-collapsed [class*="modules-head"]{border-bottom:0!important}.fc-module-collapsed [class*="lessons-list"]{display:none}.fc-module-collapsed{padding-bottom:0!important}.fc-module-collapsed [class*="module-title"]{margin-bottom:0!important}.fc-next-lesson-overlay{position:absolute;right:18px;bottom:68px;z-index:8;width:min(340px,calc(100% - 36px));border:1px solid rgba(245,199,107,.36);border-radius:22px;background:linear-gradient(145deg,rgba(10,10,14,.94),rgba(26,20,12,.94));box-shadow:0 24px 80px rgba(0,0,0,.55);backdrop-filter:blur(18px);padding:16px;color:#fff}.fc-next-lesson-overlay p{margin:0 0 6px;color:#f5c76b;font-size:12px;font-weight:950;letter-spacing:.11em;text-transform:uppercase}.fc-next-lesson-overlay h3{margin:0 0 12px;font-size:20px;line-height:1.1}.fc-next-lesson-actions{display:flex;gap:10px;align-items:center}.fc-next-lesson-actions button,.fc-next-lesson-actions a{border:0;border-radius:14px;padding:11px 13px;font-weight:950;text-decoration:none}.fc-next-lesson-primary{background:linear-gradient(180deg,#ffe39b,#e9b348);color:#140d04}.fc-next-lesson-cancel{background:rgba(255,255,255,.09);color:#fff}.fc-next-count{display:grid;place-items:center;width:42px;height:42px;border-radius:50%;background:rgba(245,199,107,.12);border:1px solid rgba(245,199,107,.35);color:#f5c76b;font-weight:1000}@media(max-width:620px){.fc-next-lesson-overlay{right:12px;left:12px;bottom:74px;width:auto}}';
-    document.head.appendChild(style);
-  }
-  document.querySelectorAll<HTMLElement>('[class*="modules-panel"]').forEach((panel) => {
-    if (panel.dataset.fcPanelToggleReady !== '1') {
-      const head = panel.querySelector<HTMLElement>('[class*="modules-head"]');
-      const closeLink = head?.querySelector<HTMLAnchorElement>('a:last-child');
-      if (head) {
-        const toggle = document.createElement('button');
-        toggle.type = 'button';
-        toggle.className = 'fc-lessons-toggle';
-        toggle.setAttribute('aria-label', 'Minimizar painel de aulas');
-        toggle.textContent = '^';
-        toggle.addEventListener('click', (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          const collapsed = panel.classList.toggle('fc-lessons-collapsed');
-          toggle.textContent = collapsed ? 'v' : '^';
-          toggle.setAttribute('aria-label', collapsed ? 'Exibir painel de aulas' : 'Minimizar painel de aulas');
-        });
-        if (closeLink) head.insertBefore(toggle, closeLink);
-        else head.appendChild(toggle);
-        panel.dataset.fcPanelToggleReady = '1';
-      }
-    }
-    panel.querySelectorAll<HTMLElement>('[class*="module-group"]').forEach((group) => {
-      if (group.dataset.fcModuleToggleReady === '1') return;
-      const title = group.querySelector<HTMLElement>('[class*="module-title"]');
-      const list = group.querySelector<HTMLElement>('[class*="lessons-list"]');
-      if (!title || !list) return;
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'fc-module-toggle';
-      button.setAttribute('aria-label', 'Minimizar aulas deste módulo');
-      button.textContent = '^';
-      button.addEventListener('click', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        const collapsed = group.classList.toggle('fc-module-collapsed');
-        button.textContent = collapsed ? 'v' : '^';
-        button.setAttribute('aria-label', collapsed ? 'Exibir aulas deste módulo' : 'Minimizar aulas deste módulo');
-      });
-      title.appendChild(button);
-      group.dataset.fcModuleToggleReady = '1';
-    });
-  });
-}
+function getDriveFileId(url?: string | null) { if (!url) return null; const patterns = [/\/file\/d\/([a-zA-Z0-9_-]+)/, /id=([a-zA-Z0-9_-]+)/, /\/d\/([a-zA-Z0-9_-]+)/]; for (const pattern of patterns) { const match = url.match(pattern); if (match?.[1]) return match[1]; } return null; }
+function isAllowedInternalMedia(url: string) { return url.startsWith('/api/media/drive/') || url.startsWith('/api/media/library/') || url.startsWith('/storage/v1/object/'); }
+async function saveProgress(lessonId: string | null | undefined, positionSeconds: number, completed = false) { if (!lessonId) return; await fetch('/api/student/progress', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ exerciseId: lessonId, positionSeconds, completed }) }).catch(() => undefined); }
+function detectNextLessonFromPage(): NextTarget { const link = document.querySelector<HTMLAnchorElement>('a[aria-label="Próxima aula"]'); if (!link?.getAttribute('href')) return null; const active = document.querySelector<HTMLElement>('.premium-lesson-item.active'); const nextItem = active?.nextElementSibling as HTMLElement | null; const title = nextItem?.querySelector('strong')?.textContent?.trim() || link.getAttribute('title') || 'próxima aula'; return { href: link.getAttribute('href') || link.href, title }; }
+function installLessonsPanelToggle() { const styleId = 'fc-lessons-panel-toggle-style'; if (!document.getElementById(styleId)) { const style = document.createElement('style'); style.id = styleId; style.textContent = '[class*="modules-actions"]{display:flex;align-items:center;gap:8px}.fc-lessons-toggle,.fc-module-toggle{display:inline-flex;align-items:center;justify-content:center;border-radius:999px;border:1px solid rgba(245,199,107,.22);background:rgba(255,255,255,.045);color:#f5c76b;font-weight:900;line-height:1}.fc-lessons-toggle{width:42px;height:42px;font-size:24px}.fc-module-toggle{width:34px;height:34px;font-size:18px;margin-left:auto}.fc-lessons-collapsed [class*="module-list"]{display:none}.fc-lessons-collapsed{max-height:110px!important;overflow:hidden}.fc-lessons-collapsed [class*="modules-head"]{border-bottom:0!important}.fc-module-collapsed [class*="lessons-list"]{display:none}.fc-module-collapsed{padding-bottom:0!important}.fc-module-collapsed [class*="module-title"]{margin-bottom:0!important}.fc-next-lesson-overlay{position:absolute;right:18px;bottom:68px;z-index:8;width:min(340px,calc(100% - 36px));border:1px solid rgba(245,199,107,.36);border-radius:22px;background:linear-gradient(145deg,rgba(10,10,14,.94),rgba(26,20,12,.94));box-shadow:0 24px 80px rgba(0,0,0,.55);backdrop-filter:blur(18px);padding:16px;color:#fff}.fc-next-lesson-close{position:absolute;right:10px;top:10px;border:0;background:rgba(255,255,255,.08);color:#fff;border-radius:999px;width:30px;height:30px;display:grid;place-items:center}.fc-next-lesson-overlay p{margin:0 0 6px;color:#f5c76b;font-size:12px;font-weight:950;letter-spacing:.11em;text-transform:uppercase}.fc-next-lesson-overlay h3{margin:0 28px 12px 0;font-size:20px;line-height:1.1}.fc-next-lesson-actions{display:flex;gap:10px;align-items:center}.fc-next-lesson-actions button{border:0;border-radius:14px;padding:11px 13px;font-weight:950}.fc-next-lesson-primary{background:linear-gradient(180deg,#ffe39b,#e9b348);color:#140d04}.fc-next-lesson-cancel{background:rgba(255,255,255,.09);color:#fff}.fc-next-count{display:grid;place-items:center;width:42px;height:42px;border-radius:50%;background:rgba(245,199,107,.12);border:1px solid rgba(245,199,107,.35);color:#f5c76b;font-weight:1000}@media(max-width:620px){.fc-next-lesson-overlay{right:12px;left:12px;bottom:74px;width:auto}}'; document.head.appendChild(style); } document.querySelectorAll<HTMLElement>('[class*="modules-panel"]').forEach((panel) => { if (panel.dataset.fcPanelToggleReady !== '1') { const head = panel.querySelector<HTMLElement>('[class*="modules-head"]'); const closeLink = head?.querySelector<HTMLAnchorElement>('a:last-child'); if (head) { const toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = 'fc-lessons-toggle'; toggle.setAttribute('aria-label', 'Minimizar painel de aulas'); toggle.textContent = '^'; toggle.addEventListener('click', (event) => { event.preventDefault(); event.stopPropagation(); const collapsed = panel.classList.toggle('fc-lessons-collapsed'); toggle.textContent = collapsed ? 'v' : '^'; toggle.setAttribute('aria-label', collapsed ? 'Exibir painel de aulas' : 'Minimizar painel de aulas'); }); if (closeLink) head.insertBefore(toggle, closeLink); else head.appendChild(toggle); panel.dataset.fcPanelToggleReady = '1'; } } panel.querySelectorAll<HTMLElement>('[class*="module-group"]').forEach((group) => { if (group.dataset.fcModuleToggleReady === '1') return; const title = group.querySelector<HTMLElement>('[class*="module-title"]'); const list = group.querySelector<HTMLElement>('[class*="lessons-list"]'); if (!title || !list) return; const button = document.createElement('button'); button.type = 'button'; button.className = 'fc-module-toggle'; button.setAttribute('aria-label', 'Minimizar aulas deste módulo'); button.textContent = '^'; button.addEventListener('click', (event) => { event.preventDefault(); event.stopPropagation(); const collapsed = group.classList.toggle('fc-module-collapsed'); button.textContent = collapsed ? 'v' : '^'; button.setAttribute('aria-label', collapsed ? 'Exibir aulas deste módulo' : 'Minimizar aulas deste módulo'); }); title.appendChild(button); group.dataset.fcModuleToggleReady = '1'; }); }); }
 
 export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, initialPositionSeconds = 0, trimStartSeconds = 0, trimEndSeconds = 0, nextLessonSlug, nextLessonTitle }: ContentPlayerProps) {
-  const router = useRouter();
-  const [isReady, setIsReady] = useState(false);
-  const [hasStarted, setHasStarted] = useState(false);
-  const [isBuffering, setIsBuffering] = useState(true);
-  const [nextCountdown, setNextCountdown] = useState<number | null>(null);
-  const [showNextOverlay, setShowNextOverlay] = useState(false);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const lastSavedAtRef = useRef(0);
-  const restoredRef = useRef(false);
-  const trimStart = Math.max(0, Number(trimStartSeconds || 0));
-  const trimEnd = Math.max(0, Number(trimEndSeconds || 0));
-
-  const { source, type } = useMemo(() => {
-    const rawSource = driveUrl || mediaUrl || '';
-    const driveFileId = getDriveFileId(rawSource);
-    return {
-      type: mediaType || 'video',
-      source: driveFileId ? `/api/media/drive/${driveFileId}` : isAllowedInternalMedia(rawSource) ? rawSource : '',
-    };
-  }, [driveUrl, mediaUrl, mediaType]);
-
-  useEffect(() => {
-    installLessonsPanelToggle();
-    const timer = window.setTimeout(installLessonsPanelToggle, 350);
-    return () => window.clearTimeout(timer);
-  }, []);
-
-  useEffect(() => {
-    setIsReady(false);
-    setHasStarted(false);
-    setIsBuffering(true);
-    setShowNextOverlay(false);
-    setNextCountdown(null);
-    restoredRef.current = false;
-    const video = videoRef.current;
-    if (!video || !source || type === 'audio') return;
-    video.load();
-    const timer = window.setTimeout(() => {
-      video.preload = 'auto';
-      video.load();
-    }, 250);
-    return () => window.clearTimeout(timer);
-  }, [source, type]);
-
-  useEffect(() => {
-    if (!showNextOverlay || !nextLessonSlug || nextCountdown === null) return;
-    if (nextCountdown <= 0) {
-      router.push(`/aluno/aula/${nextLessonSlug}`);
-      return;
-    }
-    const timer = window.setTimeout(() => setNextCountdown((value) => value === null ? null : value - 1), 1000);
-    return () => window.clearTimeout(timer);
-  }, [showNextOverlay, nextCountdown, nextLessonSlug, router]);
-
-  function restorePosition(element: HTMLMediaElement | null) {
-    if (!element || restoredRef.current) return;
-    const saved = Math.floor(initialPositionSeconds || 0);
-    const position = Math.max(trimStart, saved > trimStart ? saved : trimStart);
-    if (position > 0 && Number.isFinite(element.duration) && position < element.duration - 1) element.currentTime = position;
-    restoredRef.current = true;
-  }
-
-  function finishLesson(element: HTMLMediaElement | null) {
-    saveProgress(lessonId, element?.duration || trimEnd || 0, true);
-    if (nextLessonSlug) {
-      setShowNextOverlay(true);
-      setNextCountdown(5);
-    }
-  }
-
-  function handleTimeUpdate(element: HTMLMediaElement | null) {
-    if (!element) return;
-    if (trimEnd > trimStart && element.currentTime >= trimEnd) {
-      element.pause();
-      finishLesson(element);
-      return;
-    }
-    if (!lessonId) return;
-    const now = Date.now();
-    if (now - lastSavedAtRef.current < 10000) return;
-    lastSavedAtRef.current = now;
-    saveProgress(lessonId, element.currentTime, false);
-  }
-
-  if (!source) {
-    return (
-      <div className="lesson-player empty-player premium-loading-player">
-        <strong>Material protegido</strong>
-        <p className="muted">Este conteúdo só pode ser acessado pelo player interno do Hub.</p>
-      </div>
-    );
-  }
-
-  if (type === 'audio') {
-    return (
-      <div className="lesson-player premium-audio-player">
-        <audio
-          ref={audioRef}
-          controls
-          controlsList="nodownload noplaybackrate"
-          src={source}
-          preload="auto"
-          style={{ width: '100%' }}
-          onLoadedMetadata={() => restorePosition(audioRef.current)}
-          onPlay={() => saveProgress(lessonId, audioRef.current?.currentTime || 0, false)}
-          onTimeUpdate={() => handleTimeUpdate(audioRef.current)}
-          onEnded={() => finishLesson(audioRef.current)}
-        />
-        {showNextOverlay && nextLessonSlug ? (
-          <div className="fc-next-lesson-overlay">
-            <button type="button" className="fc-next-lesson-close" onClick={() => setShowNextOverlay(false)} aria-label="Cancelar próxima aula"><X size={18} /></button>
-            <p>Aula concluída</p>
-            <h3>Próxima: {nextLessonTitle || 'próxima aula'}</h3>
-            <div className="fc-next-lesson-actions"><span className="fc-next-count">{nextCountdown}</span><button className="fc-next-lesson-primary" type="button" onClick={() => router.push(`/aluno/aula/${nextLessonSlug}`)}>Assistir agora</button><button className="fc-next-lesson-cancel" type="button" onClick={() => setShowNextOverlay(false)}>Cancelar</button></div>
-          </div>
-        ) : null}
-      </div>
-    );
-  }
-
-  return (
-    <div className="lesson-player premium-video-player">
-      {!isReady ? (
-        <div className="premium-video-loading" aria-live="polite">
-          <span className="premium-video-glow" />
-          <Loader2 size={26} className="premium-video-spinner" />
-          <strong>Preparando aula</strong>
-          <small>Carregando vídeo em alta qualidade...</small>
-        </div>
-      ) : null}
-      {isReady && !hasStarted ? (
-        <button className="premium-video-start" type="button" onClick={() => { setHasStarted(true); if (videoRef.current && videoRef.current.currentTime < trimStart) videoRef.current.currentTime = trimStart; videoRef.current?.play().catch(() => undefined); }} aria-label="Reproduzir aula">
-          <Play size={32} fill="currentColor" />
-        </button>
-      ) : null}
-      {isBuffering && hasStarted ? <div className="premium-video-buffer"><Loader2 size={22} /></div> : null}
-      {showNextOverlay && nextLessonSlug ? (
-        <div className="fc-next-lesson-overlay">
-          <button type="button" className="fc-next-lesson-close" onClick={() => setShowNextOverlay(false)} aria-label="Cancelar próxima aula"><X size={18} /></button>
-          <p>Aula concluída</p>
-          <h3>Próxima: {nextLessonTitle || 'próxima aula'}</h3>
-          <div className="fc-next-lesson-actions"><span className="fc-next-count">{nextCountdown}</span><button className="fc-next-lesson-primary" type="button" onClick={() => router.push(`/aluno/aula/${nextLessonSlug}`)}>Assistir agora</button><button className="fc-next-lesson-cancel" type="button" onClick={() => setShowNextOverlay(false)}>Cancelar</button></div>
-        </div>
-      ) : null}
-      <video
-        ref={videoRef}
-        src={source}
-        title={title || 'Conteúdo'}
-        controls
-        controlsList="nodownload noplaybackrate"
-        playsInline
-        preload="auto"
-        onLoadedMetadata={() => { setIsReady(true); restorePosition(videoRef.current); }}
-        onCanPlay={() => { setIsReady(true); setIsBuffering(false); }}
-        onWaiting={() => setIsBuffering(true)}
-        onPlaying={() => { setHasStarted(true); setIsBuffering(false); saveProgress(lessonId, videoRef.current?.currentTime || 0, false); }}
-        onPlay={() => setHasStarted(true)}
-        onTimeUpdate={() => handleTimeUpdate(videoRef.current)}
-        onEnded={() => finishLesson(videoRef.current)}
-      />
-    </div>
-  );
+  const router = useRouter(); const [isReady, setIsReady] = useState(false); const [hasStarted, setHasStarted] = useState(false); const [isBuffering, setIsBuffering] = useState(true); const [nextCountdown, setNextCountdown] = useState<number | null>(null); const [showNextOverlay, setShowNextOverlay] = useState(false); const [nextTarget, setNextTarget] = useState<NextTarget>(null); const videoRef = useRef<HTMLVideoElement | null>(null); const audioRef = useRef<HTMLAudioElement | null>(null); const lastSavedAtRef = useRef(0); const restoredRef = useRef(false); const trimStart = Math.max(0, Number(trimStartSeconds || 0)); const trimEnd = Math.max(0, Number(trimEndSeconds || 0));
+  const { source, type } = useMemo(() => { const rawSource = driveUrl || mediaUrl || ''; const driveFileId = getDriveFileId(rawSource); return { type: mediaType || 'video', source: driveFileId ? `/api/media/drive/${driveFileId}` : isAllowedInternalMedia(rawSource) ? rawSource : '' }; }, [driveUrl, mediaUrl, mediaType]);
+  useEffect(() => { installLessonsPanelToggle(); const timer = window.setTimeout(installLessonsPanelToggle, 350); return () => window.clearTimeout(timer); }, []);
+  useEffect(() => { setIsReady(false); setHasStarted(false); setIsBuffering(true); setShowNextOverlay(false); setNextCountdown(null); setNextTarget(null); restoredRef.current = false; const video = videoRef.current; if (!video || !source || type === 'audio') return; video.load(); const timer = window.setTimeout(() => { video.preload = 'auto'; video.load(); }, 250); return () => window.clearTimeout(timer); }, [source, type]);
+  useEffect(() => { if (!showNextOverlay || !nextTarget || nextCountdown === null) return; if (nextCountdown <= 0) { router.push(nextTarget.href); return; } const timer = window.setTimeout(() => setNextCountdown((value) => value === null ? null : value - 1), 1000); return () => window.clearTimeout(timer); }, [showNextOverlay, nextCountdown, nextTarget, router]);
+  function restorePosition(element: HTMLMediaElement | null) { if (!element || restoredRef.current) return; const saved = Math.floor(initialPositionSeconds || 0); const position = Math.max(trimStart, saved > trimStart ? saved : trimStart); if (position > 0 && Number.isFinite(element.duration) && position < element.duration - 1) element.currentTime = position; restoredRef.current = true; }
+  function resolveNextTarget() { if (nextLessonSlug) return { href: `/aluno/aula/${nextLessonSlug}`, title: nextLessonTitle || 'próxima aula' }; return detectNextLessonFromPage(); }
+  function finishLesson(element: HTMLMediaElement | null) { saveProgress(lessonId, element?.duration || trimEnd || 0, true); const target = resolveNextTarget(); if (target) { setNextTarget(target); setShowNextOverlay(true); setNextCountdown(5); } }
+  function handleTimeUpdate(element: HTMLMediaElement | null) { if (!element) return; if (trimEnd > trimStart && element.currentTime >= trimEnd) { element.pause(); finishLesson(element); return; } if (!lessonId) return; const now = Date.now(); if (now - lastSavedAtRef.current < 10000) return; lastSavedAtRef.current = now; saveProgress(lessonId, element.currentTime, false); }
+  function goNext() { if (nextTarget) router.push(nextTarget.href); }
+  function NextOverlay() { if (!showNextOverlay || !nextTarget) return null; return <div className="fc-next-lesson-overlay"><button type="button" className="fc-next-lesson-close" onClick={() => setShowNextOverlay(false)} aria-label="Cancelar próxima aula"><X size={18} /></button><p>Aula concluída</p><h3>Próxima: {nextTarget.title}</h3><div className="fc-next-lesson-actions"><span className="fc-next-count">{nextCountdown}</span><button className="fc-next-lesson-primary" type="button" onClick={goNext}>Assistir agora</button><button className="fc-next-lesson-cancel" type="button" onClick={() => setShowNextOverlay(false)}>Cancelar</button></div></div>; }
+  if (!source) return <div className="lesson-player empty-player premium-loading-player"><strong>Material protegido</strong><p className="muted">Este conteúdo só pode ser acessado pelo player interno do Hub.</p></div>;
+  if (type === 'audio') return <div className="lesson-player premium-audio-player"><audio ref={audioRef} controls controlsList="nodownload noplaybackrate" src={source} preload="auto" style={{ width: '100%' }} onLoadedMetadata={() => restorePosition(audioRef.current)} onPlay={() => saveProgress(lessonId, audioRef.current?.currentTime || 0, false)} onTimeUpdate={() => handleTimeUpdate(audioRef.current)} onEnded={() => finishLesson(audioRef.current)} /><NextOverlay /></div>;
+  return <div className="lesson-player premium-video-player">{!isReady ? <div className="premium-video-loading" aria-live="polite"><span className="premium-video-glow" /><Loader2 size={26} className="premium-video-spinner" /><strong>Preparando aula</strong><small>Carregando vídeo em alta qualidade...</small></div> : null}{isReady && !hasStarted ? <button className="premium-video-start" type="button" onClick={() => { setHasStarted(true); if (videoRef.current && videoRef.current.currentTime < trimStart) videoRef.current.currentTime = trimStart; videoRef.current?.play().catch(() => undefined); }} aria-label="Reproduzir aula"><Play size={32} fill="currentColor" /></button> : null}{isBuffering && hasStarted ? <div className="premium-video-buffer"><Loader2 size={22} /></div> : null}<NextOverlay /><video ref={videoRef} src={source} title={title || 'Conteúdo'} controls controlsList="nodownload noplaybackrate" playsInline preload="auto" onLoadedMetadata={() => { setIsReady(true); restorePosition(videoRef.current); }} onCanPlay={() => { setIsReady(true); setIsBuffering(false); }} onWaiting={() => setIsBuffering(true)} onPlaying={() => { setHasStarted(true); setIsBuffering(false); saveProgress(lessonId, videoRef.current?.currentTime || 0, false); }} onPlay={() => setHasStarted(true)} onTimeUpdate={() => handleTimeUpdate(videoRef.current)} onEnded={() => finishLesson(videoRef.current)} /></div>;
 }
