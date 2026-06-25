@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Pencil, Sparkles } from 'lucide-react';
 import { formatBrazilianNote } from '@/lib/audio/pitch';
 
@@ -11,6 +11,14 @@ function formatDate(value?: string | null) {
   if (!value) return '—';
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? '—' : date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
+function newerProfile(current: VocalProfile, next: VocalProfile) {
+  if (!next?.lowest_note || !next?.highest_note) return current;
+  if (!current?.updated_at) return next;
+  const currentTime = new Date(current.updated_at).getTime();
+  const nextTime = new Date(next.updated_at || '').getTime();
+  return !Number.isNaN(nextTime) && nextTime >= currentTime ? next : current;
 }
 
 function CompactMap({ vocalProfile }: { vocalProfile: NonNullable<VocalProfile> }) {
@@ -27,17 +35,42 @@ function CompactMap({ vocalProfile }: { vocalProfile: NonNullable<VocalProfile> 
 export function VocalProfileCard({ vocalProfile }: { vocalProfile: VocalProfile }) {
   const [currentProfile, setCurrentProfile] = useState<VocalProfile>(vocalProfile || null);
 
+  const refreshProfile = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/vocal-profile/current?t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache' },
+      });
+      if (!res.ok) return;
+      const json = await res.json();
+      if (json?.vocalProfile?.lowest_note && json?.vocalProfile?.highest_note) {
+        setCurrentProfile((old) => newerProfile(old, json.vocalProfile));
+      }
+    } catch {}
+  }, []);
+
   useEffect(() => {
     let active = true;
-    fetch('/api/vocal-profile/current', { cache: 'no-store' })
-      .then((res) => res.ok ? res.json() : null)
-      .then((json) => {
-        if (!active) return;
-        if (json?.vocalProfile?.lowest_note && json?.vocalProfile?.highest_note) setCurrentProfile(json.vocalProfile);
-      })
-      .catch(() => undefined);
-    return () => { active = false; };
-  }, []);
+    let attempts = 0;
+    const tick = async () => {
+      if (!active) return;
+      attempts += 1;
+      await refreshProfile();
+      if (attempts >= 12) window.clearInterval(interval);
+    };
+    void tick();
+    const interval = window.setInterval(tick, 650);
+    const onFocus = () => void refreshProfile();
+    const onVisible = () => { if (document.visibilityState === 'visible') void refreshProfile(); };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [refreshProfile]);
 
   const hasResult = Boolean(currentProfile?.lowest_note && currentProfile?.highest_note);
 
