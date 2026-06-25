@@ -12,6 +12,8 @@ type ContentPlayerProps = {
   initialPositionSeconds?: number | null;
   trimStartSeconds?: number | null;
   trimEndSeconds?: number | null;
+  nextLessonSlug?: string | null;
+  nextLessonTitle?: string | null;
 };
 
 function getDriveFileId(url?: string | null) {
@@ -90,7 +92,7 @@ function installLessonsPanelToggle() {
   });
 }
 
-export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, initialPositionSeconds = 0, trimStartSeconds = 0, trimEndSeconds = 0 }: ContentPlayerProps) {
+export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, initialPositionSeconds = 0, trimStartSeconds = 0, trimEndSeconds = 0, nextLessonSlug: _nextLessonSlug, nextLessonTitle: _nextLessonTitle }: ContentPlayerProps) {
   const [isReady, setIsReady] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
   const [isBuffering, setIsBuffering] = useState(true);
