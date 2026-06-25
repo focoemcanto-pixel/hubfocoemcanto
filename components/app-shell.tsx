@@ -10,20 +10,22 @@ const navItems = [
   { href: '/aluno/perfil', label: 'Perfil' },
 ];
 
-const navCss = `.app-bottom-nav{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr))!important;align-items:center!important;gap:0!important;min-height:72px!important;padding:10px max(10px,env(safe-area-inset-left)) calc(10px + env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-right))!important}.app-bottom-nav a{display:flex!important;align-items:center!important;justify-content:center!important;min-width:0!important;white-space:nowrap!important;font-size:clamp(11px,3vw,14px)!important;font-weight:900!important;text-align:center!important}`;
+const navCss = `.app-bottom-nav{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr))!important;align-items:center!important;gap:0!important;min-height:72px!important;padding:10px max(10px,env(safe-area-inset-left)) calc(10px + env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-right))!important}.app-bottom-nav a{display:flex!important;align-items:center!important;justify-content:center!important;min-width:0!important;white-space:nowrap!important;font-size:clamp(11px,3vw,14px)!important;font-weight:900!important;text-align:center!important}.app-shell.hide-bottom-nav .app-content{padding-bottom:0!important}`;
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({ children, hideNav = false }: { children: React.ReactNode; hideNav?: boolean }) {
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${hideNav ? 'hide-bottom-nav' : ''}`}>
       <style dangerouslySetInnerHTML={{ __html: navCss }} />
       <StudentRoutePrefetcher />
       <FeedInitialVideoBoost />
       <main className="app-content route-surface">{children}</main>
-      <nav className="bottom-nav app-bottom-nav" aria-label="Navegação do aluno">
-        {navItems.map((item) => (
-          <Link href={item.href} key={item.href} prefetch>{item.label}</Link>
-        ))}
-      </nav>
+      {!hideNav ? (
+        <nav className="bottom-nav app-bottom-nav" aria-label="Navegação do aluno">
+          {navItems.map((item) => (
+            <Link href={item.href} key={item.href} prefetch>{item.label}</Link>
+          ))}
+        </nav>
+      ) : null}
     </div>
   );
 }
