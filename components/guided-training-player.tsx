@@ -33,10 +33,14 @@ export function GuidedTrainingPlayer({ exercise, compact = false }: { exercise: 
   const lastFrameRef = useRef<number | null>(null);
   const synthContextRef = useRef<AudioContext | null>(null);
   const activeOscillatorsRef = useRef<OscillatorNode[]>([]);
+  const countInTimeoutsRef = useRef<number[]>([]);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isCountingIn, setIsCountingIn] = useState(false);
+  const [countInBeat, setCountInBeat] = useState<number | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [speed, setSpeed] = useState(1);
   const [loop, setLoop] = useState(true);
+  const [metronomeOn, setMetronomeOn] = useState(true);
   const duration = useMemo(() => getTrainingDurationSeconds(exercise), [exercise]);
   const activeNote = exercise.notes.find((note) => currentTime >= note.start && currentTime <= note.start + note.duration);
   const hasAudioFile = Boolean(exercise.audioUrl);
@@ -45,7 +49,7 @@ export function GuidedTrainingPlayer({ exercise, compact = false }: { exercise: 
     if (audioRef.current) audioRef.current.playbackRate = speed;
   }, [speed]);
 
-  useEffect(() => () => stopSynth(), []);
+  useEffect(() => () => stopAllAudio(), []);
 
   useEffect(() => {
     if (!isPlaying) return;
@@ -61,14 +65,17 @@ export function GuidedTrainingPlayer({ exercise, compact = false }: { exercise: 
           if (!loop) {
             setIsPlaying(false);
             audioRef.current?.pause();
-            stopSynth();
+            stopAllAudio();
             return duration;
           }
+          stopAllAudio();
           if (audioRef.current) {
             audioRef.current.currentTime = 0;
             audioRef.current.play().catch(() => undefined);
+          } else {
+            startSynth(0);
           }
-          if (!hasAudioFile) startSynth(0);
+          startMetronome(0);
           return 0;
         }
         return next;
@@ -80,7 +87,7 @@ export function GuidedTrainingPlayer({ exercise, compact = false }: { exercise: 
     return () => {
       if (animationRef.current) window.cancelAnimationFrame(animationRef.current);
     };
-  }, [duration, hasAudioFile, isPlaying, loop, speed]);
+  }, [duration, isPlaying, loop, speed, metronomeOn]);
 
   function getSynthContext() {
     if (typeof window === 'undefined') return null;
@@ -92,11 +99,34 @@ export function GuidedTrainingPlayer({ exercise, compact = false }: { exercise: 
     return synthContextRef.current;
   }
 
-  function stopSynth() {
+  function clearCountIn() {
+    countInTimeoutsRef.current.forEach((id) => window.clearTimeout(id));
+    countInTimeoutsRef.current = [];
+    setIsCountingIn(false);
+    setCountInBeat(null);
+  }
+
+  function stopAllAudio() {
+    clearCountIn();
     activeOscillatorsRef.current.forEach((oscillator) => {
       try { oscillator.stop(); } catch { /* oscillator already stopped */ }
     });
     activeOscillatorsRef.current = [];
+  }
+
+  function playClick(context: AudioContext, startsAt: number, strong = false) {
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.type = 'square';
+    oscillator.frequency.value = strong ? 1320 : 880;
+    gain.gain.setValueAtTime(0.0001, startsAt);
+    gain.gain.exponentialRampToValueAtTime(strong ? 0.22 : 0.14, startsAt + 0.006);
+    gain.gain.exponentialRampToValueAtTime(0.0001, startsAt + 0.06);
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+    oscillator.start(startsAt);
+    oscillator.stop(startsAt + 0.08);
+    activeOscillatorsRef.current.push(oscillator);
   }
 
   function playPianoNote(context: AudioContext, frequency: number, startsAt: number, endsAt: number) {
@@ -108,7 +138,6 @@ export function GuidedTrainingPlayer({ exercise, compact = false }: { exercise: 
     toneFilter.Q.value = 0.7;
     toneFilter.connect(masterGain);
     masterGain.connect(context.destination);
-
     masterGain.gain.setValueAtTime(0.0001, startsAt);
     masterGain.gain.exponentialRampToValueAtTime(0.34, startsAt + 0.008);
     masterGain.gain.exponentialRampToValueAtTime(0.12, startsAt + 0.22);
@@ -137,7 +166,6 @@ export function GuidedTrainingPlayer({ exercise, compact = false }: { exercise: 
   function startSynth(startAt: number) {
     const context = getSynthContext();
     if (!context) return;
-    stopSynth();
     context.resume().catch(() => undefined);
     const now = context.currentTime + 0.04;
     exercise.notes.forEach((note) => {
@@ -150,14 +178,24 @@ export function GuidedTrainingPlayer({ exercise, compact = false }: { exercise: 
     });
   }
 
-  function togglePlayback() {
-    if (isPlaying) {
-      audioRef.current?.pause();
-      stopSynth();
-      setIsPlaying(false);
-      return;
+  function startMetronome(startAt: number) {
+    if (!metronomeOn) return;
+    const context = getSynthContext();
+    if (!context) return;
+    context.resume().catch(() => undefined);
+    const beatSeconds = (60 / Math.max(1, exercise.bpm)) / speed;
+    const now = context.currentTime + 0.04;
+    const firstBeatIndex = Math.max(0, Math.ceil(startAt / (60 / Math.max(1, exercise.bpm))));
+    for (let beat = firstBeatIndex; beat * (60 / Math.max(1, exercise.bpm)) <= duration; beat += 1) {
+      const beatTime = beat * (60 / Math.max(1, exercise.bpm));
+      const scheduled = now + Math.max(0, (beatTime - startAt) / speed);
+      playClick(context, scheduled, beat % 4 === 0);
     }
-    const startAt = currentTime >= duration ? 0 : currentTime;
+  }
+
+  function beginPlayback(startAt: number) {
+    clearCountIn();
+    stopAllAudio();
     setCurrentTime(startAt);
     if (audioRef.current) {
       audioRef.current.currentTime = startAt;
@@ -166,13 +204,45 @@ export function GuidedTrainingPlayer({ exercise, compact = false }: { exercise: 
     } else {
       startSynth(startAt);
     }
+    startMetronome(startAt);
     setIsPlaying(true);
   }
 
+  function startCountInThenPlay(startAt: number) {
+    const context = getSynthContext();
+    if (!context) return beginPlayback(startAt);
+    stopAllAudio();
+    context.resume().catch(() => undefined);
+    setIsCountingIn(true);
+    const beatMs = (60 / Math.max(1, exercise.bpm) / speed) * 1000;
+    [4, 3, 2, 1].forEach((value, index) => {
+      const timeout = window.setTimeout(() => {
+        setCountInBeat(value);
+        playClick(context, context.currentTime + 0.01, value === 4);
+      }, index * beatMs);
+      countInTimeoutsRef.current.push(timeout);
+    });
+    const startTimeout = window.setTimeout(() => beginPlayback(startAt), 4 * beatMs);
+    countInTimeoutsRef.current.push(startTimeout);
+  }
+
+  function togglePlayback() {
+    if (isPlaying || isCountingIn) {
+      audioRef.current?.pause();
+      stopAllAudio();
+      setIsPlaying(false);
+      return;
+    }
+    const startAt = currentTime >= duration ? 0 : currentTime;
+    startCountInThenPlay(startAt);
+  }
+
   function restart() {
+    audioRef.current?.pause();
+    stopAllAudio();
+    setIsPlaying(false);
     setCurrentTime(0);
     if (audioRef.current) audioRef.current.currentTime = 0;
-    if (isPlaying && !hasAudioFile) startSynth(0);
   }
 
   const progress = Math.min(100, Math.max(0, (currentTime / duration) * 100));
@@ -183,13 +253,14 @@ export function GuidedTrainingPlayer({ exercise, compact = false }: { exercise: 
       {exercise.audioUrl ? <audio ref={audioRef} src={exercise.audioUrl} loop={loop} /> : null}
       <div className="guided-player-top">
         <div>
-          <p className="eyebrow">Player guiado • piano • {exercise.bpm} BPM</p>
+          <p className="eyebrow">Player guiado • piano • metrônomo • {exercise.bpm} BPM</p>
           <h2>{exercise.title}</h2>
           <p>{exercise.objective}</p>
         </div>
-        <div className="guided-now"><span>Agora</span><strong>{activeNote?.label || activeNote?.pitch || 'Prepare'}</strong></div>
+        <div className="guided-now"><span>{isCountingIn ? 'Contagem' : 'Agora'}</span><strong>{isCountingIn ? countInBeat : activeNote?.label || activeNote?.pitch || 'Prepare'}</strong></div>
       </div>
       {!hasAudioFile ? <p className="synth-notice">Piano provisório gerado pelo app até o áudio oficial ser cadastrado.</p> : null}
+      {isCountingIn ? <div className="count-in-overlay"><span>{countInBeat}</span><small>prepare a entrada</small></div> : null}
       <div className="note-stage" aria-label="Guia visual de notas">
         <div className="stage-grid" />
         <div className="playhead" style={{ left: `${progress}%` }} />
@@ -202,9 +273,10 @@ export function GuidedTrainingPlayer({ exercise, compact = false }: { exercise: 
       </div>
       <div className="guided-progress"><span style={{ width: `${progress}%` }} /></div>
       <div className="guided-controls">
-        <button className="primary" type="button" onClick={togglePlayback}>{isPlaying ? 'Pausar' : 'Iniciar treino'}</button>
+        <button className="primary" type="button" onClick={togglePlayback}>{isPlaying ? 'Pausar' : isCountingIn ? 'Cancelar' : 'Iniciar treino'}</button>
         <button type="button" onClick={restart}>Recomeçar</button>
         <button type="button" onClick={() => setLoop((value) => !value)}>{loop ? 'Loop ligado' : 'Loop desligado'}</button>
+        <button type="button" onClick={() => setMetronomeOn((value) => !value)}>{metronomeOn ? 'Metrônomo ligado' : 'Metrônomo desligado'}</button>
         <label>Velocidade<select value={speed} onChange={(event) => setSpeed(Number(event.target.value))}><option value={0.75}>75%</option><option value={0.85}>85%</option><option value={1}>100%</option><option value={1.1}>110%</option></select></label>
         <span className="guided-time">{formatTime(currentTime)} / {formatTime(duration)}</span>
       </div>
@@ -212,4 +284,4 @@ export function GuidedTrainingPlayer({ exercise, compact = false }: { exercise: 
   );
 }
 
-const css = `.guided-player-card{border:1px solid rgba(255,255,255,.13);border-radius:28px;background:linear-gradient(180deg,rgba(255,255,255,.055),rgba(255,255,255,.025));box-shadow:0 30px 90px rgba(0,0,0,.28);padding:20px;overflow:hidden}.guided-player-top{display:flex;justify-content:space-between;gap:18px;align-items:flex-start}.guided-player-top h2{font-family:Georgia,'Times New Roman',serif;font-size:clamp(30px,4.2vw,48px);line-height:.95;margin:8px 0 8px;letter-spacing:-.045em}.guided-player-top p{margin:0;color:#bfc0ca;max-width:620px;line-height:1.45}.guided-now{min-width:132px;border:1px solid rgba(245,199,107,.35);border-radius:20px;padding:14px;background:rgba(245,199,107,.08);text-align:center}.guided-now span{display:block;color:#cfc7aa;font-size:11px;text-transform:uppercase;font-weight:950;letter-spacing:.1em}.guided-now strong{display:block;color:#f5c76b;font-size:28px;margin-top:2px}.synth-notice{margin:14px 0 0;color:#f5c76b;font-size:12px;font-weight:900}.note-stage{position:relative;height:340px;margin-top:20px;border:1px solid rgba(255,255,255,.12);border-radius:26px;background:radial-gradient(circle at 50% 50%,rgba(245,199,107,.1),transparent 34%),linear-gradient(180deg,rgba(0,0,0,.45),rgba(0,0,0,.18));overflow:hidden}.stage-grid{position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.05) 1px,transparent 1px);background-size:100% 48px,9.09% 100%;opacity:.7}.playhead{position:absolute;top:0;bottom:0;width:2px;background:#f5c76b;box-shadow:0 0 18px rgba(245,199,107,.9);z-index:3}.guided-note{position:absolute;z-index:2;height:26px;min-width:38px;border-radius:999px;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.24);box-shadow:0 12px 35px rgba(0,0,0,.34);transform:translateY(-50%);transition:.16s ease;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:950}.guided-note:before{content:'';position:absolute;left:0;top:50%;width:26px;height:26px;border-radius:50%;transform:translateY(-50%);background:linear-gradient(180deg,#fff0b6,#e9b348);box-shadow:0 0 22px rgba(245,199,107,.68)}.guided-note span{position:relative;z-index:1;margin-left:18px;text-shadow:0 1px 8px #000}.guided-note.active{background:rgba(245,199,107,.22);border-color:rgba(245,199,107,.78);transform:translateY(-50%) scale(1.06)}.guided-note.active:before{box-shadow:0 0 34px rgba(245,199,107,1)}.guided-progress{height:8px;background:rgba(255,255,255,.08);border-radius:999px;margin:16px 2px 0;overflow:hidden}.guided-progress span{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#ffe39b,#e9b348)}.guided-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:16px}.guided-controls button,.guided-controls select{border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.08);color:#fff;border-radius:14px;padding:11px 13px;font-weight:900}.guided-controls button.primary{border:0;background:linear-gradient(180deg,#ffe39b,#e9b348);color:#160f07}.guided-controls label{display:flex;align-items:center;gap:8px;color:#c7c7d1;font-size:13px;font-weight:800}.guided-time{margin-left:auto;color:#c7c7d1;font-weight:900}.guided-player-card.compact .note-stage{height:390px;background:linear-gradient(180deg,rgba(0,0,0,.28),rgba(0,0,0,.08));border-color:rgba(255,255,255,.08)}.guided-player-card.compact .synth-notice{display:none}@media(max-width:700px){.guided-player-card{padding:14px;border-radius:22px}.guided-player-top{display:grid}.guided-now{text-align:left}.note-stage{height:280px;border-radius:20px}.guided-player-card.compact .note-stage{height:420px}.guided-time{margin-left:0;width:100%}}`;
+const css = `.guided-player-card{position:relative;border:1px solid rgba(255,255,255,.13);border-radius:28px;background:linear-gradient(180deg,rgba(255,255,255,.055),rgba(255,255,255,.025));box-shadow:0 30px 90px rgba(0,0,0,.28);padding:20px;overflow:hidden}.guided-player-top{display:flex;justify-content:space-between;gap:18px;align-items:flex-start}.guided-player-top h2{font-family:Georgia,'Times New Roman',serif;font-size:clamp(30px,4.2vw,48px);line-height:.95;margin:8px 0 8px;letter-spacing:-.045em}.guided-player-top p{margin:0;color:#bfc0ca;max-width:620px;line-height:1.45}.guided-now{min-width:132px;border:1px solid rgba(245,199,107,.35);border-radius:20px;padding:14px;background:rgba(245,199,107,.08);text-align:center}.guided-now span{display:block;color:#cfc7aa;font-size:11px;text-transform:uppercase;font-weight:950;letter-spacing:.1em}.guided-now strong{display:block;color:#f5c76b;font-size:28px;margin-top:2px}.synth-notice{margin:14px 0 0;color:#f5c76b;font-size:12px;font-weight:900}.count-in-overlay{position:absolute;inset:0;z-index:10;display:grid;place-items:center;background:rgba(0,0,0,.38);backdrop-filter:blur(10px);text-align:center}.count-in-overlay span{display:block;font-size:112px;font-weight:950;color:#f5c76b;text-shadow:0 0 44px rgba(245,199,107,.85);animation:countPulse .5s ease}.count-in-overlay small{display:block;text-transform:uppercase;letter-spacing:.14em;font-weight:950;color:#fff;margin-top:-30px}.note-stage{position:relative;height:340px;margin-top:20px;border:1px solid rgba(255,255,255,.12);border-radius:26px;background:radial-gradient(circle at 50% 50%,rgba(245,199,107,.1),transparent 34%),linear-gradient(180deg,rgba(0,0,0,.45),rgba(0,0,0,.18));overflow:hidden}.stage-grid{position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.05) 1px,transparent 1px);background-size:100% 48px,9.09% 100%;opacity:.7}.playhead{position:absolute;top:0;bottom:0;width:2px;background:#f5c76b;box-shadow:0 0 18px rgba(245,199,107,.9);z-index:3}.guided-note{position:absolute;z-index:2;height:26px;min-width:38px;border-radius:999px;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.24);box-shadow:0 12px 35px rgba(0,0,0,.34);transform:translateY(-50%);transition:.16s ease;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:950}.guided-note:before{content:'';position:absolute;left:0;top:50%;width:26px;height:26px;border-radius:50%;transform:translateY(-50%);background:linear-gradient(180deg,#fff0b6,#e9b348);box-shadow:0 0 22px rgba(245,199,107,.68)}.guided-note span{position:relative;z-index:1;margin-left:18px;text-shadow:0 1px 8px #000}.guided-note.active{background:rgba(245,199,107,.22);border-color:rgba(245,199,107,.78);transform:translateY(-50%) scale(1.06)}.guided-note.active:before{box-shadow:0 0 34px rgba(245,199,107,1)}.guided-progress{height:8px;background:rgba(255,255,255,.08);border-radius:999px;margin:16px 2px 0;overflow:hidden}.guided-progress span{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#ffe39b,#e9b348)}.guided-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:16px}.guided-controls button,.guided-controls select{border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.08);color:#fff;border-radius:14px;padding:11px 13px;font-weight:900}.guided-controls button.primary{border:0;background:linear-gradient(180deg,#ffe39b,#e9b348);color:#160f07}.guided-controls label{display:flex;align-items:center;gap:8px;color:#c7c7d1;font-size:13px;font-weight:800}.guided-time{margin-left:auto;color:#c7c7d1;font-weight:900}.guided-player-card.compact .note-stage{height:390px;background:linear-gradient(180deg,rgba(0,0,0,.28),rgba(0,0,0,.08));border-color:rgba(255,255,255,.08)}.guided-player-card.compact .synth-notice{display:none}@keyframes countPulse{0%{transform:scale(.78);opacity:.4}100%{transform:scale(1);opacity:1}}@media(max-width:700px){.guided-player-card{padding:14px;border-radius:22px}.guided-player-top{display:grid}.guided-now{text-align:left}.note-stage{height:280px;border-radius:20px}.guided-player-card.compact .note-stage{height:420px}.guided-time{margin-left:0;width:100%}}`;
