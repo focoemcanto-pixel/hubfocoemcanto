@@ -97,11 +97,7 @@ export function VocalRangeTest({ profileId, authUserId, initialProfile }: Props)
   async function startTessituraMonitor() {
     if (audioRef.current) return;
     setMicError('');
-    try {
-      await openPitchMonitor();
-    } catch {
-      setMicError('Ative o microfone para validar sua afinação em tempo real.');
-    }
+    try { await openPitchMonitor(); } catch { setMicError('Ative o microfone para validar sua afinação em tempo real.'); }
   }
 
   useEffect(() => {
@@ -119,14 +115,7 @@ export function VocalRangeTest({ profileId, authUserId, initialProfile }: Props)
   useEffect(() => { document.body.classList.toggle('vocal-capture-active', step === 'lowest'); return () => document.body.classList.remove('vocal-capture-active'); }, [step]);
   useEffect(() => () => stopMic(), []);
 
-  function stopMic() {
-    const a = audioRef.current;
-    if (!a) return;
-    cancelAnimationFrame(a.raf);
-    a.stream.getTracks().forEach((t) => t.stop());
-    a.ctx.close();
-    audioRef.current = null;
-  }
+  function stopMic() { const a = audioRef.current; if (!a) return; cancelAnimationFrame(a.raf); a.stream.getTracks().forEach((t) => t.stop()); a.ctx.close(); audioRef.current = null; }
 
   async function playNote(midi: number) {
     const AudioCtor = window.AudioContext || (window as any).webkitAudioContext;
@@ -140,11 +129,7 @@ export function VocalRangeTest({ profileId, authUserId, initialProfile }: Props)
     output.gain.exponentialRampToValueAtTime(0.28, now + 0.025);
     output.gain.exponentialRampToValueAtTime(0.12, now + 0.45);
     output.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-    compressor.threshold.value = -20;
-    compressor.knee.value = 24;
-    compressor.ratio.value = 5;
-    compressor.attack.value = 0.003;
-    compressor.release.value = 0.18;
+    compressor.threshold.value = -20; compressor.knee.value = 24; compressor.ratio.value = 5; compressor.attack.value = 0.003; compressor.release.value = 0.18;
     output.connect(compressor).connect(ctx.destination);
     const base = midiToFrequency(midi);
     const harmonics = [
@@ -194,8 +179,8 @@ export function VocalRangeTest({ profileId, authUserId, initialProfile }: Props)
     {step === 'intro' && <section className="vocal-stage hero"><Sparkles size={34} /><h1>Vamos criar seu Mapa Vocal</h1><p>Esse teste identifica sua extensão, sua tessitura confortável e uma tendência vocal aproximada.</p><p className="tip">Não force. Técnica vocal é consciência, não violência.</p>{micError && <strong className="error">{micError}</strong>}<button onClick={() => startMic()} aria-label="Iniciar avaliação vocal"><Mic2 /> Iniciar avaliação</button></section>}
     {step === 'lowest' && <section className="vocal-stage grid range-capture"><div className="range-desktop-ui"><VocalNoteMeter currentMidi={currentMidi} lowestMidi={lowest?.midi} highestMidi={highest?.midi} /><div className="range-copy"><p className="eyebrow">ETAPA 1/3</p><h1>Mapeie sua extensão vocal</h1><p className="range-helper">Cante do grave ao agudo. A régua marca os extremos.</p>{captureReview && <div className="capture-result"><span>Extensão captada</span><strong>{captureRange}</strong><small>Confirme para seguir ou tente novamente.</small></div>}<div className="actions"><button disabled={!captureReady} onClick={(event) => { event.stopPropagation(); captureReview ? confirmRangeAndGoToTessitura() : finishMapping(); }}>{captureReview ? 'Confirmar extensão' : 'Pressione quando terminar'}</button><button onClick={(event) => { event.stopPropagation(); retryMapping(); }}><RefreshCw /> Tentar de novo</button></div></div></div><MobileRangeCapture currentMidi={currentMidi} lowestMidi={lowest?.midi} highestMidi={highest?.midi} liveNote={liveNote} captureReady={captureReady} captureReview={captureReview} captureRange={captureRange} onBack={resetAll} onRetry={retryMapping} onPrimary={() => captureReview ? confirmRangeAndGoToTessitura() : finishMapping()} /></section>}
     {step === 'confirm-range' && lowest && highest && <section className="vocal-stage hero"><h1>Confirmar alcance vocal?</h1><div className="range-big">{lowest.note} ↔ {highest.note}</div><p>Extensão mostra tudo que você consegue alcançar hoje.</p><div className="actions"><button onClick={() => startMic()}><RefreshCw /> Refazer</button><button onClick={confirmRangeAndGoToTessitura}><Check /> Confirmar</button></div></section>}
-    {step === 'tess-high' && highest && tessHigh != null && <Tessitura title="Tessitura vocal" text="Agora vamos encontrar seu agudo confortável. Repita a palavra na nota sugerida." midi={tessHigh} phrase="eu consigo" instruction="Cante a palavra na nota sugerida" downLabel="Quero descer a nota" tuner={highTuner} onPlay={playNote} onMove={() => { setTessHigh(Math.max(lowest?.midi ?? 24, tessHigh - 1)); setTessituraSteps((s) => [...s, { area: 'high', action: 'down', midi: tessHigh - 1 }]); }} onConfirm={() => setStep('tess-low')} />}
-    {step === 'tess-low' && lowest && tessLow != null && <Tessitura title="Tessitura vocal" text="Agora vamos encontrar seu grave confortável. Repita a palavra na nota sugerida." midi={tessLow} phrase="eu consigo" instruction="Cante a palavra na nota sugerida" downLabel="Quero subir a nota" icon="up" tuner={lowTuner} onPlay={playNote} onMove={() => { setTessLow(Math.min(highest?.midi ?? 96, tessLow + 1)); setTessituraSteps((s) => [...s, { area: 'low', action: 'up', midi: tessLow + 1 }]); }} onConfirm={() => setStep('gender')} />}
+    {step === 'tess-high' && highest && tessHigh != null && <Tessitura title="Tessitura vocal" text="Agora vamos encontrar seu agudo confortável. Repita a palavra na nota sugerida." midi={tessHigh} phrase="eu consigo" instruction="Cante a palavra na nota sugerida" downLabel="Quero descer a nota" tuner={highTuner} onPlay={playNote} onMove={() => { setTessHigh(Math.max(lowest?.midi ?? 24, tessHigh - 1)); setTessituraSteps((s) => [...s, { area: 'high', action: 'down', midi: tessHigh - 1 }]); }} onConfirm={() => setStep('tess-low')} onExit={resetAll} />}
+    {step === 'tess-low' && lowest && tessLow != null && <Tessitura title="Tessitura vocal" text="Agora vamos encontrar seu grave confortável. Repita a palavra na nota sugerida." midi={tessLow} phrase="eu consigo" instruction="Cante a palavra na nota sugerida" downLabel="Quero subir a nota" icon="up" tuner={lowTuner} onPlay={playNote} onMove={() => { setTessLow(Math.min(highest?.midi ?? 96, tessLow + 1)); setTessituraSteps((s) => [...s, { area: 'low', action: 'up', midi: tessLow + 1 }]); }} onConfirm={() => setStep('gender')} onExit={resetAll} />}
     {step === 'gender' && <section className="vocal-stage hero"><h1>Selecione uma referência vocal</h1><p>Essa informação ajuda apenas a estimar melhor a tendência vocal.</p><div className="choice-grid">{[['masculino','Masculino'],['feminino','Feminino'],['nao_informar','Prefiro não informar']].map(([value,label]) => <button className={gender === value ? 'selected' : ''} key={value} onClick={() => setGender(value as Gender)}>{label}</button>)}</div><button onClick={() => setStep('result')}>Ver resultado</button></section>}
     {step === 'result' && lowest && highest && <section className="vocal-stage hero result"><h1>Seu Mapa Vocal</h1><div className="result-grid"><article><span>Extensão</span><strong>{lowest.note} → {highest.note}</strong></article><article><span>Tessitura confortável</span><strong>{tessLow != null ? midiToBrazilianNoteName(tessLow) : '—'} → {tessHigh != null ? midiToBrazilianNoteName(tessHigh) : '—'}</strong></article><article><span>Tendência vocal</span><strong>{result.classification}</strong></article><article><span>Confiança</span><strong>{Math.round(result.confidence * 100)}%</strong></article></div><p>Essa é uma leitura inicial. Sua voz pode evoluir conforme técnica, saúde vocal, aquecimento, consciência corporal e treino.</p>{validation && <strong className="error">{validation}</strong>}{saveMessage && <strong className="save-message">{saveMessage}</strong>}<div className="actions"><button disabled={saving || Boolean(validation)} onClick={save}><Save /> {saving ? 'Salvando...' : 'Salvar no meu perfil'}</button><button onClick={resetAll}><RefreshCw /> Refazer avaliação</button><Link href="/aluno/biblioteca">Ver aulas recomendadas</Link></div></section>}
   </div>;
@@ -204,36 +189,27 @@ export function VocalRangeTest({ profileId, authUserId, initialProfile }: Props)
 function getTunerState(currentFrequency: number | null, targetMidi?: number | null) {
   if (!currentFrequency || targetMidi == null) return { cents: null as number | null, x: 50, status: 'waiting', label: 'Cante para validar a nota' };
   const raw = 1200 * Math.log2(currentFrequency / midiToFrequency(targetMidi));
-  const cents = Math.max(-50, Math.min(50, raw));
+  const visibleRange = 200;
+  const cents = Math.max(-visibleRange, Math.min(visibleRange, raw));
+  const x = Math.max(0, Math.min(100, 50 + (cents / visibleRange) * 50));
   const abs = Math.abs(raw);
-  const x = Math.max(0, Math.min(100, 50 + cents));
-  if (abs <= 15) return { cents: raw, x, status: 'in-tune', label: 'Afinado! Mantenha a nota...' };
-  if (raw < -30) return { cents: raw, x, status: 'low', label: 'Muito abaixo' };
-  if (raw < -15) return { cents: raw, x, status: 'almost-low', label: 'Um pouco abaixo' };
-  if (raw > 30) return { cents: raw, x, status: 'high', label: 'Muito acima' };
-  return { cents: raw, x, status: 'almost-high', label: 'Um pouco acima' };
+  if (abs <= 8) return { cents: raw, x, status: 'in-tune', label: 'Afinado! Mantenha a nota...' };
+  if (raw < -80) return { cents: raw, x, status: 'low', label: 'Muito abaixo' };
+  if (raw < -8) return { cents: raw, x, status: 'almost-low', label: raw < -30 ? 'Abaixo' : 'Quase no centro' };
+  if (raw > 80) return { cents: raw, x, status: 'high', label: 'Muito acima' };
+  return { cents: raw, x, status: 'almost-high', label: raw > 30 ? 'Acima' : 'Quase no centro' };
 }
 
-function mobileGlowFromMidi(midi?: number | null) {
-  if (midi == null) return { region: 'chest', top: 54, left: 53, width: 29, height: 17 };
-  if (midi >= 72) return { region: 'head', top: 21, left: 55, width: 18, height: 12 };
-  if (midi >= 55) return { region: 'mix', top: 36, left: 54, width: 23, height: 15 };
-  return { region: 'chest', top: 54, left: 53, width: 29, height: 17 };
-}
+function mobileGlowFromMidi(midi?: number | null) { if (midi == null) return { region: 'chest', top: 54, left: 53, width: 29, height: 17 }; if (midi >= 72) return { region: 'head', top: 21, left: 55, width: 18, height: 12 }; if (midi >= 55) return { region: 'mix', top: 36, left: 54, width: 23, height: 15 }; return { region: 'chest', top: 54, left: 53, width: 29, height: 17 }; }
 
 function MobileRangeCapture({ currentMidi, lowestMidi, highestMidi, liveNote, captureReady, captureReview, captureRange, onBack, onRetry, onPrimary }: any) {
-  const minMidi = 24;
-  const maxMidi = 96;
-  const clamp = (midi: number) => Math.max(minMidi, Math.min(maxMidi, midi));
-  const percent = (midi: number) => 100 - ((clamp(midi) - minMidi) / (maxMidi - minMidi)) * 100;
-  const labels = Array.from({ length: Math.floor((maxMidi - minMidi) / 4) + 1 }, (_, index) => maxMidi - index * 4);
-  const glow = mobileGlowFromMidi(currentMidi);
+  const minMidi = 24; const maxMidi = 96; const clamp = (midi: number) => Math.max(minMidi, Math.min(maxMidi, midi)); const percent = (midi: number) => 100 - ((clamp(midi) - minMidi) / (maxMidi - minMidi)) * 100; const labels = Array.from({ length: Math.floor((maxMidi - minMidi) / 4) + 1 }, (_, index) => maxMidi - index * 4); const glow = mobileGlowFromMidi(currentMidi);
   return <div className="mvr-shell"><div className="mvr-ruler"><div className="mvr-line" />{labels.map((midi) => <span key={midi} className={midi % 12 === 0 ? 'octave' : ''} style={{ top: `${percent(midi)}%` }}>{midiToBrazilianNoteName(midi)}</span>)}{highestMidi != null && <b className="mvr-limit mvr-limit-high" style={{ top: `${percent(highestMidi)}%` }}><em>{midiToBrazilianNoteName(highestMidi)}</em></b>}{lowestMidi != null && <b className="mvr-limit mvr-limit-low" style={{ top: `${percent(lowestMidi)}%` }}><em>{midiToBrazilianNoteName(lowestMidi)}</em></b>}{currentMidi != null && <i className="mvr-dot" style={{ top: `${percent(currentMidi)}%` }} />}</div><div className="mvr-visual"><div className="mvr-aura" /><img src="/vocal/vocal-body-base.png" alt="Silhueta vocal" draggable={false} /><b className={`mvr-glow ${glow.region}`} style={{ top: `${glow.top}%`, left: `${glow.left}%`, width: `${glow.width}%`, height: `${glow.height}%` }} /><span className="head">CABEÇA</span><span className="mix">VOZ MISTA</span><span className="chest">PEITO</span></div><header><small>ETAPA 1/3</small><h1>Mapeie sua extensão vocal</h1><p>Cante do grave ao agudo. A régua marca os extremos.</p></header><div className="mvr-note"><small>NOTA ATUAL</small><strong>{liveNote}</strong></div>{captureReview && <div className="mvr-result"><span>Extensão captada</span><strong>{captureRange}</strong></div>}<button className="mvr-back" onClick={onBack} aria-label="Sair">←</button><button className="mvr-main" disabled={!captureReady} onClick={onPrimary}>{captureReview ? 'Confirmar extensão' : 'Pressione quando terminar'}</button><button className="mvr-retry" onClick={onRetry} aria-label="Tentar de novo"><RefreshCw /></button></div>;
 }
 
-function Tessitura({ title, text, midi, phrase, instruction, downLabel, icon, tuner, onPlay, onMove, onConfirm }: any) {
+function Tessitura({ title, text, midi, phrase, instruction, downLabel, icon, tuner, onPlay, onMove, onConfirm, onExit }: any) {
   const note = midiToBrazilianNoteName(midi);
-  return <section className="vocal-stage tessitura-stage"><div className="tessitura-figure" aria-hidden="true"><img src="/vocal/vocal-body-base.png" alt="" draggable={false} /><span /></div><div className="tessitura-copy"><p className="tessitura-step">ETAPA 2/3</p><h1>{title}</h1><p className="tessitura-lead">{text}</p><div className="tessitura-note-card"><div><span>NOTA SUGERIDA</span><strong>{note}</strong></div><button type="button" onClick={() => onPlay(midi)}><Play /><b>{note}</b><small>Tocar nota</small></button></div><div className="tessitura-sing-card"><i><Mic2 size={28} /></i><div><strong>{instruction || 'Cante a palavra na nota sugerida'}</strong><p>Diga “{phrase || 'eu consigo'}” com qualidade e conforto.</p></div></div><div className={`tessitura-tuner ${tuner?.status || 'waiting'}`} style={{ '--tuner-x': `${tuner?.x ?? 50}%` } as any}><span>MONITORAMENTO DE AFINAÇÃO</span><div className="tessitura-scale"><b /><i /></div><div className="tessitura-scale-labels"><small>Abaixo</small><small>Na nota</small><small>Acima</small></div><p><Check size={18} /> {tuner?.label || 'Cante para validar a nota'}</p></div><div className="actions tessitura-actions"><button onClick={onConfirm}><Check /> Consegui com conforto</button><button onClick={onMove}>{icon === 'up' ? <ArrowUp /> : <ArrowDown />} Difícil / sem qualidade</button><button onClick={onMove}>{icon === 'up' ? <ArrowUp /> : <ArrowDown />} {downLabel}</button></div><div className="tessitura-tip"><Sparkles size={20} /><p>Dica: mantenha o volume moderado e foque na qualidade do som.</p></div></div></section>;
+  return <section className="vocal-stage tessitura-stage"><button type="button" className="tessitura-exit" onClick={onExit} aria-label="Voltar">‹</button><div className="tessitura-figure" aria-hidden="true"><img src="/vocal/vocal-body-base.png" alt="" draggable={false} /><span /></div><div className="tessitura-copy"><p className="tessitura-step">ETAPA 2/3</p><h1>{title}</h1><p className="tessitura-lead">{text}</p><div className="tessitura-note-card"><div><span>NOTA SUGERIDA</span><strong>{note}</strong></div><button type="button" onClick={() => onPlay(midi)}><Play /><b>{note}</b><small>Tocar nota</small></button></div><div className="tessitura-sing-card"><i><Mic2 size={28} /></i><div><strong>{instruction || 'Cante a palavra na nota sugerida'}</strong><p>Diga “{phrase || 'eu consigo'}” com qualidade e conforto.</p></div></div><div className={`tessitura-tuner ${tuner?.status || 'waiting'}`} style={{ '--tuner-x': `${tuner?.x ?? 50}%` } as any}><span>MONITORAMENTO DE AFINAÇÃO</span><div className="tessitura-scale"><b /><i /></div><div className="tessitura-scale-labels"><small>Abaixo</small><small>Na nota</small><small>Acima</small></div><p><Check size={18} /> {tuner?.label || 'Cante para validar a nota'}</p></div><div className="actions tessitura-actions"><button onClick={onConfirm}><Check /> Consegui com conforto</button><button onClick={onMove}>{icon === 'up' ? <ArrowUp /> : <ArrowDown />} Difícil / sem qualidade</button><button onClick={onMove}>{icon === 'up' ? <ArrowUp /> : <ArrowDown />} {downLabel}</button></div><div className="tessitura-tip"><Sparkles size={20} /><p>Dica: mantenha o volume moderado e foque na qualidade do som.</p></div></div></section>;
 }
 
 const css = `
