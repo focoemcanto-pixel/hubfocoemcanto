@@ -5,7 +5,7 @@ import type { CSSProperties } from 'react';
 import type { TrainingExercise, TrainingNote } from '@/lib/training-center';
 import { WireframeBody } from '@/components/vocal/wireframe-body';
 import { autoCorrelate, getVocalRegister, midiToBrazilianNoteName, noteNameToMidi } from '@/lib/audio/pitch';
-import { playPianoSample, preloadPianoSamples } from '@/lib/audio/piano-sample-engine';
+import { playPianoSample, preloadPianoSamples, stopPianoSamples } from '@/lib/audio/piano-sample-engine';
 
 const MIN_MIDI = 12;
 const MAX_MIDI = 84;
@@ -105,7 +105,7 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise;
 
   function showControls() { setControls(true); }
   function getAudioContext() { if (typeof window === 'undefined') return null; if (!audioCtxRef.current) { const Ctor = (window as WinAudio).AudioContext || (window as WinAudio).webkitAudioContext; audioCtxRef.current = Ctor ? new Ctor() : null; } return audioCtxRef.current; }
-  function stopAudio() { timersRef.current.forEach(clearTimeout); timersRef.current = []; oscillatorsRef.current.forEach((osc) => { try { osc.stop(); } catch {} }); oscillatorsRef.current = []; setCount(null); }
+  function stopAudio() { timersRef.current.forEach(clearTimeout); timersRef.current = []; stopPianoSamples(audioCtxRef.current ?? undefined); oscillatorsRef.current.forEach((osc) => { try { osc.stop(); } catch {} }); oscillatorsRef.current = []; setCount(null); }
 
   function playClick(context: AudioContext, at: number, strong = false) {
     const oscillator = context.createOscillator();
