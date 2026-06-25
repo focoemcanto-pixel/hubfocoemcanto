@@ -1,4 +1,7 @@
+'use client';
+
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
 import { Pencil, Sparkles } from 'lucide-react';
 import { formatBrazilianNote } from '@/lib/audio/pitch';
 
@@ -10,8 +13,34 @@ function formatDate(value?: string | null) {
   return Number.isNaN(date.getTime()) ? '—' : date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
+function CompactMap({ vocalProfile }: { vocalProfile: NonNullable<VocalProfile> }) {
+  return <>
+    <div className="vocal-profile-card__summary">
+      <strong>{vocalProfile.classification || 'Indefinida'}</strong>
+      <span>Extensão: {formatBrazilianNote(vocalProfile.lowest_note)} → {formatBrazilianNote(vocalProfile.highest_note)}</span>
+      <span>Tessitura: {formatBrazilianNote(vocalProfile.tessitura_low_note)} → {formatBrazilianNote(vocalProfile.tessitura_high_note)}</span>
+    </div>
+    <small className="vocal-profile-card__date">Atualizado em {formatDate(vocalProfile.updated_at)}</small>
+  </>;
+}
+
 export function VocalProfileCard({ vocalProfile }: { vocalProfile: VocalProfile }) {
-  const hasResult = Boolean(vocalProfile?.lowest_note && vocalProfile?.highest_note);
+  const [currentProfile, setCurrentProfile] = useState<VocalProfile>(vocalProfile || null);
+
+  useEffect(() => {
+    let active = true;
+    fetch('/api/vocal-profile/current', { cache: 'no-store' })
+      .then((res) => res.ok ? res.json() : null)
+      .then((json) => {
+        if (!active) return;
+        if (json?.vocalProfile?.lowest_note && json?.vocalProfile?.highest_note) setCurrentProfile(json.vocalProfile);
+      })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, []);
+
+  const hasResult = Boolean(currentProfile?.lowest_note && currentProfile?.highest_note);
+
   return (
     <section className="vocal-profile-card vocal-profile-card--compact">
       <div className="vocal-profile-card__glow" />
@@ -19,14 +48,7 @@ export function VocalProfileCard({ vocalProfile }: { vocalProfile: VocalProfile 
         <div><p>Perfil Vocal</p><h2>{hasResult ? 'Mapa vocal' : 'Crie seu Mapa Vocal'}</h2></div>
         <Link className="vocal-profile-card__edit" href="/aluno/perfil-vocal" aria-label={hasResult ? 'Refazer mapa vocal' : 'Fazer avaliação vocal'}>{hasResult ? <Pencil size={16} /> : <Sparkles size={16} />}</Link>
       </header>
-      {hasResult ? <>
-        <div className="vocal-profile-card__summary">
-          <strong>{vocalProfile?.classification || 'Indefinida'}</strong>
-          <span>{formatBrazilianNote(vocalProfile?.lowest_note)} → {formatBrazilianNote(vocalProfile?.highest_note)}</span>
-          <span>Tessitura: {formatBrazilianNote(vocalProfile?.tessitura_low_note)} → {formatBrazilianNote(vocalProfile?.tessitura_high_note)}</span>
-        </div>
-        <small className="vocal-profile-card__date">Atualizado em {formatDate(vocalProfile?.updated_at)}</small>
-      </> : <>
+      {hasResult && currentProfile ? <CompactMap vocalProfile={currentProfile} /> : <>
         <p>Descubra sua extensão e tessitura confortável.</p>
         <Link href="/aluno/perfil-vocal"><Sparkles size={18} /> Fazer avaliação vocal</Link>
       </>}
