@@ -132,11 +132,11 @@ async function getDriveMetadata(fileId: string, access: string): Promise<DriveMe
   return response.json() as Promise<DriveMetadata>;
 }
 
-function mediaHeaders(upstream: Response, metadata: DriveMetadata | null) {
+function mediaHeaders(upstream: Response) {
   const headers = new Headers();
-  const contentType = upstream.headers.get('content-type') || metadata?.mimeType || 'video/mp4';
+  const contentType = upstream.headers.get('content-type') || 'video/mp4';
   const contentRange = upstream.headers.get('content-range');
-  const contentLength = upstream.headers.get('content-length') || metadata?.size || null;
+  const contentLength = upstream.headers.get('content-length');
 
   headers.set('content-type', contentType);
   headers.set('accept-ranges', 'bytes');
@@ -151,12 +151,12 @@ function mediaHeaders(upstream: Response, metadata: DriveMetadata | null) {
   return headers;
 }
 
-async function fetchDriveMedia(fileId: string, access: string, range: string) {
+async function fetchDriveMedia(fileId: string, access: string, range: string | null) {
+  const headers: Record<string, string> = { authorization: `Bearer ${access}` };
+  if (range) headers.range = range;
+
   return fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&supportsAllDrives=true`, {
-    headers: {
-      authorization: `Bearer ${access}`,
-      range,
-    },
+    headers,
     cache: 'no-store',
   });
 }
@@ -197,21 +197,15 @@ export async function GET(request: Request, { params }: Params) {
     const auth = await authorizeAndLoad(id);
     if ('error' in auth) return auth.error;
 
-    const metadata = await getDriveMetadata(id, auth.access);
-
-    // Safari/iPhone é mais estável quando o vídeo responde por byte range.
-    // Se o navegador ainda não pediu um range, iniciamos como bytes=0- para devolver 206/Content-Range.
     const requestedRange = request.headers.get('range');
-    const driveRange = requestedRange || 'bytes=0-';
-    const upstream = await fetchDriveMedia(id, auth.access, driveRange);
+    const upstream = await fetchDriveMedia(id, auth.access, requestedRange);
 
     if (!upstream.ok || !upstream.body) {
       const detail = await upstream.text().catch(() => '');
       return NextResponse.json({ error: 'drive_video_unavailable', status: upstream.status, detail: detail.slice(0, 300) }, { status: upstream.status || 500 });
     }
 
-    const status = upstream.status === 206 || requestedRange ? upstream.status : 206;
-    return new Response(upstream.body, { status, headers: mediaHeaders(upstream, metadata) });
+    return new Response(upstream.body, { status: upstream.status, headers: mediaHeaders(upstream) });
   } catch (error) {
     return NextResponse.json({ error: 'drive_proxy_failed', message: error instanceof Error ? error.message : 'unknown_error' }, { status: 500 });
   }
