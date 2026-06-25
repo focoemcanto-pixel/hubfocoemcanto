@@ -61,7 +61,7 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise;
   const [bpm, setBpm] = useState(exercise.bpm);
   const [playing, setPlaying] = useState(false);
   const [count, setCount] = useState<number | null>(null);
-  const [loop, setLoop] = useState(true);
+  const [loop, setLoop] = useState(false);
   const [metro, setMetro] = useState(true);
   const [controls, setControls] = useState(true);
   const [micReady, setMicReady] = useState(false);
@@ -75,7 +75,6 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise;
   const micRafRef = useRef<number | null>(null);
   const lastFrameRef = useRef<number | null>(null);
   const currentBeatRef = useRef(0);
-  const smoothMidiRef = useRef<number | null>(null);
   const silenceRef = useRef(0);
   const oscillatorsRef = useRef<OscillatorNode[]>([]);
   const timersRef = useRef<number[]>([]);
@@ -114,9 +113,11 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise;
           if (!loop) {
             setPlaying(false);
             stopAudio();
+            setVoiceTrail([]);
             return totalBeats;
           }
           stopAudio();
+          setVoiceTrail([]);
           scheduleAudio(0);
           return 0;
         }
@@ -171,37 +172,56 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise;
     oscillator.type = 'square';
     oscillator.frequency.value = strong ? 1320 : 880;
     gain.gain.setValueAtTime(0.0001, at);
-    gain.gain.exponentialRampToValueAtTime(strong ? 0.2 : 0.12, at + 0.006);
-    gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.06);
+    gain.gain.exponentialRampToValueAtTime(strong ? 0.18 : 0.1, at + 0.006);
+    gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.055);
     oscillator.connect(gain);
     gain.connect(context.destination);
     oscillator.start(at);
-    oscillator.stop(at + 0.08);
+    oscillator.stop(at + 0.07);
     oscillatorsRef.current.push(oscillator);
   }
 
   function playPiano(context: AudioContext, midi: number, at: number, end: number) {
     const frequency = midiToFrequency(midi);
+    const compressor = context.createDynamicsCompressor();
     const master = context.createGain();
     const filter = context.createBiquadFilter();
+
+    compressor.threshold.value = -18;
+    compressor.knee.value = 16;
+    compressor.ratio.value = 3;
+    compressor.attack.value = 0.003;
+    compressor.release.value = 0.16;
+
     filter.type = 'lowpass';
-    filter.frequency.value = 2500;
+    filter.frequency.value = 4200;
+    filter.Q.value = 0.65;
     filter.connect(master);
-    master.connect(context.destination);
+    master.connect(compressor);
+    compressor.connect(context.destination);
+
     master.gain.setValueAtTime(0.0001, at);
-    master.gain.exponentialRampToValueAtTime(0.32, at + 0.01);
-    master.gain.exponentialRampToValueAtTime(0.12, at + 0.18);
-    master.gain.exponentialRampToValueAtTime(0.0001, end);
-    [1, 2, 3].forEach((ratio) => {
+    master.gain.exponentialRampToValueAtTime(0.78, at + 0.012);
+    master.gain.exponentialRampToValueAtTime(0.32, at + 0.16);
+    master.gain.exponentialRampToValueAtTime(0.0001, Math.max(at + 0.22, end));
+
+    [
+      { ratio: 1, gain: 0.9, type: 'triangle' as OscillatorType, detune: 0 },
+      { ratio: 2, gain: 0.24, type: 'sine' as OscillatorType, detune: -3 },
+      { ratio: 3, gain: 0.1, type: 'sine' as OscillatorType, detune: 4 },
+      { ratio: 4, gain: 0.045, type: 'sine' as OscillatorType, detune: 2 },
+    ].forEach((partial) => {
       const oscillator = context.createOscillator();
       const gain = context.createGain();
-      oscillator.type = ratio === 1 ? 'triangle' : 'sine';
-      oscillator.frequency.value = frequency * ratio;
-      gain.gain.value = ratio === 1 ? 0.72 : ratio === 2 ? 0.18 : 0.07;
+      oscillator.type = partial.type;
+      oscillator.frequency.value = frequency * partial.ratio;
+      oscillator.detune.value = partial.detune;
+      gain.gain.setValueAtTime(partial.gain, at);
+      gain.gain.exponentialRampToValueAtTime(0.0001, Math.max(at + 0.24, end));
       oscillator.connect(gain);
       gain.connect(filter);
       oscillator.start(at);
-      oscillator.stop(end + 0.04);
+      oscillator.stop(Math.max(at + 0.28, end + 0.05));
       oscillatorsRef.current.push(oscillator);
     });
   }
@@ -230,6 +250,7 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise;
       stopAudio();
       setPlaying(false);
       setControls(true);
+      setVoiceTrail([]);
       return;
     }
     await startMic();
@@ -299,16 +320,17 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise;
       const target = targetMidiRef.current;
       if (!frequency) {
         silenceRef.current += 1;
-        if (silenceRef.current > 7) setTuner((old) => ({ ...old, cents: null, feedback: 'Cante próximo ao microfone' }));
+        if (silenceRef.current > 3) {
+          setVoiceTrail([]);
+          setTuner((old) => ({ ...old, midi: null, cents: null, feedback: 'Cante próximo ao microfone' }));
+        }
       } else {
         silenceRef.current = 0;
-        const rawMidi = floatMidiFromFrequency(frequency);
-        smoothMidiRef.current = rawMidi;
-        const liveMidi = rawMidi;
+        const liveMidi = floatMidiFromFrequency(frequency);
         const cents = target == null ? null : (liveMidi - target) * 100;
         const y = yFromMidi(liveMidi);
         trailTickRef.current += 1;
-        setVoiceTrail((old) => [...old.slice(-13), { id: Date.now(), y, wobble: (trailTickRef.current % 7) - 3 }]);
+        setVoiceTrail((old) => [...old.slice(-6), { id: Date.now(), y, wobble: (trailTickRef.current % 7) - 3 }]);
         setTuner({
           midi: liveMidi,
           cents,
@@ -353,7 +375,7 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise;
           <div className="voice-trail" aria-hidden="true">
             {voiceTrail.map((point, index) => {
               const age = voiceTrail.length - index;
-              return <span key={point.id} style={{ left: `${HIT_X - age * 1.15}%`, top: `${point.y}%`, width: `${Math.max(2.8, 5.2 - age * 0.12)}%`, opacity: Math.max(0.08, 0.9 - age * 0.055), transform: `translateY(-50%) rotate(${point.wobble * 0.9}deg)` }} />;
+              return <span key={point.id} style={{ left: `${HIT_X - age * 1.35}%`, top: `${point.y}%`, width: `${Math.max(1.8, 4.2 - age * 0.36)}%`, opacity: Math.max(0.02, 0.72 - age * 0.14), transform: `translateY(-50%) rotate(${point.wobble * 0.7}deg)` }} />;
             })}
           </div>
           <div className="voice-brush"><i /></div>
@@ -383,4 +405,4 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise;
   );
 }
 
-const css = `.exercise-experience{position:relative;height:100%;min-height:100dvh;overflow:hidden;color:#f8fafc;background:#050607;touch-action:manipulation;isolation:isolate}.exercise-bg{position:absolute;inset:0;background:radial-gradient(circle at 64% 40%,rgba(112,232,255,.11),transparent 28%),radial-gradient(circle at 54% 58%,rgba(245,199,107,.1),transparent 28%),linear-gradient(180deg,#121419 0%,#050608 62%,#020304 100%)}.exercise-bg:after{content:'';position:absolute;inset:0;background-image:linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px);background-size:12.5vw 100%,100% 7.2vh;mask-image:linear-gradient(90deg,rgba(0,0,0,.55),#000 28%,#000 82%,rgba(0,0,0,.25))}.exercise-body{position:absolute;inset:0;z-index:1;pointer-events:none}.exercise-body .wireframe-body-wrap{position:absolute!important;inset:0!important;background:transparent!important;border-radius:0!important;overflow:visible!important}.exercise-body .body-aura{opacity:.4!important}.exercise-body .vocal-body-base{position:absolute!important;left:14%!important;right:auto!important;top:8dvh!important;width:112vw!important;height:82dvh!important;max-width:none!important;max-height:none!important;opacity:.52!important;object-fit:contain!important;object-position:center!important;mix-blend-mode:screen!important;filter:drop-shadow(0 0 22px rgba(236,254,255,.2))!important}.exercise-body .body-note-badge{display:none!important}.exercise-body .register-label{right:8%!important;color:rgba(255,255,255,.28)!important;font-size:13px!important}.scale-stage{position:absolute;inset:8.6dvh 0 6.8dvh 0;z-index:5}.pitch-ruler{position:absolute;left:3px;top:0;bottom:0;width:54px;display:flex;flex-direction:column;justify-content:space-between;font-size:clamp(5px,.72dvh,9px);font-weight:800;color:rgba(255,255,255,.13);line-height:1}.pitch-ruler span{position:relative;min-height:1px;text-shadow:0 0 8px rgba(0,0,0,.85)}.pitch-ruler span:after{content:'';position:absolute;left:24px;top:50%;width:18px;height:1px;background:rgba(255,255,255,.08)}.pitch-ruler span.in-range{color:rgba(255,255,255,.32)}.pitch-ruler span.in-range:after{background:rgba(255,255,255,.22)}.pitch-ruler span.octave{color:rgba(245,199,107,.78);font-size:1.08em}.pitch-ruler span.active{color:#ff3131;font-size:1.35em;text-shadow:0 0 14px rgba(255,49,49,.85)}.timeline-layer{position:absolute;left:54px;right:0;top:0;bottom:0;overflow:hidden}.hit-line{position:absolute;left:15%;top:0;bottom:0;width:1px;background:linear-gradient(180deg,transparent,rgba(255,255,255,.34) 18%,rgba(255,255,255,.34) 66%,transparent);z-index:2}.target-note{position:absolute;height:clamp(6px,.9dvh,11px);border-radius:999px;background:rgba(255,255,255,.68);box-shadow:0 0 16px rgba(255,255,255,.22);transform:translateY(-50%);z-index:4}.voice-trail{position:absolute;inset:0;z-index:7;pointer-events:none;opacity:var(--voice-visible)}.voice-trail span{position:absolute;height:clamp(2px,.42dvh,4px);border-radius:999px;background:linear-gradient(90deg,rgba(255,255,255,.12),rgba(255,45,45,.9),rgba(255,255,255,.72));box-shadow:0 0 12px rgba(255,30,30,.56);filter:blur(.15px);transform-origin:right center}.voice-brush{position:absolute;left:15%;top:var(--voice-y);width:15px;height:15px;border-radius:50%;background:radial-gradient(circle,#ffd7d7 0 18%,#ff2d2d 45%,rgba(255,21,21,.34) 75%,transparent 100%);filter:drop-shadow(0 0 14px rgba(255,0,0,.9));transform:translate(-50%,-50%);opacity:var(--voice-visible);transition:opacity .12s ease;z-index:8}.voice-brush i{position:absolute;inset:5px;border-radius:inherit;background:#fff}.minimal-top{position:absolute;left:64px;right:20px;top:2.2dvh;z-index:10;text-align:center;opacity:.72;pointer-events:none;transition:opacity .28s ease}.minimal-top strong{display:block;font-size:clamp(13px,1.9dvh,18px);font-weight:800;letter-spacing:.08em}.minimal-top span{display:block;margin-top:3px;font-size:11px;color:rgba(255,255,255,.52)}.progress-line{position:absolute;left:72px;right:48px;top:7.2dvh;height:3px;border-radius:999px;background:rgba(255,255,255,.16);z-index:10;overflow:hidden;transition:opacity .28s ease}.progress-line i{display:block;height:100%;border-radius:inherit;background:rgba(255,255,255,.72)}.feedback-text{position:absolute;left:80px;right:30px;top:42%;z-index:9;text-align:center;color:#74ff91;font-size:clamp(16px,2.5dvh,24px);font-weight:900;text-shadow:0 0 18px rgba(116,255,145,.38);pointer-events:none}.control-overlay{position:absolute;inset:0;z-index:20;opacity:0;pointer-events:none;transition:opacity .25s ease;background:linear-gradient(180deg,rgba(0,0,0,.18),transparent 35%,transparent 52%,rgba(0,0,0,.5))}.controls-on .control-overlay{opacity:1;pointer-events:auto}.controls-on .minimal-top,.controls-on .progress-line{opacity:1}.back-btn{position:absolute;left:18px;top:2.2dvh;width:44px;height:44px;border:1px solid rgba(255,255,255,.08);border-radius:50%;background:rgba(255,255,255,.06);color:#fff;font-size:24px;backdrop-filter:blur(14px)}.bpm-control{position:absolute;left:50%;bottom:calc(max(18px,env(safe-area-inset-bottom)) + 118px);transform:translateX(-50%);display:flex;align-items:center;gap:18px;color:#fff}.bpm-control button{width:38px;height:38px;border-radius:50%;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.07);color:#fff;font-size:24px;backdrop-filter:blur(14px)}.bpm-control span{display:grid;place-items:center;min-width:78px}.bpm-control b{font-size:28px;line-height:1}.bpm-control small{font-size:10px;letter-spacing:.18em;color:rgba(255,255,255,.58)}.control-row{position:absolute;left:24px;right:24px;bottom:max(18px,env(safe-area-inset-bottom));display:grid;grid-template-columns:1fr 1.2fr 1fr;align-items:end;gap:18px}.control-row button{border:0;background:transparent;color:#fff;font-weight:700;padding:0;display:grid;place-items:center;gap:8px;font-size:38px;text-shadow:0 0 22px rgba(255,255,255,.2)}.control-row button span{font-size:13px;font-weight:500;color:rgba(255,255,255,.76);text-shadow:none}.control-row .main-btn{width:86px;height:86px;justify-self:center;border:2px solid rgba(255,255,255,.86);border-radius:50%;font-size:42px;background:rgba(255,255,255,.025);backdrop-filter:blur(12px)}.control-row .main-btn span{position:absolute;top:94px}.countdown{position:absolute;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.5);backdrop-filter:blur(10px);z-index:30}.countdown b{font-size:110px;color:#f5c76b;text-shadow:0 0 50px rgba(245,199,107,.8)}@media(max-height:760px){.scale-stage{inset:8dvh 0 5.8dvh 0}.exercise-body .vocal-body-base{top:7dvh!important;height:82dvh!important}.feedback-text{top:41%}.bpm-control{bottom:calc(max(12px,env(safe-area-inset-bottom)) + 102px)}.control-row .main-btn{width:76px;height:76px}.control-row .main-btn span{top:84px}}`;
+const css = `.exercise-experience{position:relative;height:100%;min-height:100dvh;overflow:hidden;color:#f8fafc;background:#050607;touch-action:manipulation;isolation:isolate}.exercise-bg{position:absolute;inset:0;background:radial-gradient(circle at 64% 40%,rgba(112,232,255,.11),transparent 28%),radial-gradient(circle at 54% 58%,rgba(245,199,107,.1),transparent 28%),linear-gradient(180deg,#121419 0%,#050608 62%,#020304 100%)}.exercise-bg:after{content:'';position:absolute;inset:0;background-image:linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px);background-size:12.5vw 100%,100% 7.2vh;mask-image:linear-gradient(90deg,rgba(0,0,0,.55),#000 28%,#000 82%,rgba(0,0,0,.25))}.exercise-body{position:absolute;inset:0;z-index:1;pointer-events:none}.exercise-body .wireframe-body-wrap{position:absolute!important;inset:0!important;background:transparent!important;border-radius:0!important;overflow:visible!important}.exercise-body .body-aura{opacity:.4!important}.exercise-body .vocal-body-base{position:absolute!important;left:14%!important;right:auto!important;top:8dvh!important;width:112vw!important;height:82dvh!important;max-width:none!important;max-height:none!important;opacity:.52!important;object-fit:contain!important;object-position:center!important;mix-blend-mode:screen!important;filter:drop-shadow(0 0 22px rgba(236,254,255,.2))!important}.exercise-body .body-note-badge{display:none!important}.exercise-body .register-label{right:8%!important;color:rgba(255,255,255,.28)!important;font-size:13px!important}.scale-stage{position:absolute;inset:8.6dvh 0 6.8dvh 0;z-index:5}.pitch-ruler{position:absolute;left:3px;top:0;bottom:0;width:54px;display:flex;flex-direction:column;justify-content:space-between;font-size:clamp(5px,.72dvh,9px);font-weight:800;color:rgba(255,255,255,.13);line-height:1}.pitch-ruler span{position:relative;min-height:1px;text-shadow:0 0 8px rgba(0,0,0,.85)}.pitch-ruler span:after{content:'';position:absolute;left:24px;top:50%;width:18px;height:1px;background:rgba(255,255,255,.08)}.pitch-ruler span.in-range{color:rgba(255,255,255,.32)}.pitch-ruler span.in-range:after{background:rgba(255,255,255,.22)}.pitch-ruler span.octave{color:rgba(245,199,107,.78);font-size:1.08em}.pitch-ruler span.active{color:#ff3131;font-size:1.35em;text-shadow:0 0 14px rgba(255,49,49,.85)}.timeline-layer{position:absolute;left:54px;right:0;top:0;bottom:0;overflow:hidden}.hit-line{position:absolute;left:15%;top:0;bottom:0;width:1px;background:linear-gradient(180deg,transparent,rgba(255,255,255,.34) 18%,rgba(255,255,255,.34) 66%,transparent);z-index:2}.target-note{position:absolute;height:clamp(6px,.9dvh,11px);border-radius:999px;background:rgba(255,255,255,.68);box-shadow:0 0 16px rgba(255,255,255,.22);transform:translateY(-50%);z-index:4}.voice-trail{position:absolute;inset:0;z-index:7;pointer-events:none;opacity:var(--voice-visible)}.voice-trail span{position:absolute;height:clamp(2px,.36dvh,3px);border-radius:999px;background:linear-gradient(90deg,rgba(255,255,255,0),rgba(255,45,45,.78),rgba(255,255,255,.58));box-shadow:0 0 10px rgba(255,30,30,.45);filter:blur(.12px);transform-origin:right center;animation:voiceTrailFade .18s linear both}.voice-brush{position:absolute;left:15%;top:var(--voice-y);width:15px;height:15px;border-radius:50%;background:radial-gradient(circle,#ffd7d7 0 18%,#ff2d2d 45%,rgba(255,21,21,.34) 75%,transparent 100%);filter:drop-shadow(0 0 14px rgba(255,0,0,.9));transform:translate(-50%,-50%);opacity:var(--voice-visible);transition:opacity .12s ease;z-index:8}.voice-brush i{position:absolute;inset:5px;border-radius:inherit;background:#fff}.minimal-top{position:absolute;left:64px;right:20px;top:2.2dvh;z-index:10;text-align:center;opacity:.72;pointer-events:none;transition:opacity .28s ease}.minimal-top strong{display:block;font-size:clamp(13px,1.9dvh,18px);font-weight:800;letter-spacing:.08em}.minimal-top span{display:block;margin-top:3px;font-size:11px;color:rgba(255,255,255,.52)}.progress-line{position:absolute;left:72px;right:48px;top:7.2dvh;height:3px;border-radius:999px;background:rgba(255,255,255,.16);z-index:10;overflow:hidden;transition:opacity .28s ease}.progress-line i{display:block;height:100%;border-radius:inherit;background:rgba(255,255,255,.72)}.feedback-text{position:absolute;left:80px;right:30px;top:42%;z-index:9;text-align:center;color:#74ff91;font-size:clamp(16px,2.5dvh,24px);font-weight:900;text-shadow:0 0 18px rgba(116,255,145,.38);pointer-events:none}.control-overlay{position:absolute;inset:0;z-index:20;opacity:0;pointer-events:none;transition:opacity .25s ease;background:linear-gradient(180deg,rgba(0,0,0,.18),transparent 35%,transparent 52%,rgba(0,0,0,.5))}.controls-on .control-overlay{opacity:1;pointer-events:auto}.controls-on .minimal-top,.controls-on .progress-line{opacity:1}.back-btn{position:absolute;left:18px;top:2.2dvh;width:44px;height:44px;border:1px solid rgba(255,255,255,.08);border-radius:50%;background:rgba(255,255,255,.06);color:#fff;font-size:24px;backdrop-filter:blur(14px)}.bpm-control{position:absolute;left:50%;bottom:calc(max(18px,env(safe-area-inset-bottom)) + 118px);transform:translateX(-50%);display:flex;align-items:center;gap:18px;color:#fff}.bpm-control button{width:38px;height:38px;border-radius:50%;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.07);color:#fff;font-size:24px;backdrop-filter:blur(14px)}.bpm-control span{display:grid;place-items:center;min-width:78px}.bpm-control b{font-size:28px;line-height:1}.bpm-control small{font-size:10px;letter-spacing:.18em;color:rgba(255,255,255,.58)}.control-row{position:absolute;left:24px;right:24px;bottom:max(18px,env(safe-area-inset-bottom));display:grid;grid-template-columns:1fr 1.2fr 1fr;align-items:end;gap:18px}.control-row button{border:0;background:transparent;color:#fff;font-weight:700;padding:0;display:grid;place-items:center;gap:8px;font-size:38px;text-shadow:0 0 22px rgba(255,255,255,.2)}.control-row button span{font-size:13px;font-weight:500;color:rgba(255,255,255,.76);text-shadow:none}.control-row .main-btn{width:86px;height:86px;justify-self:center;border:2px solid rgba(255,255,255,.86);border-radius:50%;font-size:42px;background:rgba(255,255,255,.025);backdrop-filter:blur(12px)}.control-row .main-btn span{position:absolute;top:94px}.countdown{position:absolute;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.5);backdrop-filter:blur(10px);z-index:30}.countdown b{font-size:110px;color:#f5c76b;text-shadow:0 0 50px rgba(245,199,107,.8)}@keyframes voiceTrailFade{0%{opacity:.78}70%{opacity:.28}100%{opacity:0}}@media(max-height:760px){.scale-stage{inset:8dvh 0 5.8dvh 0}.exercise-body .vocal-body-base{top:7dvh!important;height:82dvh!important}.feedback-text{top:41%}.bpm-control{bottom:calc(max(12px,env(safe-area-inset-bottom)) + 102px)}.control-row .main-btn{width:76px;height:76px}.control-row .main-btn span{top:84px}}`;
