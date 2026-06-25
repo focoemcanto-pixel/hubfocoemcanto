@@ -1,0 +1,69 @@
+.exercise-experience .exercise-body .register-label,
+.exercise-experience .exercise-body .body-note-badge,
+.exercise-experience .exercise-body [class*='register-label'],
+.exercise-experience .exercise-body [class*='body-note']{
+  display:none!important;
+}
+
+.exercise-experience .exercise-body .vocal-body-base{
+  opacity:.18!important;
+  mix-blend-mode:normal!important;
+  filter:grayscale(1) brightness(.48) contrast(1.05) drop-shadow(0 0 6px rgba(255,255,255,.06))!important;
+}
+
+.exercise-experience .exercise-body .body-aura,
+.exercise-experience .exercise-body .vocal-body-glow,
+.exercise-experience .exercise-body [class*='aura'],
+.exercise-experience .exercise-body [class*='glow']{
+  opacity:0!important;
+  display:none!important;
+}
+
+.exercise-experience .exercise-body:before{
+  left:61%!important;
+  top:37%!important;
+  width:min(105px,15vw)!important;
+  max-width:105px!important;
+  background:radial-gradient(circle,
+    rgba(255,232,145,.78) 0%,
+    rgba(245,199,107,.34) 24%,
+    rgba(245,199,107,.12) 44%,
+    transparent 72%)!important;
+  filter:blur(13px)!important;
+  opacity:.7!important;
+  animation:anatomyPulseTight 1.9s ease-in-out infinite!important;
+}
+
+.exercise-experience .exercise-body:after{
+  left:58%!important;
+  top:50%!important;
+  width:min(82px,12vw)!important;
+  max-width:82px!important;
+  background:radial-gradient(circle,
+    rgba(245,199,107,.42) 0%,
+    rgba(245,199,107,.18) 34%,
+    transparent 74%)!important;
+  filter:blur(15px)!important;
+  opacity:.38!important;
+}
+
+.exercise-experience .target-note{
+  z-index:12!important;
+  background:rgba(255,255,255,.84)!important;
+  box-shadow:0 0 18px rgba(255,255,255,.34)!important;
+}
+
+.exercise-experience .voice-trail,
+.exercise-experience .voice-brush{
+  z-index:16!important;
+}
+
+.exercise-experience .feedback-text{
+  z-index:13!important;
+  opacity:.76!important;
+}
+
+@keyframes anatomyPulseTight{
+  0%,100%{transform:translate(-50%,-50%) scale(.94);opacity:.48}
+  50%{transform:translate(-50%,-50%) scale(1.05);opacity:.72}
+}
