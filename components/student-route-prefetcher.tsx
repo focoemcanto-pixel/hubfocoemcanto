@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 
-const ESSENTIAL_ROUTES = ['/aluno/biblioteca', '/aluno/comunidade'];
+const ESSENTIAL_ROUTES = ['/aluno/biblioteca', '/aluno/central', '/aluno/comunidade'];
 
 type WindowWithIdleCallback = Window & typeof globalThis & {
   requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number;
