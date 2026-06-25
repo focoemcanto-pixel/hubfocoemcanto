@@ -6,9 +6,9 @@
 }
 
 .exercise-experience .exercise-body .vocal-body-base{
-  opacity:.18!important;
+  opacity:.2!important;
   mix-blend-mode:normal!important;
-  filter:grayscale(1) brightness(.48) contrast(1.05) drop-shadow(0 0 6px rgba(255,255,255,.06))!important;
+  filter:grayscale(1) brightness(.5) contrast(1.08) drop-shadow(0 0 6px rgba(255,255,255,.06))!important;
 }
 
 .exercise-experience .exercise-body .body-aura,
@@ -20,31 +20,46 @@
 }
 
 .exercise-experience .exercise-body:before{
-  left:61%!important;
-  top:37%!important;
-  width:min(105px,15vw)!important;
-  max-width:105px!important;
+  content:''!important;
+  position:absolute!important;
+  left:64%!important;
+  top:39%!important;
+  width:min(72px,10vw)!important;
+  max-width:72px!important;
+  aspect-ratio:1!important;
+  border-radius:999px!important;
   background:radial-gradient(circle,
-    rgba(255,232,145,.78) 0%,
-    rgba(245,199,107,.34) 24%,
-    rgba(245,199,107,.12) 44%,
-    transparent 72%)!important;
-  filter:blur(13px)!important;
-  opacity:.7!important;
-  animation:anatomyPulseTight 1.9s ease-in-out infinite!important;
+    rgba(255,244,174,.9) 0%,
+    rgba(245,199,107,.46) 26%,
+    rgba(245,199,107,.14) 48%,
+    transparent 74%)!important;
+  filter:blur(11px)!important;
+  opacity:.66!important;
+  transform:translate(-50%,-50%) scale(.96)!important;
+  z-index:3!important;
+  pointer-events:none!important;
+  animation:anatomyGlowBreath 1.55s ease-in-out infinite!important;
 }
 
 .exercise-experience .exercise-body:after{
-  left:58%!important;
-  top:50%!important;
-  width:min(82px,12vw)!important;
-  max-width:82px!important;
+  content:''!important;
+  position:absolute!important;
+  left:61.5%!important;
+  top:47.5%!important;
+  width:min(56px,8vw)!important;
+  max-width:56px!important;
+  aspect-ratio:1!important;
+  border-radius:999px!important;
   background:radial-gradient(circle,
     rgba(245,199,107,.42) 0%,
-    rgba(245,199,107,.18) 34%,
-    transparent 74%)!important;
-  filter:blur(15px)!important;
-  opacity:.38!important;
+    rgba(245,199,107,.16) 38%,
+    transparent 72%)!important;
+  filter:blur(13px)!important;
+  opacity:.32!important;
+  transform:translate(-50%,-50%) scale(.94)!important;
+  z-index:3!important;
+  pointer-events:none!important;
+  animation:anatomyGlowSoft 2.1s ease-in-out infinite!important;
 }
 
 .exercise-experience .target-note{
@@ -63,7 +78,12 @@
   opacity:.76!important;
 }
 
-@keyframes anatomyPulseTight{
-  0%,100%{transform:translate(-50%,-50%) scale(.94);opacity:.48}
-  50%{transform:translate(-50%,-50%) scale(1.05);opacity:.72}
+@keyframes anatomyGlowBreath{
+  0%,100%{transform:translate(-50%,-50%) scale(.86);opacity:.38}
+  45%{transform:translate(-50%,-50%) scale(1.12);opacity:.72}
+}
+
+@keyframes anatomyGlowSoft{
+  0%,100%{transform:translate(-50%,-50%) scale(.9);opacity:.18}
+  50%{transform:translate(-50%,-50%) scale(1.06);opacity:.38}
 }
