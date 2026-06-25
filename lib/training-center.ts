@@ -28,6 +28,17 @@ export type TrainingCategory = {
   gradient: string;
 };
 
+export type DailyTrainingStep = {
+  day: number;
+  exerciseNumber: number;
+  title: string;
+  subtitle: string;
+  intro: string;
+  exerciseSlug: string;
+  points: number;
+  accent: 'gold' | 'teal' | 'purple';
+};
+
 export const trainingCategories: TrainingCategory[] = [
   {
     slug: 'afinacao',
@@ -179,6 +190,13 @@ export const trainingExercises: TrainingExercise[] = [
   },
 ];
 
+export const dailyTrainingSteps: DailyTrainingStep[] = [
+  { day: 5, exerciseNumber: 1, title: 'Aquecimento Vocal', subtitle: 'Prepare sua voz para o treino de hoje.', intro: 'Ative a respiração e relaxe a musculatura vocal antes dos exercícios principais.', exerciseSlug: 'sustentacao-centro-da-nota-01', points: 50, accent: 'gold' },
+  { day: 5, exerciseNumber: 2, title: 'Controle de Respiração', subtitle: 'Organize o fluxo de ar com precisão.', intro: 'Inspire pelo nariz, sustente com calma e solte o ar mantendo constância.', exerciseSlug: 'fluxo-de-ar-4-4-8', points: 60, accent: 'teal' },
+  { day: 5, exerciseNumber: 3, title: 'Centro da Afinação', subtitle: 'Cante mirando o centro da nota.', intro: 'Use o piano como referência e mantenha cada nota estável até o final.', exerciseSlug: 'sustentacao-centro-da-nota-01', points: 70, accent: 'gold' },
+  { day: 5, exerciseNumber: 4, title: 'Primeira Segunda Voz', subtitle: 'Visualize a divisão antes de cantar.', intro: 'Siga a linha luminosa e perceba o caminho das terças guiadas.', exerciseSlug: 'tercas-guiadas-primeira-entrada', points: 80, accent: 'purple' },
+];
+
 export function getTrainingCategory(slug: string) {
   return trainingCategories.find((category) => category.slug === slug);
 }
@@ -193,4 +211,12 @@ export function getExercisesByCategory(categorySlug: string) {
 
 export function getTrainingDurationSeconds(exercise: TrainingExercise) {
   return Math.ceil(Math.max(...exercise.notes.map((note) => note.start + note.duration), 0));
+}
+
+export function getDailyTrainingStep(exerciseNumber: number) {
+  return dailyTrainingSteps.find((step) => step.exerciseNumber === exerciseNumber);
+}
+
+export function getDailyTrainingExercise(step: DailyTrainingStep) {
+  return getTrainingExercise(step.exerciseSlug);
 }
