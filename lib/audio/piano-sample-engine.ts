@@ -65,7 +65,7 @@ async function loadSample(context: AudioContext, fileName: string) {
 }
 
 export async function preloadPianoSamples(context: AudioContext, midis?: number[]) {
-  const targets = midis?.length ? midis : [48, 52, 55, 60, 64, 67, 72, 76, 79];
+  const targets = midis?.length ? midis : Array.from({ length: 37 }, (_, index) => 48 + index);
   const files = Array.from(new Set(targets.map((midi) => closestSample(midi).file)));
   await Promise.allSettled(files.map((file) => loadSample(context, file)));
 }
@@ -88,14 +88,14 @@ export function stopPianoSamples(context?: AudioContext) {
 }
 
 export async function playPianoSample(context: AudioContext, midiValue: number, at: number, end: number, velocity = 1) {
-  const sample = closestSample(midiValue);
+  let sample = closestSample(midiValue);
   let buffer: AudioBuffer;
 
   try {
     buffer = await loadSample(context, sample.file);
   } catch {
-    const fallback = closestSample(60);
-    buffer = await loadSample(context, fallback.file);
+    sample = closestSample(60);
+    buffer = await loadSample(context, sample.file);
   }
 
   const source = context.createBufferSource();
