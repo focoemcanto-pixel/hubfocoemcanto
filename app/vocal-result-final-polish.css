@@ -87,4 +87,58 @@
   body:not(.vocal-capture-active) .choice-grid:has(button.selected) + button::after {
     content: ' →' !important;
   }
+
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-scale i {
+    left: clamp(35%, var(--tuner-x, 50%), 65%) !important;
+  }
+
+  .vocal-profile-card--compact {
+    padding: 15px 16px !important;
+    border-radius: 22px !important;
+  }
+
+  .vocal-profile-card--compact header {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    margin-bottom: 10px !important;
+  }
+
+  .vocal-profile-card--compact header > span {
+    display: none !important;
+  }
+
+  .vocal-profile-card--compact h2 {
+    font-size: 20px !important;
+    margin: 0 !important;
+  }
+
+  .vocal-profile-card--compact p {
+    font-size: 13px !important;
+  }
+
+  .vocal-profile-card__edit {
+    width: 34px !important;
+    height: 34px !important;
+    min-height: 34px !important;
+    padding: 0 !important;
+    border-radius: 999px !important;
+    margin: 0 !important;
+  }
+
+  .vocal-profile-card__summary {
+    display: grid !important;
+    gap: 4px !important;
+  }
+
+  .vocal-profile-card__summary strong {
+    font-size: 22px !important;
+    letter-spacing: -.03em !important;
+  }
+
+  .vocal-profile-card__summary span,
+  .vocal-profile-card__date {
+    color: rgba(255,255,255,.62) !important;
+    font-size: 13px !important;
+  }
 }
