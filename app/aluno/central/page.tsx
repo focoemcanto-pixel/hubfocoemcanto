@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import type { CSSProperties } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { AppShell } from '@/components/app-shell';
 import { dailyTrainingSteps, getExercisesByCategory, trainingCategories, trainingExercises } from '@/lib/training-center';
 
@@ -30,7 +30,7 @@ export default function TrainingCenterPage() {
 
         <section className="daily-preview">
           <div className="daily-preview-head"><div><p className="eyebrow">Desafio diário</p><h2>Dia {currentStep.day}</h2></div><Link href="/aluno/central/diarios/progresso" prefetch>Ver progresso →</Link></div>
-          <div className="daily-track">{dailyTrainingSteps.map((step) => <div className="daily-dot current" key={step.exerciseNumber}>{step.exerciseNumber}</div>).reduce((acc, item, index) => index === 0 ? [item] : [...acc, <div className="daily-line" key={`line-${index}`} />, item], [] as React.ReactNode[])}</div>
+          <div className="daily-track">{dailyTrainingSteps.map((step) => <div className="daily-dot current" key={step.exerciseNumber}>{step.exerciseNumber}</div>).reduce((acc, item, index) => index === 0 ? [item] : [...acc, <div className="daily-line" key={`line-${index}`} />, item], [] as ReactNode[])}</div>
           <Link className="daily-current-card" href="/aluno/central/diarios/1" prefetch><div><small>Próximo exercício</small><h3>{currentStep.title}</h3><p>{currentStep.subtitle}</p></div><span>Iniciar ›</span></Link>
         </section>
 
