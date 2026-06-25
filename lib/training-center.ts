@@ -39,7 +39,16 @@ export type DailyTrainingStep = {
   accent: 'gold' | 'teal' | 'purple';
 };
 
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const DEFAULT_TESSITURA_LOW = 52; // E3
+const DEFAULT_TESSITURA_HIGH = 79; // G5
+
 const beat = (bpm: number, beatNumber: number) => (60 / bpm) * beatNumber;
+
+function midiToPitch(midi: number) {
+  const octave = Math.floor(midi / 12) - 1;
+  return `${NOTE_NAMES[((midi % 12) + 12) % 12]}${octave}`;
+}
 
 function buildBeatGridNotes(bpm: number, pitches: string[], beatsPerNote = 4): TrainingNote[] {
   return pitches.map((pitch, index) => ({
@@ -48,6 +57,31 @@ function buildBeatGridNotes(bpm: number, pitches: string[], beatsPerNote = 4): T
     start: beat(bpm, index * beatsPerNote),
     duration: beat(bpm, beatsPerNote),
   }));
+}
+
+function buildAdaptiveFiveToneWarmup({ bpm, lowMidi = DEFAULT_TESSITURA_LOW, highMidi = DEFAULT_TESSITURA_HIGH, beatsPerNote = 1 }: { bpm: number; lowMidi?: number; highMidi?: number; beatsPerNote?: number }): TrainingNote[] {
+  const pattern = [0, 2, 4, 5, 7, 5, 4, 2, 0];
+  const maxPatternInterval = Math.max(...pattern);
+  const highestStart = Math.max(lowMidi, highMidi - maxPatternInterval);
+  const startsUp = Array.from({ length: highestStart - lowMidi + 1 }, (_, index) => lowMidi + index);
+  const startsDown = startsUp.slice(0, -1).reverse();
+  const starts = [...startsUp, ...startsDown];
+  let beatCursor = 0;
+
+  return starts.flatMap((rootMidi) => {
+    const phrase = pattern.map((interval) => {
+      const note: TrainingNote = {
+        pitch: midiToPitch(rootMidi + interval),
+        label: 'Mmm',
+        start: beat(bpm, beatCursor),
+        duration: beat(bpm, beatsPerNote),
+      };
+      beatCursor += beatsPerNote;
+      return note;
+    });
+    beatCursor += 1;
+    return phrase;
+  });
 }
 
 export const trainingCategories: TrainingCategory[] = [
@@ -59,6 +93,18 @@ export const trainingCategories: TrainingCategory[] = [
 ];
 
 export const trainingExercises: TrainingExercise[] = [
+  {
+    slug: 'aquecimento-boca-chiusa-5-graus-01',
+    title: 'Boca Chiusa: 5 graus',
+    categorySlug: 'afinacao',
+    objective: 'Aqueça com a boca fechada, sentindo a vibração leve e seguindo o desenho de 5 graus sem apertar a garganta.',
+    description: 'Vocalize adaptativo em boca chiusa: sobe cinco graus, desce e transpõe pela região confortável da tessitura.',
+    level: 'Iniciante',
+    durationLabel: 'Adaptativo',
+    bpm: 72,
+    focus: ['Boca chiusa', 'Aquecimento', '5 graus'],
+    notes: buildAdaptiveFiveToneWarmup({ bpm: 72 }),
+  },
   {
     slug: 'sustentacao-centro-da-nota-01',
     title: 'Relaxamento com NG',
@@ -129,7 +175,7 @@ export const trainingExercises: TrainingExercise[] = [
 ];
 
 export const dailyTrainingSteps: DailyTrainingStep[] = [
-  { day: 5, exerciseNumber: 1, title: 'Aquecimento Vocal', subtitle: 'Prepare sua voz para o treino de hoje.', intro: 'Ative a respiração e relaxe a musculatura vocal antes dos exercícios principais.', exerciseSlug: 'sustentacao-centro-da-nota-01', points: 50, accent: 'gold' },
+  { day: 5, exerciseNumber: 1, title: 'Aquecimento: Boca Chiusa', subtitle: 'Prepare sua voz com boca fechada e vibração leve.', intro: 'Faça Mmm com a boca fechada, sem força. Siga o padrão de cinco graus subindo e descendo dentro da sua tessitura.', exerciseSlug: 'aquecimento-boca-chiusa-5-graus-01', points: 50, accent: 'gold' },
   { day: 5, exerciseNumber: 2, title: 'Controle de Respiração', subtitle: 'Organize o fluxo de ar com precisão.', intro: 'Inspire pelo nariz, sustente com calma e solte o ar mantendo constância.', exerciseSlug: 'fluxo-de-ar-4-4-8', points: 60, accent: 'teal' },
   { day: 5, exerciseNumber: 3, title: 'Centro da Afinação', subtitle: 'Cante mirando o centro da nota.', intro: 'Use o piano como referência e mantenha cada nota estável até o final.', exerciseSlug: 'sustentacao-centro-da-nota-01', points: 70, accent: 'gold' },
   { day: 5, exerciseNumber: 4, title: 'Primeira Segunda Voz', subtitle: 'Visualize a divisão antes de cantar.', intro: 'Siga a linha luminosa e perceba o caminho das terças guiadas.', exerciseSlug: 'tercas-guiadas-primeira-entrada', points: 80, accent: 'purple' },
