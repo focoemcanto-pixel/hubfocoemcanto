@@ -21,7 +21,7 @@ type Tuner = { frequency: number | null; stableFrequency: number | null; cents: 
 type Vars = CSSProperties & { '--voice-y': string; '--progress': string; '--voice-opacity': string };
 
 function clamp(n: number, min: number, max: number) { return Math.max(min, Math.min(max, n)); }
-function midi(pitch?: string) { const m = pitch?.match(/^([A-G])(#?)(\d)$/); if (!m) return null; const base: Record<string, number> = { C:0,D:2,E:4,F:5,G:7,A:7,G:7,A:9,B:11 }; const fixedBase: Record<string, number> = { C:0,D:2,E:4,F:5,G:7,A:9,B:11 }; return (Number(m[3]) + 1) * 12 + fixedBase[m[1]] + (m[2] ? 1 : 0); }
+function midi(pitch?: string) { const m = pitch?.match(/^([A-G])(#?)(\d)$/); if (!m) return null; const base: Record<string, number> = { C:0,D:2,E:4,F:5,G:7,A:9,B:11 }; return (Number(m[3]) + 1) * 12 + base[m[1]] + (m[2] ? 1 : 0); }
 function frequencyFromPitch(pitch?: string) { const value = midi(pitch); return value == null ? null : 440 * 2 ** ((value - 69) / 12); }
 function yFromMidi(value: number | null) { if (value == null) return 60; const min = midi('C0')!; const max = midi('G7')!; return clamp(97 - ((value - min) / (max - min)) * 94, 2, 97); }
 function pitchY(pitch?: string) { return yFromMidi(midi(pitch)); }
