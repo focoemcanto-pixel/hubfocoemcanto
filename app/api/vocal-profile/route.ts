@@ -42,7 +42,7 @@ export async function POST(request: Request) {
       updated_at: new Date().toISOString(),
     };
     const { error } = await admin.from('vocal_profiles').upsert(payload, { onConflict: 'profile_id' });
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) return NextResponse.json({ error: error.message || 'Erro ao salvar mapa vocal', code: error.code || null }, { status: 500 });
     return NextResponse.json({ ok: true });
   } catch (error: any) {
     return NextResponse.json({ error: error?.message || 'Erro inesperado' }, { status: 500 });
