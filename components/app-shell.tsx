@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { StudentRoutePrefetcher } from '@/components/student-route-prefetcher';
+import { FeedVideoWarmup } from '@/components/feed-video-warmup';
 
 const navItems = [
   { href: '/aluno', label: 'Feed' },
@@ -12,6 +13,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="app-shell">
       <StudentRoutePrefetcher />
+      <FeedVideoWarmup />
       <main className="app-content route-surface">{children}</main>
       <nav className="bottom-nav app-bottom-nav" aria-label="Navegação do aluno">
         {navItems.map((item) => (
