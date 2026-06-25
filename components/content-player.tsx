@@ -26,10 +26,6 @@ function getDriveFileId(url?: string | null) {
   return null;
 }
 
-function drivePreviewUrl(fileId: string) {
-  return `https://drive.google.com/file/d/${fileId}/preview`;
-}
-
 function isAllowedInternalMedia(url: string) {
   return url.startsWith('/api/media/drive/') || url.startsWith('/api/media/library/') || url.startsWith('/storage/v1/object/');
 }
@@ -48,7 +44,7 @@ function installLessonsPanelToggle() {
   if (!document.getElementById(styleId)) {
     const style = document.createElement('style');
     style.id = styleId;
-    style.textContent = '[class*="modules-actions"]{display:flex;align-items:center;gap:8px}.fc-lessons-toggle,.fc-module-toggle{display:inline-flex;align-items:center;justify-content:center;border-radius:999px;border:1px solid rgba(245,199,107,.22);background:rgba(255,255,255,.045);color:#f5c76b;font-weight:900;line-height:1}.fc-lessons-toggle{width:42px;height:42px;font-size:24px}.fc-module-toggle{width:34px;height:34px;font-size:18px;margin-left:auto}.fc-lessons-collapsed [class*="module-list"]{display:none}.fc-lessons-collapsed{max-height:110px!important;overflow:hidden}.fc-lessons-collapsed [class*="modules-head"]{border-bottom:0!important}.fc-module-collapsed [class*="lessons-list"]{display:none}.fc-module-collapsed{padding-bottom:0!important}.fc-module-collapsed [class*="module-title"]{margin-bottom:0!important}.premium-drive-frame{width:100%;height:100%;min-height:clamp(360px,68vh,820px);border:0;border-radius:inherit;background:#050505;display:block}.premium-drive-player{position:relative;width:100%;height:100%;border-radius:inherit;background:#050505;overflow:hidden}.premium-drive-player-note{position:absolute;left:14px;bottom:14px;z-index:2;border:1px solid rgba(245,199,107,.22);border-radius:999px;background:rgba(0,0,0,.58);color:rgba(255,255,255,.78);padding:8px 11px;font-size:11px;font-weight:800;backdrop-filter:blur(12px);pointer-events:none}';
+    style.textContent = '[class*="modules-actions"]{display:flex;align-items:center;gap:8px}.fc-lessons-toggle,.fc-module-toggle{display:inline-flex;align-items:center;justify-content:center;border-radius:999px;border:1px solid rgba(245,199,107,.22);background:rgba(255,255,255,.045);color:#f5c76b;font-weight:900;line-height:1}.fc-lessons-toggle{width:42px;height:42px;font-size:24px}.fc-module-toggle{width:34px;height:34px;font-size:18px;margin-left:auto}.fc-lessons-collapsed [class*="module-list"]{display:none}.fc-lessons-collapsed{max-height:110px!important;overflow:hidden}.fc-lessons-collapsed [class*="modules-head"]{border-bottom:0!important}.fc-module-collapsed [class*="lessons-list"]{display:none}.fc-module-collapsed{padding-bottom:0!important}.fc-module-collapsed [class*="module-title"]{margin-bottom:0!important}';
     document.head.appendChild(style);
   }
   document.querySelectorAll<HTMLElement>('[class*="modules-panel"]').forEach((panel) => {
@@ -107,12 +103,11 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
   const trimStart = Math.max(0, Number(trimStartSeconds || 0));
   const trimEnd = Math.max(0, Number(trimEndSeconds || 0));
 
-  const { source, type, drivePreviewSource } = useMemo(() => {
+  const { source, type } = useMemo(() => {
     const rawSource = driveUrl || mediaUrl || '';
     const driveFileId = getDriveFileId(rawSource);
     return {
       type: mediaType || 'video',
-      drivePreviewSource: driveFileId ? drivePreviewUrl(driveFileId) : '',
       source: driveFileId ? `/api/media/drive/${driveFileId}` : isAllowedInternalMedia(rawSource) ? rawSource : '',
     };
   }, [driveUrl, mediaUrl, mediaType]);
@@ -129,10 +124,10 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
     setIsBuffering(false);
     restoredRef.current = false;
     const video = videoRef.current;
-    if (!video || !source || type === 'audio' || drivePreviewSource) return;
+    if (!video || !source || type === 'audio') return;
     video.preload = 'metadata';
     video.load();
-  }, [drivePreviewSource, source, type]);
+  }, [source, type]);
 
   function restorePosition(element: HTMLMediaElement | null) {
     if (!element || restoredRef.current) return;
@@ -157,27 +152,11 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
     saveProgress(lessonId, element.currentTime, false);
   }
 
-  if (!source && !drivePreviewSource) {
+  if (!source) {
     return (
       <div className="lesson-player empty-player premium-loading-player">
         <strong>Material protegido</strong>
         <p className="muted">Este conteúdo só pode ser acessado pelo player interno do Hub.</p>
-      </div>
-    );
-  }
-
-  if (type === 'video' && drivePreviewSource) {
-    return (
-      <div className="lesson-player premium-video-player premium-drive-player">
-        <iframe
-          className="premium-drive-frame"
-          src={drivePreviewSource}
-          title={title || 'Conteúdo'}
-          allow="autoplay; fullscreen; picture-in-picture"
-          allowFullScreen
-          loading="eager"
-        />
-        <span className="premium-drive-player-note">Player otimizado do Drive</span>
       </div>
     );
   }
