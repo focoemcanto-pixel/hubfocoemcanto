@@ -11,6 +11,7 @@ const MAX_MIDI = 84;
 const HIT_X = 15;
 const PX_PER_BEAT = 10;
 const PREVIEW_BEATS = 10;
+const AUDIO_LOOKAHEAD_BEATS = 8;
 const DEFAULT_LOW = noteNameToMidi('E3') ?? 52;
 const DEFAULT_HIGH = noteNameToMidi('G5') ?? 79;
 const SCALE = Array.from({ length: MAX_MIDI - MIN_MIDI + 1 }, (_, i) => MAX_MIDI - i);
@@ -52,6 +53,7 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise;
   const timersRef = useRef<number[]>([]);
   const targetMidiRef = useRef<number | null>(null);
   const trailTickRef = useRef(0);
+  const nextAudioBeatRef = useRef(0);
 
   const beatNotes = useMemo(() => buildBeatNotes(exercise), [exercise]);
   const totalBeats = useMemo(() => Math.max(...beatNotes.map((note) => note.endBeat), 0), [beatNotes]);
@@ -78,11 +80,15 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise;
       lastFrameRef.current = now;
       setCurrentBeat((old) => {
         const next = old + deltaSeconds * (bpm / 60);
+        const scheduleFrom = Math.max(0, old - 0.08);
+        const scheduleTo = Math.min(totalBeats, next + AUDIO_LOOKAHEAD_BEATS);
+        scheduleAudioWindow(scheduleFrom, scheduleTo, next);
         if (next >= totalBeats) {
           setVoiceTrail([]);
           stopAudio();
           if (!loop) { setPlaying(false); return totalBeats; }
-          scheduleAudio(0);
+          nextAudioBeatRef.current = 0;
+          scheduleAudioWindow(0, AUDIO_LOOKAHEAD_BEATS, 0);
           return 0;
         }
         return next;
@@ -93,7 +99,7 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise;
     return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
   }, [playing, totalBeats, bpm, loop, metro]);
 
-  useEffect(() => { if (playing) { stopAudio(); scheduleAudio(currentBeatRef.current); } }, [bpm, metro]);
+  useEffect(() => { if (playing) { stopAudio(); nextAudioBeatRef.current = currentBeatRef.current; scheduleAudioWindow(currentBeatRef.current, currentBeatRef.current + AUDIO_LOOKAHEAD_BEATS, currentBeatRef.current); } }, [bpm, metro]);
   useEffect(() => { if (!playing || !controls) return; const id = window.setTimeout(() => setControls(false), 2600); return () => window.clearTimeout(id); }, [playing, controls]);
 
   function showControls() { setControls(true); }
@@ -146,7 +152,6 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise;
     compressor.ratio.value = 4;
     compressor.attack.value = 0.002;
     compressor.release.value = 0.14;
-
     body.type = 'lowshelf';
     body.frequency.value = 190;
     body.gain.value = 4.5;
@@ -154,12 +159,10 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise;
     presence.frequency.value = 3200;
     presence.Q.value = 0.9;
     presence.gain.value = 5.5;
-
     body.connect(presence);
     presence.connect(master);
     master.connect(compressor);
     compressor.connect(context.destination);
-
     master.gain.setValueAtTime(0.0001, at);
     master.gain.exponentialRampToValueAtTime(1.55, at + 0.009);
     master.gain.exponentialRampToValueAtTime(0.72, at + 0.13);
@@ -167,7 +170,6 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise;
     master.gain.exponentialRampToValueAtTime(0.0001, Math.max(at + 0.42, end + 0.08));
 
     playHammer(context, presence, at);
-
     [
       { ratio: 1, gain: 1.0, type: 'triangle' as OscillatorType, detune: 0 },
       { ratio: 2.003, gain: 0.38, type: 'sine' as OscillatorType, detune: -4 },
@@ -192,19 +194,32 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise;
     });
   }
 
-  function scheduleAudio(fromBeat: number) {
+  function scheduleAudioWindow(fromBeat: number, toBeat: number, visualBeat: number) {
     const context = getAudioContext();
-    if (!context) return;
+    if (!context || toBeat <= nextAudioBeatRef.current) return;
     context.resume().catch(() => null);
-    const now = context.currentTime + 0.03;
     const secondsPerBeat = 60 / bpm;
-    if (metro) for (let beatIndex = Math.ceil(fromBeat); beatIndex <= totalBeats; beatIndex += 1) playClick(context, now + Math.max(0, beatIndex - fromBeat) * secondsPerBeat, beatIndex % 4 === 0);
+    const now = context.currentTime + 0.035;
+    const startBeat = Math.max(fromBeat, nextAudioBeatRef.current);
+    const endBeat = Math.min(toBeat, totalBeats);
+
+    if (metro) {
+      for (let beatIndex = Math.max(0, Math.ceil(startBeat)); beatIndex < endBeat; beatIndex += 1) {
+        playClick(context, now + Math.max(0, beatIndex - visualBeat) * secondsPerBeat, beatIndex % 4 === 0);
+      }
+    }
     beatNotes.forEach((note) => {
-      if (note.midi == null || note.endBeat <= fromBeat) return;
-      const startDelay = Math.max(0, note.startBeat - fromBeat) * secondsPerBeat;
-      const endDelay = Math.max(0.18, (note.endBeat - fromBeat) * secondsPerBeat);
+      if (note.midi == null || note.startBeat < startBeat || note.startBeat >= endBeat) return;
+      const startDelay = Math.max(0, note.startBeat - visualBeat) * secondsPerBeat;
+      const endDelay = Math.max(startDelay + 0.2, (note.endBeat - visualBeat) * secondsPerBeat);
       playPiano(context, note.midi, now + startDelay, now + endDelay);
     });
+    nextAudioBeatRef.current = endBeat;
+  }
+
+  function scheduleAudio(fromBeat: number) {
+    nextAudioBeatRef.current = fromBeat;
+    scheduleAudioWindow(fromBeat, Math.min(totalBeats, fromBeat + AUDIO_LOOKAHEAD_BEATS), fromBeat);
   }
 
   async function startPlayback() {
@@ -215,6 +230,7 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise;
     context.resume().catch(() => null);
     stopAudio();
     setVoiceTrail([]);
+    nextAudioBeatRef.current = currentBeat >= totalBeats ? 0 : currentBeat;
     const beatMs = (60 / bpm) * 1000;
     [4, 3, 2, 1].forEach((value, index) => timersRef.current.push(window.setTimeout(() => { setCount(value); playClick(context, context.currentTime + 0.01, value === 4); }, index * beatMs)));
     timersRef.current.push(window.setTimeout(() => { setCount(null); const start = currentBeat >= totalBeats ? 0 : currentBeat; setCurrentBeat(start); scheduleAudio(start); setPlaying(true); }, 4 * beatMs));
@@ -280,7 +296,7 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise;
       <div className="progress-line"><i style={{ width: `${progress}%` }} /></div>
       <div className="feedback-text">{tuner.feedback}</div>
       {count ? <div className="countdown"><b>{count}</b></div> : null}
-      <div className="control-overlay" onPointerDown={(event) => event.stopPropagation()}><button className="back-btn" type="button" onClick={() => history.back()}>←</button><div className="bpm-control" aria-label="Controle de BPM"><button type="button" onClick={() => adjustBpm(-2)}>−</button><span><b>{bpm}</b><small>BPM</small></span><button type="button" onClick={() => adjustBpm(2)}>+</button></div><div className="control-row"><button type="button" onClick={() => { setCurrentBeat(0); stopAudio(); setVoiceTrail([]); if (playing) scheduleAudio(0); }}>↺<span>Reiniciar</span></button><button className="main-btn" type="button" onClick={startPlayback}>{playing ? 'Ⅱ' : count ? '×' : '▶'}<span>{playing ? 'Pausar' : count ? 'Cancelar' : 'Iniciar'}</span></button><button type="button" onClick={() => setLoop((value) => !value)}>∞<span>{loop ? 'Loop' : 'Único'}</span></button></div></div>
+      <div className="control-overlay" onPointerDown={(event) => event.stopPropagation()}><button className="back-btn" type="button" onClick={() => history.back()}>←</button><div className="bpm-control" aria-label="Controle de BPM"><button type="button" onClick={() => adjustBpm(-2)}>−</button><span><b>{bpm}</b><small>BPM</small></span><button type="button" onClick={() => adjustBpm(2)}>+</button></div><div className="control-row"><button type="button" onClick={() => { setCurrentBeat(0); stopAudio(); setVoiceTrail([]); scheduleAudio(0); }}>↺<span>Reiniciar</span></button><button className="main-btn" type="button" onClick={startPlayback}>{playing ? 'Ⅱ' : count ? '×' : '▶'}<span>{playing ? 'Pausar' : count ? 'Cancelar' : 'Iniciar'}</span></button><button type="button" onClick={() => setLoop((value) => !value)}>∞<span>{loop ? 'Loop' : 'Único'}</span></button></div></div>
     </section>
   );
 }
