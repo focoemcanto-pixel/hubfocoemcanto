@@ -1,0 +1,87 @@
+@media (max-width: 760px) {
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-figure {
+    background: transparent !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+    isolation: auto !important;
+    mix-blend-mode: screen !important;
+  }
+
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-figure::before,
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-figure::after {
+    content: '' !important;
+    position: absolute !important;
+    inset: -28px -34px -38px -42px !important;
+    border-radius: 999px !important;
+    background: radial-gradient(ellipse at center, rgba(103,232,249,.12), rgba(103,232,249,.035) 44%, rgba(2,3,4,0) 72%) !important;
+    filter: blur(18px) !important;
+    z-index: -1 !important;
+    pointer-events: none !important;
+  }
+
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-figure::after {
+    inset: 38% -26px -22px -36px !important;
+    background: linear-gradient(180deg, rgba(2,3,4,0), #020304 74%) !important;
+    filter: blur(7px) !important;
+    border-radius: 0 !important;
+    z-index: 2 !important;
+  }
+
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-figure img {
+    background: transparent !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    filter: drop-shadow(0 0 22px rgba(103,232,249,.16)) !important;
+    opacity: .7 !important;
+  }
+
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-figure span {
+    background: radial-gradient(ellipse at center, rgba(245,199,107,.42), rgba(245,199,107,.13) 52%, transparent 80%) !important;
+    filter: blur(16px) !important;
+    opacity: .7 !important;
+    mix-blend-mode: screen !important;
+  }
+
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-scale i {
+    left: var(--tuner-x, 50%) !important;
+    transition: left .12s ease, background .12s ease, box-shadow .12s ease !important;
+  }
+
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-tuner.in-tune .tessitura-scale i {
+    background: #7cf7c4 !important;
+    box-shadow: 0 0 24px rgba(124,247,196,.82) !important;
+  }
+
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-tuner.almost-low .tessitura-scale i,
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-tuner.almost-high .tessitura-scale i {
+    background: #f5c76b !important;
+    box-shadow: 0 0 22px rgba(245,199,107,.72) !important;
+  }
+
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-tuner.low .tessitura-scale i,
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-tuner.high .tessitura-scale i {
+    background: #ff7b7b !important;
+    box-shadow: 0 0 22px rgba(255,123,123,.7) !important;
+  }
+
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-tuner.waiting .tessitura-scale i {
+    background: rgba(255,255,255,.5) !important;
+    box-shadow: 0 0 18px rgba(255,255,255,.22) !important;
+  }
+
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-tuner.in-tune p {
+    color: #7cf7c4 !important;
+  }
+
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-tuner.low p,
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-tuner.high p {
+    color: #ff9b9b !important;
+  }
+
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-tuner.almost-low p,
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-tuner.almost-high p {
+    color: #f5c76b !important;
+  }
+}
