@@ -77,7 +77,7 @@ export async function GET(_request: Request, { params }: Params) {
     }
 
     const response = await fetchDriveFile(id, token);
-    const contentType = response.headers.get('content-type') || 'video/mp4';
+    headers.set('content-type', 'video/mp4');
 
     if (!response.ok) {
       const details = await response.text().catch(() => '');
