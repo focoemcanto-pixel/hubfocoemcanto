@@ -5,6 +5,13 @@ import type { TrainingExercise } from '@/lib/training-center';
 import { getTrainingDurationSeconds } from '@/lib/training-center';
 
 const pitchOrder = ['C3', 'D3', 'E3', 'F3', 'G3', 'A3', 'B3', 'C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4', 'C5'];
+const pitchFrequency: Record<string, number> = {
+  C3: 130.81, D3: 146.83, E3: 164.81, F3: 174.61, G3: 196, A3: 220, B3: 246.94,
+  C4: 261.63, D4: 293.66, E4: 329.63, F4: 349.23, G4: 392, A4: 440, B4: 493.88, C5: 523.25,
+};
+
+type AudioContextConstructor = typeof AudioContext;
+type WindowWithWebAudio = Window & typeof globalThis & { webkitAudioContext?: AudioContextConstructor };
 
 function pitchToY(pitch: string) {
   const index = pitchOrder.indexOf(pitch);
@@ -24,16 +31,21 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const animationRef = useRef<number | null>(null);
   const lastFrameRef = useRef<number | null>(null);
+  const synthContextRef = useRef<AudioContext | null>(null);
+  const activeOscillatorsRef = useRef<OscillatorNode[]>([]);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [speed, setSpeed] = useState(1);
   const [loop, setLoop] = useState(true);
   const duration = useMemo(() => getTrainingDurationSeconds(exercise), [exercise]);
   const activeNote = exercise.notes.find((note) => currentTime >= note.start && currentTime <= note.start + note.duration);
+  const hasAudioFile = Boolean(exercise.audioUrl);
 
   useEffect(() => {
     if (audioRef.current) audioRef.current.playbackRate = speed;
   }, [speed]);
+
+  useEffect(() => () => stopSynth(), []);
 
   useEffect(() => {
     if (!isPlaying) return;
@@ -50,12 +62,14 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise 
           if (!loop) {
             setIsPlaying(false);
             audioRef.current?.pause();
+            stopSynth();
             return duration;
           }
           if (audioRef.current) {
             audioRef.current.currentTime = 0;
             audioRef.current.play().catch(() => undefined);
           }
+          if (!hasAudioFile) startSynth(0);
           return 0;
         }
         return next;
@@ -68,11 +82,59 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise 
     return () => {
       if (animationRef.current) window.cancelAnimationFrame(animationRef.current);
     };
-  }, [duration, isPlaying, loop, speed]);
+  }, [duration, hasAudioFile, isPlaying, loop, speed]);
+
+  function getSynthContext() {
+    if (typeof window === 'undefined') return null;
+    if (!synthContextRef.current) {
+      const browserWindow = window as WindowWithWebAudio;
+      const Context = browserWindow.AudioContext || browserWindow.webkitAudioContext;
+      synthContextRef.current = Context ? new Context() : null;
+    }
+    return synthContextRef.current;
+  }
+
+  function stopSynth() {
+    activeOscillatorsRef.current.forEach((oscillator) => {
+      try { oscillator.stop(); } catch { /* oscillator already stopped */ }
+    });
+    activeOscillatorsRef.current = [];
+  }
+
+  function startSynth(startAt: number) {
+    const context = getSynthContext();
+    if (!context) return;
+    stopSynth();
+    context.resume().catch(() => undefined);
+    const now = context.currentTime + 0.04;
+    exercise.notes.forEach((note) => {
+      const frequency = pitchFrequency[note.pitch];
+      if (!frequency) return;
+      const noteStart = (note.start - startAt) / speed;
+      const noteEnd = noteStart + note.duration / speed;
+      if (noteEnd <= 0) return;
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.type = 'sine';
+      oscillator.frequency.value = frequency;
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+      const startsAt = now + Math.max(0, noteStart);
+      const endsAt = now + Math.max(0.08, noteEnd);
+      gain.gain.setValueAtTime(0.0001, startsAt);
+      gain.gain.exponentialRampToValueAtTime(0.18, startsAt + 0.03);
+      gain.gain.setValueAtTime(0.18, Math.max(startsAt + 0.04, endsAt - 0.06));
+      gain.gain.exponentialRampToValueAtTime(0.0001, endsAt);
+      oscillator.start(startsAt);
+      oscillator.stop(endsAt + 0.03);
+      activeOscillatorsRef.current.push(oscillator);
+    });
+  }
 
   function togglePlayback() {
     if (isPlaying) {
       audioRef.current?.pause();
+      stopSynth();
       setIsPlaying(false);
       return;
     }
@@ -82,6 +144,8 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise 
       audioRef.current.currentTime = startAt;
       audioRef.current.playbackRate = speed;
       audioRef.current.play().catch(() => undefined);
+    } else {
+      startSynth(startAt);
     }
     setIsPlaying(true);
   }
@@ -89,6 +153,7 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise 
   function restart() {
     setCurrentTime(0);
     if (audioRef.current) audioRef.current.currentTime = 0;
+    if (isPlaying && !hasAudioFile) startSynth(0);
   }
 
   const progress = Math.min(100, Math.max(0, (currentTime / duration) * 100));
@@ -108,6 +173,8 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise 
           <strong>{activeNote?.label || activeNote?.pitch || 'Prepare'}</strong>
         </div>
       </div>
+
+      {!hasAudioFile ? <p className="synth-notice">Som provisório gerado pelo app até o áudio oficial ser cadastrado.</p> : null}
 
       <div className="note-stage" aria-label="Guia visual de notas">
         <div className="stage-grid" />
@@ -148,4 +215,4 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise 
   );
 }
 
-const css = `.guided-player-card{border:1px solid rgba(255,255,255,.13);border-radius:28px;background:linear-gradient(180deg,rgba(255,255,255,.055),rgba(255,255,255,.025));box-shadow:0 30px 90px rgba(0,0,0,.28);padding:20px;overflow:hidden}.guided-player-top{display:flex;justify-content:space-between;gap:18px;align-items:flex-start}.guided-player-top h2{font-family:Georgia,'Times New Roman',serif;font-size:clamp(30px,4.2vw,48px);line-height:.95;margin:8px 0 8px;letter-spacing:-.045em}.guided-player-top p{margin:0;color:#bfc0ca;max-width:620px;line-height:1.45}.guided-now{min-width:132px;border:1px solid rgba(245,199,107,.35);border-radius:20px;padding:14px;background:rgba(245,199,107,.08);text-align:center}.guided-now span{display:block;color:#cfc7aa;font-size:11px;text-transform:uppercase;font-weight:950;letter-spacing:.1em}.guided-now strong{display:block;color:#f5c76b;font-size:28px;margin-top:2px}.note-stage{position:relative;height:340px;margin-top:20px;border:1px solid rgba(255,255,255,.12);border-radius:26px;background:radial-gradient(circle at 50% 50%,rgba(245,199,107,.1),transparent 34%),linear-gradient(180deg,rgba(0,0,0,.45),rgba(0,0,0,.18));overflow:hidden}.stage-grid{position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.05) 1px,transparent 1px);background-size:100% 48px,9.09% 100%;opacity:.7}.playhead{position:absolute;top:0;bottom:0;width:2px;background:#f5c76b;box-shadow:0 0 18px rgba(245,199,107,.9);z-index:3}.guided-note{position:absolute;z-index:2;height:26px;min-width:38px;border-radius:999px;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.24);box-shadow:0 12px 35px rgba(0,0,0,.34);transform:translateY(-50%);transition:.16s ease;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:950}.guided-note:before{content:'';position:absolute;left:0;top:50%;width:26px;height:26px;border-radius:50%;transform:translateY(-50%);background:linear-gradient(180deg,#fff0b6,#e9b348);box-shadow:0 0 22px rgba(245,199,107,.68)}.guided-note span{position:relative;z-index:1;margin-left:18px;text-shadow:0 1px 8px #000}.guided-note.active{background:rgba(245,199,107,.22);border-color:rgba(245,199,107,.78);transform:translateY(-50%) scale(1.06)}.guided-note.active:before{box-shadow:0 0 34px rgba(245,199,107,1)}.guided-progress{height:8px;background:rgba(255,255,255,.08);border-radius:999px;margin:16px 2px 0;overflow:hidden}.guided-progress span{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#ffe39b,#e9b348)}.guided-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:16px}.guided-controls button,.guided-controls select{border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.08);color:#fff;border-radius:14px;padding:11px 13px;font-weight:900}.guided-controls button.primary{border:0;background:linear-gradient(180deg,#ffe39b,#e9b348);color:#160f07}.guided-controls label{display:flex;align-items:center;gap:8px;color:#c7c7d1;font-size:13px;font-weight:800}.guided-time{margin-left:auto;color:#c7c7d1;font-weight:900}@media(max-width:700px){.guided-player-card{padding:14px;border-radius:22px}.guided-player-top{display:grid}.guided-now{text-align:left}.note-stage{height:280px;border-radius:20px}.guided-time{margin-left:0;width:100%}}`;
+const css = `.guided-player-card{border:1px solid rgba(255,255,255,.13);border-radius:28px;background:linear-gradient(180deg,rgba(255,255,255,.055),rgba(255,255,255,.025));box-shadow:0 30px 90px rgba(0,0,0,.28);padding:20px;overflow:hidden}.guided-player-top{display:flex;justify-content:space-between;gap:18px;align-items:flex-start}.guided-player-top h2{font-family:Georgia,'Times New Roman',serif;font-size:clamp(30px,4.2vw,48px);line-height:.95;margin:8px 0 8px;letter-spacing:-.045em}.guided-player-top p{margin:0;color:#bfc0ca;max-width:620px;line-height:1.45}.guided-now{min-width:132px;border:1px solid rgba(245,199,107,.35);border-radius:20px;padding:14px;background:rgba(245,199,107,.08);text-align:center}.guided-now span{display:block;color:#cfc7aa;font-size:11px;text-transform:uppercase;font-weight:950;letter-spacing:.1em}.guided-now strong{display:block;color:#f5c76b;font-size:28px;margin-top:2px}.synth-notice{margin:14px 0 0;color:#f5c76b;font-size:12px;font-weight:900}.note-stage{position:relative;height:340px;margin-top:20px;border:1px solid rgba(255,255,255,.12);border-radius:26px;background:radial-gradient(circle at 50% 50%,rgba(245,199,107,.1),transparent 34%),linear-gradient(180deg,rgba(0,0,0,.45),rgba(0,0,0,.18));overflow:hidden}.stage-grid{position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.05) 1px,transparent 1px);background-size:100% 48px,9.09% 100%;opacity:.7}.playhead{position:absolute;top:0;bottom:0;width:2px;background:#f5c76b;box-shadow:0 0 18px rgba(245,199,107,.9);z-index:3}.guided-note{position:absolute;z-index:2;height:26px;min-width:38px;border-radius:999px;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.24);box-shadow:0 12px 35px rgba(0,0,0,.34);transform:translateY(-50%);transition:.16s ease;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:950}.guided-note:before{content:'';position:absolute;left:0;top:50%;width:26px;height:26px;border-radius:50%;transform:translateY(-50%);background:linear-gradient(180deg,#fff0b6,#e9b348);box-shadow:0 0 22px rgba(245,199,107,.68)}.guided-note span{position:relative;z-index:1;margin-left:18px;text-shadow:0 1px 8px #000}.guided-note.active{background:rgba(245,199,107,.22);border-color:rgba(245,199,107,.78);transform:translateY(-50%) scale(1.06)}.guided-note.active:before{box-shadow:0 0 34px rgba(245,199,107,1)}.guided-progress{height:8px;background:rgba(255,255,255,.08);border-radius:999px;margin:16px 2px 0;overflow:hidden}.guided-progress span{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#ffe39b,#e9b348)}.guided-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:16px}.guided-controls button,.guided-controls select{border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.08);color:#fff;border-radius:14px;padding:11px 13px;font-weight:900}.guided-controls button.primary{border:0;background:linear-gradient(180deg,#ffe39b,#e9b348);color:#160f07}.guided-controls label{display:flex;align-items:center;gap:8px;color:#c7c7d1;font-size:13px;font-weight:800}.guided-time{margin-left:auto;color:#c7c7d1;font-weight:900}@media(max-width:700px){.guided-player-card{padding:14px;border-radius:22px}.guided-player-top{display:grid}.guided-now{text-align:left}.note-stage{height:280px;border-radius:20px}.guided-time{margin-left:0;width:100%}}`;
