@@ -1,0 +1,90 @@
+@media (max-width: 760px) {
+  body:not(.vocal-capture-active) .vocal-stage.result {
+    padding-bottom: calc(132px + env(safe-area-inset-bottom)) !important;
+  }
+
+  body:not(.vocal-capture-active) .vocal-stage.result .actions {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    justify-items: center !important;
+    gap: 8px !important;
+    margin-top: 8px !important;
+    transform: translateY(-18px) !important;
+  }
+
+  body:not(.vocal-capture-active) .vocal-stage.result .actions button,
+  body:not(.vocal-capture-active) .vocal-stage.result .actions a {
+    width: min(78vw, 300px) !important;
+    min-height: 46px !important;
+    height: 46px !important;
+    border-radius: 18px !important;
+    padding: 0 16px !important;
+    font-size: 14px !important;
+    line-height: 1 !important;
+  }
+
+  body:not(.vocal-capture-active) .vocal-stage.result .actions button svg,
+  body:not(.vocal-capture-active) .vocal-stage.result .actions a svg {
+    width: 20px !important;
+    height: 20px !important;
+  }
+
+  body:not(.vocal-capture-active) .vocal-stage.result .actions a {
+    width: min(70vw, 260px) !important;
+    min-height: 42px !important;
+    height: 42px !important;
+  }
+
+  body:not(.vocal-capture-active) .vocal-stage.result p {
+    margin-bottom: 4px !important;
+  }
+
+  body:not(.vocal-capture-active) .choice-grid {
+    gap: 10px !important;
+    width: min(86vw, 380px) !important;
+  }
+
+  body:not(.vocal-capture-active) .choice-grid button {
+    position: relative !important;
+    width: 100% !important;
+    min-height: 54px !important;
+    border-radius: 18px !important;
+    border: 1px solid rgba(255,255,255,.14) !important;
+    background: rgba(255,255,255,.065) !important;
+    color: rgba(255,255,255,.82) !important;
+    box-shadow: none !important;
+    transition: transform .16s ease, background .16s ease, border-color .16s ease, color .16s ease, box-shadow .16s ease !important;
+  }
+
+  body:not(.vocal-capture-active) .choice-grid button.selected {
+    background: linear-gradient(180deg, #ffe29a, #e8ad34) !important;
+    color: #120d05 !important;
+    border-color: rgba(245,199,107,.65) !important;
+    box-shadow: 0 16px 34px rgba(232,173,52,.16), 0 0 0 1px rgba(255,255,255,.12) inset !important;
+    transform: translateY(-1px) !important;
+  }
+
+  body:not(.vocal-capture-active) .choice-grid button.selected::after {
+    content: '✓' !important;
+    position: absolute !important;
+    right: 18px !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+    font-size: 18px !important;
+    font-weight: 1000 !important;
+  }
+
+  body:not(.vocal-capture-active) .choice-grid:has(button.selected) + button {
+    width: min(74vw, 320px) !important;
+    min-height: 52px !important;
+    height: 52px !important;
+    border-radius: 18px !important;
+    background: linear-gradient(180deg, #ffe29a, #e8ad34) !important;
+    color: #120d05 !important;
+    box-shadow: 0 18px 40px rgba(232,173,52,.18) !important;
+  }
+
+  body:not(.vocal-capture-active) .choice-grid:has(button.selected) + button::after {
+    content: ' →' !important;
+  }
+}
