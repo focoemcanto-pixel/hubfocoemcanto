@@ -15,10 +15,10 @@ export default async function TrainingExercisePage({ params }: { params: Promise
   const category = getTrainingCategory(exercise.categorySlug);
 
   return (
-    <AppShell>
+    <AppShell hideNav>
       <main className="page training-exercise-page">
         <style dangerouslySetInnerHTML={{ __html: css }} />
-        <Link href="/aluno/central" className="training-back" prefetch>← Voltar para Central</Link>
+        <Link href="/aluno/central/personalizado" className="training-back" prefetch>← Voltar para Personalizado</Link>
         <section className="training-exercise-hero">
           <p className="eyebrow">{category?.title || 'Treino guiado'} • {exercise.level}</p>
           <h1>{exercise.title}</h1>
@@ -29,27 +29,10 @@ export default async function TrainingExercisePage({ params }: { params: Promise
             {exercise.focus.map((tag) => <span key={tag}>{tag}</span>)}
           </div>
         </section>
-
         <GuidedTrainingPlayer exercise={exercise} />
-
         <section className="training-guidance-grid">
-          <div className="training-guidance-card">
-            <h2>Como praticar</h2>
-            <p>{exercise.objective}</p>
-            <ul>
-              <li>Assista o movimento das bolinhas antes de cantar.</li>
-              <li>Depois cante junto, buscando chegar na nota no momento exato da luz.</li>
-              <li>Use velocidade menor quando precisar ganhar controle.</li>
-            </ul>
-          </div>
-          <div className="training-guidance-card">
-            <h2>Depois do treino</h2>
-            <p>Grave sua execução e envie para avaliação quando quiser validar se cumpriu o objetivo técnico.</p>
-            <div className="training-actions">
-              <Link className="gold" href="/aluno/enviar" prefetch>Enviar atividade</Link>
-              <Link className="dark" href="/aluno/comunidade" prefetch>Ver comunidade</Link>
-            </div>
-          </div>
+          <div className="training-guidance-card"><h2>Como praticar</h2><p>{exercise.objective}</p><ul><li>Assista o movimento das bolinhas antes de cantar.</li><li>Depois cante junto, buscando chegar na nota no momento exato da luz.</li><li>Use velocidade menor quando precisar ganhar controle.</li></ul></div>
+          <div className="training-guidance-card"><h2>Depois do treino</h2><p>Grave sua execução e envie para avaliação quando quiser validar se cumpriu o objetivo técnico.</p><div className="training-actions"><Link className="gold" href="/aluno/enviar" prefetch>Enviar atividade</Link><Link className="dark" href="/aluno/comunidade" prefetch>Ver comunidade</Link></div></div>
         </section>
       </main>
     </AppShell>
