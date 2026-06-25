@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, Play } from 'lucide-react';
+import { ExternalLink, Loader2, Play } from 'lucide-react';
 
 type ContentPlayerProps = {
   title?: string | null;
@@ -44,7 +44,7 @@ function installLessonsPanelToggle() {
   if (!document.getElementById(styleId)) {
     const style = document.createElement('style');
     style.id = styleId;
-    style.textContent = '[class*="modules-actions"]{display:flex;align-items:center;gap:8px}.fc-lessons-toggle,.fc-module-toggle{display:inline-flex;align-items:center;justify-content:center;border-radius:999px;border:1px solid rgba(245,199,107,.22);background:rgba(255,255,255,.045);color:#f5c76b;font-weight:900;line-height:1}.fc-lessons-toggle{width:42px;height:42px;font-size:24px}.fc-module-toggle{width:34px;height:34px;font-size:18px;margin-left:auto}.fc-lessons-collapsed [class*="module-list"]{display:none}.fc-lessons-collapsed{max-height:110px!important;overflow:hidden}.fc-lessons-collapsed [class*="modules-head"]{border-bottom:0!important}.fc-module-collapsed [class*="lessons-list"]{display:none}.fc-module-collapsed{padding-bottom:0!important}.fc-module-collapsed [class*="module-title"]{margin-bottom:0!important}';
+    style.textContent = '[class*="modules-actions"]{display:flex;align-items:center;gap:8px}.fc-lessons-toggle,.fc-module-toggle{display:inline-flex;align-items:center;justify-content:center;border-radius:999px;border:1px solid rgba(245,199,107,.22);background:rgba(255,255,255,.045);color:#f5c76b;font-weight:900;line-height:1}.fc-lessons-toggle{width:42px;height:42px;font-size:24px}.fc-module-toggle{width:34px;height:34px;font-size:18px;margin-left:auto}.fc-lessons-collapsed [class*="module-list"]{display:none}.fc-lessons-collapsed{max-height:110px!important;overflow:hidden}.fc-lessons-collapsed [class*="modules-head"]{border-bottom:0!important}.fc-module-collapsed [class*="lessons-list"]{display:none}.fc-module-collapsed{padding-bottom:0!important}.fc-module-collapsed [class*="module-title"]{margin-bottom:0!important}.premium-drive-fallback{position:absolute;left:50%;bottom:18px;z-index:8;display:inline-flex;align-items:center;gap:8px;transform:translateX(-50%);border:1px solid rgba(245,199,107,.35);border-radius:999px;background:rgba(0,0,0,.72);color:#f5c76b;padding:10px 14px;font-size:12px;font-weight:900;backdrop-filter:blur(14px);box-shadow:0 14px 38px rgba(0,0,0,.28)}';
     document.head.appendChild(style);
   }
   document.querySelectorAll<HTMLElement>('[class*="modules-panel"]').forEach((panel) => {
@@ -95,7 +95,8 @@ function installLessonsPanelToggle() {
 export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, initialPositionSeconds = 0, trimStartSeconds = 0, trimEndSeconds = 0, nextLessonSlug: _nextLessonSlug, nextLessonTitle: _nextLessonTitle }: ContentPlayerProps) {
   const [isReady, setIsReady] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
-  const [isBuffering, setIsBuffering] = useState(true);
+  const [isBuffering, setIsBuffering] = useState(false);
+  const [showDriveFallback, setShowDriveFallback] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const lastSavedAtRef = useRef(0);
@@ -121,17 +122,20 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
   useEffect(() => {
     setIsReady(false);
     setHasStarted(false);
-    setIsBuffering(true);
+    setIsBuffering(false);
+    setShowDriveFallback(false);
     restoredRef.current = false;
     const video = videoRef.current;
     if (!video || !source || type === 'audio') return;
+    video.preload = 'metadata';
     video.load();
-    const timer = window.setTimeout(() => {
-      video.preload = 'auto';
-      video.load();
-    }, 250);
-    return () => window.clearTimeout(timer);
   }, [source, type]);
+
+  useEffect(() => {
+    if (!hasStarted || !isBuffering || !driveUrl) return;
+    const timer = window.setTimeout(() => setShowDriveFallback(true), 9000);
+    return () => window.clearTimeout(timer);
+  }, [driveUrl, hasStarted, isBuffering]);
 
   function restorePosition(element: HTMLMediaElement | null) {
     if (!element || restoredRef.current) return;
@@ -173,7 +177,7 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
           controls
           controlsList="nodownload noplaybackrate"
           src={source}
-          preload="auto"
+          preload="metadata"
           style={{ width: '100%' }}
           onLoadedMetadata={() => restorePosition(audioRef.current)}
           onPlay={() => saveProgress(lessonId, audioRef.current?.currentTime || 0, false)}
@@ -191,15 +195,16 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
           <span className="premium-video-glow" />
           <Loader2 size={26} className="premium-video-spinner" />
           <strong>Preparando aula</strong>
-          <small>Carregando vídeo em alta qualidade...</small>
+          <small>Carregando informações do vídeo...</small>
         </div>
       ) : null}
       {isReady && !hasStarted ? (
-        <button className="premium-video-start" type="button" onClick={() => { setHasStarted(true); if (videoRef.current && videoRef.current.currentTime < trimStart) videoRef.current.currentTime = trimStart; videoRef.current?.play().catch(() => undefined); }} aria-label="Reproduzir aula">
+        <button className="premium-video-start" type="button" onClick={() => { setHasStarted(true); setIsBuffering(true); if (videoRef.current && videoRef.current.currentTime < trimStart) videoRef.current.currentTime = trimStart; videoRef.current?.play().catch(() => { setIsBuffering(false); }); }} aria-label="Reproduzir aula">
           <Play size={32} fill="currentColor" />
         </button>
       ) : null}
       {isBuffering && hasStarted ? <div className="premium-video-buffer"><Loader2 size={22} /></div> : null}
+      {showDriveFallback && driveUrl ? <a className="premium-drive-fallback" href={driveUrl} target="_blank" rel="noreferrer"><ExternalLink size={14} /> Abrir pelo Drive</a> : null}
       <video
         ref={videoRef}
         src={source}
@@ -207,11 +212,13 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
         controls
         controlsList="nodownload noplaybackrate"
         playsInline
-        preload="auto"
+        preload="metadata"
         onLoadedMetadata={() => { setIsReady(true); restorePosition(videoRef.current); }}
         onCanPlay={() => { setIsReady(true); setIsBuffering(false); }}
+        onCanPlayThrough={() => { setIsReady(true); setIsBuffering(false); }}
         onWaiting={() => setIsBuffering(true)}
-        onPlaying={() => { setHasStarted(true); setIsBuffering(false); saveProgress(lessonId, videoRef.current?.currentTime || 0, false); }}
+        onStalled={() => setIsBuffering(true)}
+        onPlaying={() => { setHasStarted(true); setIsBuffering(false); setShowDriveFallback(false); saveProgress(lessonId, videoRef.current?.currentTime || 0, false); }}
         onPlay={() => setHasStarted(true)}
         onTimeUpdate={() => handleTimeUpdate(videoRef.current)}
         onEnded={() => saveProgress(lessonId, videoRef.current?.duration || 0, true)}
