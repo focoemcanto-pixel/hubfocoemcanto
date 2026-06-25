@@ -22,7 +22,8 @@ function formatTime(value: number) {
 
 export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const timerRef = useRef<number | null>(null);
+  const animationRef = useRef<number | null>(null);
+  const lastFrameRef = useRef<number | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [speed, setSpeed] = useState(1);
@@ -36,28 +37,38 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise 
 
   useEffect(() => {
     if (!isPlaying) return;
-    const startedAt = Date.now() - currentTime * 1000;
-    timerRef.current = window.setInterval(() => {
-      const next = ((Date.now() - startedAt) / 1000) * speed;
-      if (next >= duration) {
-        if (loop) {
-          setCurrentTime(0);
+    lastFrameRef.current = null;
+
+    function tick(timestamp: number) {
+      if (lastFrameRef.current === null) lastFrameRef.current = timestamp;
+      const delta = ((timestamp - lastFrameRef.current) / 1000) * speed;
+      lastFrameRef.current = timestamp;
+
+      setCurrentTime((value) => {
+        const next = value + delta;
+        if (next >= duration) {
+          if (!loop) {
+            setIsPlaying(false);
+            audioRef.current?.pause();
+            return duration;
+          }
           if (audioRef.current) {
             audioRef.current.currentTime = 0;
             audioRef.current.play().catch(() => undefined);
           }
-        } else {
-          setCurrentTime(duration);
-          setIsPlaying(false);
+          return 0;
         }
-      } else {
-        setCurrentTime(next);
-      }
-    }, 60);
+        return next;
+      });
+
+      animationRef.current = window.requestAnimationFrame(tick);
+    }
+
+    animationRef.current = window.requestAnimationFrame(tick);
     return () => {
-      if (timerRef.current) window.clearInterval(timerRef.current);
+      if (animationRef.current) window.cancelAnimationFrame(animationRef.current);
     };
-  }, [currentTime, duration, isPlaying, loop, speed]);
+  }, [duration, isPlaying, loop, speed]);
 
   function togglePlayback() {
     if (isPlaying) {
@@ -65,9 +76,10 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise 
       setIsPlaying(false);
       return;
     }
-    if (currentTime >= duration) setCurrentTime(0);
+    const startAt = currentTime >= duration ? 0 : currentTime;
+    setCurrentTime(startAt);
     if (audioRef.current) {
-      audioRef.current.currentTime = currentTime >= duration ? 0 : currentTime;
+      audioRef.current.currentTime = startAt;
       audioRef.current.playbackRate = speed;
       audioRef.current.play().catch(() => undefined);
     }
