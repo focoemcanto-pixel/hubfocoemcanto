@@ -1,4 +1,19 @@
 @media (max-width: 760px) {
+  body:has(.tessitura-stage) nav,
+  body:has(.tessitura-stage) footer,
+  body:has(.tessitura-stage) [class*="bottom"],
+  body:has(.tessitura-stage) [class*="Bottom"],
+  body:has(.tessitura-stage) [class*="tab-bar"],
+  body:has(.tessitura-stage) [class*="TabBar"],
+  body:has(.tessitura-stage) [class*="mobile-nav"],
+  body:has(.tessitura-stage) [class*="MobileNav"] {
+    display: none !important;
+  }
+
+  body:has(.tessitura-stage) {
+    overflow: hidden !important;
+  }
+
   body:not(.vocal-capture-active) .tessitura-stage .tessitura-figure {
     background: transparent !important;
     border: 0 !important;
@@ -46,7 +61,7 @@
 
   body:not(.vocal-capture-active) .tessitura-stage .tessitura-scale i {
     left: var(--tuner-x, 50%) !important;
-    transition: left .12s ease, background .12s ease, box-shadow .12s ease !important;
+    transition: left .16s ease, background .12s ease, box-shadow .12s ease !important;
   }
 
   body:not(.vocal-capture-active) .tessitura-stage .tessitura-tuner.in-tune .tessitura-scale i {
@@ -83,5 +98,24 @@
   body:not(.vocal-capture-active) .tessitura-stage .tessitura-tuner.almost-low p,
   body:not(.vocal-capture-active) .tessitura-stage .tessitura-tuner.almost-high p {
     color: #f5c76b !important;
+  }
+
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-exit {
+    position: fixed !important;
+    left: 22px !important;
+    bottom: calc(18px + env(safe-area-inset-bottom)) !important;
+    z-index: 80 !important;
+    width: 38px !important;
+    height: 38px !important;
+    min-height: 38px !important;
+    padding: 0 !important;
+    border-radius: 999px !important;
+    border: 1px solid rgba(255,255,255,.1) !important;
+    background: rgba(255,255,255,.035) !important;
+    color: rgba(255,255,255,.58) !important;
+    font-size: 28px !important;
+    font-weight: 500 !important;
+    line-height: 1 !important;
+    backdrop-filter: blur(14px) !important;
   }
 }
