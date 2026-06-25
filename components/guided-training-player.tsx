@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { TrainingExercise, TrainingNote } from '@/lib/training-center';
 import { WireframeBody } from '@/components/vocal/wireframe-body';
-import { autoCorrelate, getVocalRegister, midiToBrazilianNoteName, midiToFrequency, noteNameToMidi } from '@/lib/audio/pitch';
+import { autoCorrelate, getVocalRegister, midiToBrazilianNoteName, noteNameToMidi } from '@/lib/audio/pitch';
+import { playPianoSample, preloadPianoSamples } from '@/lib/audio/piano-sample-engine';
 
 const MIN_MIDI = 12;
 const MAX_MIDI = 84;
@@ -112,7 +113,7 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise;
     oscillator.type = 'square';
     oscillator.frequency.value = strong ? 1320 : 880;
     gain.gain.setValueAtTime(0.0001, at);
-    gain.gain.exponentialRampToValueAtTime(strong ? 0.12 : 0.075, at + 0.006);
+    gain.gain.exponentialRampToValueAtTime(strong ? 0.1 : 0.06, at + 0.006);
     gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.055);
     oscillator.connect(gain);
     gain.connect(context.destination);
@@ -121,85 +122,12 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise;
     oscillatorsRef.current.push(oscillator);
   }
 
-  function playHammer(context: AudioContext, destination: AudioNode, at: number) {
-    const buffer = context.createBuffer(1, Math.floor(context.sampleRate * 0.035), context.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < data.length; i += 1) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / data.length, 3);
-    const source = context.createBufferSource();
-    const filter = context.createBiquadFilter();
-    const gain = context.createGain();
-    source.buffer = buffer;
-    filter.type = 'bandpass';
-    filter.frequency.value = 2800;
-    filter.Q.value = 1.8;
-    gain.gain.setValueAtTime(0.18, at);
-    gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.035);
-    source.connect(filter);
-    filter.connect(gain);
-    gain.connect(destination);
-    source.start(at);
-  }
-
-  function playPiano(context: AudioContext, midi: number, at: number, end: number) {
-    const frequency = midiToFrequency(midi);
-    const compressor = context.createDynamicsCompressor();
-    const master = context.createGain();
-    const body = context.createBiquadFilter();
-    const presence = context.createBiquadFilter();
-
-    compressor.threshold.value = -10;
-    compressor.knee.value = 18;
-    compressor.ratio.value = 4;
-    compressor.attack.value = 0.002;
-    compressor.release.value = 0.14;
-    body.type = 'lowshelf';
-    body.frequency.value = 190;
-    body.gain.value = 4.5;
-    presence.type = 'peaking';
-    presence.frequency.value = 3200;
-    presence.Q.value = 0.9;
-    presence.gain.value = 5.5;
-    body.connect(presence);
-    presence.connect(master);
-    master.connect(compressor);
-    compressor.connect(context.destination);
-    master.gain.setValueAtTime(0.0001, at);
-    master.gain.exponentialRampToValueAtTime(1.55, at + 0.009);
-    master.gain.exponentialRampToValueAtTime(0.72, at + 0.13);
-    master.gain.exponentialRampToValueAtTime(0.18, Math.max(at + 0.35, end - 0.08));
-    master.gain.exponentialRampToValueAtTime(0.0001, Math.max(at + 0.42, end + 0.08));
-
-    playHammer(context, presence, at);
-    [
-      { ratio: 1, gain: 1.0, type: 'triangle' as OscillatorType, detune: 0 },
-      { ratio: 2.003, gain: 0.38, type: 'sine' as OscillatorType, detune: -4 },
-      { ratio: 3.006, gain: 0.2, type: 'sine' as OscillatorType, detune: 5 },
-      { ratio: 4.012, gain: 0.11, type: 'sine' as OscillatorType, detune: 2 },
-      { ratio: 5.02, gain: 0.055, type: 'sine' as OscillatorType, detune: -6 },
-    ].forEach((partial) => {
-      const oscillator = context.createOscillator();
-      const gain = context.createGain();
-      oscillator.type = partial.type;
-      oscillator.frequency.value = frequency * partial.ratio;
-      oscillator.detune.value = partial.detune;
-      gain.gain.setValueAtTime(0.0001, at);
-      gain.gain.exponentialRampToValueAtTime(partial.gain, at + 0.01);
-      gain.gain.exponentialRampToValueAtTime(partial.gain * 0.26, at + 0.2);
-      gain.gain.exponentialRampToValueAtTime(0.0001, Math.max(at + 0.38, end + 0.06));
-      oscillator.connect(gain);
-      gain.connect(body);
-      oscillator.start(at);
-      oscillator.stop(Math.max(at + 0.45, end + 0.12));
-      oscillatorsRef.current.push(oscillator);
-    });
-  }
-
   function scheduleAudioWindow(fromBeat: number, toBeat: number, visualBeat: number) {
     const context = getAudioContext();
     if (!context || toBeat <= nextAudioBeatRef.current) return;
     context.resume().catch(() => null);
     const secondsPerBeat = 60 / bpm;
-    const now = context.currentTime + 0.035;
+    const now = context.currentTime + 0.045;
     const startBeat = Math.max(fromBeat, nextAudioBeatRef.current);
     const endBeat = Math.min(toBeat, totalBeats);
 
@@ -212,7 +140,7 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise;
       if (note.midi == null || note.startBeat < startBeat || note.startBeat >= endBeat) return;
       const startDelay = Math.max(0, note.startBeat - visualBeat) * secondsPerBeat;
       const endDelay = Math.max(startDelay + 0.2, (note.endBeat - visualBeat) * secondsPerBeat);
-      playPiano(context, note.midi, now + startDelay, now + endDelay);
+      void playPianoSample(context, note.midi, now + startDelay, now + endDelay, 1.08);
     });
     nextAudioBeatRef.current = endBeat;
   }
@@ -230,10 +158,13 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise;
     context.resume().catch(() => null);
     stopAudio();
     setVoiceTrail([]);
-    nextAudioBeatRef.current = currentBeat >= totalBeats ? 0 : currentBeat;
+    const start = currentBeat >= totalBeats ? 0 : currentBeat;
+    nextAudioBeatRef.current = start;
+    const upcoming = beatNotes.filter((note) => note.midi != null && note.startBeat >= start && note.startBeat <= start + 32).map((note) => note.midi as number);
+    await preloadPianoSamples(context, upcoming);
     const beatMs = (60 / bpm) * 1000;
     [4, 3, 2, 1].forEach((value, index) => timersRef.current.push(window.setTimeout(() => { setCount(value); playClick(context, context.currentTime + 0.01, value === 4); }, index * beatMs)));
-    timersRef.current.push(window.setTimeout(() => { setCount(null); const start = currentBeat >= totalBeats ? 0 : currentBeat; setCurrentBeat(start); scheduleAudio(start); setPlaying(true); }, 4 * beatMs));
+    timersRef.current.push(window.setTimeout(() => { setCount(null); setCurrentBeat(start); scheduleAudio(start); setPlaying(true); }, 4 * beatMs));
   }
 
   function adjustBpm(delta: number) { setBpm((old) => clamp(old + delta, 48, 140)); setControls(true); }
