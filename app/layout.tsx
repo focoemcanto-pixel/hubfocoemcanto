@@ -41,6 +41,7 @@ import './vocal-tessitura-stage.css';
 import './vocal-tessitura-live.css';
 import './vocal-result-final-polish.css';
 import './vocal-emergency-layout-fix.css';
+import './guided-training-polish.css';
 
 export default function RootLayout(props: { children: React.ReactNode }) {
   return <html lang="pt-BR"><body>{props.children}</body></html>;
