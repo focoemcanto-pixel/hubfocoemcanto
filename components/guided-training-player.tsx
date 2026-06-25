@@ -5,62 +5,31 @@ import type { CSSProperties } from 'react';
 import type { TrainingExercise, TrainingNote } from '@/lib/training-center';
 import { getTrainingDurationSeconds } from '@/lib/training-center';
 import { WireframeBody } from '@/components/vocal/wireframe-body';
+import { autoCorrelate, frequencyToMidi, midiToFrequency, noteNameToMidi, midiToBrazilianNoteName, getVocalRegister } from '@/lib/audio/pitch';
 
-const NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-const MIN = 'C0';
-const MAX = 'G7';
+const MIN_MIDI = 12;
+const MAX_MIDI = 84;
 const PLAYHEAD = 12;
 const SPEED = 10;
 const PREVIEW = 9;
-const PITCHES = Array.from({ length: 8 }, (_, o) => NAMES.map((n) => `${n}${o}`)).flat().filter((p) => {
-  const v = midi(p);
-  return v !== null && v >= midi(MIN)! && v <= midi(MAX)!;
-});
+const SCALE = Array.from({ length: MAX_MIDI - MIN_MIDI + 1 }, (_, i) => MAX_MIDI - i);
 
 type AudioCtor = typeof AudioContext;
 type WinAudio = Window & typeof globalThis & { webkitAudioContext?: AudioCtor };
-type Tuner = { frequency: number | null; stableFrequency: number | null; cents: number | null; feedback: string };
+type Tuner = { frequency: number | null; stableFrequency: number | null; midi: number | null; cents: number | null; feedback: string };
 type Vars = CSSProperties & { '--voice-y': string; '--voice-opacity': string; '--progress': string };
 
 function clamp(v: number, min: number, max: number) { return Math.max(min, Math.min(max, v)); }
-function midi(pitch?: string) {
-  const m = pitch?.match(/^([A-G])(#?)(\d)$/);
-  if (!m) return null;
-  const base: Record<string, number> = { C:0, D:2, E:4, F:5, G:7, A:9, B:11 };
-  return (Number(m[3]) + 1) * 12 + base[m[1]] + (m[2] ? 1 : 0);
+function percentFromMidi(midi: number | null) { if (midi == null) return 60; return clamp(100 - ((clamp(midi, MIN_MIDI, MAX_MIDI) - MIN_MIDI) / (MAX_MIDI - MIN_MIDI)) * 100, 0, 100); }
+function targetMidi(pitch?: string) { return pitch ? noteNameToMidi(pitch) : null; }
+function normalizeMidiToTarget(midi: number, target: number | null) {
+  if (target == null) return midi;
+  let normalized = midi;
+  while (normalized < target - 6) normalized += 12;
+  while (normalized > target + 6) normalized -= 12;
+  return normalized;
 }
-function freqFromPitch(pitch?: string) {
-  const v = midi(pitch);
-  return v === null ? null : 440 * 2 ** ((v - 69) / 12);
-}
-function yFromMidi(v: number | null) {
-  if (v === null) return 60;
-  return clamp(97 - ((v - midi(MIN)!) / (midi(MAX)! - midi(MIN)!)) * 94, 2, 97);
-}
-function yFromPitch(p?: string) { return yFromMidi(midi(p)); }
-function yFromFreq(f: number | null) { return f ? yFromMidi(69 + 12 * Math.log2(f / 440)) : null; }
-function normalizeToTarget(f: number, target: number | null) {
-  if (!target) return f;
-  let n = f;
-  while (n < target / Math.SQRT2) n *= 2;
-  while (n > target * Math.SQRT2) n /= 2;
-  return n;
-}
-function region(v: number | null) { if (v === null) return null; return v >= 72 ? 'head' : v >= 55 ? 'mix' : 'chest'; }
 function fmt(t: number) { const s = Math.max(0, Math.floor(t)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2,'0')}`; }
-function detectPitch(buffer: Float32Array, sampleRate: number) {
-  let rms = 0;
-  for (let i = 0; i < buffer.length; i++) rms += buffer[i] ** 2;
-  if (Math.sqrt(rms / buffer.length) < 0.006) return null;
-  let best = 0, bestOffset = -1;
-  for (let offset = Math.floor(sampleRate / 950); offset <= Math.floor(sampleRate / 60); offset++) {
-    let corr = 0;
-    for (let i = 0; i < buffer.length - offset; i++) corr += buffer[i] * buffer[i + offset];
-    corr /= buffer.length - offset;
-    if (corr > best) { best = corr; bestOffset = offset; }
-  }
-  return bestOffset > 0 && best > 0.001 ? sampleRate / bestOffset : null;
-}
 
 export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise; compact?: boolean }) {
   const [time, setTime] = useState(0);
@@ -69,7 +38,7 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise;
   const [loop, setLoop] = useState(true);
   const [metro, setMetro] = useState(true);
   const [mic, setMic] = useState(false);
-  const [tuner, setTuner] = useState<Tuner>({ frequency: null, stableFrequency: null, cents: null, feedback: 'Toque em iniciar e permita o microfone' });
+  const [tuner, setTuner] = useState<Tuner>({ frequency: null, stableFrequency: null, midi: null, cents: null, feedback: 'Toque em iniciar e permita o microfone' });
 
   const audioCtx = useRef<AudioContext | null>(null);
   const micCtx = useRef<AudioContext | null>(null);
@@ -77,27 +46,26 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise;
   const raf = useRef<number | null>(null);
   const micRaf = useRef<number | null>(null);
   const lastFrame = useRef<number | null>(null);
-  const smooth = useRef<number | null>(null);
+  const smoothMidi = useRef<number | null>(null);
   const silence = useRef(0);
   const oscillators = useRef<OscillatorNode[]>([]);
   const timers = useRef<number[]>([]);
-  const targetRef = useRef<number | null>(null);
+  const targetMidiRef = useRef<number | null>(null);
 
   const duration = useMemo(() => getTrainingDurationSeconds(exercise), [exercise]);
   const active = exercise.notes.find((n) => time >= n.start && time <= n.start + n.duration);
-  const activePitch = active?.pitch || '—';
-  const activeMidi = midi(active?.pitch);
-  targetRef.current = freqFromPitch(active?.pitch);
-  const y = yFromFreq(tuner.stableFrequency);
+  const activeMidi = targetMidi(active?.pitch);
+  targetMidiRef.current = activeMidi;
+  const voiceY = percentFromMidi(tuner.midi);
   const progress = Math.min(100, (time / duration) * 100);
-  const cssVars = { '--voice-y': `${y ?? 50}%`, '--voice-opacity': tuner.stableFrequency ? '1' : '0', '--progress': String(progress) } as Vars;
+  const cssVars = { '--voice-y': `${voiceY}%`, '--voice-opacity': tuner.midi != null ? '1' : '0', '--progress': String(progress) } as Vars;
 
   useEffect(() => () => { stopAudio(); stopMic(); }, []);
   useEffect(() => {
     if (!playing) return;
     lastFrame.current = null;
     const tick = (now: number) => {
-      if (lastFrame.current === null) lastFrame.current = now;
+      if (lastFrame.current == null) lastFrame.current = now;
       const delta = (now - lastFrame.current) / 1000;
       lastFrame.current = now;
       setTime((old) => {
@@ -124,14 +92,14 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise;
   }
   function stopAudio() { timers.current.forEach(clearTimeout); timers.current = []; oscillators.current.forEach((o) => { try { o.stop(); } catch {} }); oscillators.current = []; setCount(null); }
   function click(c: AudioContext, at: number, strong = false) { const o = c.createOscillator(); const g = c.createGain(); o.type = 'square'; o.frequency.value = strong ? 1320 : 880; g.gain.setValueAtTime(.0001, at); g.gain.exponentialRampToValueAtTime(strong ? .22 : .14, at + .006); g.gain.exponentialRampToValueAtTime(.0001, at + .06); o.connect(g); g.connect(c.destination); o.start(at); o.stop(at + .08); oscillators.current.push(o); }
-  function piano(c: AudioContext, f: number, at: number, end: number) { const master = c.createGain(); const filter = c.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 2600; filter.connect(master); master.connect(c.destination); master.gain.setValueAtTime(.0001, at); master.gain.exponentialRampToValueAtTime(.32, at + .01); master.gain.exponentialRampToValueAtTime(.11, at + .22); master.gain.exponentialRampToValueAtTime(.0001, end); [1,2,3].forEach((r) => { const o = c.createOscillator(); const g = c.createGain(); o.type = r === 1 ? 'triangle' : 'sine'; o.frequency.value = f * r; g.gain.value = r === 1 ? .75 : r === 2 ? .2 : .08; o.connect(g); g.connect(filter); o.start(at); o.stop(end + .04); oscillators.current.push(o); }); }
-  function playSound(from: number) { const c = ctx(); if (!c) return; c.resume().catch(() => null); const now = c.currentTime + .025; const beat = 60 / exercise.bpm; if (metro) for (let b = Math.ceil(from / beat); b * beat <= duration; b++) click(c, now + Math.max(0, b * beat - from), b % 4 === 0); exercise.notes.forEach((n) => { const f = freqFromPitch(n.pitch); if (!f || n.start + n.duration <= from) return; piano(c, f, now + Math.max(0, n.start - from), now + Math.max(.18, n.start + n.duration - from)); }); }
+  function piano(c: AudioContext, midi: number, at: number, end: number) { const f = midiToFrequency(midi); const master = c.createGain(); const filter = c.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 2600; filter.connect(master); master.connect(c.destination); master.gain.setValueAtTime(.0001, at); master.gain.exponentialRampToValueAtTime(.32, at + .01); master.gain.exponentialRampToValueAtTime(.11, at + .22); master.gain.exponentialRampToValueAtTime(.0001, end); [1,2,3].forEach((r) => { const o = c.createOscillator(); const g = c.createGain(); o.type = r === 1 ? 'triangle' : 'sine'; o.frequency.value = f * r; g.gain.value = r === 1 ? .75 : r === 2 ? .2 : .08; o.connect(g); g.connect(filter); o.start(at); o.stop(end + .04); oscillators.current.push(o); }); }
+  function playSound(from: number) { const c = ctx(); if (!c) return; c.resume().catch(() => null); const now = c.currentTime + .025; const beat = 60 / exercise.bpm; if (metro) for (let b = Math.ceil(from / beat); b * beat <= duration; b++) click(c, now + Math.max(0, b * beat - from), b % 4 === 0); exercise.notes.forEach((n) => { const midi = targetMidi(n.pitch); if (midi == null || n.start + n.duration <= from) return; piano(c, midi, now + Math.max(0, n.start - from), now + Math.max(.18, n.start + n.duration - from)); }); }
 
   async function play() { if (playing || count) { stopAudio(); setPlaying(false); return; } await startMic(); const c = ctx(); if (!c) { setPlaying(true); return; } c.resume().catch(() => null); stopAudio(); const beatMs = (60 / exercise.bpm) * 1000; [4,3,2,1].forEach((v, i) => timers.current.push(window.setTimeout(() => { setCount(v); click(c, c.currentTime + .01, v === 4); }, i * beatMs))); timers.current.push(window.setTimeout(() => { setCount(null); const start = time >= duration ? 0 : time; setTime(start); playSound(start); setPlaying(true); }, 4 * beatMs)); }
-  async function startMic() { if (mic || typeof window === 'undefined' || !navigator.mediaDevices?.getUserMedia) return; try { const Ctor = (window as WinAudio).AudioContext || (window as WinAudio).webkitAudioContext; const s = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } }); const c = new Ctor(); const source = c.createMediaStreamSource(s); const analyser = c.createAnalyser(); analyser.fftSize = 1024; analyser.smoothingTimeConstant = 0; source.connect(analyser); micCtx.current = c; stream.current = s; setMic(true); listen(analyser, c); } catch { setTuner((old) => ({ ...old, feedback: 'Permita o microfone' })); } }
+  async function startMic() { if (mic || typeof window === 'undefined' || !navigator.mediaDevices?.getUserMedia) return; try { const Ctor = (window as WinAudio).AudioContext || (window as WinAudio).webkitAudioContext; const s = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: true, autoGainControl: false } }); const c = new Ctor(); const source = c.createMediaStreamSource(s); const analyser = c.createAnalyser(); analyser.fftSize = 4096; analyser.smoothingTimeConstant = .12; source.connect(analyser); micCtx.current = c; stream.current = s; setMic(true); listen(analyser, c); } catch { setTuner((old) => ({ ...old, feedback: 'Permita o microfone' })); } }
   function stopMic() { if (micRaf.current) cancelAnimationFrame(micRaf.current); stream.current?.getTracks().forEach((t) => t.stop()); micCtx.current?.close().catch(() => null); stream.current = null; micCtx.current = null; setMic(false); }
-  function listen(analyser: AnalyserNode, c: AudioContext) { const buffer = new Float32Array(analyser.fftSize); const loopPitch = () => { analyser.getFloatTimeDomainData(buffer); const raw = detectPitch(buffer, c.sampleRate); const target = targetRef.current; if (!raw) { silence.current += 1; if (silence.current > 5) setTuner((old) => ({ ...old, frequency: null, cents: null, feedback: 'Cante próximo ao microfone' })); } else { silence.current = 0; const normalized = normalizeToTarget(raw, target); smooth.current = smooth.current === null ? normalized : smooth.current * .18 + normalized * .82; const stable = smooth.current; if (!target) setTuner({ frequency: raw, stableFrequency: stable, cents: null, feedback: 'Aguardando nota' }); else { const cents = 1200 * Math.log2(stable / target); setTuner({ frequency: raw, stableFrequency: stable, cents, feedback: Math.abs(cents) <= 28 ? 'Perfeito!' : cents < 0 ? 'Suba um pouco' : 'Desça um pouco' }); } } micRaf.current = requestAnimationFrame(loopPitch); }; loopPitch(); }
-  function getTargetStyle(note: TrainingNote): CSSProperties | null { const left = PLAYHEAD + (note.start - time) * SPEED; const width = Math.max(4, note.duration * SPEED); if (left + width <= -4 || left >= PLAYHEAD + PREVIEW * SPEED) return null; return { left: `${left}%`, width: `${width}%`, top: `${yFromPitch(note.pitch)}%` }; }
+  function listen(analyser: AnalyserNode, c: AudioContext) { const buffer = new Float32Array(analyser.fftSize); const loopPitch = () => { analyser.getFloatTimeDomainData(buffer); const freq = autoCorrelate(buffer, c.sampleRate); const target = targetMidiRef.current; if (!freq) { silence.current += 1; if (silence.current > 5) setTuner((old) => ({ ...old, frequency: null, cents: null, feedback: 'Cante próximo ao microfone' })); } else { silence.current = 0; const midi = normalizeMidiToTarget(frequencyToMidi(freq), target); smoothMidi.current = smoothMidi.current == null ? midi : smoothMidi.current * .25 + midi * .75; const stableMidi = smoothMidi.current; const cents = target == null ? null : (stableMidi - target) * 100; setTuner({ frequency: freq, stableFrequency: midiToFrequency(stableMidi), midi: stableMidi, cents, feedback: cents == null ? 'Aguardando nota' : Math.abs(cents) <= 28 ? 'Perfeito!' : cents < 0 ? 'Suba um pouco' : 'Desça um pouco' }); } micRaf.current = requestAnimationFrame(loopPitch); }; loopPitch(); }
+  function getTargetStyle(note: TrainingNote): CSSProperties | null { const left = PLAYHEAD + (note.start - time) * SPEED; const width = Math.max(4, note.duration * SPEED); if (left + width <= -4 || left >= PLAYHEAD + PREVIEW * SPEED) return null; return { left: `${left}%`, width: `${width}%`, top: `${percentFromMidi(targetMidi(note.pitch))}%` }; }
 
   return <section className="premium-workout" style={cssVars}>
     <style>{css}</style>
@@ -139,9 +107,9 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise;
     <header className="player-head"><button onClick={() => { stopAudio(); setPlaying(false); setTime(0); }}>‹</button><div><span>Treino guiado</span><strong>{exercise.title}</strong></div><em>Piano</em></header>
     <div className="time-row"><span>{fmt(time)}</span><i><b style={{ width: `${progress}%` }} /></i><span>{fmt(duration)}</span><strong>♩ {exercise.bpm} BPM</strong></div>
     <main className="stage">
-      <div className="ruler">{PITCHES.slice().reverse().map((pitch) => <span className={pitch === activePitch ? 'active' : pitch === 'C4' || pitch === 'G3' || pitch.endsWith('0') ? 'key' : ''} key={pitch}>{pitch}</span>)}</div>
+      <div className="ruler">{SCALE.map((midi) => <span className={midi === Math.round(activeMidi ?? -1) ? 'active' : midi % 12 === 0 ? 'key' : ''} key={midi}>{midiToBrazilianNoteName(midi)}</span>)}</div>
       <div className="playhead-line" />
-      <div className="body"><WireframeBody activeRegion={region(activeMidi)} currentMidi={activeMidi} currentLabel={activePitch} /></div>
+      <div className="body"><WireframeBody activeRegion={getVocalRegister(activeMidi)} currentMidi={activeMidi} currentLabel={activeMidi != null ? midiToBrazilianNoteName(activeMidi) : undefined} /></div>
       <div className="target-lane">{exercise.notes.map((note, index) => { const style = getTargetStyle(note); return style ? <span className="target" key={`${note.pitch}-${index}`} style={style} /> : null; })}</div>
       <div className="voice-marker"><i /></div>
       <div className="status-line">{tuner.feedback}</div>
