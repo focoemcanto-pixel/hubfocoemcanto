@@ -19,6 +19,7 @@ type PersistSubmissionParams = {
   visibility: string;
   reviewRequested: boolean;
   fileUrl: string;
+  posterUrl?: string | null;
 };
 
 function pathPart(value: string) {
@@ -32,6 +33,11 @@ function parseBoolean(value: unknown, fallback = true) {
 
 function hasVipSubscription(rows: any[]) {
   return rows.some((sub) => sub.course_key === 'grupo-vip' && isAccessActive(sub.status));
+}
+
+function isMissingColumn(error: any) {
+  const text = String(error?.message || '').toLowerCase();
+  return text.includes('poster_url') || text.includes('schema cache') || text.includes('column');
 }
 
 async function uploadSubmissionFile(supabase: ReturnType<typeof createAdminClient>, objectPath: string, bytes: ArrayBuffer, fileType: string) {
@@ -75,6 +81,13 @@ async function resolveExerciseAndProfile(supabase: ReturnType<typeof createAdmin
   return { exercise, profile: currentProfile, canRequestReview: hasVipSubscription(subscriptions || []) };
 }
 
+async function insertCommunityPost(supabase: ReturnType<typeof createAdminClient>, payload: Record<string, any>) {
+  const withPoster = await supabase.from('community_posts').insert(payload).select('id').single();
+  if (!withPoster.error || !payload.poster_url || !isMissingColumn(withPoster.error)) return withPoster;
+  const { poster_url: _posterUrl, ...fallbackPayload } = payload;
+  return supabase.from('community_posts').insert(fallbackPayload).select('id').single();
+}
+
 async function persistSubmission(supabase: ReturnType<typeof createAdminClient>, context: ResolvedSubmissionContext, params: PersistSubmissionParams) {
   const shouldPostCommunity = params.visibility === 'community';
   const shouldReview = context.canRequestReview && params.reviewRequested;
@@ -104,14 +117,15 @@ async function persistSubmission(supabase: ReturnType<typeof createAdminClient>,
   }
 
   if (shouldPostCommunity) {
-    const { data: post, error: postError } = await supabase.from('community_posts').insert({
+    const { data: post, error: postError } = await insertCommunityPost(supabase, {
       profile_id: context.profile.id,
       exercise_id: context.exercise.id,
       submission_id: submissionId,
       media_url: params.fileUrl,
+      poster_url: params.posterUrl || null,
       caption: params.caption || 'Minha prática do dueto.',
       category: 'dueto',
-    }).select('id').single();
+    });
     if (postError) return NextResponse.json({ error: 'community_post_failed', detail: postError.message }, { status: 500 });
     communityPostId = post?.id || null;
   }
@@ -119,7 +133,7 @@ async function persistSubmission(supabase: ReturnType<typeof createAdminClient>,
   return NextResponse.json({ ok: true, id: submissionId, community_post_id: communityPostId, posted: shouldPostCommunity, review_requested: shouldReview });
 }
 
-async function saveSubmission(params: { lessonSlug: string; caption: string; visibility: string; reviewRequested: boolean; fileUrl: string }) {
+async function saveSubmission(params: { lessonSlug: string; caption: string; visibility: string; reviewRequested: boolean; fileUrl: string; posterUrl?: string | null }) {
   const email = (await cookies()).get('hub_access_email')?.value || '';
   if (!email) return NextResponse.json({ error: 'not_authenticated' }, { status: 401 });
   if (!params.lessonSlug || !params.fileUrl) return NextResponse.json({ error: 'missing_payload' }, { status: 400 });
@@ -135,11 +149,12 @@ export async function POST(request: Request) {
     const contentType = request.headers.get('content-type') || '';
     if (contentType.includes('application/json')) {
       const body = await request.json();
-      return saveSubmission({ lessonSlug: String(body.lesson_slug || ''), caption: String(body.caption || '').trim(), visibility: String(body.visibility || 'private'), reviewRequested: parseBoolean(body.review_requested, true), fileUrl: String(body.file_url || '').trim() });
+      return saveSubmission({ lessonSlug: String(body.lesson_slug || ''), caption: String(body.caption || '').trim(), visibility: String(body.visibility || 'private'), reviewRequested: parseBoolean(body.review_requested, true), fileUrl: String(body.file_url || '').trim(), posterUrl: String(body.poster_url || '').trim() || null });
     }
 
     const [form, cookieStore] = await Promise.all([request.formData(), cookies()]);
     const file = form.get('file');
+    const poster = form.get('poster');
     const lessonSlug = String(form.get('lesson_slug') || '');
     const caption = String(form.get('caption') || '').trim();
     const visibility = String(form.get('visibility') || 'private');
@@ -160,13 +175,22 @@ export async function POST(request: Request) {
 
     const fileType = file.type || 'video/webm';
     const extension = fileType.includes('mp4') ? 'mp4' : 'webm';
-    const objectPath = `${pathPart(email)}/${resolved.exercise.id}/${Date.now()}-dueto.${extension}`;
+    const basePath = `${pathPart(email)}/${resolved.exercise.id}/${Date.now()}-dueto`;
+    const objectPath = `${basePath}.${extension}`;
 
     const { error: uploadError } = await uploadSubmissionFile(supabase, objectPath, bytes, fileType);
     if (uploadError) return NextResponse.json({ error: 'upload_failed', detail: uploadError.message }, { status: 500 });
 
+    let posterUrl: string | null = null;
+    if (poster instanceof File && poster.size > 300) {
+      const posterType = poster.type || 'image/jpeg';
+      const posterPath = `${basePath}-poster.${posterType.includes('png') ? 'png' : 'jpg'}`;
+      const posterUpload = await uploadSubmissionFile(supabase, posterPath, await poster.arrayBuffer(), posterType);
+      if (!posterUpload.error) posterUrl = supabase.storage.from(BUCKET).getPublicUrl(posterPath).data.publicUrl;
+    }
+
     const { data: publicFile } = supabase.storage.from(BUCKET).getPublicUrl(objectPath);
-    return persistSubmission(supabase, resolved, { caption, visibility, reviewRequested, fileUrl: publicFile.publicUrl });
+    return persistSubmission(supabase, resolved, { caption, visibility, reviewRequested, fileUrl: publicFile.publicUrl, posterUrl });
   } catch (error) {
     return NextResponse.json({ error: 'duet_submission_failed', message: error instanceof Error ? error.message : 'unknown_error' }, { status: 500 });
   }
