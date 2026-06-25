@@ -3,6 +3,7 @@ export type TrainingNote = {
   label?: string;
   start: number;
   duration: number;
+  mode?: 'sing' | 'guide';
 };
 
 export type TrainingExercise = {
@@ -59,6 +60,16 @@ function buildBeatGridNotes(bpm: number, pitches: string[], beatsPerNote = 4): T
   }));
 }
 
+function buildMajorChord(rootMidi: number, bpm: number, beatCursor: number, durationBeats = 0.65): TrainingNote[] {
+  return [0, 4, 7].map((interval) => ({
+    pitch: midiToPitch(rootMidi + interval),
+    label: 'Acorde',
+    start: beat(bpm, beatCursor),
+    duration: beat(bpm, durationBeats),
+    mode: 'guide' as const,
+  }));
+}
+
 function buildAdaptiveFiveToneWarmup({ bpm, lowMidi = DEFAULT_TESSITURA_LOW, highMidi = DEFAULT_TESSITURA_HIGH, beatsPerNote = 1 }: { bpm: number; lowMidi?: number; highMidi?: number; beatsPerNote?: number }): TrainingNote[] {
   const pattern = [0, 2, 4, 5, 7, 5, 4, 2, 0];
   const maxPatternInterval = Math.max(...pattern);
@@ -66,22 +77,31 @@ function buildAdaptiveFiveToneWarmup({ bpm, lowMidi = DEFAULT_TESSITURA_LOW, hig
   const startsUp = Array.from({ length: highestStart - lowMidi + 1 }, (_, index) => lowMidi + index);
   const startsDown = startsUp.slice(0, -1).reverse();
   const starts = [...startsUp, ...startsDown];
+  const notes: TrainingNote[] = [];
   let beatCursor = 0;
 
-  return starts.flatMap((rootMidi) => {
-    const phrase = pattern.map((interval) => {
-      const note: TrainingNote = {
+  starts.forEach((rootMidi, phraseIndex) => {
+    pattern.forEach((interval) => {
+      notes.push({
         pitch: midiToPitch(rootMidi + interval),
         label: 'Mmm',
         start: beat(bpm, beatCursor),
         duration: beat(bpm, beatsPerNote),
-      };
+      });
       beatCursor += beatsPerNote;
-      return note;
     });
-    beatCursor += 1;
-    return phrase;
+
+    const nextRoot = starts[phraseIndex + 1];
+    if (nextRoot != null) {
+      beatCursor += 0.25;
+      notes.push(...buildMajorChord(rootMidi, bpm, beatCursor, 0.62));
+      beatCursor += 0.72;
+      notes.push(...buildMajorChord(nextRoot, bpm, beatCursor, 0.68));
+      beatCursor += 1.03;
+    }
   });
+
+  return notes;
 }
 
 export const trainingCategories: TrainingCategory[] = [
@@ -98,7 +118,7 @@ export const trainingExercises: TrainingExercise[] = [
     title: 'Boca Chiusa: 5 graus',
     categorySlug: 'afinacao',
     objective: 'Aqueça com a boca fechada, sentindo a vibração leve e seguindo o desenho de 5 graus sem apertar a garganta.',
-    description: 'Vocalize adaptativo em boca chiusa: sobe cinco graus, desce e transpõe pela região confortável da tessitura.',
+    description: 'Vocalize adaptativo em boca chiusa: sobe cinco graus, desce e transpõe pela região confortável da tessitura, com acordes de preparação entre os tons.',
     level: 'Iniciante',
     durationLabel: 'Adaptativo',
     bpm: 72,
