@@ -5,6 +5,7 @@ import { FeedVideoWarmup } from '@/components/feed-video-warmup';
 const navItems = [
   { href: '/aluno', label: 'Feed' },
   { href: '/aluno/biblioteca', label: 'Biblioteca' },
+  { href: '/aluno/central', label: 'Central' },
   { href: '/aluno/comunidade', label: 'Comunidade' },
   { href: '/aluno/perfil', label: 'Perfil' },
 ];
