@@ -1,5 +1,4 @@
 import Link from 'next/link';
-import { Fragment } from 'react';
 import { AppShell } from '@/components/app-shell';
 import { DailyTrainingLiveStats } from '@/components/daily-training-live-stats';
 import { dailyTrainingSteps } from '@/lib/training-center';
@@ -26,14 +25,6 @@ export default function TrainingCenterPage() {
         </section>
         <section className="daily-preview">
           <div className="daily-preview-head"><div><p className="eyebrow">Desafio diário</p><h2>Dia {currentStep.day}</h2></div><Link href="/aluno/central/diarios/progresso" prefetch>Ver progresso →</Link></div>
-          <div className="daily-track">
-            {dailyTrainingSteps.map((step, index) => (
-              <Fragment key={step.exerciseNumber}>
-                <div className="daily-dot current">{step.exerciseNumber}</div>
-                {index < dailyTrainingSteps.length - 1 ? <div className="daily-line" /> : null}
-              </Fragment>
-            ))}
-          </div>
           <DailyTrainingLiveStats variant="track" />
         </section>
       </main>
