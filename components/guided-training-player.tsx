@@ -6,72 +6,58 @@ import type { TrainingExercise, TrainingNote } from '@/lib/training-center';
 import { getTrainingDurationSeconds } from '@/lib/training-center';
 import { WireframeBody } from '@/components/vocal/wireframe-body';
 
-const NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-const MIN_PITCH = 'C0';
-const MAX_PITCH = 'G7';
+const NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const MIN = 'C0';
+const MAX = 'G7';
 const PLAYHEAD = 12;
-const TARGET_SPEED = 10;
-const PREVIEW_SECONDS = 9;
-const PITCHES = Array.from({ length: 8 }, (_, octave) => NAMES.map((note) => `${note}${octave}`))
-  .flat()
-  .filter((pitch) => {
-    const value = midi(pitch);
-    return value !== null && value >= midi(MIN_PITCH)! && value <= midi(MAX_PITCH)!;
-  });
+const SPEED = 10;
+const PREVIEW = 9;
+const PITCHES = Array.from({ length: 8 }, (_, o) => NAMES.map((n) => `${n}${o}`)).flat().filter((p) => {
+  const v = midi(p);
+  return v !== null && v >= midi(MIN)! && v <= midi(MAX)!;
+});
 
 type AudioCtor = typeof AudioContext;
 type WinAudio = Window & typeof globalThis & { webkitAudioContext?: AudioCtor };
 type Tuner = { frequency: number | null; stableFrequency: number | null; cents: number | null; feedback: string };
 type Vars = CSSProperties & { '--voice-y': string; '--voice-opacity': string; '--progress': string };
 
-function clamp(value: number, min: number, max: number) { return Math.max(min, Math.min(max, value)); }
+function clamp(v: number, min: number, max: number) { return Math.max(min, Math.min(max, v)); }
 function midi(pitch?: string) {
-  const match = pitch?.match(/^([A-G])(#?)(\d)$/);
-  if (!match) return null;
-  const base: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
-  return (Number(match[3]) + 1) * 12 + base[match[1]] + (match[2] ? 1 : 0);
+  const m = pitch?.match(/^([A-G])(#?)(\d)$/);
+  if (!m) return null;
+  const base: Record<string, number> = { C:0, D:2, E:4, F:5, G:7, A:9, B:11 };
+  return (Number(m[3]) + 1) * 12 + base[m[1]] + (m[2] ? 1 : 0);
 }
-function frequencyFromPitch(pitch?: string) {
-  const value = midi(pitch);
-  return value === null ? null : 440 * 2 ** ((value - 69) / 12);
+function freqFromPitch(pitch?: string) {
+  const v = midi(pitch);
+  return v === null ? null : 440 * 2 ** ((v - 69) / 12);
 }
-function yFromMidi(value: number | null) {
-  if (value === null) return 60;
-  const min = midi(MIN_PITCH)!;
-  const max = midi(MAX_PITCH)!;
-  return clamp(97 - ((value - min) / (max - min)) * 94, 2, 97);
+function yFromMidi(v: number | null) {
+  if (v === null) return 60;
+  return clamp(97 - ((v - midi(MIN)!) / (midi(MAX)! - midi(MIN)!)) * 94, 2, 97);
 }
-function yFromPitch(pitch?: string) { return yFromMidi(midi(pitch)); }
-function yFromFrequency(freq: number | null) { return freq ? yFromMidi(69 + 12 * Math.log2(freq / 440)) : null; }
-function vocalRegion(value: number | null) {
-  if (value === null) return null;
-  if (value >= 72) return 'head';
-  if (value >= 55) return 'mix';
-  return 'chest';
+function yFromPitch(p?: string) { return yFromMidi(midi(p)); }
+function yFromFreq(f: number | null) { return f ? yFromMidi(69 + 12 * Math.log2(f / 440)) : null; }
+function normalizeToTarget(f: number, target: number | null) {
+  if (!target) return f;
+  let n = f;
+  while (n < target / Math.SQRT2) n *= 2;
+  while (n > target * Math.SQRT2) n /= 2;
+  return n;
 }
-function fmt(time: number) {
-  const total = Math.max(0, Math.floor(time));
-  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
-}
+function region(v: number | null) { if (v === null) return null; return v >= 72 ? 'head' : v >= 55 ? 'mix' : 'chest'; }
+function fmt(t: number) { const s = Math.max(0, Math.floor(t)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2,'0')}`; }
 function detectPitch(buffer: Float32Array, sampleRate: number) {
   let rms = 0;
-  for (let i = 0; i < buffer.length; i += 1) rms += buffer[i] ** 2;
+  for (let i = 0; i < buffer.length; i++) rms += buffer[i] ** 2;
   if (Math.sqrt(rms / buffer.length) < 0.006) return null;
-
-  let best = 0;
-  let bestOffset = -1;
-  const minOffset = Math.floor(sampleRate / 950);
-  const maxOffset = Math.floor(sampleRate / 60);
-  for (let offset = minOffset; offset <= maxOffset; offset += 1) {
-    let correlation = 0;
-    for (let i = 0; i < buffer.length - offset; i += 1) {
-      correlation += buffer[i] * buffer[i + offset];
-    }
-    correlation /= buffer.length - offset;
-    if (correlation > best) {
-      best = correlation;
-      bestOffset = offset;
-    }
+  let best = 0, bestOffset = -1;
+  for (let offset = Math.floor(sampleRate / 950); offset <= Math.floor(sampleRate / 60); offset++) {
+    let corr = 0;
+    for (let i = 0; i < buffer.length - offset; i++) corr += buffer[i] * buffer[i + offset];
+    corr /= buffer.length - offset;
+    if (corr > best) { best = corr; bestOffset = offset; }
   }
   return bestOffset > 0 && best > 0.001 ? sampleRate / bestOffset : null;
 }
@@ -85,243 +71,67 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise;
   const [mic, setMic] = useState(false);
   const [tuner, setTuner] = useState<Tuner>({ frequency: null, stableFrequency: null, cents: null, feedback: 'Toque em iniciar e permita o microfone' });
 
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const micContextRef = useRef<AudioContext | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const rafRef = useRef<number | null>(null);
-  const micRafRef = useRef<number | null>(null);
-  const lastFrameRef = useRef<number | null>(null);
-  const smoothFreqRef = useRef<number | null>(null);
-  const silenceRef = useRef(0);
-  const oscillatorsRef = useRef<OscillatorNode[]>([]);
-  const timersRef = useRef<number[]>([]);
+  const audioCtx = useRef<AudioContext | null>(null);
+  const micCtx = useRef<AudioContext | null>(null);
+  const stream = useRef<MediaStream | null>(null);
+  const raf = useRef<number | null>(null);
+  const micRaf = useRef<number | null>(null);
+  const lastFrame = useRef<number | null>(null);
+  const smooth = useRef<number | null>(null);
+  const silence = useRef(0);
+  const oscillators = useRef<OscillatorNode[]>([]);
+  const timers = useRef<number[]>([]);
   const targetRef = useRef<number | null>(null);
 
   const duration = useMemo(() => getTrainingDurationSeconds(exercise), [exercise]);
-  const activeNote = exercise.notes.find((note) => time >= note.start && time <= note.start + note.duration);
-  const activePitch = activeNote?.pitch || '—';
-  const activeMidi = midi(activeNote?.pitch);
-  targetRef.current = frequencyFromPitch(activeNote?.pitch);
-
-  const capturedY = yFromFrequency(tuner.stableFrequency);
-  const hasSignal = capturedY !== null;
+  const active = exercise.notes.find((n) => time >= n.start && time <= n.start + n.duration);
+  const activePitch = active?.pitch || '—';
+  const activeMidi = midi(active?.pitch);
+  targetRef.current = freqFromPitch(active?.pitch);
+  const y = yFromFreq(tuner.stableFrequency);
   const progress = Math.min(100, (time / duration) * 100);
-  const cssVars = {
-    '--voice-y': `${capturedY ?? 50}%`,
-    '--voice-opacity': hasSignal ? '1' : '0',
-    '--progress': String(progress),
-  } as Vars;
+  const cssVars = { '--voice-y': `${y ?? 50}%`, '--voice-opacity': tuner.stableFrequency ? '1' : '0', '--progress': String(progress) } as Vars;
 
   useEffect(() => () => { stopAudio(); stopMic(); }, []);
   useEffect(() => {
     if (!playing) return;
-    lastFrameRef.current = null;
+    lastFrame.current = null;
     const tick = (now: number) => {
-      if (lastFrameRef.current === null) lastFrameRef.current = now;
-      const delta = (now - lastFrameRef.current) / 1000;
-      lastFrameRef.current = now;
+      if (lastFrame.current === null) lastFrame.current = now;
+      const delta = (now - lastFrame.current) / 1000;
+      lastFrame.current = now;
       setTime((old) => {
         const next = old + delta;
         if (next >= duration) {
-          if (!loop) {
-            setPlaying(false);
-            stopAudio();
-            return duration;
-          }
-          stopAudio();
-          startSound(0);
-          return 0;
+          if (!loop) { setPlaying(false); stopAudio(); return duration; }
+          stopAudio(); playSound(0); return 0;
         }
         return next;
       });
-      rafRef.current = requestAnimationFrame(tick);
+      raf.current = requestAnimationFrame(tick);
     };
-    rafRef.current = requestAnimationFrame(tick);
-    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+    raf.current = requestAnimationFrame(tick);
+    return () => { if (raf.current) cancelAnimationFrame(raf.current); };
   }, [playing, duration, loop, metro]);
 
-  function getAudioContext() {
+  function ctx() {
     if (typeof window === 'undefined') return null;
-    if (!audioContextRef.current) {
+    if (!audioCtx.current) {
       const Ctor = (window as WinAudio).AudioContext || (window as WinAudio).webkitAudioContext;
-      audioContextRef.current = Ctor ? new Ctor() : null;
+      audioCtx.current = Ctor ? new Ctor() : null;
     }
-    return audioContextRef.current;
+    return audioCtx.current;
   }
+  function stopAudio() { timers.current.forEach(clearTimeout); timers.current = []; oscillators.current.forEach((o) => { try { o.stop(); } catch {} }); oscillators.current = []; setCount(null); }
+  function click(c: AudioContext, at: number, strong = false) { const o = c.createOscillator(); const g = c.createGain(); o.type = 'square'; o.frequency.value = strong ? 1320 : 880; g.gain.setValueAtTime(.0001, at); g.gain.exponentialRampToValueAtTime(strong ? .22 : .14, at + .006); g.gain.exponentialRampToValueAtTime(.0001, at + .06); o.connect(g); g.connect(c.destination); o.start(at); o.stop(at + .08); oscillators.current.push(o); }
+  function piano(c: AudioContext, f: number, at: number, end: number) { const master = c.createGain(); const filter = c.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 2600; filter.connect(master); master.connect(c.destination); master.gain.setValueAtTime(.0001, at); master.gain.exponentialRampToValueAtTime(.32, at + .01); master.gain.exponentialRampToValueAtTime(.11, at + .22); master.gain.exponentialRampToValueAtTime(.0001, end); [1,2,3].forEach((r) => { const o = c.createOscillator(); const g = c.createGain(); o.type = r === 1 ? 'triangle' : 'sine'; o.frequency.value = f * r; g.gain.value = r === 1 ? .75 : r === 2 ? .2 : .08; o.connect(g); g.connect(filter); o.start(at); o.stop(end + .04); oscillators.current.push(o); }); }
+  function playSound(from: number) { const c = ctx(); if (!c) return; c.resume().catch(() => null); const now = c.currentTime + .025; const beat = 60 / exercise.bpm; if (metro) for (let b = Math.ceil(from / beat); b * beat <= duration; b++) click(c, now + Math.max(0, b * beat - from), b % 4 === 0); exercise.notes.forEach((n) => { const f = freqFromPitch(n.pitch); if (!f || n.start + n.duration <= from) return; piano(c, f, now + Math.max(0, n.start - from), now + Math.max(.18, n.start + n.duration - from)); }); }
 
-  function stopAudio() {
-    timersRef.current.forEach(clearTimeout);
-    timersRef.current = [];
-    oscillatorsRef.current.forEach((osc) => { try { osc.stop(); } catch {} });
-    oscillatorsRef.current = [];
-    setCount(null);
-  }
-
-  function playClick(context: AudioContext, at: number, strong = false) {
-    const osc = context.createOscillator();
-    const gain = context.createGain();
-    osc.type = 'square';
-    osc.frequency.value = strong ? 1320 : 880;
-    gain.gain.setValueAtTime(0.0001, at);
-    gain.gain.exponentialRampToValueAtTime(strong ? 0.22 : 0.14, at + 0.006);
-    gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.06);
-    osc.connect(gain);
-    gain.connect(context.destination);
-    osc.start(at);
-    osc.stop(at + 0.08);
-    oscillatorsRef.current.push(osc);
-  }
-
-  function playPiano(context: AudioContext, frequency: number, at: number, end: number) {
-    const master = context.createGain();
-    const filter = context.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.value = 2600;
-    filter.connect(master);
-    master.connect(context.destination);
-    master.gain.setValueAtTime(0.0001, at);
-    master.gain.exponentialRampToValueAtTime(0.32, at + 0.01);
-    master.gain.exponentialRampToValueAtTime(0.11, at + 0.22);
-    master.gain.exponentialRampToValueAtTime(0.0001, end);
-    [1, 2, 3].forEach((ratio) => {
-      const osc = context.createOscillator();
-      const gain = context.createGain();
-      osc.type = ratio === 1 ? 'triangle' : 'sine';
-      osc.frequency.value = frequency * ratio;
-      gain.gain.value = ratio === 1 ? 0.75 : ratio === 2 ? 0.2 : 0.08;
-      osc.connect(gain);
-      gain.connect(filter);
-      osc.start(at);
-      osc.stop(end + 0.04);
-      oscillatorsRef.current.push(osc);
-    });
-  }
-
-  function startSound(from: number) {
-    const context = getAudioContext();
-    if (!context) return;
-    context.resume().catch(() => null);
-    const now = context.currentTime + 0.025;
-    const beat = 60 / exercise.bpm;
-    if (metro) {
-      for (let b = Math.ceil(from / beat); b * beat <= duration; b += 1) {
-        const beatTime = b * beat;
-        playClick(context, now + Math.max(0, beatTime - from), b % 4 === 0);
-      }
-    }
-    exercise.notes.forEach((note) => {
-      const frequency = frequencyFromPitch(note.pitch);
-      if (!frequency || note.start + note.duration <= from) return;
-      playPiano(
-        context,
-        frequency,
-        now + Math.max(0, note.start - from),
-        now + Math.max(0.18, note.start + note.duration - from),
-      );
-    });
-  }
-
-  async function play() {
-    if (playing || count) {
-      stopAudio();
-      setPlaying(false);
-      return;
-    }
-    await startMic();
-    const context = getAudioContext();
-    if (!context) {
-      setPlaying(true);
-      return;
-    }
-    context.resume().catch(() => null);
-    stopAudio();
-    const beatMs = (60 / exercise.bpm) * 1000;
-    [4, 3, 2, 1].forEach((value, index) => {
-      timersRef.current.push(window.setTimeout(() => {
-        setCount(value);
-        playClick(context, context.currentTime + 0.01, value === 4);
-      }, index * beatMs));
-    });
-    timersRef.current.push(window.setTimeout(() => {
-      setCount(null);
-      const start = time >= duration ? 0 : time;
-      setTime(start);
-      startSound(start);
-      setPlaying(true);
-    }, 4 * beatMs));
-  }
-
-  async function startMic() {
-    if (mic || typeof window === 'undefined' || !navigator.mediaDevices?.getUserMedia) return;
-    try {
-      const Ctor = (window as WinAudio).AudioContext || (window as WinAudio).webkitAudioContext;
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
-      const context = new Ctor();
-      const source = context.createMediaStreamSource(stream);
-      const analyser = context.createAnalyser();
-      analyser.fftSize = 1024;
-      analyser.smoothingTimeConstant = 0;
-      source.connect(analyser);
-      micContextRef.current = context;
-      streamRef.current = stream;
-      setMic(true);
-      listen(analyser, context);
-    } catch {
-      setTuner({ frequency: null, stableFrequency: null, cents: null, feedback: 'Permita o microfone' });
-    }
-  }
-
-  function stopMic() {
-    if (micRafRef.current) cancelAnimationFrame(micRafRef.current);
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-    micContextRef.current?.close().catch(() => null);
-    streamRef.current = null;
-    micContextRef.current = null;
-    setMic(false);
-  }
-
-  function listen(analyser: AnalyserNode, context: AudioContext) {
-    const buffer = new Float32Array(analyser.fftSize);
-    const loopPitch = () => {
-      analyser.getFloatTimeDomainData(buffer);
-      const raw = detectPitch(buffer, context.sampleRate);
-      const target = targetRef.current;
-
-      if (!raw) {
-        silenceRef.current += 1;
-        if (silenceRef.current > 5) {
-          smoothFreqRef.current = null;
-          setTuner((old) => ({ ...old, frequency: null, stableFrequency: null, cents: null, feedback: 'Cante próximo ao microfone' }));
-        }
-      } else {
-        silenceRef.current = 0;
-        smoothFreqRef.current = smoothFreqRef.current === null ? raw : smoothFreqRef.current * 0.25 + raw * 0.75;
-        const stable = smoothFreqRef.current;
-        if (!target) {
-          setTuner({ frequency: raw, stableFrequency: stable, cents: null, feedback: 'Aguardando nota' });
-        } else {
-          const cents = 1200 * Math.log2(stable / target);
-          setTuner({
-            frequency: raw,
-            stableFrequency: stable,
-            cents,
-            feedback: Math.abs(cents) <= 28 ? 'Perfeito!' : cents < 0 ? 'Suba um pouco' : 'Desça um pouco',
-          });
-        }
-      }
-      micRafRef.current = requestAnimationFrame(loopPitch);
-    };
-    loopPitch();
-  }
-
-  function getTargetStyle(note: TrainingNote): CSSProperties | null {
-    const left = PLAYHEAD + (note.start - time) * TARGET_SPEED;
-    const width = Math.max(4, note.duration * TARGET_SPEED);
-    const visibleLeft = left + width > -4;
-    const visibleRight = left < PLAYHEAD + PREVIEW_SECONDS * TARGET_SPEED;
-    if (!visibleLeft || !visibleRight) return null;
-    return { left: `${left}%`, width: `${width}%`, top: `${yFromPitch(note.pitch)}%` };
-  }
+  async function play() { if (playing || count) { stopAudio(); setPlaying(false); return; } await startMic(); const c = ctx(); if (!c) { setPlaying(true); return; } c.resume().catch(() => null); stopAudio(); const beatMs = (60 / exercise.bpm) * 1000; [4,3,2,1].forEach((v, i) => timers.current.push(window.setTimeout(() => { setCount(v); click(c, c.currentTime + .01, v === 4); }, i * beatMs))); timers.current.push(window.setTimeout(() => { setCount(null); const start = time >= duration ? 0 : time; setTime(start); playSound(start); setPlaying(true); }, 4 * beatMs)); }
+  async function startMic() { if (mic || typeof window === 'undefined' || !navigator.mediaDevices?.getUserMedia) return; try { const Ctor = (window as WinAudio).AudioContext || (window as WinAudio).webkitAudioContext; const s = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } }); const c = new Ctor(); const source = c.createMediaStreamSource(s); const analyser = c.createAnalyser(); analyser.fftSize = 1024; analyser.smoothingTimeConstant = 0; source.connect(analyser); micCtx.current = c; stream.current = s; setMic(true); listen(analyser, c); } catch { setTuner((old) => ({ ...old, feedback: 'Permita o microfone' })); } }
+  function stopMic() { if (micRaf.current) cancelAnimationFrame(micRaf.current); stream.current?.getTracks().forEach((t) => t.stop()); micCtx.current?.close().catch(() => null); stream.current = null; micCtx.current = null; setMic(false); }
+  function listen(analyser: AnalyserNode, c: AudioContext) { const buffer = new Float32Array(analyser.fftSize); const loopPitch = () => { analyser.getFloatTimeDomainData(buffer); const raw = detectPitch(buffer, c.sampleRate); const target = targetRef.current; if (!raw) { silence.current += 1; if (silence.current > 5) setTuner((old) => ({ ...old, frequency: null, cents: null, feedback: 'Cante próximo ao microfone' })); } else { silence.current = 0; const normalized = normalizeToTarget(raw, target); smooth.current = smooth.current === null ? normalized : smooth.current * .18 + normalized * .82; const stable = smooth.current; if (!target) setTuner({ frequency: raw, stableFrequency: stable, cents: null, feedback: 'Aguardando nota' }); else { const cents = 1200 * Math.log2(stable / target); setTuner({ frequency: raw, stableFrequency: stable, cents, feedback: Math.abs(cents) <= 28 ? 'Perfeito!' : cents < 0 ? 'Suba um pouco' : 'Desça um pouco' }); } } micRaf.current = requestAnimationFrame(loopPitch); }; loopPitch(); }
+  function getTargetStyle(note: TrainingNote): CSSProperties | null { const left = PLAYHEAD + (note.start - time) * SPEED; const width = Math.max(4, note.duration * SPEED); if (left + width <= -4 || left >= PLAYHEAD + PREVIEW * SPEED) return null; return { left: `${left}%`, width: `${width}%`, top: `${yFromPitch(note.pitch)}%` }; }
 
   return <section className="premium-workout" style={cssVars}>
     <style>{css}</style>
@@ -331,11 +141,8 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise;
     <main className="stage">
       <div className="ruler">{PITCHES.slice().reverse().map((pitch) => <span className={pitch === activePitch ? 'active' : pitch === 'C4' || pitch === 'G3' || pitch.endsWith('0') ? 'key' : ''} key={pitch}>{pitch}</span>)}</div>
       <div className="playhead-line" />
-      <div className="body"><WireframeBody activeRegion={vocalRegion(activeMidi)} currentMidi={activeMidi} currentLabel={activePitch} /></div>
-      <div className="target-lane">{exercise.notes.map((note, index) => {
-        const style = getTargetStyle(note);
-        return style ? <span className="target" key={`${note.pitch}-${index}`} style={style} /> : null;
-      })}</div>
+      <div className="body"><WireframeBody activeRegion={region(activeMidi)} currentMidi={activeMidi} currentLabel={activePitch} /></div>
+      <div className="target-lane">{exercise.notes.map((note, index) => { const style = getTargetStyle(note); return style ? <span className="target" key={`${note.pitch}-${index}`} style={style} /> : null; })}</div>
       <div className="voice-marker"><i /></div>
       <div className="status-line">{tuner.feedback}</div>
     </main>
