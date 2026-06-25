@@ -2,6 +2,11 @@
 
 import { useEffect, useRef } from 'react';
 
+type WindowWithIdle = Window & typeof globalThis & {
+  requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number;
+  cancelIdleCallback?: (handle: number) => void;
+};
+
 function visibleRatio(element: Element) {
   const rect = element.getBoundingClientRect();
   const height = Math.max(1, rect.height);
@@ -14,6 +19,8 @@ export function FeedVideoWarmup() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+
+    const browserWindow = window as WindowWithIdle;
 
     const warmupNextVideo = () => {
       rafRef.current = null;
@@ -58,9 +65,9 @@ export function FeedVideoWarmup() {
       scheduleWarmup();
     };
 
-    const idleId = 'requestIdleCallback' in window
-      ? window.requestIdleCallback(observeVideos, { timeout: 1200 })
-      : window.setTimeout(observeVideos, 350);
+    const idleId = browserWindow.requestIdleCallback
+      ? browserWindow.requestIdleCallback(observeVideos, { timeout: 1200 })
+      : globalThis.setTimeout(observeVideos, 350);
 
     window.addEventListener('scroll', scheduleWarmup, { passive: true });
     window.addEventListener('resize', scheduleWarmup);
@@ -70,8 +77,8 @@ export function FeedVideoWarmup() {
       window.removeEventListener('scroll', scheduleWarmup);
       window.removeEventListener('resize', scheduleWarmup);
       if (rafRef.current !== null) window.cancelAnimationFrame(rafRef.current);
-      if ('cancelIdleCallback' in window && typeof idleId === 'number') window.cancelIdleCallback(idleId);
-      else if (typeof idleId === 'number') window.clearTimeout(idleId);
+      if (browserWindow.cancelIdleCallback && typeof idleId === 'number') browserWindow.cancelIdleCallback(idleId);
+      else globalThis.clearTimeout(idleId);
     };
   }, []);
 
