@@ -1,104 +1,135 @@
 @media (max-width: 760px) {
-  body:not(.vocal-capture-active) .vocal-stage.tessitura-grid {
+  body:not(.vocal-capture-active) .vocal-stage.tessitura-stage {
+    position: relative !important;
     min-height: 100dvh !important;
     margin: 0 !important;
-    padding: calc(56px + env(safe-area-inset-top)) 22px calc(118px + env(safe-area-inset-bottom)) !important;
+    padding: calc(42px + env(safe-area-inset-top)) 22px calc(26px + env(safe-area-inset-bottom)) !important;
     border: 0 !important;
     border-radius: 0 !important;
-    box-shadow: none !important;
-    background:
-      radial-gradient(circle at 50% 22%, rgba(103,232,249,.14), transparent 30%),
-      radial-gradient(circle at 50% 62%, rgba(245,199,107,.12), transparent 32%),
-      linear-gradient(180deg,#050607 0%,#020304 100%) !important;
-    display: block !important;
     overflow: hidden !important;
+    background:
+      radial-gradient(circle at 83% 14%, rgba(103,232,249,.20), transparent 23%),
+      radial-gradient(circle at 56% 54%, rgba(245,199,107,.11), transparent 34%),
+      linear-gradient(180deg, #05070a 0%, #020304 100%) !important;
+    box-shadow: none !important;
   }
 
-  body:not(.vocal-capture-active) .vocal-stage.tessitura-grid > .vocal-meter,
-  body:not(.vocal-capture-active) .vocal-stage.tessitura-grid > .premium-vocal-meter {
-    display: none !important;
+  body:not(.vocal-capture-active) .vocal-stage.tessitura-stage::before {
+    content: '' !important;
+    position: absolute !important;
+    inset: 0 !important;
+    background: linear-gradient(180deg, rgba(2,3,4,0) 0%, rgba(2,3,4,.2) 34%, rgba(2,3,4,.94) 100%) !important;
+    pointer-events: none !important;
+    z-index: 2 !important;
   }
 
-  body:not(.vocal-capture-active) .vocal-stage.tessitura-grid .tessitura-copy {
-    min-height: calc(100dvh - 174px) !important;
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-figure {
+    position: absolute !important;
+    right: -18px !important;
+    top: calc(24px + env(safe-area-inset-top)) !important;
+    width: 42vw !important;
+    height: 27dvh !important;
+    min-height: 180px !important;
+    max-height: 238px !important;
+    opacity: .78 !important;
+    z-index: 1 !important;
+    pointer-events: none !important;
+    overflow: hidden !important;
+    mask-image: linear-gradient(180deg, #000 0%, #000 62%, transparent 100%) !important;
+    -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 62%, transparent 100%) !important;
+  }
+
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-figure img {
+    position: absolute !important;
+    right: -34px !important;
+    top: -18px !important;
+    width: 74vw !important;
+    height: 138% !important;
+    object-fit: contain !important;
+    object-position: right top !important;
+    opacity: .74 !important;
+    mix-blend-mode: screen !important;
+    filter: drop-shadow(0 0 24px rgba(103,232,249,.18)) !important;
+  }
+
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-figure span {
+    position: absolute !important;
+    right: 20px !important;
+    top: 44% !important;
+    width: 70px !important;
+    height: 50px !important;
+    border-radius: 999px !important;
+    background: radial-gradient(ellipse at center, rgba(245,199,107,.68), rgba(245,199,107,.18) 52%, transparent 78%) !important;
+    filter: blur(12px) !important;
+    opacity: .82 !important;
+  }
+
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-copy {
+    position: relative !important;
+    z-index: 4 !important;
+    width: 100% !important;
+    min-height: calc(100dvh - 68px - env(safe-area-inset-top) - env(safe-area-inset-bottom)) !important;
     display: grid !important;
-    align-content: center !important;
+    grid-template-rows: auto auto auto auto auto 1fr auto !important;
     justify-items: center !important;
-    gap: 14px !important;
+    align-content: start !important;
+    gap: 12px !important;
     text-align: center !important;
     padding: 0 !important;
   }
 
-  body:not(.vocal-capture-active) .vocal-stage.tessitura-grid .tessitura-copy::before {
-    content: 'ETAPA 2/3 · TESSITURA' !important;
-    display: block !important;
-    color: rgba(255,255,255,.48) !important;
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-step {
+    margin: 0 !important;
+    color: rgba(255,255,255,.44) !important;
     font-size: 11px !important;
     line-height: 1 !important;
     font-weight: 1000 !important;
-    letter-spacing: .18em !important;
+    letter-spacing: .17em !important;
     text-transform: uppercase !important;
-    margin-bottom: 8px !important;
   }
 
-  body:not(.vocal-capture-active) .vocal-stage.tessitura-grid h1 {
-    max-width: 350px !important;
+  body:not(.vocal-capture-active) .tessitura-stage h1 {
+    width: min(78vw, 360px) !important;
     margin: 0 auto !important;
-    color: rgba(255,255,255,.96) !important;
-    font-size: clamp(29px, 8vw, 42px) !important;
-    line-height: 1.04 !important;
-    letter-spacing: -.06em !important;
+    color: rgba(255,255,255,.98) !important;
+    font-size: clamp(32px, 8.6vw, 44px) !important;
+    line-height: .98 !important;
+    letter-spacing: -.07em !important;
     font-weight: 1000 !important;
     text-align: center !important;
+    text-shadow: 0 0 22px rgba(0,0,0,.75) !important;
   }
 
-  body:not(.vocal-capture-active) .vocal-stage.tessitura-grid p {
-    max-width: 340px !important;
-    margin: 0 auto !important;
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-lead {
+    width: min(78vw, 350px) !important;
+    margin: 0 auto 2px !important;
     color: rgba(255,255,255,.62) !important;
-    font-size: 16px !important;
-    line-height: 1.35 !important;
+    font-size: 14px !important;
+    line-height: 1.28 !important;
     text-align: center !important;
   }
 
-  body:not(.vocal-capture-active) .vocal-stage.tessitura-grid small {
-    color: #f5c76b !important;
-    font-size: 13px !important;
-    font-weight: 900 !important;
-    letter-spacing: .01em !important;
-    margin-top: -4px !important;
-  }
-
-  body:not(.vocal-capture-active) .vocal-stage.tessitura-grid .range-big {
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-note-card {
+    width: min(82vw, 360px) !important;
+    min-height: 128px !important;
     margin: 4px auto 0 !important;
-    color: #67e8f9 !important;
-    font-size: clamp(78px, 23vw, 128px) !important;
-    line-height: .9 !important;
-    font-weight: 1000 !important;
-    letter-spacing: -.08em !important;
-    text-shadow: 0 0 38px rgba(103,232,249,.32) !important;
+    padding: 18px 18px !important;
+    border-radius: 30px !important;
+    border: 1px solid rgba(255,255,255,.13) !important;
+    background: linear-gradient(145deg, rgba(255,255,255,.09), rgba(255,255,255,.025)) !important;
+    box-shadow: 0 28px 70px rgba(0,0,0,.38), inset 0 0 0 1px rgba(255,255,255,.035) !important;
+    display: grid !important;
+    grid-template-columns: 1fr 100px !important;
+    gap: 14px !important;
+    align-items: center !important;
+    text-align: left !important;
+    backdrop-filter: blur(18px) !important;
   }
 
-  body:not(.vocal-capture-active) .vocal-stage.tessitura-grid blockquote {
-    position: relative !important;
-    width: min(88vw, 390px) !important;
-    margin: 8px auto 10px !important;
-    padding: 18px 20px !important;
-    border: 1px solid rgba(255,255,255,.12) !important;
-    border-radius: 26px !important;
-    background: linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,.025)) !important;
-    box-shadow: 0 22px 60px rgba(0,0,0,.32), inset 0 0 0 1px rgba(255,255,255,.04) !important;
-    color: rgba(255,255,255,.9) !important;
-    font-size: 22px !important;
-    line-height: 1.25 !important;
-    font-weight: 850 !important;
-  }
-
-  body:not(.vocal-capture-active) .vocal-stage.tessitura-grid blockquote::before {
-    content: 'CANTE NESSA NOTA' !important;
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-note-card span {
     display: block !important;
-    margin-bottom: 8px !important;
-    color: rgba(255,255,255,.42) !important;
+    margin-bottom: 6px !important;
+    color: rgba(255,255,255,.45) !important;
     font-size: 10px !important;
     line-height: 1 !important;
     font-weight: 1000 !important;
@@ -106,49 +137,205 @@
     text-transform: uppercase !important;
   }
 
-  body:not(.vocal-capture-active) .vocal-stage.tessitura-grid .actions {
-    width: min(88vw, 380px) !important;
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-note-card strong {
+    display: block !important;
+    color: #67e8f9 !important;
+    font-size: clamp(58px, 17vw, 84px) !important;
+    line-height: .88 !important;
+    letter-spacing: -.08em !important;
+    font-weight: 1000 !important;
+    text-shadow: 0 0 34px rgba(103,232,249,.34) !important;
+  }
+
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-note-card button {
+    width: 94px !important;
+    height: 94px !important;
+    min-height: 94px !important;
+    padding: 0 !important;
+    border: 1px solid rgba(245,199,107,.28) !important;
+    border-radius: 28px !important;
+    background: radial-gradient(circle at 50% 26%, rgba(255,226,154,.28), transparent 42%), linear-gradient(180deg, #ffe29a, #e8ad34) !important;
+    color: #120d05 !important;
+    box-shadow: 0 18px 45px rgba(232,173,52,.18) !important;
+    display: grid !important;
+    place-items: center !important;
+    gap: 0 !important;
+  }
+
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-note-card button svg {
+    width: 30px !important;
+    height: 30px !important;
+  }
+
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-note-card button b {
+    display: none !important;
+  }
+
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-note-card button small {
+    display: block !important;
+    margin: -10px 0 0 !important;
+    color: rgba(18,13,5,.82) !important;
+    font-size: 10px !important;
+    line-height: 1 !important;
+    font-weight: 1000 !important;
+  }
+
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-sing-card {
+    width: min(82vw, 360px) !important;
+    display: grid !important;
+    grid-template-columns: 46px 1fr !important;
+    gap: 12px !important;
+    align-items: center !important;
+    padding: 14px 16px !important;
+    border-radius: 22px !important;
+    border: 1px solid rgba(255,255,255,.1) !important;
+    background: rgba(255,255,255,.045) !important;
+    text-align: left !important;
+  }
+
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-sing-card i {
+    width: 46px !important;
+    height: 46px !important;
+    border-radius: 16px !important;
+    background: rgba(103,232,249,.11) !important;
+    color: #67e8f9 !important;
+    display: grid !important;
+    place-items: center !important;
+    font-style: normal !important;
+  }
+
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-sing-card strong {
+    display: block !important;
+    color: rgba(255,255,255,.9) !important;
+    font-size: 14px !important;
+    line-height: 1.2 !important;
+    font-weight: 1000 !important;
+  }
+
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-sing-card p {
+    margin: 4px 0 0 !important;
+    color: #f5c76b !important;
+    font-size: 17px !important;
+    line-height: 1.1 !important;
+    font-weight: 950 !important;
+    text-transform: uppercase !important;
+  }
+
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-tuner {
+    width: min(82vw, 360px) !important;
+    margin: 0 auto !important;
+    padding: 4px 0 0 !important;
+    display: grid !important;
+    gap: 8px !important;
+    justify-items: center !important;
+  }
+
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-tuner > span {
+    color: rgba(255,255,255,.42) !important;
+    font-size: 10px !important;
+    line-height: 1 !important;
+    letter-spacing: .14em !important;
+    font-weight: 1000 !important;
+  }
+
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-scale {
+    position: relative !important;
+    width: min(70vw, 300px) !important;
+    height: 28px !important;
+  }
+
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-scale::before {
+    content: '' !important;
+    position: absolute !important;
+    left: 0 !important;
+    right: 0 !important;
+    top: 13px !important;
+    height: 3px !important;
+    border-radius: 999px !important;
+    background: linear-gradient(90deg, rgba(103,232,249,.22), rgba(245,199,107,.72), rgba(103,232,249,.22)) !important;
+    box-shadow: 0 0 18px rgba(245,199,107,.18) !important;
+  }
+
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-scale b {
+    position: absolute !important;
+    left: 50% !important;
+    top: 3px !important;
+    width: 0 !important;
+    height: 0 !important;
+    border-left: 7px solid transparent !important;
+    border-right: 7px solid transparent !important;
+    border-top: 10px solid #f5c76b !important;
+    transform: translateX(-50%) !important;
+  }
+
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-scale i {
+    position: absolute !important;
+    left: 50% !important;
+    top: 5px !important;
+    width: 22px !important;
+    height: 22px !important;
+    border-radius: 999px !important;
+    background: #f5c76b !important;
+    box-shadow: 0 0 22px rgba(245,199,107,.72) !important;
+    transform: translateX(-50%) !important;
+  }
+
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-scale-labels {
+    width: min(70vw, 300px) !important;
+    display: flex !important;
+    justify-content: space-between !important;
+  }
+
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-scale-labels small {
+    color: rgba(255,255,255,.48) !important;
+    font-size: 10px !important;
+    font-weight: 850 !important;
+  }
+
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-tuner p {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 6px !important;
+    margin: 0 !important;
+    color: rgba(255,255,255,.72) !important;
+    font-size: 13px !important;
+    line-height: 1.2 !important;
+  }
+
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-actions {
+    width: min(82vw, 360px) !important;
     display: grid !important;
     grid-template-columns: 1fr !important;
-    gap: 10px !important;
-    margin-top: 0 !important;
+    gap: 9px !important;
+    align-self: end !important;
+    margin-top: 4px !important;
   }
 
-  body:not(.vocal-capture-active) .vocal-stage.tessitura-grid .actions button {
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-actions button {
     width: 100% !important;
-    min-height: 54px !important;
-    height: 54px !important;
+    height: 50px !important;
+    min-height: 50px !important;
     border-radius: 18px !important;
-    font-size: 15px !important;
+    padding: 0 16px !important;
+    font-size: 13.5px !important;
     font-weight: 1000 !important;
-    letter-spacing: -.01em !important;
-    padding: 0 18px !important;
   }
 
-  body:not(.vocal-capture-active) .vocal-stage.tessitura-grid .actions button:first-child {
-    width: 74% !important;
-    justify-self: center !important;
-    min-height: 56px !important;
-    height: 56px !important;
-    border-radius: 20px !important;
-    background: linear-gradient(180deg,#ffe29a,#e8ad34) !important;
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-actions button:first-child {
+    background: linear-gradient(180deg, #ffe29a, #e8ad34) !important;
     color: #120d05 !important;
-    box-shadow: 0 18px 42px rgba(232,173,52,.2) !important;
+    box-shadow: 0 14px 34px rgba(232,173,52,.16) !important;
   }
 
-  body:not(.vocal-capture-active) .vocal-stage.tessitura-grid .actions button:nth-child(2) {
-    background: rgba(255,255,255,.1) !important;
-    color: #fff !important;
-    border: 1px solid rgba(255,255,255,.16) !important;
-  }
-
-  body:not(.vocal-capture-active) .vocal-stage.tessitura-grid .actions button:nth-child(3) {
-    background: rgba(255,255,255,.07) !important;
-    color: rgba(255,255,255,.9) !important;
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-actions button:nth-child(n+2) {
+    background: rgba(255,255,255,.06) !important;
+    color: rgba(255,255,255,.92) !important;
     border: 1px solid rgba(255,255,255,.12) !important;
+    box-shadow: none !important;
   }
 
-  body:not(.vocal-capture-active) .vocal-stage.tessitura-grid .actions button:nth-child(4) {
+  body:not(.vocal-capture-active) .tessitura-stage .tessitura-tip {
     display: none !important;
   }
 }
