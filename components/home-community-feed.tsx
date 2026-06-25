@@ -9,7 +9,7 @@ type FeedComment = { id?: string; authorName: string; text: string; createdAt?: 
 type Props = { initialPosts: FeedPost[]; hasVipAccess?: boolean; vipCheckoutUrl?: string };
 
 const DEFAULT_VIP_CHECKOUT = 'https://pay.kiwify.com.br/HHr4eyM';
-const textPostCss = `.home-post-media.text-post-media{aspect-ratio:auto;min-height:auto;background:transparent;border-top:1px solid rgba(255,255,255,.06);border-bottom:1px solid rgba(255,255,255,.06);padding:18px}.community-text-card{position:relative;overflow:hidden;border:1px solid rgba(245,199,107,.18);border-radius:28px;background:radial-gradient(circle at 70% 5%,rgba(245,199,107,.24),transparent 34%),linear-gradient(145deg,rgba(245,199,107,.13),rgba(255,255,255,.035) 44%,rgba(0,0,0,.32));padding:24px 22px;box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 22px 60px rgba(0,0,0,.25)}.community-text-card:before{content:'“';position:absolute;right:18px;top:-26px;font-family:Georgia,'Times New Roman',serif;font-size:120px;line-height:1;color:rgba(245,199,107,.12)}.community-text-type{display:inline-flex;align-items:center;gap:8px;width:max-content;border:1px solid rgba(245,199,107,.34);border-radius:999px;background:rgba(245,199,107,.10);color:#f5c76b;padding:8px 11px;text-transform:uppercase;letter-spacing:.12em;font-size:11px;font-weight:1000;margin-bottom:16px}.community-text-main{position:relative;z-index:2;margin:0;white-space:pre-line;color:#fff;line-height:1.28;font-weight:850;letter-spacing:-.025em;font-size:clamp(24px,4.8vw,44px)}.community-text-main.medium{font-size:clamp(21px,3.8vw,34px);line-height:1.36}.community-text-main.long{font-size:18px;line-height:1.55;font-weight:720;letter-spacing:-.01em}.community-text-footer{position:relative;z-index:2;display:flex;align-items:center;gap:10px;margin-top:18px;color:rgba(255,255,255,.62);font-size:13px}.community-text-dot{width:7px;height:7px;border-radius:999px;background:#f5c76b}.instagram-bottom-caption.text-only-caption{display:none}.text-post-media+.instagram-action-row{padding-top:14px}.vip-verified-badge{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:999px;margin-left:5px;color:#130d05;background:linear-gradient(180deg,#ffe39b,#e9b348);box-shadow:0 0 0 2px rgba(245,199,107,.12),0 6px 18px rgba(245,199,107,.18);vertical-align:-3px}.vip-verified-badge svg{width:13px;height:13px}.teacher-evaluated-ribbon{position:absolute;left:14px;top:14px;z-index:4;display:flex;align-items:center;gap:7px;border:1px solid rgba(245,199,107,.45);border-radius:999px;background:rgba(8,8,12,.72);backdrop-filter:blur(12px);color:#f5c76b;padding:8px 11px;font-size:11px;font-weight:1000;letter-spacing:.08em;text-transform:uppercase}.home-post-media.instagram-reel-media{background:#070707!important;overflow:hidden}.feed-video-placeholder{position:absolute;inset:0;z-index:2;display:grid;place-items:center;overflow:hidden;background:radial-gradient(circle at 70% 18%,rgba(245,199,107,.18),transparent 35%),linear-gradient(145deg,#111118,#050507 70%);pointer-events:none;transition:opacity .22s ease,visibility .22s ease}.feed-video-placeholder:before{content:'';position:absolute;inset:0;background:linear-gradient(100deg,transparent 0%,rgba(255,255,255,.08) 42%,transparent 76%);transform:translateX(-100%);animation:feedVideoShimmer 1.15s ease-in-out infinite}.feed-video-placeholder:after{content:'🎤';position:relative;z-index:2;display:grid;place-items:center;width:58px;height:58px;border-radius:50%;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.13);box-shadow:0 14px 42px rgba(0,0,0,.35);font-size:24px}.feed-video-placeholder.ready{opacity:0;visibility:hidden}.community-feed-video{position:relative;z-index:1;opacity:0;transition:opacity .18s ease;background:#070707!important;transform:translateZ(0);backface-visibility:hidden}.community-feed-video.ready{opacity:1}.community-feed-video.is-buffering{opacity:.82}.feed-video-loader{position:absolute;right:14px;top:14px;z-index:5;width:20px;height:20px;border-radius:50%;border:2px solid rgba(255,255,255,.24);border-top-color:#fff;animation:feedVideoSpin .75s linear infinite;pointer-events:none}@keyframes feedVideoShimmer{0%{transform:translateX(-120%)}100%{transform:translateX(120%)}}@keyframes feedVideoSpin{to{transform:rotate(360deg)}}@media(max-width:520px){.home-post-media.text-post-media{padding:14px 0;border:0}.community-text-card{border-radius:24px;margin:0 0;padding:22px 18px}.community-text-main{font-size:clamp(25px,8vw,37px)}.community-text-main.medium{font-size:clamp(21px,6.2vw,30px)}.community-text-main.long{font-size:17px}.community-text-type{font-size:10px}.teacher-evaluated-ribbon{left:10px;top:10px;font-size:10px}.feed-video-placeholder:after{width:50px;height:50px;font-size:21px}}`;
+const textPostCss = `.home-post-media.instagram-reel-media{background:#070707!important;overflow:hidden}.community-feed-video{display:block!important;width:100%!important;height:100%!important;object-fit:cover!important;opacity:1!important;background:#070707!important}.feed-video-placeholder,.feed-video-loader{display:none!important}.home-post-media.text-post-media{aspect-ratio:auto;min-height:auto;background:transparent;border-top:1px solid rgba(255,255,255,.06);border-bottom:1px solid rgba(255,255,255,.06);padding:18px}.community-text-card{position:relative;overflow:hidden;border:1px solid rgba(245,199,107,.18);border-radius:28px;background:radial-gradient(circle at 70% 5%,rgba(245,199,107,.24),transparent 34%),linear-gradient(145deg,rgba(245,199,107,.13),rgba(255,255,255,.035) 44%,rgba(0,0,0,.32));padding:24px 22px}.community-text-type{display:inline-flex;width:max-content;border:1px solid rgba(245,199,107,.34);border-radius:999px;background:rgba(245,199,107,.10);color:#f5c76b;padding:8px 11px;text-transform:uppercase;letter-spacing:.12em;font-size:11px;font-weight:1000;margin-bottom:16px}.community-text-main{margin:0;white-space:pre-line;color:#fff;line-height:1.28;font-weight:850;letter-spacing:-.025em;font-size:clamp(24px,4.8vw,44px)}.community-text-main.medium{font-size:clamp(21px,3.8vw,34px);line-height:1.36}.community-text-main.long{font-size:18px;line-height:1.55;font-weight:720}.community-text-footer{display:flex;align-items:center;gap:10px;margin-top:18px;color:rgba(255,255,255,.62);font-size:13px}.community-text-dot{width:7px;height:7px;border-radius:999px;background:#f5c76b}.vip-verified-badge{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:999px;margin-left:5px;color:#130d05;background:linear-gradient(180deg,#ffe39b,#e9b348);vertical-align:-3px}.vip-verified-badge svg{width:13px;height:13px}.teacher-evaluated-ribbon{position:absolute;left:14px;top:14px;z-index:4;display:flex;align-items:center;gap:7px;border:1px solid rgba(245,199,107,.45);border-radius:999px;background:rgba(8,8,12,.72);backdrop-filter:blur(12px);color:#f5c76b;padding:8px 11px;font-size:11px;font-weight:1000;letter-spacing:.08em;text-transform:uppercase}`;
 
 function initials(name?: string | null) { return String(name || 'Aluno').trim().split(' ').slice(0, 2).map((part) => part[0]).join('').toUpperCase(); }
 function timeAgo(value?: string | null) { if (!value) return 'agora'; const diff = Math.max(0, Date.now() - new Date(value).getTime()); const minutes = Math.floor(diff / 60000); if (minutes < 1) return 'agora'; if (minutes < 60) return `${minutes}min`; const hours = Math.floor(minutes / 60); if (hours < 24) return `${hours}h`; return `${Math.floor(hours / 24)}d`; }
@@ -27,8 +27,6 @@ export function HomeCommunityFeed({ initialPosts, hasVipAccess = false, vipCheck
   const [commentsLoaded, setCommentsLoaded] = useState<Record<string, boolean>>({});
   const [commentsLoading, setCommentsLoading] = useState<Record<string, boolean>>({});
   const [soundOn, setSoundOn] = useState<Record<string, boolean>>({});
-  const [videoReady, setVideoReady] = useState<Record<string, boolean>>({});
-  const [videoBuffering, setVideoBuffering] = useState<Record<string, boolean>>({});
   const [menu, setMenu] = useState<string | null>(null);
   const [sheet, setSheet] = useState<string | null>(null);
   const [toast, setToast] = useState('');
@@ -39,57 +37,51 @@ export function HomeCommunityFeed({ initialPosts, hasVipAccess = false, vipCheck
   const playRaf = useRef<number | null>(null);
 
   useEffect(() => { document.body.classList.toggle('comments-open', !!sheet || vipModal); return () => document.body.classList.remove('comments-open'); }, [sheet, vipModal]);
+
   useEffect(() => {
     const playMostVisible = () => {
       playRaf.current = null;
+      const videoEntries = Object.entries(refs.current).filter(([, video]) => Boolean(video)) as [string, HTMLVideoElement][];
       let activeId: string | null = null;
       let activeRatio = 0;
-      Object.entries(visibleRatios.current).forEach(([id, ratio]) => {
-        if (ratio > activeRatio) {
-          activeId = id;
-          activeRatio = ratio;
-        }
-      });
-      Object.entries(refs.current).forEach(([id, video]) => {
-        if (!video) return;
-        if (id === activeId && activeRatio >= 0.32) {
+      Object.entries(visibleRatios.current).forEach(([id, ratio]) => { if (ratio > activeRatio) { activeId = id; activeRatio = ratio; } });
+      const activeIndex = videoEntries.findIndex(([id]) => id === activeId);
+
+      videoEntries.forEach(([id, video], index) => {
+        const isActive = id === activeId && activeRatio >= 0.28;
+        const isNext = activeIndex >= 0 && index === activeIndex + 1;
+        if (isActive) {
           video.preload = 'auto';
           video.play().catch(() => undefined);
-        } else {
-          video.pause();
-          video.preload = 'metadata';
+          return;
         }
+        if (isNext) {
+          video.preload = 'auto';
+          try { video.load(); } catch {}
+          video.pause();
+          return;
+        }
+        video.pause();
+        video.preload = index < 2 ? 'auto' : 'metadata';
       });
     };
-
-    const schedulePlayMostVisible = () => {
-      if (playRaf.current !== null) return;
-      playRaf.current = window.requestAnimationFrame(playMostVisible);
-    };
-
+    const schedulePlayMostVisible = () => { if (playRaf.current === null) playRaf.current = window.requestAnimationFrame(playMostVisible); };
     const videos = Object.values(refs.current).filter(Boolean) as HTMLVideoElement[];
+    videos.slice(0, 2).forEach((video) => { video.preload = 'auto'; try { video.load(); } catch {} });
     const io = new IntersectionObserver((entries) => {
       entries.forEach((entry) => {
         const video = entry.target as HTMLVideoElement;
         const id = video.dataset.postId;
-        if (!id) return;
-        visibleRatios.current[id] = entry.isIntersecting ? entry.intersectionRatio : 0;
+        if (id) visibleRatios.current[id] = entry.isIntersecting ? entry.intersectionRatio : 0;
       });
       schedulePlayMostVisible();
-    }, { rootMargin: '220px 0px', threshold: [0, .15, .32, .5, .75, 1] });
+    }, { rootMargin: '420px 0px', threshold: [0, .2, .32, .5, .75, 1] });
     videos.forEach((video) => io.observe(video));
-    return () => {
-      io.disconnect();
-      if (playRaf.current !== null) window.cancelAnimationFrame(playRaf.current);
-      playRaf.current = null;
-      visibleRatios.current = {};
-      Object.values(refs.current).forEach((video) => video?.pause());
-    };
+    return () => { io.disconnect(); if (playRaf.current !== null) window.cancelAnimationFrame(playRaf.current); playRaf.current = null; visibleRatios.current = {}; Object.values(refs.current).forEach((video) => video?.pause()); };
   }, [posts]);
+
   useEffect(() => { if (sheet) loadComments(sheet); }, [sheet]);
 
-  function markVideoReady(id: string) { setVideoReady((value) => value[id] ? value : { ...value, [id]: true }); setVideoBuffering((value) => value[id] ? { ...value, [id]: false } : value); }
-  function markVideoWaiting(id: string) { if (!videoReady[id]) return; setVideoBuffering((value) => ({ ...value, [id]: true })); }
   function notice(text: string) { setToast(text); window.setTimeout(() => setToast(''), 1700); }
   function openVipModal() { setMenu(null); setVipModal(true); }
   async function postForm(url: string, data: Record<string, string>) { const form = new FormData(); Object.entries(data).forEach(([k, v]) => form.set(k, v)); return fetch(url, { method: 'POST', body: form, headers: { accept: 'application/json' } }); }
@@ -108,14 +100,14 @@ export function HomeCommunityFeed({ initialPosts, hasVipAccess = false, vipCheck
 
   return <>
     <style dangerouslySetInnerHTML={{ __html: textPostCss }} />
-    <div className="home-insta-feed instagram-mobile-feed">{posts.map((post) => {
+    <div className="home-insta-feed instagram-mobile-feed">{posts.map((post, index) => {
       const isTextOnly = !post.mediaUrl;
       const caption = post.caption || 'Compartilhou uma prática.';
       return <article className={`home-insta-post instagram-post-card ${isTextOnly ? 'text-only-post-card' : ''} ${removing === post.id ? 'post-removing' : ''}`} id={`post-${post.id}`} key={post.id}>
         {reposted[post.id] ? <div className="repost-ribbon"><Repeat2 size={14} /> Você repostou essa prática</div> : null}
         {post.isEvaluated ? <div className="teacher-evaluated-ribbon"><Sparkles size={13} /> Avaliado pelo professor</div> : null}
         <header className="home-post-head instagram-post-head"><div className="instagram-author-avatar">{post.authorAvatarUrl ? <img src={post.authorAvatarUrl} alt={post.authorName} loading="lazy" /> : <span>{initials(post.authorName)}</span>}</div><div className="instagram-author-copy"><strong>{post.authorName}{post.isVipAuthor ? <VerifiedBadge /> : null}</strong><span>{timeAgo(post.createdAt)}{post.isVipAuthor ? ' · VIP' : ''}</span></div>{!post.canDelete ? <button className={`instagram-follow-button ${following[post.authorId || post.id] ? 'following' : ''}`} type="button" onClick={() => followAuthor(post.authorId)}>{following[post.authorId || post.id] ? 'Seguindo' : 'Seguir'}</button> : null}<div className="home-post-options"><button className="home-post-menu" type="button" onClick={() => setMenu(menu === post.id ? null : post.id)}><MoreHorizontal size={28} /></button>{menu === post.id ? <div className="post-options-popover instagram-options-sheet"><Link href={`/aluno/comunidade#post-${post.id}`}>Ver publicação</Link>{post.exerciseSlug ? hasVipAccess ? <Link href={`/aluno/aula/${post.exerciseSlug}`}>Ver aula vinculada</Link> : <button type="button" onClick={openVipModal}>Ver aula vinculada</button> : null}<button type="button" onClick={() => repeatPost(post.id)}>{reposted[post.id] ? 'Remover repost' : 'Repostar'}</button><button type="button" onClick={() => sharePost(post.id)}>Compartilhar/copiar link</button>{post.canDelete ? <button className="danger-option" type="button" onClick={() => deletePost(post.id)}><Trash2 size={18} /> Excluir publicação</button> : null}</div> : null}</div></header>
-        <div className={`home-post-media instagram-reel-media ${isTextOnly ? 'text-post-media' : ''}`}>{post.mediaUrl ? <><span className={`feed-video-placeholder ${videoReady[post.id] ? 'ready' : ''}`} aria-hidden />{videoBuffering[post.id] ? <span className="feed-video-loader" aria-hidden /> : null}<video ref={(node) => { refs.current[post.id] = node; }} data-post-id={post.id} className={`community-feed-video ${videoReady[post.id] ? 'ready' : ''} ${videoBuffering[post.id] ? 'is-buffering' : ''}`} src={post.mediaUrl} muted={!soundOn[post.id]} loop playsInline preload="metadata" onLoadedData={(event) => { markVideoReady(post.id); if (!soundOn[post.id]) event.currentTarget.play().catch(() => undefined); }} onCanPlay={() => markVideoReady(post.id)} onPlaying={() => markVideoReady(post.id)} onWaiting={() => markVideoWaiting(post.id)} onStalled={() => markVideoWaiting(post.id)} onError={() => markVideoReady(post.id)} /><button className="home-sound-toggle instagram-sound-toggle" type="button" onClick={() => toggleSound(post.id)}>{soundOn[post.id] ? <Volume2 size={20} /> : <VolumeX size={20} />}</button>{post.exerciseTitle ? <div className="instagram-music-chip">♪ {post.exerciseTitle}</div> : null}</> : <div className="community-text-card"><span className="community-text-type">{textKind(caption)}</span><p className={`community-text-main ${textClass(caption)}`}>{caption}</p><div className="community-text-footer"><span className="community-text-dot" /> Publicação da comunidade</div></div>}</div>
+        <div className={`home-post-media instagram-reel-media ${isTextOnly ? 'text-post-media' : ''}`}>{post.mediaUrl ? <><video ref={(node) => { refs.current[post.id] = node; }} data-post-id={post.id} className="community-feed-video" src={post.mediaUrl} muted={!soundOn[post.id]} loop playsInline preload={index < 2 ? 'auto' : 'metadata'} onLoadedData={(event) => { if (index < 2) event.currentTarget.play().catch(() => undefined); }} onCanPlay={(event) => { if (index < 2) event.currentTarget.play().catch(() => undefined); }} /><button className="home-sound-toggle instagram-sound-toggle" type="button" onClick={() => toggleSound(post.id)}>{soundOn[post.id] ? <Volume2 size={20} /> : <VolumeX size={20} />}</button>{post.exerciseTitle ? <div className="instagram-music-chip">♪ {post.exerciseTitle}</div> : null}</> : <div className="community-text-card"><span className="community-text-type">{textKind(caption)}</span><p className={`community-text-main ${textClass(caption)}`}>{caption}</p><div className="community-text-footer"><span className="community-text-dot" /> Publicação da comunidade</div></div>}</div>
         <div className="home-icon-actions instagram-action-row"><div className="instagram-action-left"><button type="button" className={liked[post.id] ? 'liked reaction-pop' : ''} onClick={() => likePost(post.id)}><Heart size={30} fill={liked[post.id] ? 'currentColor' : 'none'} /></button><button type="button" onClick={() => setSheet(post.id)}><MessageCircle size={30} /></button><button type="button" onClick={() => sharePost(post.id)}><Send size={30} /></button><button type="button" className={reposted[post.id] ? 'active-action reaction-pop' : ''} onClick={() => repeatPost(post.id)}><Repeat2 size={29} /></button></div><button type="button" className={`save-button ${saved[post.id] ? 'active-action reaction-pop' : ''}`} onClick={() => savePost(post.id)}><Bookmark size={31} fill={saved[post.id] ? 'currentColor' : 'none'} /></button></div>
         <div className="instagram-engagement-line"><strong>{post.likesCount}</strong> curtidas</div>{isTextOnly ? null : <p className="home-post-caption instagram-bottom-caption"><strong>{post.authorName}{post.isVipAuthor ? <VerifiedBadge /> : null}</strong> {caption}</p>}<button type="button" className="instagram-view-comments" onClick={() => setSheet(post.id)}>Ver todos os {post.commentsCount} comentários</button>{(comments[post.id] || []).slice(-2).map((c, i) => <p className="home-local-comments" key={c.id || i}><strong>{c.authorName}</strong> {c.text}</p>)}
       </article>;
