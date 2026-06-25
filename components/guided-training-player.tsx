@@ -36,7 +36,7 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise;
   const [playing, setPlaying] = useState(false);
   const [count, setCount] = useState<number | null>(null);
   const [loop, setLoop] = useState(false);
-  const [metro, setMetro] = useState(true);
+  const [metro] = useState(true);
   const [controls, setControls] = useState(true);
   const [micReady, setMicReady] = useState(false);
   const [tuner, setTuner] = useState<Tuner>({ midi: null, cents: null, feedback: 'Toque para iniciar' });
@@ -61,7 +61,7 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise;
   const beatSeconds = 60 / bpm;
   const currentSeconds = currentBeat * beatSeconds;
   const durationSeconds = totalBeats * beatSeconds;
-  const activeNote = beatNotes.find((note) => currentBeat >= note.startBeat && currentBeat <= note.endBeat);
+  const activeNote = beatNotes.find((note) => note.mode !== 'guide' && currentBeat >= note.startBeat && currentBeat <= note.endBeat);
   const activeMidi = activeNote?.midi ?? null;
   const progress = totalBeats ? Math.min(100, (currentBeat / totalBeats) * 100) : 0;
   const voiceY = yFromMidi(tuner.midi);
@@ -81,9 +81,7 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise;
       lastFrameRef.current = now;
       setCurrentBeat((old) => {
         const next = old + deltaSeconds * (bpm / 60);
-        const scheduleFrom = Math.max(0, old - 0.08);
-        const scheduleTo = Math.min(totalBeats, next + AUDIO_LOOKAHEAD_BEATS);
-        scheduleAudioWindow(scheduleFrom, scheduleTo, next);
+        scheduleAudioWindow(Math.max(0, old - 0.08), Math.min(totalBeats, next + AUDIO_LOOKAHEAD_BEATS), next);
         if (next >= totalBeats) {
           setVoiceTrail([]);
           stopAudio();
@@ -140,7 +138,7 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise;
       if (note.midi == null || note.startBeat < startBeat || note.startBeat >= endBeat) return;
       const startDelay = Math.max(0, note.startBeat - visualBeat) * secondsPerBeat;
       const endDelay = Math.max(startDelay + 0.2, (note.endBeat - visualBeat) * secondsPerBeat);
-      void playPianoSample(context, note.midi, now + startDelay, now + endDelay, 1.08);
+      void playPianoSample(context, note.midi, now + startDelay, now + endDelay, note.mode === 'guide' ? 0.92 : 1.08);
     });
     nextAudioBeatRef.current = endBeat;
   }
@@ -152,7 +150,7 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise;
 
   async function startPlayback() {
     if (playing || count) { stopAudio(); setPlaying(false); setControls(true); setVoiceTrail([]); return; }
-    await startMic();
+    void startMic();
     const context = getAudioContext();
     if (!context) { setPlaying(true); return; }
     context.resume().catch(() => null);
@@ -160,7 +158,8 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise;
     setVoiceTrail([]);
     const start = currentBeat >= totalBeats ? 0 : currentBeat;
     nextAudioBeatRef.current = start;
-    await preloadPianoSamples(context);
+    const upcoming = beatNotes.filter((note) => note.midi != null && note.startBeat >= start && note.startBeat <= start + 32).map((note) => note.midi as number);
+    void preloadPianoSamples(context, upcoming);
     const beatMs = (60 / bpm) * 1000;
     [4, 3, 2, 1].forEach((value, index) => timersRef.current.push(window.setTimeout(() => { setCount(value); playClick(context, context.currentTime + 0.01, value === 4); }, index * beatMs)));
     timersRef.current.push(window.setTimeout(() => { setCount(null); setCurrentBeat(start); scheduleAudio(start); setPlaying(true); }, 4 * beatMs));
@@ -211,7 +210,13 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise;
     loopPitch();
   }
 
-  function targetStyle(note: BeatNote): CSSProperties | null { if (note.midi == null) return null; const left = HIT_X + (note.startBeat - currentBeat) * PX_PER_BEAT; const width = Math.max(5.5, note.durationBeats * PX_PER_BEAT); if (left + width < -6 || left > HIT_X + PREVIEW_BEATS * PX_PER_BEAT) return null; return { left: `${left}%`, width: `${width}%`, top: `${yFromMidi(note.midi)}%` }; }
+  function targetStyle(note: BeatNote): CSSProperties | null {
+    if (note.mode === 'guide' || note.midi == null) return null;
+    const left = HIT_X + (note.startBeat - currentBeat) * PX_PER_BEAT;
+    const width = Math.max(5.5, note.durationBeats * PX_PER_BEAT);
+    if (left + width < -6 || left > HIT_X + PREVIEW_BEATS * PX_PER_BEAT) return null;
+    return { left: `${left}%`, width: `${width}%`, top: `${yFromMidi(note.midi)}%` };
+  }
 
   return (
     <section className={`exercise-experience ${controls ? 'controls-on' : ''}`} style={cssVars} onPointerDown={showControls}>
