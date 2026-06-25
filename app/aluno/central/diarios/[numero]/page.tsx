@@ -13,7 +13,7 @@ export default async function DailyExercisePage({ params }: { params: Promise<{ 
   if (!exercise) notFound();
 
   return (
-    <AppShell>
+    <AppShell hideNav>
       <main className="page" style={{ padding: 0 }}>
         <DailyTrainingPlayer step={step} exercise={exercise} total={dailyTrainingSteps.length} />
       </main>
