@@ -26,8 +26,33 @@ function getDriveFileId(url?: string | null) {
   return null;
 }
 
+function pathFromUrl(url: string) {
+  try {
+    return new URL(url, typeof window !== 'undefined' ? window.location.origin : 'http://localhost').pathname;
+  } catch {
+    return url;
+  }
+}
+
 function isAllowedInternalMedia(url: string) {
-  return url.startsWith('/api/media/drive/') || url.startsWith('/api/media/library/') || url.startsWith('/storage/v1/object/');
+  const path = pathFromUrl(url);
+  return (
+    url.startsWith('/api/media/drive/') ||
+    url.startsWith('/api/media/library/') ||
+    url.startsWith('/storage/v1/object/') ||
+    path.startsWith('/storage/v1/object/')
+  );
+}
+
+function buildSource(mediaUrl?: string | null, driveUrl?: string | null) {
+  const candidates = [mediaUrl, driveUrl].map((value) => String(value || '').trim()).filter(Boolean);
+  const internalSource = candidates.find(isAllowedInternalMedia);
+  if (internalSource) return internalSource;
+
+  const driveFileId = candidates.map(getDriveFileId).find(Boolean);
+  if (driveFileId) return `/api/media/drive/${driveFileId}`;
+
+  return '';
 }
 
 async function saveProgress(lessonId: string | null | undefined, positionSeconds: number, completed = false) {
@@ -96,6 +121,7 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
   const [isReady, setIsReady] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
   const [isBuffering, setIsBuffering] = useState(true);
+  const [mediaError, setMediaError] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const lastSavedAtRef = useRef(0);
@@ -104,11 +130,9 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
   const trimEnd = Math.max(0, Number(trimEndSeconds || 0));
 
   const { source, type } = useMemo(() => {
-    const rawSource = driveUrl || mediaUrl || '';
-    const driveFileId = getDriveFileId(rawSource);
     return {
       type: mediaType || 'video',
-      source: driveFileId ? `/api/media/drive/${driveFileId}` : isAllowedInternalMedia(rawSource) ? rawSource : '',
+      source: buildSource(mediaUrl, driveUrl),
     };
   }, [driveUrl, mediaUrl, mediaType]);
 
@@ -122,6 +146,7 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
     setIsReady(false);
     setHasStarted(false);
     setIsBuffering(true);
+    setMediaError(false);
     restoredRef.current = false;
     const video = videoRef.current;
     if (!video || !source || type === 'audio') return;
@@ -139,6 +164,12 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
     const position = Math.max(trimStart, saved > trimStart ? saved : trimStart);
     if (position > 0 && Number.isFinite(element.duration) && position < element.duration - 1) element.currentTime = position;
     restoredRef.current = true;
+  }
+
+  function handleMediaError() {
+    setIsReady(true);
+    setIsBuffering(false);
+    setMediaError(true);
   }
 
   function handleTimeUpdate(element: HTMLMediaElement | null) {
@@ -159,8 +190,8 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
   if (!source) {
     return (
       <div className="lesson-player empty-player premium-loading-player">
-        <strong>Material protegido</strong>
-        <p className="muted">Este conteúdo só pode ser acessado pelo player interno do Hub.</p>
+        <strong>Material indisponível</strong>
+        <p className="muted">Não encontrei um link de vídeo ou áudio válido para esta aula.</p>
       </div>
     );
   }
@@ -168,6 +199,12 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
   if (type === 'audio') {
     return (
       <div className="lesson-player premium-audio-player">
+        {mediaError ? (
+          <div className="premium-video-loading static" aria-live="polite">
+            <strong>Não foi possível carregar o áudio</strong>
+            <small>Verifique se o arquivo ainda existe no Drive ou no Storage.</small>
+          </div>
+        ) : null}
         <audio
           ref={audioRef}
           controls
@@ -179,6 +216,7 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
           onPlay={() => saveProgress(lessonId, audioRef.current?.currentTime || 0, false)}
           onTimeUpdate={() => handleTimeUpdate(audioRef.current)}
           onEnded={() => saveProgress(lessonId, audioRef.current?.duration || 0, true)}
+          onError={handleMediaError}
         />
       </div>
     );
@@ -194,12 +232,18 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
           <small>Carregando vídeo em alta qualidade...</small>
         </div>
       ) : null}
-      {isReady && !hasStarted ? (
+      {mediaError ? (
+        <div className="premium-video-loading static" aria-live="polite">
+          <strong>Não foi possível carregar o vídeo</strong>
+          <small>Verifique se o arquivo ainda existe no Drive ou se o link salvo na aula está correto.</small>
+        </div>
+      ) : null}
+      {isReady && !hasStarted && !mediaError ? (
         <button className="premium-video-start" type="button" onClick={() => { setHasStarted(true); if (videoRef.current && videoRef.current.currentTime < trimStart) videoRef.current.currentTime = trimStart; videoRef.current?.play().catch(() => undefined); }} aria-label="Reproduzir aula">
           <Play size={32} fill="currentColor" />
         </button>
       ) : null}
-      {isBuffering && hasStarted ? <div className="premium-video-buffer"><Loader2 size={22} /></div> : null}
+      {isBuffering && hasStarted && !mediaError ? <div className="premium-video-buffer"><Loader2 size={22} /></div> : null}
       <video
         ref={videoRef}
         src={source}
@@ -215,6 +259,7 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
         onPlay={() => setHasStarted(true)}
         onTimeUpdate={() => handleTimeUpdate(videoRef.current)}
         onEnded={() => saveProgress(lessonId, videoRef.current?.duration || 0, true)}
+        onError={handleMediaError}
       />
     </div>
   );
