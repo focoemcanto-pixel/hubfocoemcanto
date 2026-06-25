@@ -89,7 +89,7 @@
   }
 
   body:not(.vocal-capture-active) .tessitura-stage .tessitura-scale i {
-    left: clamp(35%, var(--tuner-x, 50%), 65%) !important;
+    left: clamp(8%, var(--tuner-x, 50%), 92%) !important;
   }
 
   .vocal-profile-card--compact {
