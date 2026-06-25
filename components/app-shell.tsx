@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { StudentRoutePrefetcher } from '@/components/student-route-prefetcher';
+import { FeedVideoFrameNudge } from '@/components/feed-video-frame-nudge';
 
 const navItems = [
   { href: '/aluno', label: 'Feed' },
@@ -13,6 +14,7 @@ export function AppShell({ children, hideNav = false }: { children: React.ReactN
   return (
     <div className={`app-shell ${hideNav ? 'hide-bottom-nav' : ''}`}>
       <StudentRoutePrefetcher />
+      <FeedVideoFrameNudge />
       <main className="app-content route-surface">{children}</main>
       {!hideNav ? (
         <nav className="bottom-nav app-bottom-nav" aria-label="Navegação do aluno">
