@@ -101,6 +101,46 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise 
     activeOscillatorsRef.current = [];
   }
 
+  function playPianoNote(context: AudioContext, frequency: number, startsAt: number, endsAt: number) {
+    const masterGain = context.createGain();
+    const toneFilter = context.createBiquadFilter();
+    toneFilter.type = 'lowpass';
+    toneFilter.frequency.setValueAtTime(4200, startsAt);
+    toneFilter.frequency.exponentialRampToValueAtTime(1600, Math.max(startsAt + 0.12, endsAt - 0.02));
+    toneFilter.Q.value = 0.7;
+    toneFilter.connect(masterGain);
+    masterGain.connect(context.destination);
+
+    const attack = 0.008;
+    const decay = 0.22;
+    const sustainTime = Math.max(startsAt + 0.08, endsAt - 0.09);
+    masterGain.gain.setValueAtTime(0.0001, startsAt);
+    masterGain.gain.exponentialRampToValueAtTime(0.34, startsAt + attack);
+    masterGain.gain.exponentialRampToValueAtTime(0.12, startsAt + decay);
+    masterGain.gain.setValueAtTime(0.08, sustainTime);
+    masterGain.gain.exponentialRampToValueAtTime(0.0001, endsAt);
+
+    const partials = [
+      { ratio: 1, gain: 0.75, detune: 0, type: 'triangle' as OscillatorType },
+      { ratio: 2, gain: 0.22, detune: -5, type: 'sine' as OscillatorType },
+      { ratio: 3, gain: 0.08, detune: 4, type: 'sine' as OscillatorType },
+    ];
+
+    partials.forEach((partial) => {
+      const oscillator = context.createOscillator();
+      const partialGain = context.createGain();
+      oscillator.type = partial.type;
+      oscillator.frequency.value = frequency * partial.ratio;
+      oscillator.detune.value = partial.detune;
+      partialGain.gain.value = partial.gain;
+      oscillator.connect(partialGain);
+      partialGain.connect(toneFilter);
+      oscillator.start(startsAt);
+      oscillator.stop(endsAt + 0.04);
+      activeOscillatorsRef.current.push(oscillator);
+    });
+  }
+
   function startSynth(startAt: number) {
     const context = getSynthContext();
     if (!context) return;
@@ -113,21 +153,9 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise 
       const noteStart = (note.start - startAt) / speed;
       const noteEnd = noteStart + note.duration / speed;
       if (noteEnd <= 0) return;
-      const oscillator = context.createOscillator();
-      const gain = context.createGain();
-      oscillator.type = 'sine';
-      oscillator.frequency.value = frequency;
-      oscillator.connect(gain);
-      gain.connect(context.destination);
       const startsAt = now + Math.max(0, noteStart);
-      const endsAt = now + Math.max(0.08, noteEnd);
-      gain.gain.setValueAtTime(0.0001, startsAt);
-      gain.gain.exponentialRampToValueAtTime(0.18, startsAt + 0.03);
-      gain.gain.setValueAtTime(0.18, Math.max(startsAt + 0.04, endsAt - 0.06));
-      gain.gain.exponentialRampToValueAtTime(0.0001, endsAt);
-      oscillator.start(startsAt);
-      oscillator.stop(endsAt + 0.03);
-      activeOscillatorsRef.current.push(oscillator);
+      const endsAt = now + Math.max(0.18, noteEnd);
+      playPianoNote(context, frequency, startsAt, endsAt);
     });
   }
 
@@ -164,7 +192,7 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise 
       {exercise.audioUrl ? <audio ref={audioRef} src={exercise.audioUrl} loop={loop} /> : null}
       <div className="guided-player-top">
         <div>
-          <p className="eyebrow">Player guiado • {exercise.bpm} BPM</p>
+          <p className="eyebrow">Player guiado • piano • {exercise.bpm} BPM</p>
           <h2>{exercise.title}</h2>
           <p>{exercise.objective}</p>
         </div>
@@ -174,7 +202,7 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise 
         </div>
       </div>
 
-      {!hasAudioFile ? <p className="synth-notice">Som provisório gerado pelo app até o áudio oficial ser cadastrado.</p> : null}
+      {!hasAudioFile ? <p className="synth-notice">Piano provisório gerado pelo app até o áudio oficial ser cadastrado.</p> : null}
 
       <div className="note-stage" aria-label="Guia visual de notas">
         <div className="stage-grid" />
