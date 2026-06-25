@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { midiToBrazilianNoteName, midiToFrequency, formatBrazilianNote } from '@/lib/audio/pitch';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -14,6 +16,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Dados vocais inconsistentes' }, { status: 400 });
     }
     const admin = createAdminClient();
+    const savedAt = new Date().toISOString();
     const payload = {
       profile_id: body.profileId,
       auth_user_id: body.authUserId || null,
@@ -37,13 +40,26 @@ export async function POST(request: Request) {
         tessituraSteps: body.tessituraSteps || [],
         userAgent: body.userAgent || null,
         referenceFrequencies: { tessituraLow: midiToFrequency(tessLow), tessituraHigh: midiToFrequency(tessHigh) },
-        completedAt: new Date().toISOString(),
+        completedAt: savedAt,
       },
-      updated_at: new Date().toISOString(),
+      updated_at: savedAt,
     };
-    const { error } = await admin.from('vocal_profiles').upsert(payload, { onConflict: 'profile_id' });
+    const { data, error } = await admin
+      .from('vocal_profiles')
+      .upsert(payload, { onConflict: 'profile_id' })
+      .select('classification,classification_confidence,lowest_note,highest_note,tessitura_low_note,tessitura_high_note,updated_at')
+      .single();
     if (error) return NextResponse.json({ error: error.message || 'Erro ao salvar mapa vocal', code: error.code || null }, { status: 500 });
-    return NextResponse.json({ ok: true });
+    const profile = data || {
+      classification: payload.classification,
+      classification_confidence: payload.classification_confidence,
+      lowest_note: payload.lowest_note,
+      highest_note: payload.highest_note,
+      tessitura_low_note: payload.tessitura_low_note,
+      tessitura_high_note: payload.tessitura_high_note,
+      updated_at: payload.updated_at,
+    };
+    return NextResponse.json({ ok: true, profile, vocalProfile: profile }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error: any) {
     return NextResponse.json({ error: error?.message || 'Erro inesperado' }, { status: 500 });
   }
