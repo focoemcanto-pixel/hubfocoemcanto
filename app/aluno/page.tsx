@@ -16,11 +16,11 @@ type ModuleRow = { id: string; title: string; slug: string; description?: string
 const studentHeroImage = process.env.NEXT_PUBLIC_STUDENT_HERO_IMAGE || '/images/aluno-hero.jpg';
 const links = {
   vip: '/aluno/biblioteca#sala-vip',
-  harmonia: process.env.NEXT_PUBLIC_HARMONIA_MEMBER_URL || 'https://dashboard.kiwify.com.br',
-  canto: process.env.NEXT_PUBLIC_FOCO_CANTO_MEMBER_URL || process.env.NEXT_PUBLIC_FOCO_CANTO_CHECKOUT_URL || 'https://dashboard.kiwify.com.br',
-  cantoCheckout: process.env.NEXT_PUBLIC_FOCO_CANTO_CHECKOUT_URL || 'https://dashboard.kiwify.com.br',
-  melismas: process.env.NEXT_PUBLIC_MELISMAS_CHECKOUT_URL || 'https://dashboard.kiwify.com.br',
-  ebooks: process.env.NEXT_PUBLIC_EBOOKS_CHECKOUT_URL || 'https://dashboard.kiwify.com.br',
+  harmonia: process.env.NEXT_PUBLIC_HARMONIA_SALES_URL || 'https://harmonia.focoemcanto.com',
+  canto: process.env.NEXT_PUBLIC_FOCO_CANTO_SALES_URL || 'https://focoemcanto.com',
+  cantoCheckout: process.env.NEXT_PUBLIC_FOCO_CANTO_SALES_URL || 'https://focoemcanto.com',
+  melismas: process.env.NEXT_PUBLIC_MELISMAS_SALES_URL || process.env.NEXT_PUBLIC_MELISMAS_CHECKOUT_URL || 'https://dashboard.kiwify.com.br',
+  ebooks: process.env.NEXT_PUBLIC_EBOOKS_SALES_URL || process.env.NEXT_PUBLIC_EBOOKS_CHECKOUT_URL || 'https://dashboard.kiwify.com.br',
 };
 const covers = [
   'radial-gradient(circle at 60% 18%,rgba(245,199,107,.34),transparent 35%),linear-gradient(145deg,#342414,#07070b)',
@@ -37,7 +37,8 @@ const HOME_SUBMISSION_FALLBACK_LIMIT = 16;
 
 function getRelated(value: unknown) { return Array.isArray(value) ? value[0] || null : value || null; }
 function isRealModule(module: ModuleRow) { return String(module.description || '').toLowerCase().indexOf('importados da pasta') === -1; }
-function productLink(product: Product | undefined, fallback: string) { return product?.member_url || product?.checkout_url || product?.sales_url || product?.external_url || product?.kiwify_url || fallback; }
+function productLink(product: Product | undefined, fallback: string) { return product?.redirect_url || product?.sales_page_url || product?.sales_url || product?.external_url || product?.kiwify_url || product?.checkout_url || product?.member_url || fallback; }
+function unlockedProductLink(product: Product | undefined, fallback: string) { return product?.member_url || product?.course_url || product?.internal_url || productLink(product, fallback); }
 function productCover(product: Product | undefined, fallback: string) { return product?.cover_url || product?.image_url || product?.thumbnail_url || product?.cover_image_url || product?.banner_url || product?.card_cover_url || fallback; }
 function formatResume(seconds?: number | null) { const value = Math.floor(Number(seconds || 0)); return value > 5 ? `${Math.floor(value / 60)}min ${String(value % 60).padStart(2, '0')}s` : 'aula aberta'; }
 function hasCourse(subscriptions: Subscription[], courseKey: string) { return subscriptions.some((sub) => sub.course_key === courseKey && isAccessActive(sub.status)); }
@@ -89,10 +90,10 @@ export default async function StudentPage() {
   const freeModule = modules.find((module) => `${module.title} ${module.slug}`.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes('firmando') && `${module.title} ${module.slug}`.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes('afinacao'));
   const courseCards = [
     { title: 'Sala de Atividades VIP', description: hasVip ? 'Todos os módulos, duetos, downloads e avaliações.' : `${freeModule?.title || 'Firmando a Afinação'} liberado grátis. Assine para desbloquear tudo.`, unlocked: true, href: '/aluno/biblioteca#sala-vip', cover: productCover(vipProduct, freeModule?.cover_url || covers[0]), action: hasVip ? 'Acessar sala' : 'Explorar grátis' },
-    { title: 'Foco em Harmonia', description: 'Curso completo de segunda voz e divisão vocal.', unlocked: hasHarmonia, href: productLink(harmoniaProduct, links.harmonia), cover: productCover(harmoniaProduct, covers[1]), action: hasHarmonia ? 'Acessar curso' : 'Comprar curso' },
-    { title: 'Foco em Canto', description: 'Técnica, extensão, afinação e performance vocal.', unlocked: hasCanto, href: hasCanto ? productLink(cantoProduct, links.canto) : productLink(cantoProduct, links.cantoCheckout), cover: productCover(cantoProduct, covers[2]), action: hasCanto ? 'Acessar curso' : 'Comprar curso' },
-    { title: 'Foco em Melismas', description: 'Agilidade, riffs, runs e ornamentações.', unlocked: hasMelismas, href: productLink(melismasProduct, links.melismas), cover: productCover(melismasProduct, covers[3]), action: hasMelismas ? 'Acessar curso' : 'Comprar curso' },
-    { title: 'Ebooks e Guias', description: 'Materiais complementares para acelerar seus estudos.', unlocked: hasEbooks, href: productLink(ebookProduct, links.ebooks), cover: productCover(ebookProduct, covers[4]), action: hasEbooks ? 'Acessar materiais' : 'Comprar acesso' },
+    { title: 'Foco em Harmonia', description: 'Curso completo de segunda voz e divisão vocal.', unlocked: hasHarmonia, href: hasHarmonia ? unlockedProductLink(harmoniaProduct, links.harmonia) : productLink(harmoniaProduct, links.harmonia), cover: productCover(harmoniaProduct, covers[1]), action: hasHarmonia ? 'Acessar curso' : 'Conhecer treinamento' },
+    { title: 'Foco em Canto', description: 'Técnica, extensão, afinação e performance vocal.', unlocked: hasCanto, href: hasCanto ? unlockedProductLink(cantoProduct, links.canto) : productLink(cantoProduct, links.canto), cover: productCover(cantoProduct, covers[2]), action: hasCanto ? 'Acessar curso' : 'Conhecer treinamento' },
+    { title: 'Foco em Melismas', description: 'Agilidade, riffs, runs e ornamentações.', unlocked: hasMelismas, href: hasMelismas ? unlockedProductLink(melismasProduct, links.melismas) : productLink(melismasProduct, links.melismas), cover: productCover(melismasProduct, covers[3]), action: hasMelismas ? 'Acessar curso' : 'Conhecer treinamento' },
+    { title: 'Ebooks e Guias', description: 'Materiais complementares para acelerar seus estudos.', unlocked: hasEbooks, href: hasEbooks ? unlockedProductLink(ebookProduct, links.ebooks) : productLink(ebookProduct, links.ebooks), cover: productCover(ebookProduct, covers[4]), action: hasEbooks ? 'Acessar materiais' : 'Conhecer materiais' },
   ];
   const continueItems = (progressRows || []).filter((row: any) => {
     const exercise = getRelated(row.exercises) as any;
@@ -134,7 +135,7 @@ export default async function StudentPage() {
           <div className="premium-hero-copy"><p className="eyebrow">Escola Foco em Canto ★</p><h1>Olá, {firstName}.<br />Escolha seu treino de hoje.</h1><p>Sua escola vocal organizada por cursos, acessos e progresso real.</p><div className="hero-actions"><Link className="premium-button gold" href="/aluno/biblioteca" prefetch>▶ Abrir biblioteca</Link><Link className="premium-button dark" href="/aluno/perfil" prefetch>Ver avaliações</Link></div></div>
           <div className="premium-hero-photo" aria-hidden="true" style={{ '--student-hero-image': `url(${studentHeroImage})` } as CSSProperties} />
         </section>
-        <section className="student-course-section"><div className="premium-section-heading"><h2>Meus cursos</h2><Link href="/aluno/biblioteca" prefetch>Ver biblioteca →</Link></div><div className="student-products-grid">{courseCards.map((course) => <a className={`student-product-card ${course.unlocked ? 'unlocked' : 'locked'}`} key={course.title} href={course.href}><span className="student-product-badge">{course.unlocked ? 'Liberado' : '🔒 Bloqueado'}</span><div className="student-product-bg" style={styleForCover(course.cover)} /><div className="student-product-overlay" /><div className="student-product-body"><h3>{course.title}</h3><p>{course.description}</p><span className="student-product-button">{course.action}</span></div></a>)}</div></section>
+        <section className="student-course-section"><div className="premium-section-heading"><h2>Meus cursos</h2><Link href="/aluno/biblioteca" prefetch>Ver biblioteca →</Link></div><div className="student-products-grid">{courseCards.map((course) => <a className={`student-product-card ${course.unlocked ? 'unlocked' : 'locked'}`} key={course.title} href={course.href}><span className="student-product-badge">{course.unlocked ? 'Liberado' : '🔒 Premium'}</span><div className="student-product-bg" style={styleForCover(course.cover)} /><div className="student-product-overlay" /><div className="student-product-body"><h3>{course.title}</h3><p>{course.description}</p><span className="student-product-button">{course.action}</span></div></a>)}</div></section>
         {continueItems.length ? <section className="premium-continue-panel"><div className="premium-section-heading"><h2>Continue de onde parou</h2><Link href="/aluno/biblioteca" prefetch>Ver todos →</Link></div><div className="premium-course-row">{continueItems.map((item) => <Link className="premium-course-card" key={item.id} href={item.href} prefetch><div className="course-cover" style={styleForCover(item.cover)}><span className="course-badge">{item.badge}</span><strong>{item.title}</strong></div><div className="course-resume">{item.moduleTitle} · {item.resume}</div><div className="course-meta"><span>{item.lessons} aulas</span><span>{item.percent}%</span></div><div className="progress"><span style={{ width: `${item.percent}%` }} /></div></Link>)}</div></section> : null}
         <section className="feed-layout premium-community-feed"><div className="section-heading"><div><p className="eyebrow">Comunidade VIP</p><h2>Atividades recentes</h2></div><Link href="/aluno/comunidade" prefetch>Abrir comunidade</Link></div><HomeCommunityFeed initialPosts={feedPosts} hasVipAccess={hasVip} /></section>
       </main>
