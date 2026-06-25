@@ -19,42 +19,50 @@
   display:none!important;
 }
 
-.exercise-experience .exercise-body:before{
+.exercise-experience .exercise-body:before,
+.exercise-experience .exercise-body:after{
+  content:none!important;
+  display:none!important;
+  opacity:0!important;
+  animation:none!important;
+}
+
+.exercise-experience:before{
   content:''!important;
   position:absolute!important;
-  left:69%!important;
-  top:36%!important;
-  width:min(64px,9vw)!important;
-  max-width:64px!important;
+  left:70%!important;
+  top:34.5%!important;
+  width:min(58px,8.3vw)!important;
+  max-width:58px!important;
   aspect-ratio:1!important;
   border-radius:999px!important;
   background:
-    radial-gradient(circle at 48% 48%,rgba(255,255,246,.94) 0 7%,transparent 18%),
-    radial-gradient(circle,rgba(255,238,148,.76) 0%,rgba(245,199,107,.38) 24%,rgba(112,232,255,.12) 46%,transparent 74%)!important;
-  filter:blur(9px)!important;
-  opacity:.68!important;
-  transform:translate(-50%,-50%) scale(.94)!important;
+    radial-gradient(circle at 50% 50%,rgba(255,255,246,.96) 0 6%,transparent 17%),
+    radial-gradient(circle,rgba(255,238,148,.78) 0%,rgba(245,199,107,.4) 23%,rgba(112,232,255,.12) 46%,transparent 74%)!important;
+  filter:blur(8px)!important;
+  opacity:.64!important;
+  transform:translate(-50%,-50%) scale(.92)!important;
   z-index:3!important;
   pointer-events:none!important;
-  animation:anatomyGlowLive 1.35s cubic-bezier(.45,0,.25,1) infinite!important;
+  animation:anatomyGlowLive 1.25s cubic-bezier(.45,0,.25,1) infinite!important;
 }
 
-.exercise-experience .exercise-body:after{
+.exercise-experience:after{
   content:''!important;
   position:absolute!important;
-  left:67%!important;
-  top:43.5%!important;
-  width:min(46px,6.5vw)!important;
-  max-width:46px!important;
+  left:68.4%!important;
+  top:41.5%!important;
+  width:min(42px,6vw)!important;
+  max-width:42px!important;
   aspect-ratio:1!important;
   border-radius:999px!important;
-  background:radial-gradient(circle,rgba(245,199,107,.34) 0%,rgba(245,199,107,.12) 38%,transparent 74%)!important;
-  filter:blur(11px)!important;
-  opacity:.26!important;
-  transform:translate(-50%,-50%) scale(.9)!important;
+  background:radial-gradient(circle,rgba(245,199,107,.32) 0%,rgba(245,199,107,.12) 36%,transparent 72%)!important;
+  filter:blur(10px)!important;
+  opacity:.24!important;
+  transform:translate(-50%,-50%) scale(.88)!important;
   z-index:3!important;
   pointer-events:none!important;
-  animation:anatomyGlowEcho 1.9s ease-in-out infinite!important;
+  animation:anatomyGlowEcho 1.7s ease-in-out infinite!important;
 }
 
 .exercise-experience .target-note{
@@ -74,13 +82,13 @@
 }
 
 @keyframes anatomyGlowLive{
-  0%,100%{transform:translate(-50%,-50%) translate3d(0,0,0) scale(.88);opacity:.36;filter:blur(10px)}
-  22%{transform:translate(-50%,-50%) translate3d(2px,-3px,0) scale(1.03);opacity:.66;filter:blur(8px)}
-  48%{transform:translate(-50%,-50%) translate3d(4px,-4px,0) scale(1.13);opacity:.78;filter:blur(9px)}
-  73%{transform:translate(-50%,-50%) translate3d(2px,2px,0) scale(.98);opacity:.52;filter:blur(11px)}
+  0%,100%{transform:translate(-50%,-50%) translate3d(0,0,0) scale(.86);opacity:.34;filter:blur(9px)}
+  21%{transform:translate(-50%,-50%) translate3d(3px,-3px,0) scale(1.02);opacity:.64;filter:blur(7px)}
+  48%{transform:translate(-50%,-50%) translate3d(5px,-5px,0) scale(1.14);opacity:.78;filter:blur(8px)}
+  74%{transform:translate(-50%,-50%) translate3d(2px,2px,0) scale(.97);opacity:.5;filter:blur(10px)}
 }
 
 @keyframes anatomyGlowEcho{
-  0%,100%{transform:translate(-50%,-50%) translate3d(0,0,0) scale(.82);opacity:.12;filter:blur(12px)}
-  45%{transform:translate(-50%,-50%) translate3d(3px,-2px,0) scale(1.12);opacity:.34;filter:blur(10px)}
+  0%,100%{transform:translate(-50%,-50%) translate3d(0,0,0) scale(.82);opacity:.1;filter:blur(11px)}
+  45%{transform:translate(-50%,-50%) translate3d(4px,-2px,0) scale(1.14);opacity:.3;filter:blur(9px)}
 }
