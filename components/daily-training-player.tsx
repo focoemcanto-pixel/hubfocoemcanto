@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
+import type { CSSProperties } from 'react';
 import { GuidedTrainingPlayer } from '@/components/guided-training-player';
 import type { DailyTrainingStep, TrainingExercise } from '@/lib/training-center';
 
@@ -11,13 +12,16 @@ const accentMap = {
   purple: { icon: '♫', glow: 'rgba(155,76,255,.32)', color: '#a855f7' },
 };
 
+type DailyStyle = CSSProperties & { '--daily-glow': string; '--daily-accent': string };
+
 export function DailyTrainingPlayer({ step, exercise, total }: { step: DailyTrainingStep; exercise: TrainingExercise; total: number }) {
   const [started, setStarted] = useState(false);
   const accent = accentMap[step.accent];
   const nextExercise = step.exerciseNumber < total ? step.exerciseNumber + 1 : null;
+  const style = { '--daily-glow': accent.glow, '--daily-accent': accent.color } as DailyStyle;
 
   return (
-    <section className="daily-immersive" style={{ '--daily-glow': accent.glow, '--daily-accent': accent.color } as React.CSSProperties}>
+    <section className="daily-immersive" style={style}>
       <style>{css}</style>
       <div className="daily-top-line">
         <Link href="/aluno/central" prefetch>←</Link>
