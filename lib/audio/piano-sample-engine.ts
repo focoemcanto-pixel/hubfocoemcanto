@@ -1,73 +1,43 @@
 const SAMPLE_BASE_URL = 'https://raw.githubusercontent.com/focoemcanto-pixel/piano-sound-samples/master/sound_keyboard_staff/';
+const REFERENCE_SAMPLE = 'C.mp3';
+const REFERENCE_MIDI = 48;
 
-const NOTE_NAMES = ['C', 'Cs', 'D', 'Ds', 'E', 'F', 'Fs', 'G', 'Gs', 'A', 'As', 'B'];
-const LOWER_NOTE_NAMES = ['cc', 'd', 'e', 'f', 'g', 'aa', 'b'];
-const LOWER_PITCH_CLASSES = [0, 2, 4, 5, 7, 9, 11];
-const cache = new Map<string, AudioBuffer>();
-const loading = new Map<string, Promise<AudioBuffer>>();
+let referenceBuffer: AudioBuffer | null = null;
+let referenceLoading: Promise<AudioBuffer> | null = null;
 
 function midiToFrequency(midi: number) {
   return 440 * Math.pow(2, (midi - 69) / 12);
 }
 
-function safeMidi(midi: number) {
-  return Math.max(21, Math.min(108, Math.round(midi)));
-}
+async function loadReferenceSample(context: AudioContext) {
+  if (referenceBuffer) return referenceBuffer;
+  if (referenceLoading) return referenceLoading;
 
-function sampleNameForMidi(midiValue: number) {
-  const midi = safeMidi(midiValue);
-  const pitchClass = ((midi % 12) + 12) % 12;
-  const octave = Math.floor(midi / 12) - 1;
-  const note = NOTE_NAMES[pitchClass];
-
-  if (octave === 0) return `${note}_2.mp3`;
-  if (octave === 1) return `${note}_1.mp3`;
-  if (octave === 2) return `${note}.mp3`;
-
-  const lowerIndex = LOWER_PITCH_CLASSES.indexOf(pitchClass);
-  const lowerBase = lowerIndex >= 0 ? LOWER_NOTE_NAMES[lowerIndex] : NOTE_NAMES[pitchClass].toLowerCase();
-
-  if (octave === 3) return `${lowerBase}.mp3`;
-  return `${lowerBase}${octave - 3}.mp3`;
-}
-
-async function loadSample(context: AudioContext, fileName: string) {
-  const cached = cache.get(fileName);
-  if (cached) return cached;
-
-  const pending = loading.get(fileName);
-  if (pending) return pending;
-
-  const request = fetch(`${SAMPLE_BASE_URL}${fileName}`)
+  referenceLoading = fetch(`${SAMPLE_BASE_URL}${REFERENCE_SAMPLE}`)
     .then((response) => {
-      if (!response.ok) throw new Error(`Sample não encontrado: ${fileName}`);
+      if (!response.ok) throw new Error(`Sample não encontrado: ${REFERENCE_SAMPLE}`);
       return response.arrayBuffer();
     })
     .then((arrayBuffer) => context.decodeAudioData(arrayBuffer.slice(0)))
     .then((buffer) => {
-      cache.set(fileName, buffer);
-      loading.delete(fileName);
+      referenceBuffer = buffer;
+      referenceLoading = null;
       return buffer;
     })
     .catch((error) => {
-      loading.delete(fileName);
+      referenceLoading = null;
       throw error;
     });
 
-  loading.set(fileName, request);
-  return request;
+  return referenceLoading;
 }
 
-export async function preloadPianoSamples(context: AudioContext, midis: number[]) {
-  const files = Array.from(new Set(midis.map(sampleNameForMidi)));
-  await Promise.allSettled(files.map((file) => loadSample(context, file)));
+export async function preloadPianoSamples(context: AudioContext) {
+  await loadReferenceSample(context);
 }
 
 export async function playPianoSample(context: AudioContext, midiValue: number, at: number, end: number, velocity = 1) {
-  const midi = safeMidi(midiValue);
-  const fileName = sampleNameForMidi(midi);
-  const buffer = await loadSample(context, fileName);
-
+  const buffer = await loadReferenceSample(context);
   const source = context.createBufferSource();
   const gain = context.createGain();
   const compressor = context.createDynamicsCompressor();
@@ -75,29 +45,29 @@ export async function playPianoSample(context: AudioContext, midiValue: number, 
   const presence = context.createBiquadFilter();
 
   source.buffer = buffer;
-  source.playbackRate.value = midiToFrequency(midiValue) / midiToFrequency(midi);
+  source.playbackRate.value = midiToFrequency(midiValue) / midiToFrequency(REFERENCE_MIDI);
 
   body.type = 'lowshelf';
-  body.frequency.value = 180;
-  body.gain.value = 2.8;
+  body.frequency.value = 190;
+  body.gain.value = 2.2;
 
   presence.type = 'peaking';
-  presence.frequency.value = 2600;
+  presence.frequency.value = 2800;
   presence.Q.value = 0.8;
-  presence.gain.value = 2.6;
+  presence.gain.value = 2.2;
 
-  compressor.threshold.value = -8;
+  compressor.threshold.value = -9;
   compressor.knee.value = 14;
   compressor.ratio.value = 3;
   compressor.attack.value = 0.003;
-  compressor.release.value = 0.18;
+  compressor.release.value = 0.16;
 
-  const startAt = Math.max(context.currentTime + 0.006, at);
-  const stopAt = Math.max(startAt + 0.22, end + 0.12);
+  const startAt = Math.max(context.currentTime + 0.008, at);
+  const stopAt = Math.max(startAt + 0.26, end + 0.08);
 
   gain.gain.setValueAtTime(0.0001, startAt);
-  gain.gain.exponentialRampToValueAtTime(1.35 * velocity, startAt + 0.012);
-  gain.gain.exponentialRampToValueAtTime(0.55 * velocity, startAt + 0.18);
+  gain.gain.exponentialRampToValueAtTime(1.45 * velocity, startAt + 0.012);
+  gain.gain.exponentialRampToValueAtTime(0.62 * velocity, startAt + 0.16);
   gain.gain.exponentialRampToValueAtTime(0.0001, stopAt);
 
   source.connect(body);
