@@ -47,7 +47,7 @@ export function DailyTrainingLiveStats({ variant = 'summary' }: { variant?: 'sum
 
   return (
     <div className="today-progress">
-      <div><strong>{completedCount ? `${completedCount}x` : '0'}</strong><span>Sequência</span></div>
+      <div><strong>{completedCount}</strong><span>Concluídos</span></div>
       <div><strong>{completedCount}/{dailyTrainingSteps.length}</strong><span>Treinos</span></div>
       <div><strong>{progress.points}</strong><span>Pontos</span></div>
       <div><strong>{formatSeconds(progress.totalSeconds)}</strong><span>Tempo</span></div>
