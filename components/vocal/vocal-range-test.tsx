@@ -11,6 +11,12 @@ type Gender = 'masculino' | 'feminino' | 'nao_informar';
 type Step = 'intro' | 'lowest' | 'highest' | 'confirm-range' | 'tess-high' | 'tess-low' | 'gender' | 'result';
 type Props = { profileId: string; authUserId?: string | null; initialProfile?: any };
 
+function rmsFromBuffer(data: Float32Array) {
+  let sum = 0;
+  for (let index = 0; index < data.length; index += 1) sum += data[index] * data[index];
+  return Math.sqrt(sum / data.length);
+}
+
 export function VocalRangeTest({ profileId, authUserId, initialProfile }: Props) {
   const [step, setStep] = useState<Step>('intro');
   const [micError, setMicError] = useState('');
@@ -29,6 +35,7 @@ export function VocalRangeTest({ profileId, authUserId, initialProfile }: Props)
   const audioRef = useRef<{ ctx: AudioContext; analyser: AnalyserNode; stream: MediaStream; raf: number } | null>(null);
   const stableRef = useRef<{ midi: number | null; since: number }>({ midi: null, since: 0 });
   const stepRef = useRef<Step>(step);
+  const visualFrequencyRef = useRef<number | null>(null);
 
   const result = useMemo(() => classifyVoice({ tessituraLowMidi: tessLow, tessituraHighMidi: tessHigh, lowestMidi: lowest?.midi, highestMidi: highest?.midi, gender }), [tessLow, tessHigh, lowest, highest, gender]);
   const validation = useMemo(() => {
@@ -49,6 +56,7 @@ export function VocalRangeTest({ profileId, authUserId, initialProfile }: Props)
       setCurrentFrequency(null);
       setCurrentMidi(null);
       setStableMidi(null);
+      visualFrequencyRef.current = null;
     }
     setCaptureReview(false);
     try {
@@ -64,19 +72,35 @@ export function VocalRangeTest({ profileId, authUserId, initialProfile }: Props)
     const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: true, autoGainControl: false } });
     const ctx = new AudioContext();
     const analyser = ctx.createAnalyser();
-    analyser.fftSize = 2048;
+    analyser.fftSize = 4096;
+    analyser.smoothingTimeConstant = 0.12;
     ctx.createMediaStreamSource(stream).connect(analyser);
     const data = new Float32Array(analyser.fftSize);
     const tick = () => {
       analyser.getFloatTimeDomainData(data);
+      const volume = rmsFromBuffer(data);
+      const isTessitura = stepRef.current === 'tess-high' || stepRef.current === 'tess-low';
+      if (volume < (isTessitura ? 0.006 : 0.01)) {
+        if (isTessitura) {
+          visualFrequencyRef.current = null;
+          setCurrentFrequency(null);
+          setCurrentMidi(null);
+        }
+        audioRef.current!.raf = requestAnimationFrame(tick);
+        return;
+      }
       const freq = autoCorrelate(data, ctx.sampleRate);
       if (freq) {
         const midi = frequencyToMidi(freq);
-        setCurrentFrequency(freq);
+        const displayFrequency = isTessitura
+          ? (visualFrequencyRef.current == null ? freq : visualFrequencyRef.current * 0.58 + freq * 0.42)
+          : freq;
+        visualFrequencyRef.current = displayFrequency;
+        setCurrentFrequency(displayFrequency);
         setCurrentMidi(midi);
         const now = performance.now();
         if (stableRef.current.midi === midi) {
-          if (now - stableRef.current.since > 220) {
+          if (now - stableRef.current.since > (isTessitura ? 90 : 220)) {
             setStableMidi(midi);
             const item = { midi, note: midiToBrazilianNoteName(midi), frequency: freq };
             if (stepRef.current === 'lowest') {
@@ -85,7 +109,7 @@ export function VocalRangeTest({ profileId, authUserId, initialProfile }: Props)
             }
           }
         } else stableRef.current = { midi, since: now };
-      } else if (stepRef.current === 'tess-high' || stepRef.current === 'tess-low') {
+      } else if (isTessitura) {
         setCurrentFrequency(null);
         setCurrentMidi(null);
       }
@@ -110,12 +134,21 @@ export function VocalRangeTest({ profileId, authUserId, initialProfile }: Props)
       setCurrentFrequency(null);
       setCurrentMidi(null);
       setStableMidi(null);
+      visualFrequencyRef.current = null;
     }
   }, [step]);
   useEffect(() => { document.body.classList.toggle('vocal-capture-active', step === 'lowest'); return () => document.body.classList.remove('vocal-capture-active'); }, [step]);
   useEffect(() => () => stopMic(), []);
 
-  function stopMic() { const a = audioRef.current; if (!a) return; cancelAnimationFrame(a.raf); a.stream.getTracks().forEach((t) => t.stop()); a.ctx.close(); audioRef.current = null; }
+  function stopMic() {
+    const a = audioRef.current;
+    if (!a) return;
+    cancelAnimationFrame(a.raf);
+    a.stream.getTracks().forEach((t) => t.stop());
+    a.ctx.close();
+    audioRef.current = null;
+    visualFrequencyRef.current = null;
+  }
 
   async function playNote(midi: number) {
     const AudioCtor = window.AudioContext || (window as any).webkitAudioContext;
@@ -188,16 +221,16 @@ export function VocalRangeTest({ profileId, authUserId, initialProfile }: Props)
 
 function getTunerState(currentFrequency: number | null, targetMidi?: number | null) {
   if (!currentFrequency || targetMidi == null) return { cents: null as number | null, x: 50, status: 'waiting', label: 'Cante para validar a nota' };
-  const raw = 1200 * Math.log2(currentFrequency / midiToFrequency(targetMidi));
-  const visibleRange = 200;
-  const cents = Math.max(-visibleRange, Math.min(visibleRange, raw));
-  const x = Math.max(0, Math.min(100, 50 + (cents / visibleRange) * 50));
-  const abs = Math.abs(raw);
-  if (abs <= 8) return { cents: raw, x, status: 'in-tune', label: 'Afinado! Mantenha a nota...' };
-  if (raw < -80) return { cents: raw, x, status: 'low', label: 'Muito abaixo' };
-  if (raw < -8) return { cents: raw, x, status: 'almost-low', label: raw < -30 ? 'Abaixo' : 'Quase no centro' };
-  if (raw > 80) return { cents: raw, x, status: 'high', label: 'Muito acima' };
-  return { cents: raw, x, status: 'almost-high', label: raw > 30 ? 'Acima' : 'Quase no centro' };
+  const targetFrequency = midiToFrequency(targetMidi);
+  const rawCents = 1200 * Math.log2(currentFrequency / targetFrequency);
+  const pitchClassCents = ((((rawCents + 600) % 1200) + 1200) % 1200) - 600;
+  const x = Math.max(5, Math.min(95, 50 + Math.tanh(pitchClassCents / 35) * 45));
+  const abs = Math.abs(pitchClassCents);
+  if (abs <= 7) return { cents: pitchClassCents, x: 50, status: 'in-tune', label: 'Afinado! Mantenha a nota...' };
+  if (pitchClassCents < -55) return { cents: pitchClassCents, x, status: 'low', label: 'Abaixo da nota' };
+  if (pitchClassCents < -7) return { cents: pitchClassCents, x, status: 'almost-low', label: abs <= 18 ? 'Quase no centro' : 'Um pouco abaixo' };
+  if (pitchClassCents > 55) return { cents: pitchClassCents, x, status: 'high', label: 'Acima da nota' };
+  return { cents: pitchClassCents, x, status: 'almost-high', label: abs <= 18 ? 'Quase no centro' : 'Um pouco acima' };
 }
 
 function mobileGlowFromMidi(midi?: number | null) { if (midi == null) return { region: 'chest', top: 54, left: 53, width: 29, height: 17 }; if (midi >= 72) return { region: 'head', top: 21, left: 55, width: 18, height: 12 }; if (midi >= 55) return { region: 'mix', top: 36, left: 54, width: 23, height: 15 }; return { region: 'chest', top: 54, left: 53, width: 29, height: 17 }; }
@@ -213,6 +246,5 @@ function Tessitura({ title, text, midi, phrase, instruction, downLabel, icon, tu
 }
 
 const css = `
-.vocal-test-shell{min-height:100dvh;padding:18px 14px 110px;color:#fff;background:#050507}.vocal-stage{max-width:1120px;margin:0 auto;border:1px solid rgba(255,255,255,.12);border-radius:30px;background:linear-gradient(145deg,rgba(255,255,255,.08),rgba(255,255,255,.025));box-shadow:0 28px 90px rgba(0,0,0,.45);padding:24px}.vocal-stage.hero{text-align:center;display:grid;gap:18px;place-items:center}.range-desktop-ui{display:grid;grid-template-columns:minmax(360px,1.12fr) minmax(0,.88fr);gap:22px;align-items:stretch}.range-copy{align-self:center}.vocal-stage h1{margin:0;font-size:clamp(34px,7vw,58px);letter-spacing:-.06em}.vocal-stage p{margin:0;color:rgba(255,255,255,.72);font-size:18px;line-height:1.45}.eyebrow{color:#67e8f9!important;font-size:12px!important;text-transform:uppercase;letter-spacing:.18em;font-weight:1000}.tip,.vocal-stage small{color:#f5c76b!important}.vocal-stage button,.vocal-stage a{border:0;border-radius:18px;padding:15px 18px;background:linear-gradient(180deg,#ffe29a,#e8ad34);color:#120d05;font-weight:950;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:54px}.actions{display:flex;flex-wrap:wrap;gap:10px;justify-content:center}.actions button:nth-child(n+2){background:rgba(255,255,255,.09);color:#fff;border:1px solid rgba(255,255,255,.12)}.range-big{font-size:54px;font-weight:1000;letter-spacing:-.05em;color:#67e8f9}.choice-grid,.result-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;width:100%;max-width:760px}.result-grid{grid-template-columns:repeat(2,1fr)}.result-grid article{border:1px solid rgba(255,255,255,.1);border-radius:20px;padding:18px;background:rgba(0,0,0,.25)}.result-grid span{display:block;color:rgba(255,255,255,.62);margin-bottom:7px}.result-grid strong{font-size:24px}.mvr-shell{display:none}body.vocal-capture-active{overflow:hidden!important}body.vocal-capture-active nav,body.vocal-capture-active footer,body.vocal-capture-active [class*="bottom"],body.vocal-capture-active [class*="Bottom"],body.vocal-capture-active [class*="tab-bar"],body.vocal-capture-active [class*="TabBar"],body.vocal-capture-active [class*="mobile-nav"],body.vocal-capture-active [class*="MobileNav"]{display:none!important}
-@media(max-width:760px){.vocal-test-shell{padding:0;background:#020304;min-height:100dvh;overflow:hidden}.range-capture{position:fixed!important;inset:0!important;width:100vw!important;height:100dvh!important;max-width:none!important;margin:0!important;padding:0!important;border:0!important;border-radius:0!important;background:#020304!important;box-shadow:none!important;overflow:hidden!important;z-index:2147483647!important}.range-desktop-ui{display:none!important}.mvr-shell{display:block;position:absolute;inset:0;background:#020304;color:#fff;overflow:hidden}.mvr-ruler{position:absolute;left:28px;top:calc(154px + env(safe-area-inset-top));width:112px;height:calc(100dvh - 306px);z-index:20}.mvr-line{position:absolute;left:72px;top:0;bottom:0;width:3px;background:linear-gradient(180deg,#67e8f9 0%,#67e8f9 53%,#f5c76b 53%,#f5c76b 100%);box-shadow:0 0 18px rgba(103,232,249,.5)}.mvr-ruler:after{content:'';position:absolute;left:72px;top:0;bottom:0;width:32px;background:repeating-linear-gradient(to bottom,rgba(255,255,255,.25) 0 1px,transparent 1px 31px)}.mvr-ruler span{position:absolute;left:0;transform:translateY(-50%);font-size:12px;line-height:1;font-weight:850;color:rgba(255,255,255,.56);white-space:nowrap}.mvr-ruler span.octave{font-size:20px;font-weight:1000;color:rgba(255,255,255,.96)}.mvr-dot{position:absolute;left:48px;width:50px;height:50px;border-radius:999px;background:#67e8f9;transform:translateY(-50%);box-shadow:0 0 28px rgba(103,232,249,.9),0 0 70px rgba(103,232,249,.5);z-index:10}.mvr-limit{position:absolute;left:72px;width:54px;height:3px;border-radius:999px;transform:translateY(-50%);z-index:12}.mvr-limit-high{background:#67e8f9;box-shadow:0 0 12px rgba(103,232,249,.9)}.mvr-limit-low{background:#f5c76b;box-shadow:0 0 12px rgba(245,199,107,.9)}.mvr-limit em{position:absolute;left:58px;top:50%;transform:translateY(-50%);font-style:normal;font-size:10px;font-weight:950;letter-spacing:.02em;color:#fff;text-shadow:0 0 10px rgba(0,0,0,.9)}.mvr-limit-high em{color:#67e8f9}.mvr-limit-low em{color:#f5c76b}.mvr-visual{position:absolute;left:102px;right:-72px;top:calc(154px + env(safe-area-inset-top));height:calc(100dvh - 350px);z-index:4}.mvr-visual img{position:absolute;right:-18vw;top:0;width:124vw;height:100%;object-fit:contain;object-position:center top;opacity:.78;mix-blend-mode:screen;filter:drop-shadow(0 0 24px rgba(236,254,255,.16))}.mvr-aura{position:absolute;inset:5% 4% 10% 0;border-radius:999px;background:radial-gradient(ellipse at center,rgba(103,232,249,.16),rgba(103,232,249,.04) 45%,transparent 72%);filter:blur(22px)}.mvr-glow{position:absolute;border-radius:999px;transform:translate(-50%,-50%);transition:top .18s ease,left .18s ease,width .18s ease,height .18s ease;mix-blend-mode:screen}.mvr-glow.chest{background:radial-gradient(ellipse at center,rgba(255,235,170,.95),rgba(245,199,107,.48) 38%,transparent 72%);filter:blur(10px) drop-shadow(0 0 30px rgba(245,199,107,.85))}.mvr-glow.mix{background:radial-gradient(ellipse at center,rgba(255,255,255,.92),rgba(103,232,249,.46) 38%,transparent 72%);filter:blur(9px) drop-shadow(0 0 28px rgba(103,232,249,.82))}.mvr-glow.head{background:radial-gradient(ellipse at center,rgba(255,255,255,.92),rgba(167,139,250,.48) 38%,transparent 72%);filter:blur(8px) drop-shadow(0 0 28px rgba(167,139,250,.84))}.mvr-visual span{position:absolute;right:7vw;font-size:14px;font-weight:950;letter-spacing:.05em;color:rgba(255,255,255,.62);text-transform:uppercase}.mvr-visual .head{top:18%}.mvr-visual .mix{top:35%}.mvr-visual .chest{top:50%;color:#f5c76b}.mvr-shell header{position:absolute;top:calc(50px + env(safe-area-inset-top));left:0;right:0;padding:0 24px;text-align:center;z-index:30}.mvr-shell header small{display:block;margin-bottom:11px;color:rgba(255,255,255,.5)!important;font-size:12px;font-weight:1000;letter-spacing:.16em}.mvr-shell header h1{margin:0 auto;color:#fff;font-size:clamp(27px,7.2vw,34px);line-height:1.04;letter-spacing:-.045em;font-weight:1000;text-shadow:0 0 16px rgba(0,0,0,.9);max-width:560px}.mvr-shell header p{margin:12px auto 0;color:rgba(255,255,255,.62);font-size:15px;line-height:1.22;max-width:560px}.mvr-note{position:absolute;left:50%;bottom:calc(142px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:35;padding:10px 24px 12px;border:1px solid rgba(255,255,255,.15);border-radius:22px;background:rgba(0,0,0,.54);text-align:center;backdrop-filter:blur(14px)}.mvr-note small{display:block;color:rgba(255,255,255,.58)!important;font-size:12px!important;font-weight:900;letter-spacing:.13em}.mvr-note strong{display:block;color:#67e8f9;font-size:38px;line-height:.95}.mvr-result{position:absolute;left:144px;right:18px;bottom:calc(222px + env(safe-area-inset-bottom));z-index:40;padding:10px 14px;border-radius:18px;border:1px solid rgba(255,255,255,.12);background:rgba(0,0,0,.55);text-align:center}.mvr-back,.mvr-retry{position:absolute;bottom:calc(48px + env(safe-area-inset-bottom));z-index:60;width:66px!important;height:66px!important;min-height:66px!important;border-radius:999px!important;background:rgba(255,255,255,.055)!important;border:1px solid rgba(255,255,255,.16)!important;color:#fff!important;padding:0!important;font-size:32px!important;backdrop-filter:blur(14px)}.mvr-back{left:34px}.mvr-retry{right:34px}.mvr-retry svg{width:30px;height:30px}.mvr-main{position:absolute;left:50%;bottom:calc(54px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:65;width:min(52vw,420px)!important;min-width:260px!important;height:58px!important;min-height:58px!important;border-radius:999px!important;background:linear-gradient(180deg,#ffe29a,#e8ad34)!important;color:#120d05!important;font-size:15px!important;font-weight:1000!important;white-space:nowrap!important;padding:0 22px!important}.choice-grid,.result-grid{grid-template-columns:1fr}}
+.vocal-test-shell{min-height:100dvh;padding:18px 14px 110px;color:#fff;background:#050507}.vocal-stage{max-width:1120px;margin:0 auto;border:1px solid rgba(255,255,255,.12);border-radius:30px;background:linear-gradient(145deg,rgba(255,255,255,.08),rgba(255,255,255,.025));box-shadow:0 28px 90px rgba(0,0,0,.45);padding:24px}.vocal-stage.hero{text-align:center;display:grid;gap:18px;place-items:center}.range-desktop-ui{display:grid;grid-template-columns:minmax(360px,1.12fr) minmax(0,.88fr);gap:22px;align-items:stretch}.range-copy{align-self:center}.vocal-stage h1{margin:0;font-size:clamp(34px,7vw,58px);letter-spacing:-.06em}.vocal-stage p{margin:0;color:rgba(255,255,255,.72);font-size:18px;line-height:1.45}.eyebrow{color:#67e8f9!important;font-size:12px!important;text-transform:uppercase;letter-spacing:.18em;font-weight:1000}.tip,.vocal-stage small{color:#f5c76b!important}.vocal-stage button,.vocal-stage a{border:0;border-radius:18px;padding:15px 18px;background:linear-gradient(180deg,#ffe29a,#e8ad34);color:#120d05;font-weight:950;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:54px}.actions{display:flex;flex-wrap:wrap;gap:10px;justify-content:center}.actions button:nth-child(n+2){background:rgba(255,255,255,.09);color:#fff;border:1px solid rgba(255,255,255,.12)}.range-big{font-size:54px;font-weight:1000;letter-spacing:-.05em;color:#67e8f9}.choice-grid,.result-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;width:100%;max-width:760px}.result-grid{grid-template-columns:repeat(2,1fr)}.result-grid article{border:1px solid rgba(255,255,255,.1);border-radius:20px;padding:18px;background:rgba(0,0,0,.25)}.result-grid span{display:block;color:rgba(255,255,255,.62);margin-bottom:7px}.result-grid strong{font-size:24px}.mvr-shell{display:none}body.vocal-capture-active{overflow:hidden!important}body.vocal-capture-active nav,body.vocal-capture-active footer,body.vocal-capture-active [class*="bottom"],body.vocal-capture-active [class*="Bottom"],body.vocal-capture-active [class*="tab-bar"],body.vocal-capture-active [class*="TabBar"],body.vocal-capture-active [class*="mobile-nav"],body.vocal-capture-active [class*="MobileNav"]{display:none!important}@media(max-width:760px){.vocal-test-shell{padding:0;background:#020304;min-height:100dvh;overflow:hidden}.range-capture{position:fixed!important;inset:0!important;width:100vw!important;height:100dvh!important;max-width:none!important;margin:0!important;padding:0!important;border:0!important;border-radius:0!important;background:#020304!important;box-shadow:none!important;overflow:hidden!important;z-index:2147483647!important}.range-desktop-ui{display:none!important}.mvr-shell{display:block;position:absolute;inset:0;background:#020304;color:#fff;overflow:hidden}.choice-grid,.result-grid{grid-template-columns:1fr}}
 `;
