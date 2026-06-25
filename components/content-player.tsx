@@ -149,9 +149,9 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, mobileMedi
   }, []);
 
   const { source, type } = useMemo(() => {
-    const mobileSource = mobileMediaUrl || lowQualityMediaUrl || mediaUrl || driveUrl || '';
-    const desktopSource = driveUrl || mediaUrl || mobileMediaUrl || lowQualityMediaUrl || '';
-    const rawSource = preferMobileSource ? mobileSource : desktopSource;
+    const explicitLightSource = mobileMediaUrl || lowQualityMediaUrl || '';
+    const safeDefaultSource = driveUrl || mediaUrl || '';
+    const rawSource = preferMobileSource && explicitLightSource ? explicitLightSource : safeDefaultSource;
     const driveFileId = getDriveFileId(rawSource);
     return {
       type: mediaType || 'video',
