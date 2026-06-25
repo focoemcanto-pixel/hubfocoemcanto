@@ -22,44 +22,39 @@
 .exercise-experience .exercise-body:before{
   content:''!important;
   position:absolute!important;
-  left:64%!important;
-  top:39%!important;
-  width:min(72px,10vw)!important;
-  max-width:72px!important;
+  left:69%!important;
+  top:36%!important;
+  width:min(64px,9vw)!important;
+  max-width:64px!important;
   aspect-ratio:1!important;
   border-radius:999px!important;
-  background:radial-gradient(circle,
-    rgba(255,244,174,.9) 0%,
-    rgba(245,199,107,.46) 26%,
-    rgba(245,199,107,.14) 48%,
-    transparent 74%)!important;
-  filter:blur(11px)!important;
-  opacity:.66!important;
-  transform:translate(-50%,-50%) scale(.96)!important;
+  background:
+    radial-gradient(circle at 48% 48%,rgba(255,255,246,.94) 0 7%,transparent 18%),
+    radial-gradient(circle,rgba(255,238,148,.76) 0%,rgba(245,199,107,.38) 24%,rgba(112,232,255,.12) 46%,transparent 74%)!important;
+  filter:blur(9px)!important;
+  opacity:.68!important;
+  transform:translate(-50%,-50%) scale(.94)!important;
   z-index:3!important;
   pointer-events:none!important;
-  animation:anatomyGlowBreath 1.55s ease-in-out infinite!important;
+  animation:anatomyGlowLive 1.35s cubic-bezier(.45,0,.25,1) infinite!important;
 }
 
 .exercise-experience .exercise-body:after{
   content:''!important;
   position:absolute!important;
-  left:61.5%!important;
-  top:47.5%!important;
-  width:min(56px,8vw)!important;
-  max-width:56px!important;
+  left:67%!important;
+  top:43.5%!important;
+  width:min(46px,6.5vw)!important;
+  max-width:46px!important;
   aspect-ratio:1!important;
   border-radius:999px!important;
-  background:radial-gradient(circle,
-    rgba(245,199,107,.42) 0%,
-    rgba(245,199,107,.16) 38%,
-    transparent 72%)!important;
-  filter:blur(13px)!important;
-  opacity:.32!important;
-  transform:translate(-50%,-50%) scale(.94)!important;
+  background:radial-gradient(circle,rgba(245,199,107,.34) 0%,rgba(245,199,107,.12) 38%,transparent 74%)!important;
+  filter:blur(11px)!important;
+  opacity:.26!important;
+  transform:translate(-50%,-50%) scale(.9)!important;
   z-index:3!important;
   pointer-events:none!important;
-  animation:anatomyGlowSoft 2.1s ease-in-out infinite!important;
+  animation:anatomyGlowEcho 1.9s ease-in-out infinite!important;
 }
 
 .exercise-experience .target-note{
@@ -78,12 +73,14 @@
   opacity:.76!important;
 }
 
-@keyframes anatomyGlowBreath{
-  0%,100%{transform:translate(-50%,-50%) scale(.86);opacity:.38}
-  45%{transform:translate(-50%,-50%) scale(1.12);opacity:.72}
+@keyframes anatomyGlowLive{
+  0%,100%{transform:translate(-50%,-50%) translate3d(0,0,0) scale(.88);opacity:.36;filter:blur(10px)}
+  22%{transform:translate(-50%,-50%) translate3d(2px,-3px,0) scale(1.03);opacity:.66;filter:blur(8px)}
+  48%{transform:translate(-50%,-50%) translate3d(4px,-4px,0) scale(1.13);opacity:.78;filter:blur(9px)}
+  73%{transform:translate(-50%,-50%) translate3d(2px,2px,0) scale(.98);opacity:.52;filter:blur(11px)}
 }
 
-@keyframes anatomyGlowSoft{
-  0%,100%{transform:translate(-50%,-50%) scale(.9);opacity:.18}
-  50%{transform:translate(-50%,-50%) scale(1.06);opacity:.38}
+@keyframes anatomyGlowEcho{
+  0%,100%{transform:translate(-50%,-50%) translate3d(0,0,0) scale(.82);opacity:.12;filter:blur(12px)}
+  45%{transform:translate(-50%,-50%) translate3d(3px,-2px,0) scale(1.12);opacity:.34;filter:blur(10px)}
 }
