@@ -8,9 +8,18 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 type Row = any;
+type R2UploadedPart = { partNumber: number; etag: string };
+type R2MultipartUploadLike = {
+  uploadPart: (partNumber: number, value: ArrayBuffer | ArrayBufferView | string | null) => Promise<R2UploadedPart>;
+  complete: (parts: R2UploadedPart[]) => Promise<unknown>;
+  abort: () => Promise<unknown>;
+};
 type R2BucketLike = {
   put: (key: string, value: ReadableStream | ArrayBuffer | ArrayBufferView | string | null, options?: { httpMetadata?: { contentType?: string } }) => Promise<unknown>;
+  createMultipartUpload?: (key: string, options?: { httpMetadata?: { contentType?: string } }) => Promise<R2MultipartUploadLike>;
 };
+
+const PART_SIZE = 8 * 1024 * 1024;
 
 function msg(error: unknown) {
   return error instanceof Error ? error.message : String(error || 'unknown_error');
@@ -57,6 +66,58 @@ function getR2Bucket(): R2BucketLike | null {
     return null;
   } catch {
     return null;
+  }
+}
+
+function concatChunks(chunks: Uint8Array[], total: number) {
+  const output = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    output.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return output;
+}
+
+async function uploadStreamMultipart(bucket: R2BucketLike, key: string, stream: ReadableStream, contentType: string) {
+  if (typeof bucket.createMultipartUpload !== 'function') {
+    throw new Error('r2_multipart_not_available');
+  }
+
+  const upload = await bucket.createMultipartUpload(key, { httpMetadata: { contentType } });
+  const reader = stream.getReader();
+  const parts: R2UploadedPart[] = [];
+  let partNumber = 1;
+  let chunks: Uint8Array[] = [];
+  let buffered = 0;
+
+  async function flushPart() {
+    if (!buffered) return;
+    const part = concatChunks(chunks, buffered);
+    chunks = [];
+    buffered = 0;
+    const uploaded = await upload.uploadPart(partNumber, part);
+    parts.push(uploaded);
+    partNumber += 1;
+  }
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value?.byteLength) continue;
+      chunks.push(value);
+      buffered += value.byteLength;
+      if (buffered >= PART_SIZE) await flushPart();
+    }
+
+    await flushPart();
+    if (!parts.length) throw new Error('empty_stream');
+    await upload.complete(parts);
+    return { parts: parts.length };
+  } catch (error) {
+    await upload.abort().catch(() => null);
+    throw error;
   }
 }
 
@@ -155,8 +216,8 @@ async function migrateExercise(exercise: Row, product: Row, module: Row, token: 
     const key = `${folder}/${Date.now()}-${cleanFileName(name)}`;
     const publicUrl = publicUrlForKey(key);
 
-    step = 'r2_binding_put';
-    await bucket.put(key, driveResponse.body, { httpMetadata: { contentType: type } });
+    step = 'r2_multipart_upload';
+    const uploadInfo = await uploadStreamMultipart(bucket, key, driveResponse.body, type);
 
     step = 'public_check';
     const check = await fetch(publicUrl, { method: 'HEAD', cache: 'no-store' });
@@ -167,7 +228,7 @@ async function migrateExercise(exercise: Row, product: Row, module: Row, token: 
     const { error } = await supabase.from('exercises').update({ media_url: publicUrl, media_type: type.startsWith('audio/') ? 'audio' : 'video' }).eq('id', exercise.id);
     if (error) return { id: exercise.id, title: exercise.title, status: 'failed', step, reason: error.message };
 
-    return { id: exercise.id, title: exercise.title, moduleTitle: module?.title, status: 'migrated', mediaUrl: publicUrl, folder, key };
+    return { id: exercise.id, title: exercise.title, moduleTitle: module?.title, status: 'migrated', mediaUrl: publicUrl, folder, key, parts: uploadInfo.parts };
   } catch (error) {
     return { id: exercise.id, title: exercise.title, status: 'failed', step, reason: msg(error) };
   }
