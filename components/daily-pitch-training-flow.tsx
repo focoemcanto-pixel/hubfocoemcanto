@@ -8,6 +8,7 @@ import { completeDailyStep } from '@/lib/daily-training-progress';
 import { playPianoSample, preloadPianoSamples, stopPianoSamples } from '@/lib/audio/piano-sample-engine';
 import type { DailyTrainingStep, TrainingExercise } from '@/lib/training-center';
 import './daily-pitch-note-replica.css';
+import './daily-pitch-note-replica-fixes.css';
 
 type AudioCtor = typeof AudioContext;
 type AudioWindow = Window & typeof globalThis & { webkitAudioContext?: AudioCtor };
@@ -18,8 +19,9 @@ type Result = { ok: boolean; sungName: string; sungDisplay: string; cents: numbe
 
 const PT: Record<string, string> = { C: 'Dó', 'C#': 'Dó#', D: 'Ré', 'D#': 'Ré#', E: 'Mi', F: 'Fá', 'F#': 'Fá#', G: 'Sol', 'G#': 'Sol#', A: 'Lá', 'A#': 'Lá#', B: 'Si' };
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-const RECORD_SECONDS = 2.1;
+const RECORD_SECONDS = 2.15;
 const PASS_CENTS = 50;
+const SILENCE_RESET_SECONDS = 0.22;
 const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 const cents = (freq: number, target: number) => 1200 * Math.log2(freq / target);
@@ -106,7 +108,7 @@ export function DailyPitchTrainingFlow({ step, exercise }: { step: DailyTraining
   const [phase, setPhase] = useState<Phase>('ready');
   const [recordProgress, setRecordProgress] = useState(0);
   const [result, setResult] = useState<Result>(null);
-  const [, setHistory] = useState<Result[]>([]);
+  const [history, setHistory] = useState<Result[]>([]);
   const sampleCtxRef = useRef<AudioContext | null>(null);
   const micCtxRef = useRef<AudioContext | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -117,6 +119,8 @@ export function DailyPitchTrainingFlow({ step, exercise }: { step: DailyTraining
   const activeTargetRef = useRef<TargetNote | null>(null);
   const target = targets[index] ?? targets[0];
   const overall = `${((index + (phase === 'result' ? 1 : recordProgress)) / targets.length) * 100}%`;
+  const correctCount = history.filter((item) => item?.ok).length;
+  const wrongCount = history.filter((item) => item && !item.ok).length;
 
   useEffect(() => {
     const ctx = getSampleContext();
@@ -155,8 +159,8 @@ export function DailyPitchTrainingFlow({ step, exercise }: { step: DailyTraining
     await ctx.resume().catch(() => null);
     stopPianoSamples(ctx);
     await preloadPianoSamples(ctx, [noteToPlay.midi]).catch(() => null);
-    await playPianoSample(ctx, noteToPlay.midi, ctx.currentTime + 0.04, ctx.currentTime + 2.85, 1.08).catch(() => null);
-    await wait(2300);
+    await playPianoSample(ctx, noteToPlay.midi, ctx.currentTime + 0.04, ctx.currentTime + 3.72, 1.08).catch(() => null);
+    await wait(3100);
     if (autoRecord) void startCapture(noteToPlay);
     else setPhase('ready');
   }
@@ -192,6 +196,7 @@ export function DailyPitchTrainingFlow({ step, exercise }: { step: DailyTraining
       micCtxRef.current = ctx;
       const data = new Float32Array(analyser.fftSize);
       let heardSeconds = 0;
+      let silentSeconds = 0;
       let last = performance.now();
       const tick = () => {
         const now = performance.now();
@@ -200,8 +205,17 @@ export function DailyPitchTrainingFlow({ step, exercise }: { step: DailyTraining
         analyser.getFloatTimeDomainData(data);
         const pitch = getPitch(data, ctx.sampleRate);
         if (pitch) {
+          silentSeconds = 0;
           heardSeconds = Math.min(RECORD_SECONDS, heardSeconds + delta);
           samplesRef.current.push(nearestTarget(pitch, noteToCapture));
+        } else {
+          silentSeconds += delta;
+          if (silentSeconds >= SILENCE_RESET_SECONDS) {
+            heardSeconds = 0;
+            samplesRef.current = [];
+          } else {
+            heardSeconds = Math.max(0, heardSeconds - delta * 5);
+          }
         }
         const progress = clamp(heardSeconds / RECORD_SECONDS, 0, 1);
         setRecordProgress(progress);
@@ -239,6 +253,8 @@ export function DailyPitchTrainingFlow({ step, exercise }: { step: DailyTraining
     setRecordProgress(0);
     paintRecordProgress(0);
     if (index >= targets.length - 1) {
+      const summary = { correct: correctCount, wrong: wrongCount, total: targets.length, savedAt: Date.now() };
+      try { sessionStorage.setItem('daily-pitch-note-summary', JSON.stringify(summary)); } catch {}
       completeDailyStep(step, Math.max(1, Math.round((Date.now() - startRef.current) / 1000)));
       router.push(`/aluno/central/diarios/concluido?exercicio=${step.exerciseNumber}`);
       return;
@@ -290,7 +306,7 @@ export function DailyPitchTrainingFlow({ step, exercise }: { step: DailyTraining
           </div>
         </div>
 
-        {!currentResult && <p className="note-prompt">{phase === 'recording' ? 'Gravando sua voz...' : phase === 'playing' ? 'Ouça com atenção.' : 'Cante a nota que você ouviu.'}</p>}
+        {!currentResult && <p className="note-prompt">{phase === 'recording' ? 'Sustente a nota até completar o círculo.' : phase === 'playing' ? 'Ouça com atenção.' : 'Cante a nota que você ouviu.'}</p>}
 
         {!currentResult && (
           <div className="note-mic-wrap">
@@ -323,6 +339,8 @@ export function DailyPitchTrainingFlow({ step, exercise }: { step: DailyTraining
             </div>
           </>
         )}
+
+        {currentResult && <div className="note-rep-summary">Parcial: <b>{correctCount}</b> acerto(s) · <i>{wrongCount}</i> erro(s)</div>}
 
         <div className="note-tip">
           <strong>💡 Dica</strong>
