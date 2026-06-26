@@ -1,0 +1,256 @@
+/* Reference-matched layout for the first daily perception challenge */
+.ear-screen:has(.different-body) {
+  padding: calc(118px + env(safe-area-inset-top)) 32px calc(34px + env(safe-area-inset-bottom)) !important;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(255,255,255,.13), transparent 22%),
+    radial-gradient(circle at 83% 50%, rgba(255,255,255,.05), transparent 18%),
+    radial-gradient(circle at 20% 76%, rgba(255,255,255,.04), transparent 22%),
+    linear-gradient(180deg, #1d1d1d 0%, #101010 48%, #080808 100%) !important;
+}
+
+.ear-screen:has(.different-body)::before {
+  opacity: .42 !important;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.08), transparent 16%),
+    repeating-linear-gradient(112deg, rgba(255,255,255,.018) 0 1px, transparent 1px 21px) !important;
+}
+
+.ear-screen:has(.different-body) .ear-top {
+  position: absolute !important;
+  top: calc(30px + env(safe-area-inset-top)) !important;
+  left: 32px !important;
+  right: 32px !important;
+  grid-template-columns: 112px 1fr 58px !important;
+  min-height: 58px !important;
+}
+
+.ear-screen:has(.different-body) .ear-top button {
+  width: 112px !important;
+  height: 54px !important;
+  padding: 0 !important;
+  font-size: 20px !important;
+  border-width: 2px !important;
+  border-radius: 999px !important;
+}
+
+.ear-screen:has(.different-body) .ear-top span {
+  font-size: 20px !important;
+  letter-spacing: .09em !important;
+  color: rgba(255,255,255,.58) !important;
+}
+
+.ear-screen:has(.different-body) .ear-top i {
+  width: 54px !important;
+  height: 54px !important;
+  font-size: 28px !important;
+}
+
+.ear-screen:has(.different-body) .ear-icons {
+  display: grid !important;
+  grid-template-columns: repeat(6, 1fr) !important;
+  gap: 20px !important;
+  margin: 0 0 12px !important;
+  height: 54px !important;
+  align-items: end !important;
+}
+
+.ear-screen:has(.different-body) .ear-icons span {
+  font-size: 39px !important;
+  min-height: 52px !important;
+  color: rgba(255,255,255,.46) !important;
+}
+
+.ear-screen:has(.different-body) .ear-icons span.active {
+  color: #fff !important;
+  text-shadow: 0 0 18px rgba(255,255,255,.9) !important;
+}
+
+.ear-screen:has(.different-body) .ear-icons span.active::after {
+  content: '' !important;
+  position: absolute !important;
+  left: 50% !important;
+  bottom: -18px !important;
+  transform: translateX(-50%) !important;
+  width: 0 !important;
+  height: 0 !important;
+  border-left: 7px solid transparent !important;
+  border-right: 7px solid transparent !important;
+  border-bottom: 10px solid rgba(255,255,255,.95) !important;
+}
+
+.ear-screen:has(.different-body) .ear-line {
+  height: 1px !important;
+  margin: 0 0 78px !important;
+  background: rgba(255,255,255,.46) !important;
+}
+
+.ear-screen:has(.different-body) .different-body h2 {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace !important;
+  font-size: clamp(24px, 6.6vw, 34px) !important;
+  font-weight: 900 !important;
+  line-height: 1.08 !important;
+  letter-spacing: .015em !important;
+  max-width: 700px !important;
+  margin: 0 auto 10px !important;
+  text-align: center !important;
+  color: rgba(255,255,255,.94) !important;
+  text-shadow: 0 0 1px rgba(255,255,255,.55) !important;
+}
+
+.ear-screen:has(.different-body) .different-body p {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace !important;
+  font-size: clamp(18px, 4.6vw, 27px) !important;
+  font-weight: 700 !important;
+  line-height: 1.18 !important;
+  max-width: 710px !important;
+  margin: 0 auto 76px !important;
+  color: rgba(255,255,255,.72) !important;
+}
+
+.ear-screen:has(.different-body) .different-grid {
+  display: grid !important;
+  grid-template-columns: 104px 1fr !important;
+  gap: 48px !important;
+  align-items: start !important;
+  margin: 0 !important;
+}
+
+.ear-screen:has(.different-body) .sound-stack {
+  gap: 70px !important;
+  justify-items: center !important;
+  padding-top: 0 !important;
+}
+
+.ear-screen:has(.different-body) .sound-stack div {
+  gap: 9px !important;
+}
+
+.ear-screen:has(.different-body) .sound-stack strong {
+  font-size: 27px !important;
+  line-height: 1 !important;
+  color: #fff !important;
+  justify-self: start !important;
+  width: 76px !important;
+  text-align: left !important;
+}
+
+.ear-screen:has(.different-body) .sound-stack button {
+  width: 74px !important;
+  height: 74px !important;
+  border: 2px solid rgba(255,255,255,.96) !important;
+  border-radius: 50% !important;
+  background: rgba(0,0,0,.06) !important;
+  font-size: 0 !important;
+  box-shadow: 0 0 18px rgba(255,255,255,.08) !important;
+}
+
+.ear-screen:has(.different-body) .sound-stack button::before {
+  content: '🔊' !important;
+  font-size: 29px !important;
+  line-height: 1 !important;
+}
+
+.ear-screen:has(.different-body) .note-choices {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(92px, 1fr)) !important;
+  grid-template-rows: 94px 94px !important;
+  column-gap: clamp(42px, 18vw, 150px) !important;
+  row-gap: 48px !important;
+  align-items: center !important;
+  padding-top: 24px !important;
+}
+
+.ear-screen:has(.different-body) .reference-note,
+.ear-screen:has(.different-body) .note-choices button {
+  min-width: 84px !important;
+  min-height: 92px !important;
+  display: grid !important;
+  place-items: center !important;
+  color: rgba(255,255,255,.73) !important;
+}
+
+.ear-screen:has(.different-body) .reference-note span,
+.ear-screen:has(.different-body) .note-choices button span {
+  font-size: 57px !important;
+  line-height: .72 !important;
+  color: rgba(255,255,255,.72) !important;
+  transform: translateY(-2px) !important;
+}
+
+.ear-screen:has(.different-body) .reference-note b {
+  font-size: 24px !important;
+  line-height: 1 !important;
+  margin-top: 7px !important;
+  color: rgba(255,255,255,.82) !important;
+}
+
+.ear-screen:has(.different-body) .note-choices button i {
+  width: 34px !important;
+  height: 34px !important;
+  border: 2px solid rgba(255,255,255,.72) !important;
+  border-radius: 50% !important;
+  margin-top: 10px !important;
+  background: transparent !important;
+}
+
+.ear-screen:has(.different-body) .note-choices button.selected i {
+  background: rgba(255,255,255,.84) !important;
+  box-shadow: 0 0 18px rgba(255,255,255,.5) !important;
+}
+
+.ear-screen:has(.different-body) .chalk-action {
+  right: 32px !important;
+  bottom: calc(32px + env(safe-area-inset-bottom)) !important;
+  font-size: 30px !important;
+  line-height: 1 !important;
+}
+
+@media (max-width: 520px) {
+  .ear-screen:has(.different-body) {
+    padding-left: 31px !important;
+    padding-right: 31px !important;
+  }
+
+  .ear-screen:has(.different-body) .ear-top {
+    left: 31px !important;
+    right: 31px !important;
+  }
+
+  .ear-screen:has(.different-body) .ear-line {
+    margin-bottom: 74px !important;
+  }
+
+  .ear-screen:has(.different-body) .different-body p {
+    margin-bottom: 72px !important;
+  }
+
+  .ear-screen:has(.different-body) .different-grid {
+    grid-template-columns: 84px 1fr !important;
+    gap: 38px !important;
+  }
+
+  .ear-screen:has(.different-body) .sound-stack {
+    gap: 68px !important;
+  }
+
+  .ear-screen:has(.different-body) .sound-stack button {
+    width: 66px !important;
+    height: 66px !important;
+  }
+
+  .ear-screen:has(.different-body) .sound-stack strong {
+    font-size: 25px !important;
+    width: 66px !important;
+  }
+
+  .ear-screen:has(.different-body) .note-choices {
+    column-gap: 48px !important;
+    row-gap: 46px !important;
+    grid-template-rows: 92px 92px !important;
+  }
+
+  .ear-screen:has(.different-body) .reference-note span,
+  .ear-screen:has(.different-body) .note-choices button span {
+    font-size: 54px !important;
+  }
+}
