@@ -80,8 +80,13 @@ async function sha256Hex(value: string) {
   return [...new Uint8Array(hash)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
+function bufferSource(value: ArrayBuffer | Uint8Array): BufferSource {
+  if (value instanceof ArrayBuffer) return value;
+  return value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength) as ArrayBuffer;
+}
+
 async function hmac(key: ArrayBuffer | Uint8Array, value: string) {
-  const cryptoKey = await crypto.subtle.importKey('raw', key, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const cryptoKey = await crypto.subtle.importKey('raw', bufferSource(key), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   return crypto.subtle.sign('HMAC', cryptoKey, new TextEncoder().encode(value));
 }
 
