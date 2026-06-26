@@ -110,6 +110,7 @@ export const trainingCategories: TrainingCategory[] = [
   { slug: 'respiracao', title: 'Respiração', subtitle: 'Fluxo, apoio e controle', description: 'Treinos com guia visual para inspirar, dosar o ar e sustentar frases longas com mais organização corporal.', icon: '🌬️', gradient: 'radial-gradient(circle at 70% 20%,rgba(55,155,255,.35),transparent 38%),linear-gradient(145deg,#0b203f,#05060a)' },
   { slug: 'extensao-tessitura', title: 'Extensão e Tessitura', subtitle: 'Conforto nos graves e agudos', description: 'Vocalizes progressivos para mapear alcance, fortalecer a passagem e transformar extensão em tessitura utilizável.', icon: '📈', gradient: 'radial-gradient(circle at 70% 20%,rgba(46,213,170,.32),transparent 38%),linear-gradient(145deg,#0d2a22,#05060a)' },
   { slug: 'melismas', title: 'Melismas', subtitle: 'Agilidade e precisão', description: 'Padrões curtos com notas luminosas para treinar coordenação, velocidade e clareza em riffs e runs.', icon: '✨', gradient: 'radial-gradient(circle at 70% 20%,rgba(255,115,115,.30),transparent 38%),linear-gradient(145deg,#2e1111,#05060a)' },
+  { slug: 'percepcao', title: 'Percepção', subtitle: 'Ouvido, voz e ritmo', description: 'Perguntas rápidas que mudam todos os dias para treinar memória melódica, direção, ritmo e reconhecimento de notas.', icon: '🎧', gradient: 'radial-gradient(circle at 70% 20%,rgba(255,255,255,.20),transparent 38%),linear-gradient(145deg,#252525,#050505)' },
 ];
 
 export const trainingExercises: TrainingExercise[] = [
@@ -187,6 +188,18 @@ export const trainingExercises: TrainingExercise[] = [
     focus: ['Agilidade', 'Clareza', 'Coordenação'],
     notes: buildBeatGridNotes(92, ['E4', 'F4', 'G4', 'F4', 'E4', 'D4', 'E4', 'G4', 'A4'], 1),
   },
+  {
+    slug: 'percepcao-diaria-iniciante-01',
+    title: 'Percepção diária',
+    categorySlug: 'percepcao',
+    objective: 'Ouça, compare, cante e responda pequenos desafios de percepção musical.',
+    description: 'Seis provas curtas com notas, voz, ritmo, piano e memória melódica. As combinações variam automaticamente a cada dia.',
+    level: 'Iniciante',
+    durationLabel: '3 min',
+    bpm: 78,
+    focus: ['Percepção', 'Ritmo', 'Memória melódica'],
+    notes: buildBeatGridNotes(78, ['C4', 'E4', 'G4'], 1),
+  },
 ];
 
 export const dailyTrainingSteps: DailyTrainingStep[] = [
@@ -194,6 +207,7 @@ export const dailyTrainingSteps: DailyTrainingStep[] = [
   { day: 5, exerciseNumber: 2, title: 'Apoio da Respiração', subtitle: 'Sustente o ar em S contínuo.', intro: 'Inspire com calma e solte em Ssss, mantendo o fluxo constante até o tempo finalizar.', exerciseSlug: 'fluxo-de-ar-4-4-8', points: 60, accent: 'teal' },
   { day: 5, exerciseNumber: 3, title: 'Centro da Afinação', subtitle: 'Cante mirando o centro da nota.', intro: 'Use o piano como referência e mantenha cada nota estável até o final.', exerciseSlug: 'sustentacao-centro-da-nota-01', points: 70, accent: 'gold' },
   { day: 5, exerciseNumber: 4, title: 'Primeira Segunda Voz', subtitle: 'Visualize a divisão antes de cantar.', intro: 'Siga a linha luminosa e perceba o caminho das terças guiadas.', exerciseSlug: 'tercas-guiadas-primeira-entrada', points: 80, accent: 'purple' },
+  { day: 5, exerciseNumber: 5, title: 'Percepção Musical', subtitle: 'Ouça, compare e responda.', intro: 'Complete seis desafios rápidos de percepção. As notas e ritmos mudam todos os dias.', exerciseSlug: 'percepcao-diaria-iniciante-01', points: 90, accent: 'gold' },
 ];
 
 export function getTrainingCategory(slug: string) { return trainingCategories.find((category) => category.slug === slug); }
