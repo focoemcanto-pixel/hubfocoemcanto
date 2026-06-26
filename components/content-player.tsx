@@ -41,6 +41,27 @@ function canPlayNativeHls(video: HTMLVideoElement) {
   return Boolean(video.canPlayType('application/vnd.apple.mpegurl') || video.canPlayType('application/x-mpegURL'));
 }
 
+function isSafariLike() {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  const vendor = navigator.vendor || '';
+  const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isSafari = /Safari/i.test(ua) && /Apple/i.test(vendor) && !/CriOS|FxiOS|EdgiOS|OPiOS|Chrome|Chromium|Android/i.test(ua);
+  return isIOS || isSafari;
+}
+
+function shouldPrewarm() {
+  if (typeof navigator === 'undefined') return true;
+  const connection = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
+  if (connection?.saveData) return false;
+  if (connection?.effectiveType && /(^slow-2g$|^2g$)/i.test(connection.effectiveType)) return false;
+  return true;
+}
+
+function prewarmByteEnd() {
+  return isSafariLike() ? 1024 * 1024 - 1 : 2 * 1024 * 1024 - 1;
+}
+
 async function saveProgress(lessonId: string | null | undefined, positionSeconds: number, completed = false) {
   if (!lessonId) return;
   await fetch('/api/student/progress', {
@@ -111,6 +132,7 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const lastSavedAtRef = useRef(0);
   const restoredRef = useRef(false);
+  const prewarmedSourceRef = useRef('');
   const trimStart = Math.max(0, Number(trimStartSeconds || 0));
   const trimEnd = Math.max(0, Number(trimEndSeconds || 0));
 
@@ -131,6 +153,26 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
     const timer = window.setTimeout(installLessonsPanelToggle, 350);
     return () => window.clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    if (!source || type === 'audio' || isHls || prewarmedSourceRef.current === source || !shouldPrewarm()) return undefined;
+    prewarmedSourceRef.current = source;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      fetch(source, {
+        method: 'GET',
+        headers: { Range: `bytes=0-${prewarmByteEnd()}` },
+        cache: 'force-cache',
+        credentials: 'same-origin',
+        signal: controller.signal,
+      }).then((response) => response.arrayBuffer()).catch(() => undefined);
+    }, isSafariLike() ? 180 : 80);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [source, type, isHls]);
 
   useEffect(() => {
     setIsReady(false);
