@@ -56,7 +56,7 @@ export default function DailyTrainingEntryPage() {
                 <div className="daily-curriculum"><span>♦</span>Currículo Atual</div>
                 <p className="daily-hint">Arraste para cima para ver os próximos exercícios. Nenhum exercício fica bloqueado.</p>
                 <div className="daily-actions">
-                  <Link className={`daily-start ${isDone ? 'done' : ''}`} href={`/aluno/central/${step.exerciseSlug}`} prefetch>{isDone ? 'Concluído' : 'Iniciar'}</Link>
+                  <Link className={`daily-start ${isDone ? 'done' : ''}`} href={`/aluno/central/diarios/${step.exerciseNumber}`} prefetch>{isDone ? 'Concluído' : 'Iniciar'}</Link>
                   <Link className="daily-progress-link" href="/aluno/central/diarios/progresso" prefetch>Ver progresso</Link>
                 </div>
                 {index < dailyTrainingSteps.length - 1 ? <div className="daily-down" aria-hidden="true" /> : null}
