@@ -21,7 +21,7 @@ function formatClock(totalSeconds: number) {
 
 const summaryIcons = ['♫', '♬', '◉', '▤', '♮', '◎'];
 type SummaryMark = 'right' | 'wrong' | null;
-type PitchSummary = { exercise?: number; correct: number; wrong: number; total: number; avgCents?: number; durationSeconds?: number; savedAt?: number } | null;
+type PitchSummary = { exercise?: number; correct: number; wrong: number; total: number; avgCents?: number | null; durationSeconds?: number; savedAt?: number } | null;
 
 function readEarTrainingMarks(exerciseNumber: number): SummaryMark[] {
   try {
@@ -35,9 +35,10 @@ function readEarTrainingMarks(exerciseNumber: number): SummaryMark[] {
   }
 }
 
-function readPitchSummary(exerciseNumber: number): PitchSummary {
+function readRealSummary(exerciseNumber: number): PitchSummary {
   try {
-    const raw = sessionStorage.getItem('daily-pitch-note-summary') || localStorage.getItem('daily-pitch-note-summary');
+    const key = exerciseNumber === 4 ? 'daily-melodic-control-summary' : 'daily-pitch-note-summary';
+    const raw = sessionStorage.getItem(key) || localStorage.getItem(key);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as PitchSummary;
     if (!parsed || typeof parsed.correct !== 'number' || typeof parsed.wrong !== 'number') return null;
@@ -53,29 +54,29 @@ export function DailyTrainingCompletion({ step, total, next, durationSeconds }: 
   const [marks, setMarks] = useState<SummaryMark[]>(summaryIcons.map(() => null));
   const [pitchSummary, setPitchSummary] = useState<PitchSummary>(null);
   const level = (step as DailyTrainingStep & { level?: string }).level ?? 'Iniciante';
-  const isPitchStep = step.exerciseSlug === 'sustentacao-centro-da-nota-01' || step.title.toLowerCase().includes('afinação');
+  const isResultStep = step.exerciseSlug === 'sustentacao-centro-da-nota-01' || step.exerciseNumber === 4 || step.title.toLowerCase().includes('afinação');
 
   useEffect(() => {
     const nextProgress = completeDailyStep(step, durationSeconds);
     setProgress(nextProgress);
     setMarks(readEarTrainingMarks(step.exerciseNumber));
-    setPitchSummary(readPitchSummary(step.exerciseNumber));
+    setPitchSummary(readRealSummary(step.exerciseNumber));
     window.dispatchEvent(new Event('daily-training-progress'));
   }, [durationSeconds, step]);
 
   const completedCount = progress.completedExercises.length;
   const pitchData = useMemo(() => {
-    if (!isPitchStep && !pitchSummary) return null;
-    const totalNotes = Math.max(1, pitchSummary?.total || 15);
+    if (!isResultStep && !pitchSummary) return null;
+    const totalNotes = Math.max(1, pitchSummary?.total || (step.exerciseNumber === 4 ? 45 : 15));
     const correct = Math.max(0, pitchSummary?.correct || 0);
     const wrong = Math.max(0, pitchSummary?.wrong ?? Math.max(0, totalNotes - correct));
     const percent = Math.round((correct / totalNotes) * 100);
     const wrongPercent = Math.max(0, 100 - percent);
     const avg = typeof pitchSummary?.avgCents === 'number' ? Math.round(Math.abs(pitchSummary.avgCents)) : null;
     const time = pitchSummary?.durationSeconds || durationSeconds;
-    const pin = avg == null ? 50 : Math.max(4, Math.min(96, (avg / 60) * 100));
+    const pin = avg == null ? Math.max(8, Math.min(92, 100 - percent)) : Math.max(4, Math.min(96, (avg / 60) * 100));
     return { totalNotes, correct, wrong, percent, wrongPercent, avg, time, pin };
-  }, [durationSeconds, isPitchStep, pitchSummary]);
+  }, [durationSeconds, isResultStep, pitchSummary, step.exerciseNumber]);
 
   if (pitchData) {
     return (
@@ -101,7 +102,7 @@ export function DailyTrainingCompletion({ step, total, next, durationSeconds }: 
         <section className="completion-stats-card" aria-label="Dados reais da atividade">
           <div className="completion-stat ok"><span className="completion-stat-icon">◎</span><label>Acertos</label><strong>{pitchData.correct}</strong><small>{pitchData.percent}%</small></div>
           <div className="completion-stat bad"><span className="completion-stat-icon">×</span><label>Erros</label><strong>{pitchData.wrong}</strong><small>{pitchData.wrongPercent}%</small></div>
-          <div className="completion-stat precision"><span className="completion-stat-icon">⌁</span><label>Precisão média</label><strong>{pitchData.avg ?? '—'}</strong><small>centavos</small></div>
+          <div className="completion-stat precision"><span className="completion-stat-icon">⌁</span><label>{step.exerciseNumber === 4 ? 'Notas avaliadas' : 'Precisão média'}</label><strong>{step.exerciseNumber === 4 ? pitchData.totalNotes : pitchData.avg ?? '—'}</strong><small>{step.exerciseNumber === 4 ? 'eventos' : 'centavos'}</small></div>
           <div className="completion-stat time"><span className="completion-stat-icon">◷</span><label>Tempo total</label><strong>{formatClock(pitchData.time)}</strong><small>min</small></div>
         </section>
 
