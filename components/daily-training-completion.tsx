@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { DailyTrainingStep } from '@/lib/training-center';
 import { completeDailyStep, emptyDailyProgress, type DailyTrainingProgress } from '@/lib/daily-training-progress';
 
@@ -11,20 +11,34 @@ function formatSeconds(totalSeconds: number) {
   return `${minutes}:${seconds}`;
 }
 
-const summaryIcons = ['♫', '🎙', '🥁', '🎹', '♮', '🎧'];
+const summaryIcons = ['♫', '♬', '◉', '▤', '♮', '◎'];
+type SummaryMark = 'right' | 'wrong' | null;
+
+function readEarTrainingMarks(exerciseNumber: number): SummaryMark[] {
+  try {
+    const raw = sessionStorage.getItem('daily-ear-training-summary');
+    if (!raw) return summaryIcons.map(() => null);
+    const parsed = JSON.parse(raw) as { exercise?: number; marks?: SummaryMark[] };
+    if (parsed.exercise !== exerciseNumber || !Array.isArray(parsed.marks)) return summaryIcons.map(() => null);
+    return summaryIcons.map((_, index) => parsed.marks?.[index] ?? null);
+  } catch {
+    return summaryIcons.map(() => null);
+  }
+}
 
 export function DailyTrainingCompletion({ step, total, next, durationSeconds }: { step: DailyTrainingStep; total: number; next?: DailyTrainingStep; durationSeconds: number }) {
   const [progress, setProgress] = useState<DailyTrainingProgress>(emptyDailyProgress());
+  const [marks, setMarks] = useState<SummaryMark[]>(summaryIcons.map(() => null));
   const level = (step as DailyTrainingStep & { level?: string }).level ?? 'Iniciante';
 
   useEffect(() => {
     const nextProgress = completeDailyStep(step, durationSeconds);
     setProgress(nextProgress);
+    setMarks(readEarTrainingMarks(step.exerciseNumber));
     window.dispatchEvent(new Event('daily-training-progress'));
   }, [durationSeconds, step]);
 
   const completedCount = progress.completedExercises.length;
-  const marks = useMemo(() => summaryIcons.map((_, index) => (index === 2 ? 'wrong' : 'right')), []);
 
   return (
     <div className="done-premium-card">
@@ -34,9 +48,9 @@ export function DailyTrainingCompletion({ step, total, next, durationSeconds }: 
         <h2>NÍVEL - {level}</h2>
         <div className="done-premium-icons" aria-label="Resumo das respostas">
           {summaryIcons.map((icon, index) => (
-            <span key={`${icon}-${index}`} className={marks[index] === 'wrong' ? 'wrong' : 'right'}>
+            <span key={`${icon}-${index}`} className={marks[index] === 'wrong' ? 'wrong' : marks[index] === 'right' ? 'right' : ''}>
               <i>{icon}</i>
-              <b>{marks[index] === 'wrong' ? '×' : '✓'}</b>
+              <b>{marks[index] === 'wrong' ? '×' : marks[index] === 'right' ? '✓' : '•'}</b>
             </span>
           ))}
         </div>
