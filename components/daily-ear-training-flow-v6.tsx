@@ -1,5 +1,6 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import { useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { completeDailyStep } from '@/lib/daily-training-progress';
@@ -8,62 +9,524 @@ import { playPianoSample, preloadPianoSamples, stopPianoSamples } from '@/lib/au
 import type { DailyTrainingStep, TrainingExercise } from '@/lib/training-center';
 
 type Note = 'C' | 'D' | 'E' | 'F' | 'G' | 'A' | 'B';
-type Screen = 0 | 1 | 2 | 3 | 4 | 5;
+type StepIndex = 0 | 1 | 2 | 3 | 4 | 5;
 type Mark = 'right' | 'wrong' | null;
-type Score = { perfect: number; great: number; good: number; missed: number };
-type Dir = 'asc' | 'desc';
-const notes: Note[] = ['C','D','E','F','G','A','B'];
-const black = ['C#','D#','F#','G#','A#'];
-const staff = ['B','A#','A','G#','G','F#','F','E','D#','D','C#','C'];
-const icons = ['♫','🎙','🥁','🎹','♮','🎧'];
-const wait = (ms:number)=>new Promise(r=>setTimeout(r,ms));
-function rng(seed:number){let s=seed||1;return()=>((s=(s*9301+49297)%233280)/233280)}
-function pick<T>(r:()=>number,a:T[]){return a[Math.floor(r()*a.length)%a.length]}
-function midi(n:string){return noteNameToMidi(`${n}4`)??60}
-function y(n:string|null){const i=n?staff.indexOf(n):-1;return i>=0?7+i*7.6:50}
-function heard(freq:number){if(!Number.isFinite(freq)||freq<70)return null;const ns=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];const m=Math.round(69+12*Math.log2(freq/440));return ns[((m%12)+12)%12]}
-function pitch(buf:Float32Array,sr:number){const rms=Math.sqrt(buf.reduce((a,b)=>a+b*b,0)/buf.length);if(rms<.015)return null;let best=0,off=-1;for(let o=40;o<1000;o++){let sc=0;for(let i=0;i<buf.length-o;i++)sc+=1-Math.abs(buf[i]-buf[i+o]);sc/=buf.length-o;if(sc>best){best=sc;off=o}}return best>.88&&off>0?sr/off:null}
-function build(step:number){const d=new Date();const r=rng(Number(`${d.getFullYear()}${d.getMonth()+1}${d.getDate()}${step}`));const first:[Note,Note]=[pick(r,['B','C','D','E','F','G'] as Note[]),pick(r,['C','D','E','F','G','A'] as Note[])];const answer=Math.floor(r()*2);const second:[Note,Note]=[...first];second[answer]=pick(r,notes.filter(n=>n!==first[answer]));const sing:[Note,Note]=[pick(r,['C','D','E','F','G'] as Note[]),pick(r,['C','D','E','F','G','A'] as Note[])];const piano:[Note,Note,Note]=[pick(r,notes),pick(r,notes),pick(r,notes)];const dir:Dir=r()>.5?'asc':'desc';const low=pick(r,['C','D','E','F'] as Note[]), high=pick(r,['G','A','B'] as Note[]);const interval:[Note,Note]=dir==='asc'?[low,high]:[high,low];const same=r()>.5;const seq1:[Note,Note,Note]=[pick(r,notes),pick(r,notes),pick(r,notes)];const seq2:[Note,Note,Note]=same?[...seq1]:[...seq1];if(!same){const i=Math.floor(r()*3);seq2[i]=pick(r,notes.filter(n=>n!==seq1[i]))}return{first,second,answer,sing,piano,dir,interval,seq1,seq2,same}}
+type Direction = 'asc' | 'desc';
+type ScoreKey = 'perfect' | 'great' | 'good' | 'missed';
+type Score = Record<ScoreKey, number>;
 
-export function DailyEarTrainingFlowV6({step,exercise}:{step:DailyTrainingStep;exercise:TrainingExercise}){
- const router=useRouter(), audio=useRef<AudioContext|null>(null), started=useRef(Date.now()), rhythmStart=useRef(0);
- const data=useMemo(()=>build(step.exerciseNumber),[step.exerciseNumber]);
- const [screen,setScreen]=useState<Screen>(0),[marks,setMarks]=useState<Mark[]>(Array(6).fill(null)),[flash,setFlash]=useState<Mark>(null);
- const [selected,setSelected]=useState<number|null>(null),[playing,setPlaying]=useState<string|null>(null),[activeKey,setActiveKey]=useState<string|null>(null);
- const [voice,setVoice]=useState({target:0,heard:null as string|null,active:false,done:[] as boolean[]});
- const [phase,setPhase]=useState<'ready'|'demo'|'play'|'done'>('ready'),[beat,setBeat]=useState(-1),[tapBeat,setTapBeat]=useState(-1),[taps,setTaps]=useState(0),[score,setScore]=useState<Score>({perfect:0,great:0,good:0,missed:0});
- const [pianoAnswer,setPianoAnswer]=useState<Note[]>([]),[drag,setDrag]=useState<Note|null>(null),[dirChoice,setDirChoice]=useState<Dir|null>(null),[sameChoice,setSameChoice]=useState<boolean|null>(null),[cursor,setCursor]=useState<{line:1|2|null;pos:number}>({line:null,pos:0});
- const bpm=77, beatMs=Math.round(60000/bpm);
- function ctx(){if(!audio.current)audio.current=new AudioContext();return audio.current}
- async function tone(n:string,visual=false){const c=ctx();await c.resume().catch(()=>null);const m=midi(n);void preloadPianoSamples(c,[m]);if(visual){setActiveKey(n);setTimeout(()=>setActiveKey(null),250)}await playPianoSample(c,m,c.currentTime+.025,c.currentTime+.58,1.04);await wait(610)}
- async function playNotes(label:string,arr:Note[],visual=false,line?:1|2){if(playing)return;setPlaying(label);if(line)setCursor({line,pos:0});for(let i=0;i<arr.length;i++){if(line)setCursor({line,pos:i});await tone(arr[i],visual);await wait(60)}if(line)setCursor({line,pos:3});await wait(160);if(line)setCursor({line:null,pos:0});setPlaying(null)}
- async function kick(){const c=ctx();await c.resume().catch(()=>null);const o=c.createOscillator(),g=c.createGain();o.type='sine';o.frequency.setValueAtTime(122,c.currentTime);o.frequency.exponentialRampToValueAtTime(48,c.currentTime+.16);g.gain.setValueAtTime(.42,c.currentTime);g.gain.exponentialRampToValueAtTime(.0001,c.currentTime+.22);o.connect(g).connect(c.destination);o.start();o.stop(c.currentTime+.23)}
- function quit(){stopPianoSamples(audio.current??undefined);router.push('/aluno/central/diarios')}
- function finish(){completeDailyStep(step,Math.max(1,Math.round((Date.now()-started.current)/1000)));stopPianoSamples(audio.current??undefined);router.push(`/aluno/central/diarios/concluido?exercicio=${step.exerciseNumber}`)}
- function mark(ok:boolean,next:()=>void){setMarks(m=>{const n=[...m];n[screen]=ok?'right':'wrong';return n});setFlash(ok?'right':'wrong');setTimeout(()=>{setFlash(null);next()},760)}
- function submit1(){if(selected==null)return;mark(selected===data.answer,()=>setScreen(1))}
- async function listen(target:Note,i:number){setVoice(v=>({...v,target:i,heard:null,active:true}));try{const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:true,autoGainControl:false}});const c=new AudioContext(),src=c.createMediaStreamSource(stream),an=c.createAnalyser();an.fftSize=2048;src.connect(an);const buf=new Float32Array(an.fftSize);let ok=0,start=performance.now();while(performance.now()-start<2200){an.getFloatTimeDomainData(buf);const h=heard(pitch(buf,c.sampleRate)||0);setVoice(v=>({...v,heard:h,active:true}));ok=h===target?ok+1:Math.max(0,ok-1);if(ok>=5)break;await wait(90)}stream.getTracks().forEach(t=>t.stop());await c.close().catch(()=>null);const good=ok>=5;setVoice(v=>{const done=[...v.done];done[i]=good;return{...v,active:false,done}});return good}catch{setVoice(v=>({...v,active:false}));return false}}
- async function runSing(){if(voice.active)return;setVoice({target:0,heard:null,active:false,done:[]});await playNotes('sing',data.sing,false);const out=[];for(let i=0;i<data.sing.length;i++){out[i]=await listen(data.sing[i],i);await wait(240)}mark(out.every(Boolean),()=>setScreen(2))}
- async function demoRhythm(){if(phase!=='ready')return;setPhase('demo');setScore({perfect:0,great:0,good:0,missed:0});setTaps(0);for(let i=0;i<4;i++){setBeat(i);await kick();await wait(beatMs)}setBeat(-1);await wait(340);setPhase('play');rhythmStart.current=performance.now()+480}
- function tapRhythm(){if(phase!=='play'||taps>=4)return;void kick();const i=taps;setTapBeat(i);setTimeout(()=>setTapBeat(-1),170);const diff=Math.abs(performance.now()-(rhythmStart.current+i*beatMs));const q:keyof Score=diff<=85?'perfect':diff<=150?'great':diff<=240?'good':'missed';setScore(s=>({...s,[q]:s[q]+1}));const next=i+1;setTaps(next);if(next>=4){setPhase('done');setTimeout(()=>mark(score.missed<3,()=>setScreen(3)),600)}}
- async function choosePiano(n:Note){await tone(n,true);if(pianoAnswer.length<3)setPianoAnswer(a=>[...a,n])}
- function place(i:number){if(!drag)return;setPianoAnswer(a=>{const n=[...a];n[i]=drag;return n.slice(0,3) as Note[]});setDrag(null)}
- function submitPiano(){mark(pianoAnswer.length===3&&pianoAnswer.join(',')===data.piano.join(','),()=>setScreen(4))}
- function submitDir(c:Dir){setDirChoice(c);mark(c===data.dir,()=>setScreen(5))}
- function submitSame(v:boolean){setSameChoice(v);mark(v===data.same,finish)}
- return <main className="ear6"><style>{css}</style><Header level={exercise.level} screen={screen} marks={marks} quit={quit}/>{screen===0&&<Step1 data={data} selected={selected} setSelected={setSelected} playSet={(k:'first'|'second')=>playNotes(k,k==='first'?data.first:data.second)} playing={playing} submit={submit1}/>} {screen===1&&<Step2 data={data} voice={voice} run={runSing}/>} {screen===2&&<Step3 bpm={bpm} beat={beat} tapBeat={tapBeat} phase={phase} score={score} demo={demoRhythm} tap={tapRhythm}/>} {screen===3&&<Step4 answer={pianoAnswer} active={activeKey} play={()=>playNotes('piano',data.piano,false)} choose={choosePiano} setDrag={setDrag} place={place} reset={()=>setPianoAnswer([])} submit={submitPiano} playing={playing==='piano'}/>} {screen===4&&<Step5 choice={dirChoice} play={()=>playNotes('interval',data.interval,false)} playing={playing==='interval'} submit={submitDir}/>} {screen===5&&<Step6 choice={sameChoice} play1={()=>playNotes('seq1',data.seq1,false,1)} play2={()=>playNotes('seq2',data.seq2,false,2)} playing={playing} cursor={cursor} submit={submitSame}/>} {flash&&<div className={`feedback ${flash}`}>{flash==='right'?'✓':'×'}</div>}</main>
+const notes: Note[] = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+const blackNotes = ['C#', 'D#', 'F#', 'G#', 'A#'];
+const staffRows = ['B', 'A#', 'A', 'G#', 'G', 'F#', 'F', 'E', 'D#', 'D', 'C#', 'C'];
+
+function wait(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
-function Header({level,screen,marks,quit}:{level:string;screen:Screen;marks:Mark[];quit:()=>void}){return <><header className="top"><button onClick={quit}>Sair</button><span>{level}</span><i>i</i></header><nav className="icons">{icons.map((ic,i)=><span key={ic} className={`${i===screen?'active':''} ${marks[i]?'done':''} ${marks[i]==='wrong'?'bad':''}`}>{ic}<b>{marks[i]==='wrong'?'×':'✓'}</b></span>)}</nav></>}
-function Medal(){return <div className="medal"><b>♛</b><span>◇</span></div>}
-function Step1(p:any){return <section className="stage"><Card title="Identifique dois conjuntos\nde notas." text={<span>Do <b>2º</b> conjunto, selecione<br/>a nota que está fora do <b>1º</b> conjunto.</span>}/><Set title="1º CONJUNTO" play={()=>p.playSet('first')} playing={p.playing==='first'}>{p.data.first.map((n:Note)=><div className="note" key={n}><span>♪</span><b>{n}</b></div>)}</Set><Set title="2º CONJUNTO" play={()=>p.playSet('second')} playing={p.playing==='second'}>{p.data.second.map((n:Note,i:number)=><button key={i} className={`answer ${p.selected===i?'selected':''}`} onClick={()=>p.setSelected(i)}><span>♪</span><i/></button>)}</Set>{p.selected!=null&&<button className="send" onClick={p.submit}>Enviar</button>}</section>}
-function Card({title,text}:{title:string;text:React.ReactNode}){return <section className="card"><Medal/><h1>{title.split('\n').map((t,i)=><span key={i}>{t}{i<title.split('\n').length-1&&<br/>}</span>)}</h1><em/><p>{text}</p></section>}
-function Set({title,play,playing,children}:any){return <section className="set"><h2><span/>{title}<span/></h2><button className={playing?'playing':''} onClick={play}>🔊</button>{children}</section>}
-function Step2({data,voice,run}:any){return <section className="sing"><h1>Ouça as duas notas.<br/>Depois cante na mesma ordem.</h1><div className="staff">{staff.map(n=><div key={n}><span>{n}</span><i/></div>)}{data.sing.map((n:Note,i:number)=><button key={i} className={voice.done[i]?'done':''} style={{top:`${y(n)}%`,left:`${i?74:32}%`}}>{voice.done[i]?'✓':n}</button>)}{voice.heard&&<em style={{top:`${y(voice.heard)}%`,left:`${voice.target?74:32}%`}}/>}</div><button className="big" onClick={run}>🔊</button><small>{voice.active?'cante a nota indicada':'toque para ouvir as duas notas'}</small></section>}
-function Step3({bpm,beat,tapBeat,phase,score,demo,tap}:any){return <section className="rhythm"><div className="rtitle"><Medal/><h1>Observe a bateria,<br/>em seguida, toque seguindo o ritmo.</h1></div><div className="beats"><div>♩ = {bpm}<br/><small>4/4</small></div>{[0,1,2,3].map(i=><span key={i} className={(beat===i||tapBeat===i)?'on':''}/>)}</div><button className="tap" onClick={tap} disabled={phase!=='play'}><b>{phase==='done'?'Concluído':'Toque aqui'}</b></button><p className="score">Perfeito: <strong>{score.perfect}</strong> · Ótimo: <strong>{score.great}</strong> · Bom: <strong>{score.good}</strong><br/>Perdido: <strong>{score.missed}</strong></p><small>{phase==='ready'||phase==='demo'?'Demonstração...':phase==='play'?'Sua vez':'Avançando...'}</small><button className="demo" onClick={demo} disabled={phase!=='ready'}>🔊</button></section>}
-function Step4({answer,active,play,choose,setDrag,place,reset,submit,playing}:any){return <section className="piano"><div className="ptitle"><Medal/><h1>Ouça a(s) nota(s) de uma oitava inferior<br/>ou superior.</h1><p>Encontre e selecione as mesmas notas no teclado.</p></div><Keyboard active={active} choose={choose} setDrag={setDrag}/><p className="hint">Pressione e segure o piano e arraste para a <b>Área de Resposta...</b></p><div className="slots">{[0,1,2].map(i=><button key={i} onDragOver={e=>e.preventDefault()} onDrop={()=>place(i)} onPointerUp={()=>place(i)}>{answer[i]||''}</button>)}</div><button className={`big ${playing?'playing':''}`} onClick={play}>🔊</button>{answer.length>0&&<button className="reset" onClick={reset}>Redefinir</button>}{answer.length===3&&<button className="send" onClick={submit}>Enviar</button>}</section>}
-function Keyboard({active,choose,setDrag}:any){return <div className="keyboard">{black.map((n,i)=><span key={n} className={`black b${i}`}>{n}</span>)}{notes.map(n=><button key={n} className={active===n?'on':''} draggable onDragStart={()=>setDrag(n)} onPointerDown={()=>setDrag(n)} onClick={()=>choose(n)}><b>{n}</b></button>)}</div>}
-function Step5({choice,play,playing,submit}:any){return <section className="interval"><div className="ititle"><Medal/><h1>Ouça as duas notas<br/>Elas estão <b>ascendentes</b> ou <b>descendentes</b>?</h1></div><div className="cards"><article><b>1st</b><span>♪</span></article><article><b>2nd</b><span>♪</span></article></div><div className="divider"/><button className={`big ${playing?'playing':''}`} onClick={play}>🔊</button><div className="choices"><button className={choice==='asc'?'selected':''} onClick={()=>submit('asc')}>Ascendente</button><button className={choice==='desc'?'selected':''} onClick={()=>submit('desc')}>Descendente</button></div></section>}
-function Step6({choice,play1,play2,playing,cursor,submit}:any){return <section className="compare"><div className="ctitle"><Medal/><h1>Ouça dois conjuntos de notas.<br/>São <b>iguais</b> ou <b>diferentes</b>?</h1></div><ScoreLine label="1st" play={play1} active={playing==='seq1'} line={1} cursor={cursor}/><ScoreLine label="2nd" play={play2} active={playing==='seq2'} line={2} cursor={cursor}/><p>Selecionar resposta</p><div className="compare-choice"><button className={choice===true?'selected':''} onClick={()=>submit(true)}>IGUAL<br/><span>◇</span></button><button className={choice===false?'selected':''} onClick={()=>submit(false)}>DIFERENTE<br/><span>◇</span></button></div><button className={`big ${playing?'playing':''}`} onClick={play1}>🔊</button></section>}
-function ScoreLine({label,play,active,line,cursor}:any){const left=18+(Math.min(cursor.pos,3)*24);return <section className="scoreline"><strong>{label}</strong><button className={active?'playing':''} onClick={play}>🔊</button><div className="staffline"><i/><i/><i/><i/><i/><b style={{left:`${cursor.line===line?left:88}%`}}>𝄞</b></div></section>}
 
-const css=`.ear6{--g:#d7a34d;--g2:#ffd482;min-height:100dvh;position:relative;overflow-x:hidden;padding:calc(20px + env(safe-area-inset-top)) 18px calc(20px + env(safe-area-inset-bottom));color:#f4ead8;background:radial-gradient(circle at 50% -8%,rgba(255,220,140,.12),transparent 25%),radial-gradient(circle at 50% 34%,rgba(215,163,77,.09),transparent 36%),linear-gradient(180deg,#17191b,#0d0f11 58%,#060708);font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;text-align:center}.ear6:before{content:'';position:absolute;inset:0;background:repeating-linear-gradient(110deg,rgba(255,255,255,.018) 0 1px,transparent 1px 24px),radial-gradient(circle at 50% 52%,rgba(255,255,255,.052),transparent 24%);opacity:.7;pointer-events:none}.ear6 *{box-sizing:border-box}.ear6>*{position:relative;z-index:1}.top{height:7.2dvh;width:min(100%,430px);margin:0 auto;display:grid;grid-template-columns:84px 1fr 44px;align-items:center;gap:10px}.top button{width:84px;height:38px;border:1.3px solid var(--g);border-radius:999px;background:rgba(215,163,77,.035);color:var(--g2);font:900 17px system-ui}.top span{color:var(--g2);font-size:20px;letter-spacing:.18em}.top i{width:42px;height:42px;border:1.3px solid var(--g);border-radius:50%;display:grid;place-items:center;color:var(--g2);font:900 23px system-ui;font-style:normal}.icons{height:7dvh;width:min(100%,430px);margin:0 auto;display:grid;grid-template-columns:repeat(6,1fr);gap:8px;align-items:center}.icons span{height:38px;display:grid;place-items:center;color:rgba(255,255,255,.38);font-size:24px;position:relative;filter:grayscale(1)}.icons .active{color:var(--g2);filter:none;text-shadow:0 0 16px rgba(215,163,77,.36)}.icons .active:after{content:'';position:absolute;bottom:-6px;width:48px;height:2px;background:var(--g2)}.icons b{display:none}.icons .done b{display:block;position:absolute;bottom:-17px;color:#20d977;font-size:18px}.icons .bad b{color:#ff3030}.stage,.sing,.rhythm,.piano,.interval,.compare{min-height:calc(100dvh - 14.5dvh - 42px);display:flex;flex-direction:column;align-items:center;justify-content:space-evenly;gap:12px}.card{position:relative;width:min(100%,330px);min-height:172px;border:1.1px solid rgba(215,163,77,.56);border-radius:26px;background:linear-gradient(145deg,rgba(215,163,77,.105),rgba(255,255,255,.018));display:flex;flex-direction:column;align-items:center;justify-content:center;padding:30px 24px 17px}.medal{position:absolute;top:-25px;left:50%;transform:translateX(-50%);width:50px;height:50px;border:1.8px solid var(--g2);border-radius:50%;display:grid;place-items:center;background:#171516;color:var(--g2);box-shadow:0 0 18px rgba(215,163,77,.20)}.medal b{position:absolute;top:-17px;font-size:19px;font-family:serif}.medal span{font-size:24px}.card h1,.sing h1,.rtitle h1,.ititle h1,.ctitle h1{font:900 clamp(18px,4.7vw,23px)/1.1 ui-monospace,SFMono-Regular,monospace;margin:0;white-space:pre-line}.card em{width:40px;height:2px;background:var(--g2);display:block;margin:11px 0 10px}.card p{margin:0;color:rgba(245,242,236,.64);font-size:clamp(13px,3.55vw,15px);line-height:1.26}.card b,.hint b,.ititle b,.ctitle b{color:var(--g2)}.set{position:relative;width:min(100%,348px);min-height:112px;border:1px solid rgba(215,163,77,.22);border-radius:21px;background:rgba(255,255,255,.017);display:grid;grid-template-columns:62px 1fr 1fr;gap:16px;align-items:center;padding:19px 20px 12px}.set h2{position:absolute;top:-13px;left:50%;transform:translateX(-50%);display:grid;grid-template-columns:48px auto 48px;gap:8px;align-items:center;color:var(--g2);font-size:14px;font-weight:500;white-space:nowrap}.set h2 span{height:1px;background:rgba(215,163,77,.28)}.set>button,.big,.demo,.scoreline>button{border:1.8px solid var(--g2);border-radius:50%;background:radial-gradient(circle,rgba(215,163,77,.17),rgba(255,255,255,.02));color:#fff;box-shadow:0 0 18px rgba(215,163,77,.20)}.set>button{width:56px;height:56px;font-size:25px}.playing{transform:scale(.96);box-shadow:0 0 30px rgba(215,163,77,.44)!important}.note,.answer{display:grid;place-items:center;border:0;background:transparent;color:#e8e8e8}.note span,.answer span{font-size:32px;line-height:.74;color:var(--g2)}.note b{margin-top:5px;font:700 20px system-ui}.answer i{width:26px;height:26px;border:2px solid rgba(255,255,255,.62);border-radius:50%;margin-top:7px;display:block}.answer.selected i{background:var(--g2);box-shadow:0 0 18px rgba(215,163,77,.48)}.send,.reset{position:fixed;bottom:calc(12px + env(safe-area-inset-bottom));border:0;border-radius:999px;background:linear-gradient(180deg,#ffe0a0,#d7a34d);color:#16110a;font:900 13px system-ui;text-transform:uppercase;padding:10px 16px;z-index:8}.send{right:18px}.reset{left:18px;background:transparent;color:var(--g2)}.feedback{position:fixed;inset:0;display:grid;place-items:center;font-size:76px;font-weight:950;color:#43ff83;text-shadow:0 0 34px rgba(67,255,131,.72);background:rgba(0,0,0,.18);z-index:10}.feedback.wrong{color:#ff4242}.staff{position:relative;width:min(100%,365px);height:46dvh;max-height:420px;min-height:318px}.staff div{display:grid;grid-template-columns:38px 1fr;align-items:center;height:8.33%;color:rgba(255,255,255,.42);font:800 12px system-ui}.staff i{height:1px;background:rgba(255,255,255,.24)}.staff button{position:absolute;transform:translate(-50%,-50%);width:46px;height:46px;border:1.8px solid var(--g2);border-radius:50%;background:rgba(0,0,0,.22);color:var(--g2);font-weight:900}.staff button.done{border-color:#48ff8a;color:#48ff8a}.staff em{position:absolute;transform:translate(-50%,-50%);width:30px;height:30px;border-radius:50%;background:#f81919;box-shadow:0 0 16px rgba(248,25,25,.7)}.big,.demo{width:64px;height:64px;font-size:28px}small{color:rgba(255,255,255,.52);font-size:14px}.rtitle,.ptitle,.ititle,.ctitle{position:relative;padding-top:38px;min-height:96px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end}.rtitle .medal,.ptitle .medal,.ititle .medal,.ctitle .medal{top:0}.beats{width:min(100%,390px);display:grid;grid-template-columns:72px repeat(4,1fr);gap:12px;align-items:center}.beats div{height:54px;border:1px solid rgba(215,163,77,.2);border-radius:14px;display:grid;place-items:center;color:var(--g2);font-size:16px}.beats span{width:24px;height:34px;border:1.5px solid var(--g2);border-radius:3px;justify-self:center;position:relative}.beats span:after{content:'';position:absolute;inset:5px;background:rgba(255,212,130,.06)}.beats .on:after{background:linear-gradient(180deg,#ffdc91,#d7a34d);box-shadow:0 0 26px rgba(255,212,130,.7)}.tap{width:min(100%,340px);height:22dvh;min-height:150px;border:1px solid rgba(215,163,77,.38);border-radius:22px;background:radial-gradient(circle,rgba(215,163,77,.18),rgba(255,255,255,.018) 30%,transparent);color:var(--g2);font:400 20px system-ui}.tap b{font-weight:400}.score{width:min(100%,340px);font:400 14px/1.4 system-ui;color:var(--g2);border:1px solid rgba(255,255,255,.07);border-radius:16px;padding:10px;margin:0}.score strong{color:#fff;font-weight:400}.keyboard{position:relative;width:min(720px,90vw);height:190px;border:1px solid rgba(215,163,77,.32);border-radius:22px;padding:46px 12px 22px;display:grid;grid-template-columns:repeat(7,1fr);background:rgba(255,255,255,.015)}.keyboard>button{border:1px solid rgba(0,0,0,.45);background:linear-gradient(90deg,#ede8da,#fffaf0 45%,#d4cdbf);color:#282828;font:900 20px system-ui;display:flex;align-items:flex-end;justify-content:center;padding-bottom:12px}.keyboard>button.on,.keyboard>button:active{transform:translateY(3px);filter:brightness(.86);box-shadow:inset 0 8px 20px rgba(0,0,0,.24),0 0 28px rgba(215,163,77,.42)}.black{position:absolute;top:33px;width:36px;height:92px;background:linear-gradient(180deg,#000,#1e1e1e 70%,#484848);color:var(--g2);font:900 13px system-ui;padding-top:7px;border-radius:0 0 6px 6px;z-index:3}.b0{left:17%}.b1{left:29%}.b2{left:55%}.b3{left:67%}.b4{left:79%}.ptitle h1{font:400 17px/1.35 system-ui}.ptitle p{font:400 16px/1.35 system-ui;margin:0}.hint{font:400 14px/1.35 system-ui;color:rgba(255,255,255,.78);margin:0}.slots{display:flex;gap:24px}.slots button{width:58px;height:58px;border:2px dashed var(--g2);border-radius:50%;background:rgba(215,163,77,.03);color:#fff;font:900 22px system-ui}.cards{display:grid;grid-template-columns:1fr 1fr;gap:16px;width:min(640px,82vw);margin:20px auto}.cards article{height:176px;border:1px solid rgba(215,163,77,.52);border-radius:26px;background:radial-gradient(circle at 50% 60%,rgba(215,163,77,.13),rgba(255,255,255,.015));display:grid;place-items:center;color:var(--g2)}.cards article>b{font:800 24px system-ui}.cards span{font-size:64px}.divider{width:min(660px,82vw);height:1px;background:linear-gradient(90deg,transparent,rgba(215,163,77,.45),transparent)}.choices,.compare-choice{display:flex;gap:16px;justify-content:center}.choices button,.compare-choice button{border:1px solid rgba(215,163,77,.55);border-radius:18px;background:rgba(215,163,77,.06);color:var(--g2);font:900 14px system-ui;padding:11px 14px;text-transform:uppercase}.choices .selected,.compare-choice .selected{background:var(--g2);color:#16110a}.compare p{color:var(--g2);margin:0;font-size:17px}.scoreline{position:relative;width:min(100%,360px);height:96px;border:1px solid rgba(215,163,77,.28);border-radius:19px;background:rgba(255,255,255,.015);display:grid;grid-template-columns:70px 1fr;align-items:center;padding:14px 18px}.scoreline strong{position:absolute;top:-28px;left:18px;color:var(--g2);font:800 24px system-ui}.scoreline>button{width:54px;height:54px;font-size:23px}.staffline{position:relative;height:54px}.staffline i{position:absolute;left:0;right:0;height:1px;background:rgba(215,163,77,.45)}.staffline i:nth-child(1){top:8px}.staffline i:nth-child(2){top:18px}.staffline i:nth-child(3){top:28px}.staffline i:nth-child(4){top:38px}.staffline i:nth-child(5){top:48px}.staffline b{position:absolute;top:-6px;color:var(--g2);font-size:48px;transition:left .55s ease;text-shadow:0 0 18px rgba(215,163,77,.45)}@media(max-height:760px){.set{min-height:102px}.card{min-height:156px}.staff{height:40dvh}.tap{height:18dvh}.cards article{height:148px}.scoreline{height:84px}.keyboard{height:172px}.big,.demo{width:56px;height:56px}}`;
+function randomFor(seedValue: number) {
+  let seed = seedValue || 1;
+  return () => {
+    seed = (seed * 9301 + 49297) % 233280;
+    return seed / 233280;
+  };
+}
+
+function choose<T>(random: () => number, items: T[]) {
+  return items[Math.floor(random() * items.length) % items.length];
+}
+
+function toMidi(note: string) {
+  return noteNameToMidi(`${note}4`) ?? 60;
+}
+
+function noteY(note: string | null) {
+  const index = note ? staffRows.indexOf(note) : -1;
+  return index >= 0 ? 7 + index * 7.6 : 50;
+}
+
+function noteFromFrequency(frequency: number) {
+  if (!Number.isFinite(frequency) || frequency < 70) return null;
+  const chromatic = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+  const midi = Math.round(69 + 12 * Math.log2(frequency / 440));
+  return chromatic[((midi % 12) + 12) % 12];
+}
+
+function estimatePitch(buffer: Float32Array, sampleRate: number) {
+  const rms = Math.sqrt(buffer.reduce((sum, value) => sum + value * value, 0) / buffer.length);
+  if (rms < 0.015) return null;
+  let bestScore = 0;
+  let bestOffset = -1;
+  for (let offset = 40; offset < 1000; offset += 1) {
+    let score = 0;
+    for (let index = 0; index < buffer.length - offset; index += 1) {
+      score += 1 - Math.abs(buffer[index] - buffer[index + offset]);
+    }
+    score /= buffer.length - offset;
+    if (score > bestScore) {
+      bestScore = score;
+      bestOffset = offset;
+    }
+  }
+  return bestScore > 0.88 && bestOffset > 0 ? sampleRate / bestOffset : null;
+}
+
+function makeChallenge(stepNumber: number) {
+  const today = new Date();
+  const random = randomFor(Number(`${today.getFullYear()}${today.getMonth() + 1}${today.getDate()}${stepNumber}`));
+
+  const first: [Note, Note] = [choose(random, ['B', 'C', 'D', 'E', 'F', 'G'] as Note[]), choose(random, ['C', 'D', 'E', 'F', 'G', 'A'] as Note[])];
+  const differentIndex = Math.floor(random() * 2);
+  const second: [Note, Note] = [...first];
+  second[differentIndex] = choose(random, notes.filter((note) => note !== first[differentIndex]));
+
+  const sing: [Note, Note] = [choose(random, ['C', 'D', 'E', 'F', 'G'] as Note[]), choose(random, ['C', 'D', 'E', 'F', 'G', 'A'] as Note[])];
+  const piano: [Note, Note, Note] = [choose(random, notes), choose(random, notes), choose(random, notes)];
+
+  const direction: Direction = random() > 0.5 ? 'asc' : 'desc';
+  const low = choose(random, ['C', 'D', 'E', 'F'] as Note[]);
+  const high = choose(random, ['G', 'A', 'B'] as Note[]);
+  const interval: [Note, Note] = direction === 'asc' ? [low, high] : [high, low];
+
+  const same = random() > 0.5;
+  const seq1: [Note, Note, Note] = [choose(random, notes), choose(random, notes), choose(random, notes)];
+  const seq2: [Note, Note, Note] = same ? [...seq1] : [...seq1];
+  if (!same) {
+    const index = Math.floor(random() * 3);
+    seq2[index] = choose(random, notes.filter((note) => note !== seq1[index]));
+  }
+
+  return { first, second, differentIndex, sing, piano, direction, interval, seq1, seq2, same };
+}
+
+function SvgIcon({ type }: { type: 'note' | 'mic' | 'drum' | 'piano' | 'fork' | 'headphones' | 'volume' }) {
+  if (type === 'volume') return <span className="svg-emoji">🔊</span>;
+  return (
+    <svg viewBox="0 0 64 64" aria-hidden="true">
+      {type === 'note' && <path d="M40 9v34.5A11 11 0 1 1 34 34V17l22-5v10z" />}
+      {type === 'mic' && <><rect x="23" y="8" width="18" height="32" rx="9" /><path d="M16 29c0 11 7 18 16 18s16-7 16-18M32 47v9M22 56h20" /></>}
+      {type === 'drum' && <><ellipse cx="32" cy="24" rx="19" ry="8" /><path d="M13 24v17c0 5 8.5 9 19 9s19-4 19-9V24" /><path d="M17 10l10 12M47 10L37 22" /></>}
+      {type === 'piano' && <><rect x="9" y="15" width="46" height="34" rx="4" /><path d="M18 16v32M27 16v32M37 16v32M46 16v32M22 16v19M41 16v19" /></>}
+      {type === 'fork' && <><path d="M26 10v25c0 6-5 9-9 9M38 10v25c0 6 5 9 9 9M32 10v43" /><path d="M23 54h18" /></>}
+      {type === 'headphones' && <><path d="M12 35V29a20 20 0 0 1 40 0v6" /><rect x="8" y="34" width="12" height="18" rx="4" /><rect x="44" y="34" width="12" height="18" rx="4" /></>}
+    </svg>
+  );
+}
+
+export function DailyEarTrainingFlowV6({ step, exercise }: { step: DailyTrainingStep; exercise: TrainingExercise }) {
+  const router = useRouter();
+  const audioRef = useRef<AudioContext | null>(null);
+  const startedAt = useRef(Date.now());
+  const rhythmStart = useRef(0);
+  const marksRef = useRef<Mark[]>(Array(6).fill(null));
+
+  const data = useMemo(() => makeChallenge(step.exerciseNumber), [step.exerciseNumber]);
+  const [screen, setScreen] = useState<StepIndex>(0);
+  const [marks, setMarks] = useState<Mark[]>(Array(6).fill(null));
+  const [feedback, setFeedback] = useState<Mark>(null);
+  const [playing, setPlaying] = useState<string | null>(null);
+
+  const [differentChoice, setDifferentChoice] = useState<number | null>(null);
+  const [voice, setVoice] = useState({ target: 0, heard: null as string | null, active: false, done: [] as boolean[] });
+  const [beat, setBeat] = useState(-1);
+  const [tapBeat, setTapBeat] = useState(-1);
+  const [rhythmPhase, setRhythmPhase] = useState<'ready' | 'demo' | 'play' | 'done'>('ready');
+  const [taps, setTaps] = useState(0);
+  const [score, setScore] = useState<Score>({ perfect: 0, great: 0, good: 0, missed: 0 });
+  const [activeKey, setActiveKey] = useState<string | null>(null);
+  const [pianoAnswer, setPianoAnswer] = useState<Note[]>([]);
+  const [draggingNote, setDraggingNote] = useState<Note | null>(null);
+  const [directionChoice, setDirectionChoice] = useState<Direction | null>(null);
+  const [sameChoice, setSameChoice] = useState<boolean | null>(null);
+  const [cursor, setCursor] = useState<{ line: 1 | 2 | null; position: number }>({ line: null, position: 0 });
+
+  const bpm = 77;
+  const beatMs = Math.round(60000 / bpm);
+
+  function getAudioContext() {
+    if (!audioRef.current) audioRef.current = new AudioContext();
+    return audioRef.current;
+  }
+
+  async function playTone(note: string, visual = false) {
+    const ctx = getAudioContext();
+    await ctx.resume().catch(() => null);
+    const midi = toMidi(note);
+    void preloadPianoSamples(ctx, [midi]);
+    if (visual) {
+      setActiveKey(note);
+      window.setTimeout(() => setActiveKey(null), 260);
+    }
+    await playPianoSample(ctx, midi, ctx.currentTime + 0.025, ctx.currentTime + 0.6, 1.04);
+    await wait(620);
+  }
+
+  async function playNotes(label: string, sequence: Note[], options?: { visual?: boolean; line?: 1 | 2 }) {
+    if (playing) return;
+    setPlaying(label);
+    if (options?.line) setCursor({ line: options.line, position: 0 });
+    for (let index = 0; index < sequence.length; index += 1) {
+      if (options?.line) setCursor({ line: options.line, position: index });
+      await playTone(sequence[index], Boolean(options?.visual));
+      await wait(70);
+    }
+    if (options?.line) {
+      setCursor({ line: options.line, position: 3 });
+      await wait(200);
+      setCursor({ line: null, position: 0 });
+    }
+    setPlaying(null);
+  }
+
+  async function kick() {
+    const ctx = getAudioContext();
+    await ctx.resume().catch(() => null);
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(122, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(48, ctx.currentTime + 0.16);
+    gain.gain.setValueAtTime(0.42, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.22);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.23);
+  }
+
+  function quit() {
+    stopPianoSamples(audioRef.current ?? undefined);
+    router.push('/aluno/central/diarios');
+  }
+
+  function persistSummary(finalMarks: Mark[]) {
+    try {
+      sessionStorage.setItem('daily-ear-training-summary', JSON.stringify({ exercise: step.exerciseNumber, marks: finalMarks, savedAt: Date.now() }));
+    } catch {}
+  }
+
+  function finish(finalMarks = marksRef.current) {
+    persistSummary(finalMarks);
+    completeDailyStep(step, Math.max(1, Math.round((Date.now() - startedAt.current) / 1000)));
+    stopPianoSamples(audioRef.current ?? undefined);
+    router.push(`/aluno/central/diarios/concluido?exercicio=${step.exerciseNumber}`);
+  }
+
+  function mark(ok: boolean, next: (nextMarks: Mark[]) => void) {
+    const nextMarks = [...marksRef.current];
+    nextMarks[screen] = ok ? 'right' : 'wrong';
+    marksRef.current = nextMarks;
+    setMarks(nextMarks);
+    setFeedback(ok ? 'right' : 'wrong');
+    window.setTimeout(() => {
+      setFeedback(null);
+      next(nextMarks);
+    }, 720);
+  }
+
+  async function listen(target: Note, index: number) {
+    setVoice((old) => ({ ...old, target: index, heard: null, active: true }));
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: true, autoGainControl: false } });
+      const ctx = new AudioContext();
+      const src = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 2048;
+      src.connect(analyser);
+      const buffer = new Float32Array(analyser.fftSize);
+      let okFrames = 0;
+      const started = performance.now();
+      while (performance.now() - started < 2200) {
+        analyser.getFloatTimeDomainData(buffer);
+        const current = noteFromFrequency(estimatePitch(buffer, ctx.sampleRate) || 0);
+        setVoice((old) => ({ ...old, heard: current, active: true }));
+        okFrames = current === target ? okFrames + 1 : Math.max(0, okFrames - 1);
+        if (okFrames >= 5) break;
+        await wait(90);
+      }
+      stream.getTracks().forEach((track) => track.stop());
+      await ctx.close().catch(() => null);
+      const ok = okFrames >= 5;
+      setVoice((old) => {
+        const done = [...old.done];
+        done[index] = ok;
+        return { ...old, active: false, done };
+      });
+      return ok;
+    } catch {
+      setVoice((old) => ({ ...old, active: false }));
+      return false;
+    }
+  }
+
+  async function runSing() {
+    if (voice.active || playing) return;
+    setVoice({ target: 0, heard: null, active: false, done: [] });
+    await playNotes('sing-demo', data.sing);
+    const results: boolean[] = [];
+    for (let index = 0; index < data.sing.length; index += 1) {
+      results[index] = await listen(data.sing[index], index);
+      await wait(240);
+    }
+    mark(results.every(Boolean), () => setScreen(2));
+  }
+
+  async function demoRhythm() {
+    if (rhythmPhase !== 'ready') return;
+    setRhythmPhase('demo');
+    setScore({ perfect: 0, great: 0, good: 0, missed: 0 });
+    setTaps(0);
+    for (let index = 0; index < 4; index += 1) {
+      setBeat(index);
+      await kick();
+      await wait(beatMs);
+    }
+    setBeat(-1);
+    await wait(340);
+    setRhythmPhase('play');
+    rhythmStart.current = performance.now() + 460;
+  }
+
+  function tapRhythm() {
+    if (rhythmPhase !== 'play' || taps >= 4) return;
+    void kick();
+    const index = taps;
+    setTapBeat(index);
+    window.setTimeout(() => setTapBeat(-1), 170);
+    const diff = Math.abs(performance.now() - (rhythmStart.current + index * beatMs));
+    const quality: ScoreKey = diff <= 85 ? 'perfect' : diff <= 150 ? 'great' : diff <= 240 ? 'good' : 'missed';
+    const nextScore = { ...score, [quality]: score[quality] + 1 };
+    setScore(nextScore);
+    const nextTap = index + 1;
+    setTaps(nextTap);
+    if (nextTap >= 4) {
+      setRhythmPhase('done');
+      window.setTimeout(() => mark(nextScore.missed < 3, () => setScreen(3)), 520);
+    }
+  }
+
+  async function choosePiano(note: Note) {
+    await playTone(note, true);
+    if (pianoAnswer.length < 3) setPianoAnswer((old) => [...old, note]);
+  }
+
+  function placePiano(index: number) {
+    if (!draggingNote) return;
+    setPianoAnswer((old) => {
+      const next = [...old];
+      next[index] = draggingNote;
+      return next.slice(0, 3) as Note[];
+    });
+    setDraggingNote(null);
+  }
+
+  return (
+    <main className="ear6">
+      <style>{styles}</style>
+      <Header level={exercise.level} marks={marks} screen={screen} quit={quit} />
+
+      {screen === 0 && (
+        <StepOne
+          data={data}
+          selected={differentChoice}
+          setSelected={setDifferentChoice}
+          playing={playing}
+          playSet={(kind) => playNotes(kind, kind === 'first' ? data.first : data.second)}
+          submit={() => differentChoice !== null && mark(differentChoice === data.differentIndex, () => setScreen(1))}
+        />
+      )}
+      {screen === 1 && <StepTwo data={data} voice={voice} run={runSing} />}
+      {screen === 2 && <StepThree bpm={bpm} beat={beat} tapBeat={tapBeat} phase={rhythmPhase} score={score} demo={demoRhythm} tap={tapRhythm} />}
+      {screen === 3 && (
+        <StepFour
+          answer={pianoAnswer}
+          activeKey={activeKey}
+          playing={playing === 'piano'}
+          play={() => playNotes('piano', data.piano)}
+          choose={choosePiano}
+          setDragging={setDraggingNote}
+          place={placePiano}
+          reset={() => setPianoAnswer([])}
+          submit={() => mark(pianoAnswer.length === 3 && pianoAnswer.join(',') === data.piano.join(','), () => setScreen(4))}
+        />
+      )}
+      {screen === 4 && (
+        <StepFive
+          selected={directionChoice}
+          setSelected={setDirectionChoice}
+          playing={playing === 'interval'}
+          play={() => playNotes('interval', data.interval)}
+          submit={() => directionChoice && mark(directionChoice === data.direction, () => setScreen(5))}
+        />
+      )}
+      {screen === 5 && (
+        <StepSix
+          selected={sameChoice}
+          setSelected={setSameChoice}
+          playing={playing}
+          cursor={cursor}
+          play1={() => playNotes('seq1', data.seq1, { line: 1 })}
+          play2={() => playNotes('seq2', data.seq2, { line: 2 })}
+          playBoth={async () => {
+            await playNotes('seq1', data.seq1, { line: 1 });
+            await wait(180);
+            await playNotes('seq2', data.seq2, { line: 2 });
+          }}
+          submit={() => sameChoice !== null && mark(sameChoice === data.same, (finalMarks) => finish(finalMarks))}
+        />
+      )}
+
+      {feedback && <div className={`ear-feedback ${feedback}`}>{feedback === 'right' ? '✓' : '×'}</div>}
+    </main>
+  );
+}
+
+function Header({ level, marks, screen, quit }: { level: string; marks: Mark[]; screen: StepIndex; quit: () => void }) {
+  const items: Array<{ type: 'note' | 'mic' | 'drum' | 'piano' | 'fork' | 'headphones'; label: string }> = [
+    { type: 'note', label: 'percepção' },
+    { type: 'mic', label: 'voz' },
+    { type: 'drum', label: 'ritmo' },
+    { type: 'piano', label: 'piano' },
+    { type: 'fork', label: 'direção' },
+    { type: 'headphones', label: 'comparação' },
+  ];
+  return (
+    <>
+      <header className="ear-top"><button onClick={quit}>Sair</button><span>{level}</span><i>i</i></header>
+      <nav className="ear-nav" aria-label="Etapas de percepção">
+        {items.map((item, index) => (
+          <span key={item.label} className={`${index === screen ? 'active' : ''} ${marks[index] ? 'marked' : ''} ${marks[index] === 'wrong' ? 'wrong' : ''}`}>
+            <SvgIcon type={item.type} />
+            <b>{marks[index] === 'wrong' ? '×' : '✓'}</b>
+          </span>
+        ))}
+      </nav>
+    </>
+  );
+}
+
+function Medal() {
+  return <div className="medal"><b>♛</b><span>◇</span></div>;
+}
+
+function TitleBlock({ children }: { children: ReactNode }) {
+  return <section className="title-block"><Medal />{children}</section>;
+}
+
+function StepOne({ data, selected, setSelected, playing, playSet, submit }: { data: ReturnType<typeof makeChallenge>; selected: number | null; setSelected: (value: number) => void; playing: string | null; playSet: (kind: 'first' | 'second') => void; submit: () => void }) {
+  return (
+    <section className="exercise stage-one">
+      <section className="intro-card">
+        <Medal />
+        <h1>Identifique dois conjuntos<br />de notas.</h1>
+        <em />
+        <p>Do <strong>2º</strong> conjunto, selecione<br />a nota que está fora do <strong>1º</strong> conjunto.</p>
+      </section>
+      <NoteSet title="1º CONJUNTO" playing={playing === 'first'} play={() => playSet('first')}>
+        {data.first.map((note) => <NoteOption key={note} note={note} />)}
+      </NoteSet>
+      <NoteSet title="2º CONJUNTO" playing={playing === 'second'} play={() => playSet('second')}>
+        {data.second.map((note, index) => (
+          <button key={`${note}-${index}`} className={`note-answer ${selected === index ? 'selected' : ''}`} onClick={() => setSelected(index)}>
+            <span>♪</span><i />
+          </button>
+        ))}
+      </NoteSet>
+      <ActionBar>{selected !== null && <button onClick={submit}>Enviar</button>}</ActionBar>
+    </section>
+  );
+}
+
+function NoteSet({ title, playing, play, children }: { title: string; playing: boolean; play: () => void; children: ReactNode }) {
+  return <section className="note-set"><h2><span />{title}<span /></h2><button className={playing ? 'playing' : ''} onClick={play}><SvgIcon type="volume" /></button>{children}</section>;
+}
+
+function NoteOption({ note }: { note: Note }) {
+  return <div className="note-option"><span>♪</span><b>{note}</b></div>;
+}
+
+function StepTwo({ data, voice, run }: { data: ReturnType<typeof makeChallenge>; voice: { target: number; heard: string | null; active: boolean; done: boolean[] }; run: () => void }) {
+  return (
+    <section className="exercise stage-two">
+      <TitleBlock><h1>Ouça e cante<br />as mesmas notas</h1></TitleBlock>
+      <div className="pitch-staff">
+        {staffRows.map((row) => <div key={row}><span>{row}</span><i /></div>)}
+        {data.sing.map((note, index) => <button key={`${note}-${index}`} className={voice.done[index] ? 'done' : ''} style={{ top: `${noteY(note)}%`, left: `${index ? 74 : 32}%` }}>{voice.done[index] ? '✓' : note}</button>)}
+        {voice.heard && <em style={{ top: `${noteY(voice.heard)}%`, left: `${voice.target ? 74 : 32}%` }} />}
+      </div>
+      <button className="big-sound" onClick={run}><SvgIcon type="volume" /></button>
+      <small>{voice.active ? 'centralize a bolinha' : 'toque e cante na sequência'}</small>
+    </section>
+  );
+}
+
+function StepThree({ bpm, beat, tapBeat, phase, score, demo, tap }: { bpm: number; beat: number; tapBeat: number; phase: string; score: Score; demo: () => void; tap: () => void }) {
+  return (
+    <section className="exercise stage-three">
+      <TitleBlock><h1>Observe a bateria,<br />em seguida, toque seguindo o ritmo.</h1></TitleBlock>
+      <div className="beat-row"><div>♩ = {bpm}<br /><small>4/4</small></div>{[0, 1, 2, 3].map((item) => <span key={item} className={beat === item || tapBeat === item ? 'on' : ''} />)}</div>
+      <button className="tap-pad" onClick={tap} disabled={phase !== 'play'}><b>{phase === 'done' ? 'Concluído' : 'Toque aqui'}</b></button>
+      <p className="score-line">Perfeito: <strong>{score.perfect}</strong> · Ótimo: <strong>{score.great}</strong> · Bom: <strong>{score.good}</strong><br />Perdido: <strong>{score.missed}</strong></p>
+      <small>{phase === 'ready' || phase === 'demo' ? 'Demonstração...' : phase === 'play' ? 'Sua vez' : 'Avançando...'}</small>
+      <button className="small-sound" onClick={demo} disabled={phase !== 'ready'}><SvgIcon type="volume" /></button>
+    </section>
+  );
+}
+
+function StepFour({ answer, activeKey, playing, play, choose, setDragging, place, reset, submit }: { answer: Note[]; activeKey: string | null; playing: boolean; play: () => void; choose: (note: Note) => void; setDragging: (note: Note) => void; place: (index: number) => void; reset: () => void; submit: () => void }) {
+  return (
+    <section className="exercise stage-four">
+      <TitleBlock><h1>Ouça a(s) nota(s) de uma oitava inferior<br />ou superior.</h1><p>Encontre e selecione as mesmas notas no teclado.</p></TitleBlock>
+      <Keyboard activeKey={activeKey} choose={choose} setDragging={setDragging} />
+      <p className="hint">Pressione e segure o piano e arraste para a <strong>Área de Resposta...</strong></p>
+      <div className="slots">{[0, 1, 2].map((index) => <button key={index} onDragOver={(event) => event.preventDefault()} onDrop={() => place(index)} onPointerUp={() => place(index)}>{answer[index] || ''}</button>)}</div>
+      <button className={`big-sound ${playing ? 'playing' : ''}`} onClick={play}><SvgIcon type="volume" /></button>
+      <ActionBar>{answer.length > 0 && <button className="ghost" onClick={reset}>Redefinir</button>}{answer.length === 3 && <button onClick={submit}>Enviar</button>}</ActionBar>
+    </section>
+  );
+}
+
+function Keyboard({ activeKey, choose, setDragging }: { activeKey: string | null; choose: (note: Note) => void; setDragging: (note: Note) => void }) {
+  return (
+    <div className="keyboard">
+      {blackNotes.map((note, index) => <span key={note} className={`black b${index}`}>{note}</span>)}
+      {notes.map((note) => <button key={note} draggable onDragStart={() => setDragging(note)} onPointerDown={() => setDragging(note)} onClick={() => choose(note)} className={activeKey === note ? 'on' : ''}><b>{note}</b></button>)}
+    </div>
+  );
+}
+
+function StepFive({ selected, setSelected, playing, play, submit }: { selected: Direction | null; setSelected: (value: Direction) => void; playing: boolean; play: () => void; submit: () => void }) {
+  return (
+    <section className="exercise stage-five">
+      <TitleBlock><h1>Ouça as duas notas<br />Elas estão <strong>ascendentes</strong> ou <strong>descendentes</strong>?</h1></TitleBlock>
+      <div className="interval-cards"><article><b>1st</b><span>♪</span></article><article><b>2nd</b><span>♪</span></article></div>
+      <button className={`big-sound ${playing ? 'playing' : ''}`} onClick={play}><SvgIcon type="volume" /></button>
+      <div className="choice-row"><button className={selected === 'asc' ? 'selected' : ''} onClick={() => setSelected('asc')}>Ascendente</button><button className={selected === 'desc' ? 'selected' : ''} onClick={() => setSelected('desc')}>Descendente</button></div>
+      <ActionBar>{selected && <button onClick={submit}>Enviar</button>}</ActionBar>
+    </section>
+  );
+}
+
+function StepSix({ selected, setSelected, playing, cursor, play1, play2, playBoth, submit }: { selected: boolean | null; setSelected: (value: boolean) => void; playing: string | null; cursor: { line: 1 | 2 | null; position: number }; play1: () => void; play2: () => void; playBoth: () => void; submit: () => void }) {
+  return (
+    <section className="exercise stage-six">
+      <TitleBlock><h1>Ouça dois conjuntos de notas.<br />São <strong>iguais</strong> ou <strong>diferentes</strong>?</h1></TitleBlock>
+      <ScoreLine label="1st" active={playing === 'seq1'} play={play1} cursor={cursor} line={1} />
+      <ScoreLine label="2nd" active={playing === 'seq2'} play={play2} cursor={cursor} line={2} />
+      <button className={`big-sound ${playing ? 'playing' : ''}`} onClick={playBoth}><SvgIcon type="volume" /></button>
+      <p className="select-label">Selecionar resposta</p>
+      <div className="choice-row compare"><button className={selected === true ? 'selected' : ''} onClick={() => setSelected(true)}>Igual</button><button className={selected === false ? 'selected' : ''} onClick={() => setSelected(false)}>Diferente</button></div>
+      <ActionBar>{selected !== null && <button onClick={submit}>Enviar</button>}</ActionBar>
+    </section>
+  );
+}
+
+function ScoreLine({ label, active, play, cursor, line }: { label: string; active: boolean; play: () => void; cursor: { line: 1 | 2 | null; position: number }; line: 1 | 2 }) {
+  const left = cursor.line === line ? 16 + Math.min(cursor.position, 3) * 24 : 88;
+  return <section className="score-card"><strong>{label}</strong><button className={active ? 'playing' : ''} onClick={play}><SvgIcon type="volume" /></button><div className="mini-staff"><i /><i /><i /><i /><i /><b style={{ left: `${left}%` }}>𝄞</b></div></section>;
+}
+
+function ActionBar({ children }: { children: ReactNode }) {
+  return <div className="action-bar">{children}</div>;
+}
+
+const styles = `
+.ear6{--gold:#d7a34d;--gold2:#ffd482;min-height:100svh;background:radial-gradient(circle at 50% -8%,rgba(255,220,140,.12),transparent 24%),radial-gradient(circle at 50% 42%,rgba(215,163,77,.09),transparent 36%),linear-gradient(180deg,#17191b,#0b0d0f 62%,#050607);color:#f5eddf;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;text-align:center;padding:calc(14px + env(safe-area-inset-top)) 18px calc(16px + env(safe-area-inset-bottom));position:relative;overflow-x:hidden}.ear6:before{content:'';position:absolute;inset:0;background:repeating-linear-gradient(110deg,rgba(255,255,255,.018) 0 1px,transparent 1px 24px);pointer-events:none}.ear6 *{box-sizing:border-box}.ear6>*{position:relative;z-index:1}.ear-top{height:54px;width:min(100%,410px);display:grid;grid-template-columns:82px 1fr 42px;align-items:center;gap:10px;margin:0 auto}.ear-top button{height:36px;border:1.5px solid var(--gold);border-radius:999px;background:rgba(215,163,77,.04);color:var(--gold2);font:900 16px system-ui}.ear-top span{font-size:21px;letter-spacing:.16em;color:var(--gold2)}.ear-top i{width:40px;height:40px;border:1.5px solid var(--gold);border-radius:50%;display:grid;place-items:center;color:var(--gold2);font:900 23px Georgia,serif;font-style:italic}.ear-nav{height:70px;width:min(100%,410px);display:grid;grid-template-columns:repeat(6,1fr);align-items:center;gap:8px;margin:0 auto 6px}.ear-nav span{position:relative;display:grid;place-items:center;color:rgba(255,255,255,.42)}.ear-nav svg{width:31px;height:31px;fill:none;stroke:currentColor;stroke-width:4;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 0 10px rgba(255,255,255,.08))}.ear-nav .active{color:var(--gold2);text-shadow:0 0 24px rgba(255,212,130,.34)}.ear-nav .active:after{content:'';position:absolute;bottom:-7px;width:44px;height:2px;background:var(--gold2);box-shadow:0 0 16px rgba(255,212,130,.5)}.ear-nav b{display:none;position:absolute;bottom:-27px;font:900 22px system-ui;color:#22e66f}.ear-nav .marked b{display:block}.ear-nav .wrong b{color:#ff4141}.ear-nav .marked svg{opacity:.72}.exercise{width:min(100%,390px);min-height:calc(100svh - 150px - env(safe-area-inset-top) - env(safe-area-inset-bottom));margin:0 auto;display:flex;flex-direction:column;align-items:center;justify-content:space-evenly;gap:12px;padding:16px 0 12px}.intro-card,.title-block{position:relative;width:min(100%,326px);border:1px solid rgba(215,163,77,.48);border-radius:25px;background:linear-gradient(145deg,rgba(215,163,77,.10),rgba(255,255,255,.018));box-shadow:0 0 34px rgba(215,163,77,.08);padding:34px 18px 17px}.title-block{border:0;background:transparent;box-shadow:none;padding:44px 6px 0}.medal{position:absolute;top:-24px;left:50%;transform:translateX(-50%);width:50px;height:50px;border:2px solid var(--gold2);border-radius:50%;display:grid;place-items:center;background:#151315;color:var(--gold2);box-shadow:0 0 25px rgba(215,163,77,.25)}.medal:before,.medal:after{content:'';position:absolute;top:50%;width:70px;height:1px;background:linear-gradient(90deg,transparent,rgba(215,163,77,.50))}.medal:before{right:100%}.medal:after{left:100%;transform:scaleX(-1)}.medal b{position:absolute;top:-18px;font-size:20px;font-family:serif}.medal span{font-size:24px}.title-block .medal{top:0}.intro-card h1,.title-block h1{font:900 clamp(18px,4.6vw,21px)/1.1 ui-monospace,SFMono-Regular,monospace;margin:0;letter-spacing:-.035em}.title-block h1{font-weight:700}.title-block p{font:400 clamp(13px,3.6vw,15px)/1.35 system-ui;margin:8px 0 0;color:rgba(255,255,255,.86)}.intro-card em{width:44px;height:2px;background:var(--gold2);display:block;margin:13px auto 11px}.intro-card p{margin:0;color:rgba(245,242,236,.66);font-size:clamp(12px,3.35vw,14px);line-height:1.25}.intro-card strong,.title-block strong,.hint strong{color:var(--gold2)}.note-set{position:relative;width:min(100%,342px);min-height:104px;border:1px solid rgba(215,163,77,.24);border-radius:21px;background:rgba(255,255,255,.018);display:grid;grid-template-columns:60px 1fr 1fr;align-items:center;gap:14px;padding:17px 18px 11px}.note-set h2{position:absolute;top:-13px;left:50%;transform:translateX(-50%);display:grid;grid-template-columns:48px auto 48px;gap:8px;align-items:center;color:var(--gold2);font-size:13px;font-weight:500;white-space:nowrap}.note-set h2 span{height:1px;background:rgba(215,163,77,.30)}.note-set>button,.big-sound,.small-sound,.score-card>button{display:grid;place-items:center;border:2px solid var(--gold2);border-radius:50%;background:radial-gradient(circle,rgba(215,163,77,.18),rgba(255,255,255,.018));color:var(--gold2);box-shadow:0 0 20px rgba(215,163,77,.20)}.note-set>button{width:52px;height:52px}.svg-emoji{font-size:26px;filter:saturate(.55)}.playing{transform:scale(.96);box-shadow:0 0 32px rgba(255,212,130,.42)!important}.note-option,.note-answer{border:0;background:transparent;color:#e8e8e8;display:grid;place-items:center}.note-option span,.note-answer span{font-size:31px;line-height:.72;color:var(--gold2)}.note-option b{margin-top:6px;font:800 18px system-ui}.note-answer i{display:block;width:24px;height:24px;border:2px solid rgba(255,255,255,.62);border-radius:50%;margin-top:8px}.note-answer.selected i{background:var(--gold2);box-shadow:0 0 18px rgba(255,212,130,.5)}.action-bar{min-height:44px;width:100%;display:flex;align-items:center;justify-content:center;gap:12px}.action-bar button{height:40px;min-width:120px;border:1px solid rgba(255,212,130,.75);border-radius:999px;background:linear-gradient(180deg,#ffe0a0,#d7a34d);color:#17110a;font:900 13px system-ui;text-transform:uppercase;letter-spacing:.04em}.action-bar .ghost{background:transparent;color:var(--gold2)}.pitch-staff{position:relative;width:min(100%,360px);height:min(39svh,342px);min-height:286px}.pitch-staff div{display:grid;grid-template-columns:36px 1fr;align-items:center;height:8.33%;color:rgba(255,255,255,.42);font:800 12px system-ui}.pitch-staff i{height:1px;background:rgba(255,255,255,.26)}.pitch-staff button{position:absolute;transform:translate(-50%,-50%);width:42px;height:42px;border:2px solid var(--gold2);border-radius:50%;background:rgba(0,0,0,.22);color:var(--gold2);font-weight:900}.pitch-staff button.done{border-color:#26e977;color:#26e977}.pitch-staff em{position:absolute;transform:translate(-50%,-50%);width:28px;height:28px;border:3px solid #fff;border-radius:50%;background:#f61717;box-shadow:0 0 18px rgba(246,23,23,.72)}.big-sound{width:60px;height:60px}.small-sound{width:54px;height:54px}small{font-size:13px;color:rgba(255,255,255,.54)}.beat-row{width:min(100%,360px);display:grid;grid-template-columns:66px repeat(4,1fr);gap:10px;align-items:center}.beat-row div{height:49px;border:1px solid rgba(215,163,77,.22);border-radius:14px;display:grid;place-items:center;color:var(--gold2);font-size:15px}.beat-row div small{font-size:17px;color:rgba(255,255,255,.55)}.beat-row span{width:22px;height:31px;border:1.7px solid var(--gold2);border-radius:3px;justify-self:center;position:relative}.beat-row span:after{content:'';position:absolute;inset:5px;border-radius:2px;background:rgba(255,212,130,.06)}.beat-row .on:after{background:linear-gradient(180deg,#ffdf99,#d7a34d);box-shadow:0 0 26px rgba(255,212,130,.72)}.tap-pad{width:min(100%,336px);height:min(18svh,154px);min-height:122px;border:1px solid rgba(215,163,77,.38);border-radius:21px;background:radial-gradient(circle at center,rgba(215,163,77,.18),rgba(255,255,255,.018) 34%,transparent);color:var(--gold2);font:400 20px system-ui}.tap-pad b{font-weight:400}.score-line{width:min(100%,336px);border:1px solid rgba(255,255,255,.08);border-radius:15px;margin:0;padding:8px;color:var(--gold2);font:400 13px/1.35 system-ui}.score-line strong{color:#fff;font-weight:400}.keyboard{position:relative;width:min(100%,350px);height:160px;border:1px solid rgba(215,163,77,.32);border-radius:20px;padding:39px 10px 17px;display:grid;grid-template-columns:repeat(7,1fr);background:rgba(255,255,255,.015);box-shadow:0 0 28px rgba(215,163,77,.08)}.keyboard>button{border:1px solid rgba(0,0,0,.45);background:linear-gradient(90deg,#ede8da,#fffaf0 45%,#d4cdbf);color:#282828;font:900 18px system-ui;display:flex;align-items:flex-end;justify-content:center;padding-bottom:10px}.keyboard>button.on,.keyboard>button:active{transform:translateY(3px);filter:brightness(.86);box-shadow:inset 0 8px 20px rgba(0,0,0,.24),0 0 28px rgba(215,163,77,.42)}.black{position:absolute;top:28px;width:33px;height:81px;background:linear-gradient(180deg,#000,#1e1e1e 70%,#4b4b4b);color:var(--gold2);font:900 12px system-ui;padding-top:7px;border-radius:0 0 6px 6px;z-index:3}.b0{left:17%}.b1{left:29%}.b2{left:55%}.b3{left:67%}.b4{left:79%}.hint{margin:0;width:min(100%,340px);font:400 13px/1.35 system-ui;color:rgba(255,255,255,.75)}.slots{display:flex;gap:18px}.slots button{width:52px;height:52px;border:2px dashed var(--gold2);border-radius:50%;background:rgba(215,163,77,.03);color:#fff;font:900 21px system-ui}.interval-cards{width:min(100%,350px);display:grid;grid-template-columns:1fr 1fr;gap:14px}.interval-cards article{height:132px;border:1px solid rgba(215,163,77,.48);border-radius:22px;background:radial-gradient(circle at 50% 60%,rgba(215,163,77,.13),rgba(255,255,255,.015));display:grid;place-items:center;color:var(--gold2)}.interval-cards b{font:800 22px system-ui}.interval-cards span{font-size:52px;text-shadow:0 0 22px rgba(215,163,77,.34)}.choice-row{display:flex;justify-content:center;gap:12px}.choice-row button{min-width:132px;min-height:42px;border:1px solid rgba(215,163,77,.58);border-radius:999px;background:rgba(215,163,77,.055);color:var(--gold2);font:900 12px system-ui;text-transform:uppercase;letter-spacing:.04em;padding:10px 12px}.choice-row button.selected{background:var(--gold2);color:#17110a}.score-card{position:relative;width:min(100%,350px);height:76px;border:1px solid rgba(215,163,77,.30);border-radius:17px;background:rgba(255,255,255,.015);display:grid;grid-template-columns:56px 1fr;align-items:center;padding:9px 14px;margin-top:14px}.score-card strong{position:absolute;top:-25px;left:14px;color:var(--gold2);font:800 21px system-ui}.score-card>button{width:48px;height:48px}.mini-staff{position:relative;height:46px}.mini-staff i{position:absolute;left:0;right:0;height:1px;background:rgba(215,163,77,.45)}.mini-staff i:nth-child(1){top:7px}.mini-staff i:nth-child(2){top:15px}.mini-staff i:nth-child(3){top:23px}.mini-staff i:nth-child(4){top:31px}.mini-staff i:nth-child(5){top:39px}.mini-staff b{position:absolute;top:-5px;color:var(--gold2);font-size:39px;line-height:1;transition:left .55s ease;text-shadow:0 0 18px rgba(215,163,77,.45)}.select-label{margin:0;color:var(--gold2);font-size:15px}.ear-feedback{position:fixed;inset:0;display:grid;place-items:center;z-index:20;background:rgba(0,0,0,.22);backdrop-filter:blur(2px);font:950 72px system-ui;color:#25ef78;text-shadow:0 0 34px rgba(37,239,120,.7)}.ear-feedback.wrong{color:#ff4242;text-shadow:0 0 34px rgba(255,66,66,.7)}@media(max-height:740px){.ear6{padding-top:calc(10px + env(safe-area-inset-top))}.ear-top{height:48px}.ear-nav{height:62px;margin-bottom:2px}.exercise{min-height:calc(100svh - 132px - env(safe-area-inset-top) - env(safe-area-inset-bottom));gap:8px;padding-top:12px}.intro-card{min-height:134px;padding-top:28px}.note-set{min-height:94px}.title-block{padding-top:36px}.pitch-staff{height:34svh;min-height:248px}.tap-pad{min-height:106px;max-height:128px}.keyboard{height:144px}.black{height:74px}.interval-cards article{height:112px}.big-sound{width:54px;height:54px}.small-sound{width:50px;height:50px}.score-card{height:68px}.choice-row button{min-height:38px}.action-bar{min-height:40px}.action-bar button{height:38px}}`;
