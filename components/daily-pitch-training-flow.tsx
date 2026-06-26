@@ -8,6 +8,7 @@ import { noteNameToMidi } from '@/lib/audio/pitch';
 import { playPianoSample, preloadPianoSamples, stopPianoSamples } from '@/lib/audio/piano-sample-engine';
 import type { DailyTrainingStep, TrainingExercise } from '@/lib/training-center';
 import './daily-pitch-training.css';
+import './daily-pitch-training-fixes.css';
 
 type AudioCtor = typeof AudioContext;
 type AudioWindow = Window & typeof globalThis & { webkitAudioContext?: AudioCtor };
