@@ -7,7 +7,9 @@ export const runtime = 'nodejs';
 
 const ACCESS_CACHE_MS = 55 * 60 * 1000;
 const LESSON_ACCESS_CACHE_MS = 5 * 60 * 1000;
+const METADATA_CACHE_MS = 30 * 60 * 1000;
 const allowedFileCache = new Map<string, number>();
+const driveMetadataCache = new Map<string, { metadata: DriveMetadata | null; expiresAt: number }>();
 let cachedAccessToken: { token: string; expiresAt: number } | null = null;
 
 type Params = { params: Promise<{ id: string }> };
@@ -137,6 +139,9 @@ async function loadAccess() {
 }
 
 async function getDriveMetadata(fileId: string, access: string): Promise<DriveMetadata | null> {
+  const cached = driveMetadataCache.get(fileId);
+  if (cached && cached.expiresAt > Date.now()) return cached.metadata;
+
   const params = new URLSearchParams({
     fields: 'name,mimeType,size',
     supportsAllDrives: 'true',
@@ -148,7 +153,9 @@ async function getDriveMetadata(fileId: string, access: string): Promise<DriveMe
   });
 
   if (!response.ok) return null;
-  return response.json() as Promise<DriveMetadata>;
+  const metadata = await response.json() as DriveMetadata;
+  driveMetadataCache.set(fileId, { metadata, expiresAt: Date.now() + METADATA_CACHE_MS });
+  return metadata;
 }
 
 function mediaHeaders(upstream: Response, metadata?: DriveMetadata | null) {
@@ -159,7 +166,7 @@ function mediaHeaders(upstream: Response, metadata?: DriveMetadata | null) {
 
   headers.set('content-type', contentType);
   headers.set('accept-ranges', 'bytes');
-  headers.set('cache-control', 'private, max-age=300, stale-while-revalidate=600');
+  headers.set('cache-control', 'private, max-age=1800, stale-while-revalidate=3600');
   headers.set('x-content-type-options', 'nosniff');
   headers.set('content-disposition', 'inline');
   headers.set('vary', 'Range');
@@ -200,7 +207,7 @@ export async function HEAD(_request: Request, { params }: Params) {
     const headers = new Headers();
     headers.set('content-type', inferMediaContentType(metadata));
     headers.set('accept-ranges', 'bytes');
-    headers.set('cache-control', 'private, max-age=300, stale-while-revalidate=600');
+    headers.set('cache-control', 'private, max-age=1800, stale-while-revalidate=3600');
     headers.set('content-disposition', 'inline');
     if (metadata?.size) headers.set('content-length', metadata.size);
 
@@ -217,15 +224,17 @@ export async function GET(request: Request, { params }: Params) {
     if ('error' in auth) return auth.error;
 
     const requestedRange = request.headers.get('range');
-    const [metadata, upstream] = await Promise.all([
-      getDriveMetadata(id, auth.access),
-      fetchDriveMedia(id, auth.access, requestedRange),
-    ]);
+    const cachedMetadata = driveMetadataCache.get(id);
+    const upstream = await fetchDriveMedia(id, auth.access, requestedRange);
 
     if (!upstream.ok || !upstream.body) {
       const detail = await upstream.text().catch(() => '');
       return NextResponse.json({ error: 'drive_video_unavailable', status: upstream.status, detail: detail.slice(0, 300) }, { status: upstream.status || 500 });
     }
+
+    const upstreamType = upstream.headers.get('content-type') || '';
+    const needsMetadata = !cachedMetadata || /application\/octet-stream|binary\/octet-stream/i.test(upstreamType);
+    const metadata = needsMetadata ? await getDriveMetadata(id, auth.access) : cachedMetadata.metadata;
 
     return new Response(upstream.body, { status: upstream.status, headers: mediaHeaders(upstream, metadata) });
   } catch (error) {
