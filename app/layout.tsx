@@ -45,7 +45,8 @@ import './guided-training-polish.css';
 import './ear-training-reference.css';
 import './ear-piano-no-hint.css';
 import './ear6-premium-final-spacing.css';
+import { EarPianoDragOnlyGuard } from '@/components/ear-piano-drag-only-guard';
 
 export default function RootLayout(props: { children: React.ReactNode }) {
-  return <html lang="pt-BR"><body>{props.children}</body></html>;
+  return <html lang="pt-BR"><body><EarPianoDragOnlyGuard />{props.children}</body></html>;
 }
