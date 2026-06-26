@@ -2,6 +2,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createR2SignedPutUrl } from '@/lib/r2';
+import { normalizeR2RuntimeEnv, normalizeRuntimeUrl } from '@/lib/r2-runtime';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -46,7 +47,7 @@ type ProductRow = {
 let cachedAccessToken: { token: string; expiresAt: number } | null = null;
 
 function publicR2Base() {
-  return String(process.env.R2_PUBLIC_URL || process.env.NEXT_PUBLIC_R2_PUBLIC_URL || '').replace(/\/$/, '');
+  return normalizeRuntimeUrl(process.env.R2_PUBLIC_URL || process.env.NEXT_PUBLIC_R2_PUBLIC_URL || '');
 }
 
 function isRealR2Url(value?: string | null) {
@@ -181,6 +182,7 @@ async function loadProductScope(productId?: string | null, moduleId?: string | n
 }
 
 async function migrateExercise(exercise: ExerciseRow, access: string, product?: ProductRow | null, module?: ModuleRow | null) {
+  normalizeR2RuntimeEnv();
   const fileId = driveFileId(exercise.drive_url);
   if (!fileId) return { ...resultBase(exercise, module), status: 'skipped', reason: 'invalid_drive_url' };
 
@@ -223,6 +225,7 @@ async function migrateExercise(exercise: ExerciseRow, access: string, product?: 
 
 export async function POST(request: Request) {
   try {
+    normalizeR2RuntimeEnv();
     const cookieStore = await cookies();
     const email = cookieStore.get('hub_access_email')?.value;
     if (!email) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
