@@ -151,21 +151,16 @@ export const trainingExercises: TrainingExercise[] = [
   },
   {
     slug: 'fluxo-de-ar-4-4-8',
-    title: 'Fluxo de ar: 4 • 4 • 8',
+    title: 'Sustentação em S',
     categorySlug: 'respiracao',
-    objective: 'Organizar inspiração, suspensão e expiração com controle.',
-    description: 'Siga o pulso visual: inspire, sustente e solte o ar em fluxo constante. Ideal antes de vocalizes longos.',
+    objective: 'Sustentar o fluxo de ar em som de S por 30 segundos, mantendo constância e pouco esforço.',
+    description: 'Exercício de apoio respiratório: inspire com calma, solte em S contínuo e mantenha o fluxo até o círculo completar.',
     level: 'Iniciante',
-    durationLabel: '5 min',
+    durationLabel: '30s',
     bpm: 60,
-    focus: ['Apoio', 'Fluxo', 'Preparação'],
+    focus: ['Respiração', 'Sustentação', 'Ssss'],
     notes: [
-      { pitch: 'Inspira', label: 'Inspira', start: 0, duration: 4 },
-      { pitch: 'Sustenta', label: 'Segura', start: 4, duration: 4 },
-      { pitch: 'Expira', label: 'Solta', start: 8, duration: 8 },
-      { pitch: 'Inspira', label: 'Inspira', start: 17, duration: 4 },
-      { pitch: 'Sustenta', label: 'Segura', start: 21, duration: 4 },
-      { pitch: 'Expira', label: 'Solta', start: 25, duration: 8 },
+      { pitch: 'Ssss', label: 'Ssss', start: 0, duration: 30 },
     ],
   },
   {
@@ -196,7 +191,7 @@ export const trainingExercises: TrainingExercise[] = [
 
 export const dailyTrainingSteps: DailyTrainingStep[] = [
   { day: 5, exerciseNumber: 1, title: 'Aquecimento: Boca Chiusa', subtitle: 'Prepare sua voz com boca fechada e vibração leve.', intro: 'Faça Mmm com a boca fechada, sem força. Siga o padrão de cinco graus subindo e descendo dentro da sua tessitura.', exerciseSlug: 'aquecimento-boca-chiusa-5-graus-01', points: 50, accent: 'gold' },
-  { day: 5, exerciseNumber: 2, title: 'Controle de Respiração', subtitle: 'Organize o fluxo de ar com precisão.', intro: 'Inspire pelo nariz, sustente com calma e solte o ar mantendo constância.', exerciseSlug: 'fluxo-de-ar-4-4-8', points: 60, accent: 'teal' },
+  { day: 5, exerciseNumber: 2, title: 'Apoio da Respiração', subtitle: 'Sustente o ar em S contínuo.', intro: 'Inspire com calma e solte em Ssss, mantendo o fluxo constante até o tempo finalizar.', exerciseSlug: 'fluxo-de-ar-4-4-8', points: 60, accent: 'teal' },
   { day: 5, exerciseNumber: 3, title: 'Centro da Afinação', subtitle: 'Cante mirando o centro da nota.', intro: 'Use o piano como referência e mantenha cada nota estável até o final.', exerciseSlug: 'sustentacao-centro-da-nota-01', points: 70, accent: 'gold' },
   { day: 5, exerciseNumber: 4, title: 'Primeira Segunda Voz', subtitle: 'Visualize a divisão antes de cantar.', intro: 'Siga a linha luminosa e perceba o caminho das terças guiadas.', exerciseSlug: 'tercas-guiadas-primeira-entrada', points: 80, accent: 'purple' },
 ];
