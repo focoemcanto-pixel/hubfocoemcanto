@@ -49,7 +49,7 @@ function getR2Bucket(): R2BucketLike | null {
   try {
     const context = getCloudflareContext();
     const env = (context?.env || {}) as Record<string, unknown>;
-    const candidates = ['HUB_MEDIA', 'R2_MEDIA_BUCKET', 'MEDIA_BUCKET', 'R2_BUCKET_BINDING', 'R2_BUCKET'];
+    const candidates = ['MEDIA_BUCKET', 'HUB_MEDIA', 'R2_MEDIA_BUCKET', 'R2_BUCKET_BINDING', 'R2_BUCKET'];
     for (const name of candidates) {
       const bucket = env[name] as R2BucketLike | undefined;
       if (bucket && typeof bucket.put === 'function') return bucket;
@@ -65,7 +65,40 @@ async function driveToken() {
   const { data, error } = await supabase.from('google_drive_connections').select('*').order('updated_at', { ascending: false }).limit(1).maybeSingle();
   if (error) throw new Error(error.message);
   if (!data?.access_token) throw new Error('google_drive_not_connected');
-  return String(data.access_token);
+
+  const expiresAt = data.expires_at ? new Date(data.expires_at).getTime() : 0;
+  if (expiresAt > Date.now() + 60_000 || !data.refresh_token) return String(data.access_token);
+
+  const refresh = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: process.env.GOOGLE_CLIENT_ID || '',
+      client_secret: process.env.GOOGLE_CLIENT_SECRET || '',
+      refresh_token: String(data.refresh_token),
+      grant_type: 'refresh_token',
+    }),
+  });
+
+  if (!refresh.ok) {
+    const detail = await refresh.text().catch(() => '');
+    throw new Error(`google_refresh_failed_${refresh.status}: ${detail.slice(0, 180)}`);
+  }
+
+  const json = await refresh.json();
+  const nextExpiresAt = Date.now() + Number(json.expires_in || 3600) * 1000;
+
+  await supabase.from('google_drive_connections').upsert({
+    id: data.id,
+    access_token: json.access_token,
+    refresh_token: data.refresh_token,
+    scope: json.scope || data.scope,
+    token_type: json.token_type || data.token_type,
+    expires_at: new Date(nextExpiresAt).toISOString(),
+    updated_at: new Date().toISOString(),
+  });
+
+  return String(json.access_token);
 }
 
 async function productModules(productId: string) {
@@ -113,7 +146,7 @@ async function migrateExercise(exercise: Row, product: Row, module: Row, token: 
       cache: 'no-store',
     });
     if (!driveResponse.ok || !driveResponse.body) {
-      return { id: exercise.id, title: exercise.title, status: 'failed', step, reason: `drive_${driveResponse.status}`, detail: (await driveResponse.text().catch(() => '')).slice(0, 160) };
+      return { id: exercise.id, title: exercise.title, status: 'failed', step, reason: `drive_${driveResponse.status}`, detail: (await driveResponse.text().catch(() => '')).slice(0, 180) };
     }
 
     const type = metadata?.mimeType || driveResponse.headers.get('content-type') || 'video/mp4';
@@ -146,7 +179,7 @@ export async function POST(request: Request) {
     if (!email) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
     const bucket = getR2Bucket();
-    if (!bucket) return NextResponse.json({ error: 'r2_binding_missing', message: 'Configure um R2 bucket binding chamado HUB_MEDIA no Cloudflare.' }, { status: 500 });
+    if (!bucket) return NextResponse.json({ error: 'r2_binding_missing', message: 'Configure um R2 bucket binding chamado MEDIA_BUCKET no Cloudflare.' }, { status: 500 });
 
     const body = await request.json().catch(() => ({}));
     const productId = String(body.productId || '');
