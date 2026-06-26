@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 type UploadResult = {
   key: string;
@@ -23,6 +23,9 @@ type AdminMediaUploaderProps = {
   productId?: string;
   productName?: string | null;
   migrationOnly?: boolean;
+  totalLessons?: number;
+  migratedLessons?: number;
+  driveLessons?: number;
 };
 
 function mediaFolder(file: File) {
@@ -32,7 +35,21 @@ function mediaFolder(file: File) {
   return 'files';
 }
 
-export function AdminMediaUploader({ productId, productName, migrationOnly = false }: AdminMediaUploaderProps = {}) {
+function statusLabel(status: string) {
+  if (status === 'migrated') return 'Migrado';
+  if (status === 'failed') return 'Falhou';
+  if (status === 'skipped') return 'Ignorado';
+  return status || 'Processado';
+}
+
+function statusClass(status: string) {
+  if (status === 'migrated') return 'admin-clean-pill success';
+  if (status === 'failed') return 'admin-clean-pill danger';
+  if (status === 'skipped') return 'admin-clean-pill warning';
+  return 'admin-clean-pill';
+}
+
+export function AdminMediaUploader({ productId, productName, migrationOnly = false, totalLessons = 0, migratedLessons = 0, driveLessons = 0 }: AdminMediaUploaderProps = {}) {
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState<'idle' | 'signing' | 'uploading' | 'done' | 'error'>('idle');
   const [progress, setProgress] = useState(0);
@@ -41,6 +58,12 @@ export function AdminMediaUploader({ productId, productName, migrationOnly = fal
   const [migrationStatus, setMigrationStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
   const [migrationResults, setMigrationResults] = useState<MigrationResult[]>([]);
   const [migrationError, setMigrationError] = useState('');
+  const [lastBatchSize, setLastBatchSize] = useState(0);
+
+  const displayMigrated = migratedLessons + migrationResults.filter((item) => item.status === 'migrated').length;
+  const displayPending = Math.max(0, driveLessons - migrationResults.filter((item) => item.status === 'migrated').length);
+  const percent = totalLessons > 0 ? Math.min(100, Math.round((displayMigrated / totalLessons) * 100)) : 0;
+  const destinationPreview = useMemo(() => `produtos/${(productName || 'produto').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'produto'}/modulo/originals/video.mp4`, [productName]);
 
   async function upload() {
     if (!file) return;
@@ -85,6 +108,13 @@ export function AdminMediaUploader({ productId, productName, migrationOnly = fal
   }
 
   async function migrateDriveBatch(limit = 1) {
+    if (!productId) {
+      setMigrationError('Produto não identificado. Abra a migração dentro de um produto.');
+      setMigrationStatus('error');
+      return;
+    }
+
+    setLastBatchSize(limit);
     setMigrationStatus('running');
     setMigrationError('');
     try {
@@ -93,9 +123,11 @@ export function AdminMediaUploader({ productId, productName, migrationOnly = fal
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ limit, productId }),
       });
-      const json = await response.json();
-      if (!response.ok) throw new Error(json?.message || json?.error || 'Migração falhou.');
-      setMigrationResults((current) => [...(json.results || []), ...current].slice(0, 30));
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(json?.message || json?.error || `Migração falhou (${response.status}).`);
+      const results = (json.results || []) as MigrationResult[];
+      setMigrationResults((current) => [...results, ...current].slice(0, 30));
+      if (!results.length) setMigrationError(json?.message || 'Nenhuma aula pendente encontrada para este produto.');
       setMigrationStatus('done');
     } catch (err) {
       setMigrationError(err instanceof Error ? err.message : 'Erro desconhecido na migração.');
@@ -104,32 +136,49 @@ export function AdminMediaUploader({ productId, productName, migrationOnly = fal
   }
 
   const migrationCard = (
-    <section className="card admin-section">
+    <section className="card admin-section media-migration-card">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">Migração automática</p>
-          <h2>{productName ? `Drive para R2 · ${productName}` : 'Drive para R2'}</h2>
-          <p className="muted">Migra aulas deste produto para pastas organizadas por produto e módulo, preservando cortes e mantendo Drive como fallback.</p>
+          <p className="eyebrow">Migração inteligente</p>
+          <h2>{productName ? `Drive → R2 · ${productName}` : 'Drive → R2'}</h2>
+          <p className="muted">O Hub pega as aulas já vinculadas ao produto, baixa do Google Drive e publica no Cloudflare R2 na pasta correta do produto e módulo.</p>
         </div>
+        <span className="admin-clean-pill">{percent}% no R2</span>
+      </div>
+
+      <div className="admin-grid admin-section">
+        <article className="admin-stat"><span>Total</span><strong>{totalLessons || '—'}</strong><p className="muted">Aulas vinculadas.</p></article>
+        <article className="admin-stat"><span>Migradas</span><strong>{displayMigrated}</strong><p className="muted">Já usam R2.</p></article>
+        <article className="admin-stat"><span>Pendentes</span><strong>{displayPending || '0'}</strong><p className="muted">Ainda usam Drive.</p></article>
+      </div>
+
+      <div className="progress media-migration-progress"><span style={{ width: `${percent}%` }} /></div>
+
+      <div className="admin-help-box">
+        <strong>O que será migrado?</strong>
+        <p className="muted">As próximas aulas pendentes deste produto. Os cortes continuam salvos na aula e o link do Drive fica como fallback de segurança.</p>
+        <code>{destinationPreview}</code>
       </div>
 
       <div className="admin-clean-actions">
-        <button className="button" type="button" onClick={() => migrateDriveBatch(1)} disabled={migrationStatus === 'running'}>
-          {migrationStatus === 'running' ? 'Migrando...' : 'Migrar 1 aula'}
+        <button className="admin-clean-button primary" type="button" onClick={() => migrateDriveBatch(1)} disabled={migrationStatus === 'running' || displayPending === 0}>
+          {migrationStatus === 'running' && lastBatchSize === 1 ? 'Migrando 1 aula...' : 'Migrar 1 aula'}
         </button>
-        <button className="button secondary" type="button" onClick={() => migrateDriveBatch(5)} disabled={migrationStatus === 'running'}>
-          Migrar 5 aulas
+        <button className="admin-clean-button secondary" type="button" onClick={() => migrateDriveBatch(5)} disabled={migrationStatus === 'running' || displayPending === 0}>
+          {migrationStatus === 'running' && lastBatchSize === 5 ? 'Migrando 5 aulas...' : 'Migrar 5 aulas'}
         </button>
       </div>
-      <p className="muted">Destino exemplo: produtos/{productName ? productName.toLowerCase().replace(/\s+/g, '-') : 'produto'}/modulo/originals/video.mp4</p>
-      {migrationError ? <p className="error-text">{migrationError}</p> : null}
+
+      {migrationStatus === 'running' ? <p className="admin-save-success">Migração em andamento. Não feche esta tela até finalizar.</p> : null}
+      {migrationStatus === 'done' && migrationResults.length > 0 ? <p className="admin-save-success">Migração concluída. Confira abaixo as aulas processadas.</p> : null}
+      {migrationError ? <p className="admin-save-error">{migrationError}</p> : null}
 
       {migrationResults.length > 0 ? (
-        <div className="admin-list">
+        <div className="admin-list media-migration-results">
           {migrationResults.map((item, index) => (
             <div className="admin-row" key={`${item.id}-${index}`}>
               <div>
-                <span className="pill">{item.status}</span>
+                <span className={statusClass(item.status)}>{statusLabel(item.status)}</span>
                 <h3>{item.title || item.id}</h3>
                 <p className="muted">{item.folder || item.mediaUrl || item.reason || item.detail || 'Processado'}</p>
               </div>
