@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
-import { DailyEarTrainingPlayerV2 } from '@/components/daily-ear-training-player-v2';
+import { DailyEarTrainingPlayerGold } from '@/components/daily-ear-training-player-gold';
 import { DailyTrainingPlayer } from '@/components/daily-training-player';
 import { personalizeDailyWarmup } from '@/lib/adaptive-training';
 import type { DailyTrainingStep, TrainingExercise } from '@/lib/training-center';
@@ -10,7 +10,7 @@ export function AdaptiveDailyTrainingPlayer({ step, exercise, total }: { step: D
   const personalizedExercise = useMemo(() => personalizeDailyWarmup(exercise), [exercise]);
 
   if (exercise.categorySlug === 'percepcao') {
-    return <DailyEarTrainingPlayerV2 step={step} exercise={personalizedExercise} />;
+    return <DailyEarTrainingPlayerGold step={step} exercise={personalizedExercise} />;
   }
 
   return <DailyTrainingPlayer step={step} exercise={personalizedExercise} total={total} />;
