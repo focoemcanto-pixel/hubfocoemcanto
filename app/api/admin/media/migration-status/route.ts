@@ -18,6 +18,12 @@ function isRealR2Url(value?: string | null) {
   return url.startsWith(`${base}/`);
 }
 
+function isVipProduct(product: Row) {
+  const slug = String(product?.slug || '').toLowerCase();
+  const name = String(product?.name || '').toLowerCase();
+  return slug.includes('grupo-vip') || name.includes('grupo vip') || name.includes('vip');
+}
+
 export async function GET(request: Request) {
   try {
     const cookieStore = await cookies();
@@ -40,30 +46,42 @@ export async function GET(request: Request) {
       ? await supabase.from('course_module_links').select('module_id,sort_order').eq('course_id', course.id).order('sort_order', { ascending: true })
       : { data: [] };
 
-    const moduleIds = ((links || []) as Row[]).map((link) => String(link.module_id));
-    if (!moduleIds.length) return NextResponse.json({ product, r2Base: publicR2Base(), total: 0, migrated: 0, pending: 0, modules: [] });
-
-    const { data: modules } = await supabase
-      .from('modules')
-      .select('id,title,slug,sort_order,exercises(id,title,slug,media_url,drive_url)')
-      .in('id', moduleIds)
-      .order('sort_order', { ascending: true });
-
+    const linkedIds = ((links || []) as Row[]).map((link) => String(link.module_id));
     const linkOrder = new Map(((links || []) as Row[]).map((link) => [String(link.module_id), Number(link.sort_order || 0)]));
-    const summaries = ((modules || []) as Row[])
+
+    const moduleQuery = supabase
+      .from('modules')
+      .select('id,title,slug,description,sort_order,is_active,exercises(id,title,slug,media_url,drive_url,media_type,sort_order)')
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true });
+
+    const { data: modulesData } = linkedIds.length ? await moduleQuery.in('id', linkedIds) : await moduleQuery;
+
+    const modulesSource = ((modulesData || []) as Row[])
+      .filter((module) => module.is_active !== false)
+      .filter((module) => !String(module.description || '').toLowerCase().includes('importados da pasta'));
+
+    const modules = linkedIds.length || isVipProduct(product)
+      ? modulesSource
+      : [];
+
+    const summaries = modules
       .sort((a, b) => (linkOrder.get(String(a.id)) || Number(a.sort_order || 0)) - (linkOrder.get(String(b.id)) || Number(b.sort_order || 0)))
       .map((module) => {
-        const lessons = (module.exercises || []) as Row[];
-        const total = lessons.length;
-        const migrated = lessons.filter((lesson) => isRealR2Url(lesson.media_url)).length;
-        const pending = lessons.filter((lesson) => lesson.drive_url && !isRealR2Url(lesson.media_url)).length;
-        const examples = lessons.slice(0, 8).map((lesson) => ({
+        const lessons = ((module.exercises || []) as Row[]).sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0));
+        const lessonRows = lessons.map((lesson) => ({
           id: lesson.id,
           title: lesson.title,
           slug: lesson.slug,
+          mediaType: lesson.media_type,
+          driveUrl: lesson.drive_url,
+          mediaUrl: lesson.media_url,
           status: isRealR2Url(lesson.media_url) ? 'r2' : lesson.drive_url ? 'drive' : 'empty',
         }));
-        return { id: module.id, title: module.title || 'Módulo sem nome', slug: module.slug, total, migrated, pending, examples };
+        const total = lessonRows.length;
+        const migrated = lessonRows.filter((lesson) => lesson.status === 'r2').length;
+        const pending = lessonRows.filter((lesson) => lesson.status === 'drive').length;
+        return { id: module.id, title: module.title || 'Módulo sem nome', slug: module.slug, total, migrated, pending, lessons: lessonRows };
       });
 
     const total = summaries.reduce((sum, item) => sum + item.total, 0);
