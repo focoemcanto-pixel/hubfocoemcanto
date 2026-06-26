@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
+import type { CSSProperties } from 'react';
 import type { DailyTrainingStep } from '@/lib/training-center';
 import { completeDailyStep, emptyDailyProgress, type DailyTrainingProgress } from '@/lib/daily-training-progress';
 import './daily-training-completion-result.css';
@@ -20,7 +21,7 @@ function formatClock(totalSeconds: number) {
 
 const summaryIcons = ['♫', '♬', '◉', '▤', '♮', '◎'];
 type SummaryMark = 'right' | 'wrong' | null;
-type PitchSummary = { correct: number; wrong: number; total: number; avgCents?: number; durationSeconds?: number; savedAt?: number } | null;
+type PitchSummary = { exercise?: number; correct: number; wrong: number; total: number; avgCents?: number; durationSeconds?: number; savedAt?: number } | null;
 
 function readEarTrainingMarks(exerciseNumber: number): SummaryMark[] {
   try {
@@ -34,12 +35,13 @@ function readEarTrainingMarks(exerciseNumber: number): SummaryMark[] {
   }
 }
 
-function readPitchSummary(): PitchSummary {
+function readPitchSummary(exerciseNumber: number): PitchSummary {
   try {
-    const raw = sessionStorage.getItem('daily-pitch-note-summary');
+    const raw = sessionStorage.getItem('daily-pitch-note-summary') || localStorage.getItem('daily-pitch-note-summary');
     if (!raw) return null;
     const parsed = JSON.parse(raw) as PitchSummary;
     if (!parsed || typeof parsed.correct !== 'number' || typeof parsed.wrong !== 'number') return null;
+    if (parsed.exercise && parsed.exercise !== exerciseNumber) return null;
     return parsed;
   } catch {
     return null;
@@ -51,28 +53,29 @@ export function DailyTrainingCompletion({ step, total, next, durationSeconds }: 
   const [marks, setMarks] = useState<SummaryMark[]>(summaryIcons.map(() => null));
   const [pitchSummary, setPitchSummary] = useState<PitchSummary>(null);
   const level = (step as DailyTrainingStep & { level?: string }).level ?? 'Iniciante';
+  const isPitchStep = step.exerciseSlug === 'sustentacao-centro-da-nota-01' || step.title.toLowerCase().includes('afinação');
 
   useEffect(() => {
     const nextProgress = completeDailyStep(step, durationSeconds);
     setProgress(nextProgress);
     setMarks(readEarTrainingMarks(step.exerciseNumber));
-    setPitchSummary(readPitchSummary());
+    setPitchSummary(readPitchSummary(step.exerciseNumber));
     window.dispatchEvent(new Event('daily-training-progress'));
   }, [durationSeconds, step]);
 
   const completedCount = progress.completedExercises.length;
   const pitchData = useMemo(() => {
-    if (!pitchSummary) return null;
-    const totalNotes = Math.max(1, pitchSummary.total || pitchSummary.correct + pitchSummary.wrong || 15);
-    const correct = Math.max(0, pitchSummary.correct || 0);
-    const wrong = Math.max(0, pitchSummary.wrong || Math.max(0, totalNotes - correct));
+    if (!isPitchStep && !pitchSummary) return null;
+    const totalNotes = Math.max(1, pitchSummary?.total || 15);
+    const correct = Math.max(0, pitchSummary?.correct || 0);
+    const wrong = Math.max(0, pitchSummary?.wrong ?? Math.max(0, totalNotes - correct));
     const percent = Math.round((correct / totalNotes) * 100);
     const wrongPercent = Math.max(0, 100 - percent);
-    const avg = typeof pitchSummary.avgCents === 'number' ? Math.round(Math.abs(pitchSummary.avgCents)) : null;
-    const time = pitchSummary.durationSeconds || durationSeconds;
+    const avg = typeof pitchSummary?.avgCents === 'number' ? Math.round(Math.abs(pitchSummary.avgCents)) : null;
+    const time = pitchSummary?.durationSeconds || durationSeconds;
     const pin = avg == null ? 50 : Math.max(4, Math.min(96, (avg / 60) * 100));
     return { totalNotes, correct, wrong, percent, wrongPercent, avg, time, pin };
-  }, [durationSeconds, pitchSummary]);
+  }, [durationSeconds, isPitchStep, pitchSummary]);
 
   if (pitchData) {
     return (
@@ -105,7 +108,7 @@ export function DailyTrainingCompletion({ step, total, next, durationSeconds }: 
         <section className="completion-performance">
           <h2>▮ Desempenho</h2>
           <p>{pitchData.percent >= 80 ? 'Você está no caminho certo!' : pitchData.percent >= 55 ? 'Boa base. Continue refinando o ouvido.' : 'Continue treinando: cada tentativa melhora sua precisão.'}</p>
-          <div className="completion-scale" style={{ '--pin': `${pitchData.pin}%` } as React.CSSProperties}><i /></div>
+          <div className="completion-scale" style={{ '--pin': `${pitchData.pin}%` } as CSSProperties}><i /></div>
           <div className="completion-scale-labels">
             <span><b>Iniciante</b>0 - 20 centavos</span>
             <span><b>Intermediário</b>20 - 40 centavos</span>
