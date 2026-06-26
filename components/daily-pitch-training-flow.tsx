@@ -8,129 +8,126 @@ import { completeDailyStep } from '@/lib/daily-training-progress';
 import { noteNameToMidi } from '@/lib/audio/pitch';
 import { playPianoSample, preloadPianoSamples, stopPianoSamples } from '@/lib/audio/piano-sample-engine';
 import type { DailyTrainingStep, TrainingExercise } from '@/lib/training-center';
-import './daily-pitch-training.css';
-import './daily-pitch-training-fixes.css';
+import './daily-pitch-note-replica.css';
 
 type AudioCtor = typeof AudioContext;
 type AudioWindow = Window & typeof globalThis & { webkitAudioContext?: AudioCtor };
-type Level = 0 | 1 | 2 | 3 | 4 | 5;
-type Note = { name: string; hz: number };
-type LevelConfig = { title: string; sub: string; goal: string; seconds: number; tol: number };
-type EvalSample = { note: string; cents: number };
-type EvalResult = { target: string; sung: string; cents: number; ok: boolean } | null;
+type Phase = 'ready' | 'playing' | 'recording' | 'result';
+type TargetNote = { name: string; display: string; midi: number; hz: number };
+type VoiceSample = { name: string; display: string; centsToTarget: number };
+type Result = { ok: boolean; sungName: string; sungDisplay: string; cents: number } | null;
 
-const NOTES: Note[] = [
-  { name: 'C4', hz: 261.63 }, { name: 'D4', hz: 293.66 }, { name: 'E4', hz: 329.63 },
-  { name: 'F4', hz: 349.23 }, { name: 'G4', hz: 392 }, { name: 'A4', hz: 440 }, { name: 'B4', hz: 493.88 },
-];
-const LEVELS: LevelConfig[] = [
-  { title: 'Nível 1', sub: 'Encontrar a nota', goal: 'Cante a nota que você ouviu.', seconds: 1.8, tol: 40 },
-  { title: 'Nível 2', sub: 'Sustentar', goal: 'Mantenha a voz estável.', seconds: 2.7, tol: 36 },
-  { title: 'Nível 3', sub: 'Ataque preciso', goal: 'Entre afinado sem escorregar.', seconds: 1.55, tol: 32 },
-  { title: 'Nível 4', sub: 'Sequência melódica', goal: 'Cante as notas em sequência.', seconds: 1.05, tol: 38 },
-  { title: 'Nível 5', sub: 'Saltos vocais', goal: 'Acerte saltos maiores com precisão.', seconds: 1.15, tol: 36 },
-  { title: 'Nível 6', sub: 'Controle dinâmico', goal: 'Mantenha o centro em mudanças curtas.', seconds: 1.25, tol: 34 },
-];
-const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
-const cents = (freq: number, target: number) => 1200 * Math.log2(freq / target);
+const PT: Record<string, string> = { C: 'Dó', 'C#': 'Dó#', D: 'Ré', 'D#': 'Ré#', E: 'Mi', F: 'Fá', 'F#': 'Fá#', G: 'Sol', 'G#': 'Sol#', A: 'Lá', 'A#': 'Lá#', B: 'Si' };
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const RECORD_SECONDS = 2.1;
+const PASS_CENTS = 50;
 const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
-
+const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+const cents = (freq: number, target: number) => 1200 * Math.log2(freq / target);
+const midiHz = (midi: number) => 440 * 2 ** ((midi - 69) / 12);
+const midiName = (midi: number) => `${NOTE_NAMES[((midi % 12) + 12) % 12]}${Math.floor(midi / 12) - 1}`;
+const displayName = (name: string) => {
+  const match = name.match(/^([A-G]#?)(-?\d)$/);
+  return match ? `${PT[match[1]] ?? match[1]}${match[2]}` : name;
+};
+const makeTarget = (midi: number): TargetNote => {
+  const name = midiName(midi);
+  return { name, display: displayName(name), midi, hz: midiHz(midi) };
+};
+function rng(seed: number) {
+  let value = seed || 1;
+  return () => {
+    value = (value * 9301 + 49297) % 233280;
+    return value / 233280;
+  };
+}
 function getAudioCtor() {
   if (typeof window === 'undefined') return null;
   return (window as AudioWindow).AudioContext || (window as AudioWindow).webkitAudioContext || null;
 }
-
 function getPitch(buffer: Float32Array, sampleRate: number) {
   let rms = 0;
-  for (let i = 0; i < buffer.length; i++) rms += buffer[i] * buffer[i];
-  if (Math.sqrt(rms / buffer.length) < 0.01) return null;
+  for (let i = 0; i < buffer.length; i += 1) rms += buffer[i] * buffer[i];
+  if (Math.sqrt(rms / buffer.length) < 0.012) return null;
   let bestLag = -1;
   let best = 0;
   const minLag = Math.floor(sampleRate / 900);
   const maxLag = Math.floor(sampleRate / 70);
-  for (let lag = minLag; lag <= maxLag; lag++) {
+  for (let lag = minLag; lag <= maxLag; lag += 1) {
     let sum = 0;
     let energy = 0;
-    for (let i = 0; i < buffer.length - lag; i++) { sum += buffer[i] * buffer[i + lag]; energy += buffer[i] * buffer[i] + buffer[i + lag] * buffer[i + lag]; }
+    for (let i = 0; i < buffer.length - lag; i += 1) {
+      sum += buffer[i] * buffer[i + lag];
+      energy += buffer[i] * buffer[i] + buffer[i + lag] * buffer[i + lag];
+    }
     const corr = energy > 0 ? (2 * sum) / energy : 0;
-    if (corr > best) { best = corr; bestLag = lag; }
+    if (corr > best) {
+      best = corr;
+      bestLag = lag;
+    }
   }
-  return bestLag > 0 && best > 0.18 ? sampleRate / bestLag : null;
+  return bestLag > 0 && best > 0.19 ? sampleRate / bestLag : null;
 }
-
-function nearestNote(freq: number) {
-  return NOTES.reduce((best, item) => Math.abs(cents(freq, item.hz)) < Math.abs(cents(freq, best.hz)) ? item : best, NOTES[0]);
+function nearestTarget(freq: number, target: TargetNote): VoiceSample {
+  const midi = Math.round(69 + 12 * Math.log2(freq / 440));
+  const name = midiName(midi);
+  return { name, display: displayName(name), centsToTarget: cents(freq, target.hz) };
 }
-
-function summarize(samples: EvalSample[], target: Note): EvalResult {
-  if (!samples.length) return { target: target.name, sung: '—', cents: 0, ok: false };
+function summarize(samples: VoiceSample[], target: TargetNote): Result {
+  if (!samples.length) return { ok: false, sungName: '—', sungDisplay: '—', cents: 0 };
   const counts = samples.reduce<Record<string, number>>((acc, item) => {
-    acc[item.note] = (acc[item.note] ?? 0) + 1;
+    acc[item.name] = (acc[item.name] ?? 0) + 1;
     return acc;
   }, {});
-  const sung = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? '—';
-  const related = samples.filter((item) => item.note === sung);
-  const avg = related.reduce((sum, item) => sum + item.cents, 0) / Math.max(1, related.length);
-  return { target: target.name, sung, cents: Math.round(avg), ok: sung === target.name };
+  const sungName = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? samples[0].name;
+  const related = samples.filter((item) => item.name === sungName);
+  const avg = related.reduce((sum, item) => sum + item.centsToTarget, 0) / Math.max(1, related.length);
+  const rounded = Math.round(avg);
+  return { ok: sungName === target.name && Math.abs(rounded) <= PASS_CENTS, sungName, sungDisplay: displayName(sungName), cents: rounded };
+}
+function makeSequence(seed: number) {
+  const random = rng(seed);
+  const low = 48;
+  const high = 68;
+  const pool = Array.from({ length: high - low + 1 }, (_, index) => low + index).filter((midi) => ![1, 3, 6, 8, 10].includes(midi % 12) || random() > 0.42);
+  const result: TargetNote[] = [];
+  for (let i = 0; i < 15; i += 1) {
+    const previous = result.at(-1)?.midi;
+    const options = pool.filter((midi) => midi !== previous && (!previous || Math.abs(midi - previous) <= 7));
+    result.push(makeTarget(options[Math.floor(random() * options.length) % options.length] ?? pool[0]));
+  }
+  return result;
 }
 
 export function DailyPitchTrainingFlow({ step, exercise }: { step: DailyTrainingStep; exercise: TrainingExercise }) {
   const router = useRouter();
-  const seed = useMemo(() => [...exercise.slug, String(step.day)].reduce((a, c) => a + c.charCodeAt(0), 0), [exercise.slug, step.day]);
-  const sequences = useMemo(() => {
-    const n = (offset: number) => NOTES[(seed + offset + NOTES.length) % NOTES.length];
-    return [[n(0)], [n(2)], [n(4)], [n(0), n(1), n(2)], [n(0), n(4), n(1)], [n(2), n(3), n(5)]] as Note[][];
-  }, [seed]);
-  const allTargets = useMemo(() => sequences.flat(), [sequences]);
-  const [level, setLevel] = useState<Level>(0);
-  const [activeStep, setActiveStep] = useState(0);
-  const [running, setRunning] = useState(false);
-  const [done, setDone] = useState(false);
-  const [off, setOff] = useState(0);
-  const [hold, setHold] = useState(0);
-  const [msg, setMsg] = useState('Toque para ouvir e cante a nota.');
-  const [score, setScore] = useState([0, 0, 0, 0, 0, 0]);
-  const [result, setResult] = useState<EvalResult>(null);
-  const ctxRef = useRef<AudioContext | null>(null);
+  const seed = useMemo(() => [...exercise.slug, String(step.day), String(step.exerciseNumber)].reduce((sum, char) => sum + char.charCodeAt(0), 0), [exercise.slug, step.day, step.exerciseNumber]);
+  const targets = useMemo(() => makeSequence(seed), [seed]);
+  const [index, setIndex] = useState(0);
+  const [phase, setPhase] = useState<Phase>('ready');
+  const [recordProgress, setRecordProgress] = useState(0);
+  const [result, setResult] = useState<Result>(null);
+  const [history, setHistory] = useState<Result[]>([]);
   const sampleCtxRef = useRef<AudioContext | null>(null);
+  const micCtxRef = useRef<AudioContext | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef<number | null>(null);
-  const lastRef = useRef<number>(0);
-  const startRef = useRef<number>(0);
-  const attackRef = useRef(false);
-  const offRef = useRef(0);
-  const holdRef = useRef(0);
-  const activeStepRef = useRef(0);
-  const finishingRef = useRef(false);
-  const evalSamplesRef = useRef<EvalSample[]>([]);
-  const radarRef = useRef<HTMLDivElement | null>(null);
-
-  const cfg = LEVELS[level];
-  const sequence = sequences[level];
-  const note = sequence[activeStep] ?? sequence[0];
-  const centered = Math.abs(off) <= cfg.tol && running;
-  const stepProgress = clamp(hold / cfg.seconds, 0, 1);
-  const totalProgress = clamp((activeStep + stepProgress) / sequence.length, 0, 1);
-  const meterX = `${50 + clamp(off / 110, -1, 1) * 44}%`;
-  const feedback = !running ? 'Aguardando sua voz' : level === 0 ? `Gravando · ${Math.round(stepProgress * 100)}%` : centered ? `Afinado · ${Math.round(stepProgress * 100)}%` : off < 0 ? 'Um pouco grave' : 'Um pouco agudo';
+  const startRef = useRef(Date.now());
+  const samplesRef = useRef<VoiceSample[]>([]);
+  const progressRef = useRef<HTMLButtonElement | null>(null);
+  const target = targets[index] ?? targets[0];
+  const overall = `${((index + (phase === 'result' ? 1 : recordProgress)) / targets.length) * 100}%`;
 
   useEffect(() => {
     const ctx = getSampleContext();
-    if (ctx) void preloadPianoSamples(ctx, allTargets.map((target) => noteNameToMidi(target.name) ?? 60));
-    return () => stopMic();
-  }, [allTargets]);
-
-  function paintProgress(value: number, targetSeconds: number) {
-    const deg = clamp(value / targetSeconds, 0, 1) * 360;
-    radarRef.current?.style.setProperty('--hold-progress', `${deg.toFixed(2)}deg`);
-  }
-
-  function paintBall(offsetCents: number) {
-    const x = clamp(offsetCents / 95, -1, 1) * 19.5;
-    const y = clamp(offsetCents / 95, -1, 1) * 45;
-    radarRef.current?.style.setProperty('--ball-x', `${x.toFixed(2)}px`);
-    radarRef.current?.style.setProperty('--ball-y', `${y.toFixed(2)}px`);
-  }
+    if (ctx) void preloadPianoSamples(ctx, targets.map((item) => item.midi));
+    const timer = window.setTimeout(() => void playCurrent(true), 320);
+    return () => {
+      window.clearTimeout(timer);
+      stopCapture();
+      stopPianoSamples(sampleCtxRef.current ?? undefined);
+    };
+  }, [targets]);
 
   function getSampleContext() {
     if (sampleCtxRef.current) return sampleCtxRef.current;
@@ -139,53 +136,43 @@ export function DailyPitchTrainingFlow({ step, exercise }: { step: DailyTraining
     return sampleCtxRef.current;
   }
 
-  async function playReference(target = note) {
+  function paintRecordProgress(value: number) {
+    progressRef.current?.style.setProperty('--record-progress', `${(clamp(value, 0, 1) * 360).toFixed(2)}deg`);
+  }
+
+  async function playCurrent(autoRecord = false) {
     const ctx = getSampleContext();
-    if (!ctx) return;
+    if (!ctx || !target) return;
+    stopCapture();
+    setResult(null);
+    setPhase('playing');
+    setRecordProgress(0);
+    paintRecordProgress(0);
     await ctx.resume().catch(() => null);
     stopPianoSamples(ctx);
-    const midi = noteNameToMidi(target.name) ?? 60;
-    await preloadPianoSamples(ctx, [midi]).catch(() => null);
-    await playPianoSample(ctx, midi, ctx.currentTime + 0.035, ctx.currentTime + 2.85, 1.08).catch(() => null);
+    await preloadPianoSamples(ctx, [target.midi]).catch(() => null);
+    await playPianoSample(ctx, target.midi, ctx.currentTime + 0.04, ctx.currentTime + 2.85, 1.08).catch(() => null);
+    await wait(2300);
+    if (autoRecord) void startCapture();
+    else setPhase('ready');
   }
 
-  async function playSequencePreview(notes = sequence) {
-    for (const target of notes) {
-      await playReference(target);
-      await wait(360);
-    }
-  }
-
-  function stopMic() {
+  function stopCapture() {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    streamRef.current?.getTracks().forEach((t) => t.stop());
-    void ctxRef.current?.close().catch(() => null);
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    void micCtxRef.current?.close().catch(() => null);
     rafRef.current = null;
     streamRef.current = null;
-    ctxRef.current = null;
-    setRunning(false);
+    micCtxRef.current = null;
   }
 
-  function completeLevel(activeLevel: Level, targetSequence: Note[] = sequence) {
-    finishingRef.current = true;
-    paintProgress(LEVELS[activeLevel].seconds, LEVELS[activeLevel].seconds);
-    const finalResult = activeLevel === 0 ? summarize(evalSamplesRef.current, targetSequence[0]) : null;
-    if (finalResult) setResult(finalResult);
-    stopMic();
-    setDone(true);
-    setMsg(finalResult ? (finalResult.ok ? 'Acertou a nota.' : 'Você cantou outra nota.') : 'Perfeito. Centro encaixado.');
-    setScore((s) => s.map((v, i) => i === activeLevel ? v + (finalResult ? Number(finalResult.ok) : 1) : v));
-  }
-
-  async function start(targetLevel: Level = level) {
-    stopMic();
-    const targetSequence = sequences[targetLevel];
-    const targetCfg = LEVELS[targetLevel];
-    offRef.current = 0; holdRef.current = 0; activeStepRef.current = 0; finishingRef.current = false; evalSamplesRef.current = [];
-    paintProgress(0, targetCfg.seconds); paintBall(0);
-    setActiveStep(0); setDone(false); setHold(0); setOff(0); setRunning(true); setResult(null);
-    setMsg(targetLevel === 0 ? 'Cante a nota que você ouviu.' : targetLevel === 2 ? 'Entre direto no centro.' : targetLevel >= 3 ? 'Ouça e siga a sequência.' : 'Aproxime a bolinha do centro.');
-    attackRef.current = false; lastRef.current = performance.now(); if (!startRef.current) startRef.current = Date.now();
+  async function startCapture() {
+    if (!target) return;
+    stopCapture();
+    samplesRef.current = [];
+    setPhase('recording');
+    setRecordProgress(0);
+    paintRecordProgress(0);
     try {
       const Ctor = getAudioCtor();
       if (!Ctor) throw new Error('AudioContext indisponível');
@@ -193,85 +180,163 @@ export function DailyPitchTrainingFlow({ step, exercise }: { step: DailyTraining
       const ctx = new Ctor();
       const source = ctx.createMediaStreamSource(stream);
       const analyser = ctx.createAnalyser();
-      analyser.fftSize = 4096; analyser.smoothingTimeConstant = 0.04; source.connect(analyser);
-      streamRef.current = stream; ctxRef.current = ctx;
-      if (targetSequence.length > 1) await playSequencePreview(targetSequence);
-      else await playReference(targetSequence[0]);
-      loop(analyser, ctx.sampleRate, targetLevel, targetSequence, targetCfg);
-    } catch { setMsg('Permita o microfone para medir sua afinação.'); setRunning(false); }
+      analyser.fftSize = 4096;
+      analyser.smoothingTimeConstant = 0.04;
+      source.connect(analyser);
+      streamRef.current = stream;
+      micCtxRef.current = ctx;
+      const data = new Float32Array(analyser.fftSize);
+      let heardSeconds = 0;
+      let last = performance.now();
+      const tick = () => {
+        const now = performance.now();
+        const delta = Math.min(0.05, Math.max(0, (now - last) / 1000));
+        last = now;
+        analyser.getFloatTimeDomainData(data);
+        const pitch = getPitch(data, ctx.sampleRate);
+        if (pitch) {
+          heardSeconds = Math.min(RECORD_SECONDS, heardSeconds + delta);
+          samplesRef.current.push(nearestTarget(pitch, target));
+        }
+        const progress = clamp(heardSeconds / RECORD_SECONDS, 0, 1);
+        setRecordProgress(progress);
+        paintRecordProgress(progress);
+        if (heardSeconds >= RECORD_SECONDS) {
+          finishAttempt();
+          return;
+        }
+        rafRef.current = requestAnimationFrame(tick);
+      };
+      tick();
+    } catch {
+      setPhase('ready');
+    }
   }
 
-  function loop(analyser: AnalyserNode, sampleRate: number, activeLevel: Level, targetSequence: Note[], targetCfg: LevelConfig) {
-    const data = new Float32Array(analyser.fftSize);
-    const tick = () => {
-      if (finishingRef.current) return;
-      const now = performance.now();
-      const delta = Math.min(0.05, Math.max(0, (now - lastRef.current) / 1000));
-      lastRef.current = now; analyser.getFloatTimeDomainData(data);
-      const targetNote = targetSequence[activeStepRef.current] ?? targetSequence[0];
-      const pitch = getPitch(data, sampleRate);
-      if (!pitch) {
-        setMsg('Cante para ativar o afinador.');
-        if (activeLevel !== 0) holdRef.current = Math.max(0, holdRef.current - delta * .24);
-        paintProgress(holdRef.current, targetCfg.seconds);
-        setHold(holdRef.current);
-      } else {
-        const sung = nearestNote(pitch);
-        const rawToTarget = clamp(cents(pitch, targetNote.hz), -110, 110);
-        const smooth = offRef.current * .88 + rawToTarget * .12;
-        offRef.current = smooth;
-        paintBall(smooth);
-        setOff(smooth);
-        const ok = Math.abs(smooth) <= targetCfg.tol;
-        if (activeLevel === 0) {
-          evalSamplesRef.current.push({ note: sung.name, cents: cents(pitch, sung.hz) });
-          setMsg(ok ? 'No centro. Continue sustentando.' : 'Continue sustentando.');
-          holdRef.current = Math.min(targetCfg.seconds, holdRef.current + delta);
-        } else {
-          if (activeLevel === 2 && !attackRef.current) { attackRef.current = true; if (!ok && Math.abs(smooth) > targetCfg.tol + 18) { setMsg(smooth < 0 ? 'Entrou grave. Refaça o ataque.' : 'Entrou agudo. Refaça o ataque.'); holdRef.current = 0; setHold(0); paintProgress(0, targetCfg.seconds); } }
-          setMsg(ok ? (activeLevel === 1 || activeLevel === 5 ? 'Segure no centro.' : 'Centro encontrado.') : smooth < 0 ? 'Suba um pouco.' : 'Desça um pouco.');
-          holdRef.current = ok ? Math.min(targetCfg.seconds, holdRef.current + delta) : Math.max(0, holdRef.current - delta * .30);
-        }
-        paintProgress(holdRef.current, targetCfg.seconds);
-        setHold(holdRef.current);
-        if (holdRef.current >= targetCfg.seconds) {
-          if (activeStepRef.current < targetSequence.length - 1) {
-            activeStepRef.current += 1;
-            holdRef.current = 0; offRef.current = 0; paintProgress(0, targetCfg.seconds); paintBall(0);
-            setActiveStep(activeStepRef.current); setHold(0); setOff(0); setMsg('Próxima nota...');
-            void playReference(targetSequence[activeStepRef.current]);
-          } else {
-            completeLevel(activeLevel, targetSequence);
-            return;
-          }
-        }
-      }
-      rafRef.current = requestAnimationFrame(tick);
-    };
-    tick();
+  function finishAttempt() {
+    stopCapture();
+    const finalResult = summarize(samplesRef.current, target);
+    setResult(finalResult);
+    setHistory((current) => [...current.slice(0, index), finalResult]);
+    setPhase('result');
   }
 
-  function next() {
-    if (level < 5) {
-      const nextLevel = (level + 1) as Level;
-      setLevel(nextLevel); setActiveStep(0); setDone(false); setHold(0); setOff(0); setResult(null); paintProgress(0, LEVELS[nextLevel].seconds); paintBall(0); setMsg('Preparando próximo nível...');
-      window.setTimeout(() => void start(nextLevel), 140);
+  function repeat() {
+    samplesRef.current = [];
+    setResult(null);
+    void playCurrent(true);
+  }
+
+  function nextNote() {
+    stopCapture();
+    samplesRef.current = [];
+    setResult(null);
+    setRecordProgress(0);
+    paintRecordProgress(0);
+    if (index >= targets.length - 1) {
+      completeDailyStep(step, Math.max(1, Math.round((Date.now() - startRef.current) / 1000)));
+      router.push(`/aluno/central/diarios/concluido?exercicio=${step.exerciseNumber}`);
       return;
     }
-    completeDailyStep(step, startRef.current ? (Date.now() - startRef.current) / 1000 : 1);
-    router.push(`/aluno/central/diarios/concluido?exercicio=${step.exerciseNumber}`);
+    setIndex((current) => current + 1);
+    setPhase('ready');
+    window.setTimeout(() => void playCurrent(true), 120);
   }
 
-  const startButtonHandler = () => {
-    if (running) {
-      stopMic();
-      return;
-    }
-    void start();
-  };
+  const isResult = phase === 'result' && result;
+  const statusText = result?.ok ? 'Excelente!' : 'Por pouco!';
+  const resultDescription = result?.ok ? 'A nota que você cantou corresponde à nota alvo.' : 'A nota que você cantou foi diferente da nota alvo.';
+  const centsDirection = result ? result.cents < 0 ? 'baixo' : result.cents > 0 ? 'acima' : 'no centro' : 'no centro';
+  const activeStepDots = [0, 1, 2, 3, 4].map((item) => Math.min(targets.length, Math.round(1 + item * 3.5)));
 
-  const radarStyle = {'--hold-progress': `${(stepProgress * 360).toFixed(2)}deg`} as CSSProperties;
-  const prompt = result ? `Alvo ${result.target} · Você ${result.sung} · ${result.ok ? 'Acertou' : 'Errou'}` : done ? 'Centro confirmado.' : running ? msg : 'Cante agora...';
+  return (
+    <section className={`note-rep-screen ${isResult ? 'note-result-mode' : ''}`}>
+      <div className="note-rep-inner">
+        <header className="note-rep-top">
+          <Link href="/aluno/central/diarios">Sair</Link>
+          <strong>Iniciante</strong>
+          <button type="button" aria-label="Informações">i</button>
+        </header>
 
-  return <section className="pitch-premium-screen"><header className="pitch-top"><Link href="/aluno/central/diarios">Sair</Link><strong>Iniciante</strong><button type="button">i</button></header><main className="pitch-card"><div className="pitch-medal"><span>♢</span></div><button className="pitch-replay" type="button" onClick={() => sequence.length > 1 ? void playSequencePreview() : void playReference()}>🔊<small>Ouvir</small></button><div className="pitch-heading"><span>Atividade 3</span><h1>Afinação</h1><p>Encontre o centro da nota e mantenha sua voz estável.</p></div><div className={`pitch-target-card ${centered ? 'is-centered' : ''}`}><span className="pitch-label">Nota alvo</span><strong>{note.name}</strong>{sequence.length > 1 && <div className="pitch-sequence-row">{sequence.map((item, index) => <span key={`${item.name}-${index}`} className={`${index < activeStep ? 'done' : ''} ${index === activeStep ? 'active' : ''}`}>{item.name}</span>)}</div>}<div ref={radarRef} className="pitch-radar" style={radarStyle}><i className="ring outer"/><i className="ring inner"/><i className="ring load"/><i className="cross horizontal"/><i className="cross vertical"/><b className="target-dot"/><b className={`voice-ball ${centered ? 'hit' : ''}`}/></div><em>{prompt}</em></div><div className="pitch-feedback"><span>Feedback em tempo real</span><div className="pitch-meter" style={{'--meter-x': meterX} as CSSProperties}>{Array.from({length:19},(_,i)=><i key={i}/>)}<b/></div><div className="pitch-feedback-row"><small>Muito grave</small><strong>{feedback}</strong><small>Muito agudo</small></div></div><div className="pitch-level-card"><div className="pitch-level-icon">◎</div><div><strong>{cfg.title} · {cfg.sub}</strong><span>{cfg.goal}</span></div><em>{level+1}/6</em></div><div className="pitch-progress"><span style={{width:`${totalProgress*100}%`}}/></div>{done?<button className="pitch-start" type="button" onClick={next}>{level<5?'Próximo nível':'Concluir atividade'} ›</button>:<button className="pitch-start" type="button" onClick={startButtonHandler}>{running?'Pausar':'Iniciar atividade'}</button>}<div className="pitch-score"><span>Centro: {score[0]}</span><span>Sustentação: {score[1]}</span><span>Ataque: {score[2]}</span><span>Sequência: {score[3]}</span><span>Saltos: {score[4]}</span><span>Controle: {score[5]}</span></div></main></section>;
+        <div className="note-rep-progress" style={{ '--overall': overall } as CSSProperties}>
+          <span>×</span>
+          <div className="note-rep-track"><i /></div>
+          <span>♙</span>
+        </div>
+
+        <div className="note-rep-title">
+          <span>Afinação</span>
+          <h1>Exercício 1</h1>
+          <p>Ouça o som e reproduza a mesma nota.</p>
+        </div>
+
+        <div className="note-target-card">
+          <div>
+            <span className="note-label">Nota alvo</span>
+            <strong className="note-target-name">{target.display}</strong>
+            <button className="note-sound-button" type="button" onClick={() => void playCurrent(false)} aria-label="Repetir nota alvo">🔊</button>
+          </div>
+          <div className={`note-wave ${phase === 'playing' ? 'is-playing' : ''}`} aria-hidden="true">
+            {Array.from({ length: 44 }, (_, i) => <i key={i} style={{ '--h': 8 + ((i * 17) % 36), '--d': i } as CSSProperties} />)}
+          </div>
+        </div>
+
+        {!isResult && <p className="note-prompt">{phase === 'recording' ? 'Gravando sua voz...' : phase === 'playing' ? 'Ouça com atenção.' : 'Cante a nota que você ouviu.'}</p>}
+
+        {!isResult && (
+          <div className="note-mic-wrap">
+            <button ref={progressRef} className={`note-mic-ring ${phase === 'recording' ? 'is-recording' : ''}`} type="button" onClick={() => phase === 'recording' ? finishAttempt() : void startCapture()} aria-label="Gravar resposta">
+              <b>🎙</b>
+            </button>
+          </div>
+        )}
+
+        {isResult && (
+          <>
+            <p className="note-prompt">Você cantou. Vamos ver como foi:</p>
+            <div className={`note-result-card ${result.ok ? 'ok' : ''}`}>
+              <div>
+                <span className="note-label">Sua nota</span>
+                <strong className="note-target-name">{result.sungDisplay}</strong>
+                <button className="note-sound-button" type="button" onClick={() => void playCurrent(false)} aria-label="Ouvir nota alvo">🔊</button>
+              </div>
+              <div className="note-result-text">
+                <strong>{result.ok ? '✓' : '×'} {statusText}</strong>
+                <p>{resultDescription}</p>
+              </div>
+              <div className="note-wave is-playing" aria-hidden="true">
+                {Array.from({ length: 38 }, (_, i) => <i key={i} style={{ '--h': 8 + ((i * 23) % 37), '--d': i } as CSSProperties} />)}
+              </div>
+              <div className="note-diff">
+                <strong>Diferença: {result.cents > 0 ? '+' : ''}{result.cents} centavos ({centsDirection})</strong>
+                <span>{result.cents === 0 ? 'Sua nota ficou exatamente no centro.' : `Sua nota está ${Math.abs(result.cents)} centavos ${centsDirection} da nota alvo.`}</span>
+              </div>
+            </div>
+          </>
+        )}
+
+        <div className="note-tip">
+          <strong>💡 Dica</strong>
+          <span>{isResult ? 'Respire, escute e tente novamente.' : 'Concentre-se no timbre e na altura do som.'}</span>
+        </div>
+
+        <div className="note-actions">
+          <button type="button" onClick={repeat}>↻ Repetir</button>
+          <button type="button" onClick={nextNote}>▶ {index >= targets.length - 1 ? 'Concluir' : 'Pular'}</button>
+        </div>
+
+        <div className="note-steps" aria-label={`Nota ${index + 1} de ${targets.length}`}>
+          {activeStepDots.map((value, dotIndex) => <span key={dotIndex} className={index + 1 >= value ? 'active' : ''}>{dotIndex + 1}</span>)}
+        </div>
+
+        {isResult && (
+          <div className="note-quote">
+            <b>“</b>
+            <span>A afinação não é sorte, é treino e atenção.<br />Cada tentativa te aproxima da excelência.</span>
+            <em>— Marcos Cruz</em>
+          </div>
+        )}
+      </div>
+    </section>
+  );
 }
