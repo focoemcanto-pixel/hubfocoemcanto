@@ -83,11 +83,9 @@ async function migrateExercise(exercise: Row, product: Row, module: Row, token: 
       headers: { authorization: `Bearer ${token}` },
       cache: 'no-store',
     });
-    if (!driveResponse.ok) return { id: exercise.id, title: exercise.title, status: 'failed', step, reason: `drive_${driveResponse.status}`, detail: (await driveResponse.text().catch(() => '')).slice(0, 160) };
-
-    step = 'buffer';
-    const buffer = await driveResponse.arrayBuffer();
-    if (!buffer.byteLength) return { id: exercise.id, title: exercise.title, status: 'failed', step, reason: 'empty_file' };
+    if (!driveResponse.ok || !driveResponse.body) {
+      return { id: exercise.id, title: exercise.title, status: 'failed', step, reason: `drive_${driveResponse.status}`, detail: (await driveResponse.text().catch(() => '')).slice(0, 160) };
+    }
 
     const type = metadata?.mimeType || driveResponse.headers.get('content-type') || 'video/mp4';
     const name = metadata?.name || `${safe(exercise.title || exercise.slug)}.mp4`;
@@ -96,8 +94,13 @@ async function migrateExercise(exercise: Row, product: Row, module: Row, token: 
     step = 'signed_url';
     const signed = await createR2SignedPutUrl({ fileName: name, contentType: type, folder });
 
-    step = 'r2_upload';
-    const upload = await fetch(signed.uploadUrl, { method: 'PUT', headers: { 'content-type': type }, body: buffer });
+    step = 'r2_stream_upload';
+    const upload = await fetch(signed.uploadUrl, {
+      method: 'PUT',
+      headers: { 'content-type': type },
+      body: driveResponse.body,
+      duplex: 'half',
+    } as RequestInit & { duplex: 'half' });
     if (!upload.ok) return { id: exercise.id, title: exercise.title, status: 'failed', step, reason: `r2_${upload.status}`, detail: (await upload.text().catch(() => '')).slice(0, 240) };
 
     step = 'public_check';
@@ -109,7 +112,7 @@ async function migrateExercise(exercise: Row, product: Row, module: Row, token: 
     const { error } = await supabase.from('exercises').update({ media_url: signed.publicUrl, media_type: type.startsWith('audio/') ? 'audio' : 'video' }).eq('id', exercise.id);
     if (error) return { id: exercise.id, title: exercise.title, status: 'failed', step, reason: error.message };
 
-    return { id: exercise.id, title: exercise.title, moduleTitle: module?.title, status: 'migrated', mediaUrl: signed.publicUrl, folder, size: buffer.byteLength };
+    return { id: exercise.id, title: exercise.title, moduleTitle: module?.title, status: 'migrated', mediaUrl: signed.publicUrl, folder };
   } catch (error) {
     return { id: exercise.id, title: exercise.title, status: 'failed', step, reason: msg(error) };
   }
