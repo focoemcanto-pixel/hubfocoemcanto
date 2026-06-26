@@ -15,6 +15,7 @@ import './profile-premium.css';
 import './admin-reviews-premium.css';
 import './admin-review-detail-premium.css';
 import './admin-premium.css';
+import './media-migration-premium.css';
 import './admin-product-cover-vertical.css';
 import './academy-login.css';
 import './vip-paywall.css';
