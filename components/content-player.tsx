@@ -32,6 +32,7 @@ function isHlsUrl(url: string) {
 
 function isAllowedInternalMedia(url: string) {
   if (url.startsWith('/api/media/drive/') || url.startsWith('/api/media/library/') || url.startsWith('/storage/v1/object/')) return true;
+  if (/^https:\/\//i.test(url)) return true;
   if (isHlsUrl(url)) return url.startsWith('/') || /^https:\/\//i.test(url);
   return false;
 }
@@ -114,7 +115,7 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
   const trimEnd = Math.max(0, Number(trimEndSeconds || 0));
 
   const { source, type, isHls } = useMemo(() => {
-    const rawSource = driveUrl || mediaUrl || '';
+    const rawSource = mediaUrl || driveUrl || '';
     const driveFileId = getDriveFileId(rawSource);
     const resolvedSource = driveFileId ? `/api/media/drive/${driveFileId}` : isAllowedInternalMedia(rawSource) ? rawSource : '';
     const resolvedType = String(mediaType || '').toLowerCase() || 'video';

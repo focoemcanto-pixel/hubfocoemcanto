@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { AdminInlineLessonName } from '@/components/admin-inline-lesson-name';
 import { AdminLoadingLink } from '@/components/admin-loading-link';
 import { AdminProductCoverPreview } from '@/components/admin-product-cover-preview';
+import { AdminMediaUploader } from '@/components/admin-media-uploader';
 
 export const dynamic = 'force-dynamic';
 
@@ -137,7 +138,7 @@ function matchesProduct(subscription: Row, product: Row, isVipProduct: boolean) 
 export default async function ProductEditPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams?: Promise<Search> }) {
   const { id } = await params;
   const query = searchParams ? await searchParams : {};
-  const activeTab = ['conteudo', 'alunos', 'comentarios', 'configuracoes'].includes(String(query.tab || '')) ? String(query.tab) : 'conteudo';
+  const activeTab = ['conteudo', 'midia', 'alunos', 'comentarios', 'configuracoes'].includes(String(query.tab || '')) ? String(query.tab) : 'conteudo';
   const supabase = createAdminClient();
 
   const [{ data: product }, { data: course }] = await Promise.all([
@@ -151,7 +152,7 @@ export default async function ProductEditPage({ params, searchParams }: { params
   const isVipProduct = String(product.slug || '').includes('grupo-vip') || String(product.name || '').toLowerCase().includes('grupo vip');
   const [{ data: links }, { data: allModules }, { data: profiles }, { data: subscriptions }] = await Promise.all([
     courseId ? supabase.from('course_module_links').select('module_id,sort_order').eq('course_id', courseId).order('sort_order', { ascending: true }) : Promise.resolve({ data: [] }),
-    supabase.from('modules').select('id,title,slug,description,sort_order,cover_url,is_active,exercises(id,title,slug,media_type,sort_order)').order('sort_order', { ascending: true }).order('created_at', { ascending: true }),
+    supabase.from('modules').select('id,title,slug,description,sort_order,cover_url,is_active,exercises(id,title,slug,media_type,sort_order,media_url,drive_url)').order('sort_order', { ascending: true }).order('created_at', { ascending: true }),
     supabase.from('profiles').select('id,name,email,whatsapp,avatar_url,role,created_at').order('created_at', { ascending: false }),
     supabase.from('subscriptions').select('profile_id,status,product_name,current_period_end,created_at').order('created_at', { ascending: false }),
   ]);
@@ -166,6 +167,10 @@ export default async function ProductEditPage({ params, searchParams }: { params
     return aOrder - bOrder;
   });
   const tabHref = (tab: string) => `/admin/produtos/${product.id}?tab=${tab}`;
+
+  const totalLessons = modules.reduce((sum, module) => sum + ((module.exercises || []) as Row[]).length, 0);
+  const migratedLessons = modules.reduce((sum, module) => sum + ((module.exercises || []) as Row[]).filter((lesson) => lesson.media_url).length, 0);
+  const driveLessons = modules.reduce((sum, module) => sum + ((module.exercises || []) as Row[]).filter((lesson) => lesson.drive_url && !lesson.media_url).length, 0);
 
   const subsByProfile = new Map<string, Row[]>();
   ((subscriptions || []) as Row[]).forEach((sub) => {
@@ -190,6 +195,7 @@ export default async function ProductEditPage({ params, searchParams }: { params
 
       <section className="admin-product-tabs">
         <a className={activeTab === 'conteudo' ? 'active' : ''} href={tabHref('conteudo')}>Conteudo</a>
+        <a className={activeTab === 'midia' ? 'active' : ''} href={tabHref('midia')}>Mídia</a>
         <a className={activeTab === 'alunos' ? 'active' : ''} href={tabHref('alunos')}>Alunos</a>
         <a className={activeTab === 'comentarios' ? 'active' : ''} href={tabHref('comentarios')}>Comentarios</a>
         <a className={activeTab === 'configuracoes' ? 'active' : ''} href={tabHref('configuracoes')}>Configuracoes</a>
@@ -208,15 +214,24 @@ export default async function ProductEditPage({ params, searchParams }: { params
             <button className="admin-clean-button primary" type="submit">Criar modulo</button>
           </form>
 
+          <section className="admin-grid admin-section">
+            <article className="admin-stat"><span>Aulas</span><strong>{totalLessons}</strong><p className="muted">Conteúdos vinculados a este produto.</p></article>
+            <article className="admin-stat"><span>No R2</span><strong>{migratedLessons}</strong><p className="muted">Já usam media_url.</p></article>
+            <article className="admin-stat"><span>Pendentes</span><strong>{driveLessons}</strong><p className="muted">Ainda dependem do Drive.</p></article>
+          </section>
+          <AdminMediaUploader productId={product.id} productName={product.name} migrationOnly />
+
           <div className="admin-member-modules">
             {modules.map((module, index) => {
               const lessons = ((module.exercises || []) as Row[]).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
               const importUrl = `/admin/conteudos/selecionar-drive?module=${module.id}`;
               const displayOrder = String(index + 1).padStart(2, '0');
+              const moduleMigrated = lessons.filter((lesson) => lesson.media_url).length;
+              const sourceLabel = moduleMigrated === lessons.length && lessons.length ? 'R2' : moduleMigrated ? 'Drive/R2' : 'drive';
               return (
                 <article className="admin-member-module" key={module.id}>
                   <div className="admin-member-module-head">
-                    <div><span className="admin-clean-pill">{displayOrder} · drive · {lessons.length} conteudos</span><h3>{module.title}</h3><p>{module.description || 'Sem descricao.'}</p></div>
+                    <div><span className="admin-clean-pill">{displayOrder} · {sourceLabel} · {lessons.length} conteudos</span><h3>{module.title}</h3><p>{module.description || 'Sem descricao.'}</p></div>
                     <div className="admin-clean-actions">
                       <form action={moveModule}><input type="hidden" name="product_id" value={product.id} /><input type="hidden" name="course_id" value={courseId} /><input type="hidden" name="module_id" value={module.id} /><input type="hidden" name="direction" value="up" /><button className="admin-clean-button secondary" type="submit" disabled={index === 0} title="Subir módulo">↑</button></form>
                       <form action={moveModule}><input type="hidden" name="product_id" value={product.id} /><input type="hidden" name="course_id" value={courseId} /><input type="hidden" name="module_id" value={module.id} /><input type="hidden" name="direction" value="down" /><button className="admin-clean-button secondary" type="submit" disabled={index === modules.length - 1} title="Descer módulo">↓</button></form>
@@ -226,7 +241,7 @@ export default async function ProductEditPage({ params, searchParams }: { params
                     </div>
                   </div>
                   <div className="admin-lesson-list">
-                    {lessons.map((lesson) => <div className="admin-lesson-row" key={lesson.id}><span className="admin-drag-dot">::</span><AdminInlineLessonName moduleId={module.id} lessonId={lesson.id} initialTitle={lesson.title || ''} /><small>{lesson.media_type || 'video'}</small><div className="admin-lesson-actions"><a href={`/aluno/aula/${lesson.slug}`} title="Abrir aula">Abrir</a><a href={`/admin/conteudos/exercicios/${lesson.id}/editar`} title="Editar aula">Editar</a><form action={deleteLesson}><input type="hidden" name="product_id" value={product.id} /><input type="hidden" name="lesson_id" value={lesson.id} /><button type="submit" title="Excluir aula">Excluir</button></form></div></div>)}
+                    {lessons.map((lesson) => <div className="admin-lesson-row" key={lesson.id}><span className="admin-drag-dot">::</span><AdminInlineLessonName moduleId={module.id} lessonId={lesson.id} initialTitle={lesson.title || ''} /><small>{lesson.media_url ? 'R2' : lesson.media_type || 'video'}</small><div className="admin-lesson-actions"><a href={`/aluno/aula/${lesson.slug}`} title="Abrir aula">Abrir</a><a href={`/admin/conteudos/exercicios/${lesson.id}/editar`} title="Editar aula">Editar</a><form action={deleteLesson}><input type="hidden" name="product_id" value={product.id} /><input type="hidden" name="lesson_id" value={lesson.id} /><button type="submit" title="Excluir aula">Excluir</button></form></div></div>)}
                     {!lessons.length ? <p className="admin-clean-muted">Nenhuma aula ainda. Clique em + Aula para puxar do Drive ou preparar R2.</p> : null}
                   </div>
                 </article>
@@ -234,6 +249,18 @@ export default async function ProductEditPage({ params, searchParams }: { params
             })}
             {!modules.length ? <div className="admin-empty-state"><strong>Nenhum modulo criado.</strong><p>Crie o primeiro modulo e depois adicione aulas pelo Drive/R2.</p></div> : null}
           </div>
+        </section>
+      ) : null}
+
+      {activeTab === 'midia' ? (
+        <section className="admin-clean-section">
+          <div className="admin-clean-heading"><div><span className="admin-clean-eyebrow">Mídia do produto</span><h2>Biblioteca e migração</h2><p className="admin-clean-muted">Organização por produto e módulo no Cloudflare R2.</p></div></div>
+          <section className="admin-grid admin-section">
+            <article className="admin-stat"><span>Aulas</span><strong>{totalLessons}</strong><p className="muted">Conteúdos vinculados ao produto.</p></article>
+            <article className="admin-stat"><span>No R2</span><strong>{migratedLessons}</strong><p className="muted">Já usam media_url.</p></article>
+            <article className="admin-stat"><span>Pendentes</span><strong>{driveLessons}</strong><p className="muted">Ainda usam Drive como origem principal.</p></article>
+          </section>
+          <AdminMediaUploader productId={product.id} productName={product.name} />
         </section>
       ) : null}
 
