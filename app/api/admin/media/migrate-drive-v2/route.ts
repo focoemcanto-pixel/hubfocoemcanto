@@ -1,13 +1,16 @@
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
+import { getCloudflareContext } from '@opennextjs/cloudflare';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { createR2SignedPutUrl } from '@/lib/r2';
 import { normalizeR2RuntimeEnv, normalizeRuntimeUrl } from '@/lib/r2-runtime';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 type Row = any;
+type R2BucketLike = {
+  put: (key: string, value: ReadableStream | ArrayBuffer | ArrayBufferView | string | null, options?: { httpMetadata?: { contentType?: string } }) => Promise<unknown>;
+};
 
 function msg(error: unknown) {
   return error instanceof Error ? error.message : String(error || 'unknown_error');
@@ -22,6 +25,13 @@ function safe(value?: string | null) {
     .replace(/^-+|-+$/g, '') || 'item';
 }
 
+function cleanFileName(fileName: string) {
+  const extension = fileName.includes('.') ? fileName.split('.').pop() || '' : '';
+  const base = fileName.replace(/\.[^/.]+$/, '');
+  const cleanBase = safe(base).slice(0, 90) || 'media';
+  return extension ? `${cleanBase}.${safe(extension).replace(/\./g, '')}` : cleanBase;
+}
+
 function fileId(url?: string | null) {
   const value = String(url || '');
   return (value.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || value.match(/id=([a-zA-Z0-9_-]+)/) || value.match(/\/d\/([a-zA-Z0-9_-]+)/))?.[1] || '';
@@ -29,6 +39,25 @@ function fileId(url?: string | null) {
 
 function r2Base() {
   return normalizeRuntimeUrl(process.env.R2_PUBLIC_URL || process.env.NEXT_PUBLIC_R2_PUBLIC_URL || '');
+}
+
+function publicUrlForKey(key: string) {
+  return `${r2Base()}/${key.split('/').map(encodeURIComponent).join('/')}`;
+}
+
+function getR2Bucket(): R2BucketLike | null {
+  try {
+    const context = getCloudflareContext();
+    const env = (context?.env || {}) as Record<string, unknown>;
+    const candidates = ['HUB_MEDIA', 'R2_MEDIA_BUCKET', 'MEDIA_BUCKET', 'R2_BUCKET_BINDING', 'R2_BUCKET'];
+    for (const name of candidates) {
+      const bucket = env[name] as R2BucketLike | undefined;
+      if (bucket && typeof bucket.put === 'function') return bucket;
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 async function driveToken() {
@@ -64,7 +93,7 @@ async function productModules(productId: string) {
   return { product, ids, modules: new Map(((modules || []) as Row[]).map((m) => [String(m.id), m])) };
 }
 
-async function migrateExercise(exercise: Row, product: Row, module: Row, token: string) {
+async function migrateExercise(exercise: Row, product: Row, module: Row, token: string, bucket: R2BucketLike) {
   let step = 'start';
   try {
     normalizeR2RuntimeEnv();
@@ -90,29 +119,22 @@ async function migrateExercise(exercise: Row, product: Row, module: Row, token: 
     const type = metadata?.mimeType || driveResponse.headers.get('content-type') || 'video/mp4';
     const name = metadata?.name || `${safe(exercise.title || exercise.slug)}.mp4`;
     const folder = `produtos/${safe(product?.slug || product?.name || 'produto')}/${safe(module?.slug || module?.title || 'modulo')}/originals`;
+    const key = `${folder}/${Date.now()}-${cleanFileName(name)}`;
+    const publicUrl = publicUrlForKey(key);
 
-    step = 'signed_url';
-    const signed = await createR2SignedPutUrl({ fileName: name, contentType: type, folder });
-
-    step = 'r2_stream_upload';
-    const upload = await fetch(signed.uploadUrl, {
-      method: 'PUT',
-      headers: { 'content-type': type },
-      body: driveResponse.body,
-      duplex: 'half',
-    } as RequestInit & { duplex: 'half' });
-    if (!upload.ok) return { id: exercise.id, title: exercise.title, status: 'failed', step, reason: `r2_${upload.status}`, detail: (await upload.text().catch(() => '')).slice(0, 240) };
+    step = 'r2_binding_put';
+    await bucket.put(key, driveResponse.body, { httpMetadata: { contentType: type } });
 
     step = 'public_check';
-    const check = await fetch(signed.publicUrl, { method: 'HEAD', cache: 'no-store' });
-    if (!check.ok) return { id: exercise.id, title: exercise.title, status: 'failed', step, reason: `public_${check.status}`, mediaUrl: signed.publicUrl };
+    const check = await fetch(publicUrl, { method: 'HEAD', cache: 'no-store' });
+    if (!check.ok) return { id: exercise.id, title: exercise.title, status: 'failed', step, reason: `public_${check.status}`, mediaUrl: publicUrl };
 
     step = 'database_update';
     const supabase = createAdminClient();
-    const { error } = await supabase.from('exercises').update({ media_url: signed.publicUrl, media_type: type.startsWith('audio/') ? 'audio' : 'video' }).eq('id', exercise.id);
+    const { error } = await supabase.from('exercises').update({ media_url: publicUrl, media_type: type.startsWith('audio/') ? 'audio' : 'video' }).eq('id', exercise.id);
     if (error) return { id: exercise.id, title: exercise.title, status: 'failed', step, reason: error.message };
 
-    return { id: exercise.id, title: exercise.title, moduleTitle: module?.title, status: 'migrated', mediaUrl: signed.publicUrl, folder };
+    return { id: exercise.id, title: exercise.title, moduleTitle: module?.title, status: 'migrated', mediaUrl: publicUrl, folder, key };
   } catch (error) {
     return { id: exercise.id, title: exercise.title, status: 'failed', step, reason: msg(error) };
   }
@@ -122,6 +144,9 @@ export async function POST(request: Request) {
   try {
     const email = (await cookies()).get('hub_access_email')?.value;
     if (!email) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+
+    const bucket = getR2Bucket();
+    if (!bucket) return NextResponse.json({ error: 'r2_binding_missing', message: 'Configure um R2 bucket binding chamado HUB_MEDIA no Cloudflare.' }, { status: 500 });
 
     const body = await request.json().catch(() => ({}));
     const productId = String(body.productId || '');
@@ -143,7 +168,7 @@ export async function POST(request: Request) {
     const results = [];
     for (const exercise of ((data || []) as Row[])) {
       const module = scope.modules.get(String(exercise.module_id)) || {};
-      results.push(await migrateExercise(exercise, scope.product || {}, module, token));
+      results.push(await migrateExercise(exercise, scope.product || {}, module, token, bucket));
     }
 
     return NextResponse.json({ total: results.length, r2Base: r2Base(), results });
