@@ -17,6 +17,15 @@ type MigrationResult = {
   detail?: string;
   mediaUrl?: string;
   folder?: string;
+  moduleTitle?: string | null;
+};
+
+type ModuleSummary = {
+  id: string;
+  title: string;
+  total: number;
+  migrated: number;
+  pending: number;
 };
 
 type AdminMediaUploaderProps = {
@@ -26,6 +35,7 @@ type AdminMediaUploaderProps = {
   totalLessons?: number;
   migratedLessons?: number;
   driveLessons?: number;
+  moduleSummaries?: ModuleSummary[];
 };
 
 function mediaFolder(file: File) {
@@ -49,7 +59,14 @@ function statusClass(status: string) {
   return 'admin-clean-pill';
 }
 
-export function AdminMediaUploader({ productId, productName, migrationOnly = false, totalLessons = 0, migratedLessons = 0, driveLessons = 0 }: AdminMediaUploaderProps = {}) {
+function moduleStatus(module: ModuleSummary) {
+  if (module.total === 0) return { label: 'Vazio', className: 'admin-clean-pill' };
+  if (module.pending === 0) return { label: 'Concluído', className: 'admin-clean-pill success' };
+  if (module.migrated > 0) return { label: 'Parcial', className: 'admin-clean-pill warning' };
+  return { label: 'Pendente', className: 'admin-clean-pill danger' };
+}
+
+export function AdminMediaUploader({ productId, productName, migrationOnly = false, totalLessons = 0, migratedLessons = 0, driveLessons = 0, moduleSummaries = [] }: AdminMediaUploaderProps = {}) {
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState<'idle' | 'signing' | 'uploading' | 'done' | 'error'>('idle');
   const [progress, setProgress] = useState(0);
@@ -60,10 +77,11 @@ export function AdminMediaUploader({ productId, productName, migrationOnly = fal
   const [migrationError, setMigrationError] = useState('');
   const [lastBatchSize, setLastBatchSize] = useState(0);
 
-  const displayMigrated = migratedLessons + migrationResults.filter((item) => item.status === 'migrated').length;
-  const displayPending = Math.max(0, driveLessons - migrationResults.filter((item) => item.status === 'migrated').length);
+  const migratedNow = migrationResults.filter((item) => item.status === 'migrated').length;
+  const displayMigrated = migratedLessons + migratedNow;
+  const displayPending = Math.max(0, driveLessons - migratedNow);
   const percent = totalLessons > 0 ? Math.min(100, Math.round((displayMigrated / totalLessons) * 100)) : 0;
-  const destinationPreview = useMemo(() => `produtos/${(productName || 'produto').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'produto'}/modulo/originals/video.mp4`, [productName]);
+  const destinationPreview = useMemo(() => `produtos/${(productName || 'produto').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'produto'}/nome-do-modulo/originals/nome-da-aula.mp4`, [productName]);
 
   async function upload() {
     if (!file) return;
@@ -141,7 +159,7 @@ export function AdminMediaUploader({ productId, productName, migrationOnly = fal
         <div>
           <p className="eyebrow">Migração inteligente</p>
           <h2>{productName ? `Drive → R2 · ${productName}` : 'Drive → R2'}</h2>
-          <p className="muted">O Hub pega as aulas já vinculadas ao produto, baixa do Google Drive e publica no Cloudflare R2 na pasta correta do produto e módulo.</p>
+          <p className="muted">O Hub baixa as aulas já vinculadas, publica no Cloudflare R2 e organiza tudo por produto, módulo e aula.</p>
         </div>
         <span className="admin-clean-pill">{percent}% no R2</span>
       </div>
@@ -155,8 +173,8 @@ export function AdminMediaUploader({ productId, productName, migrationOnly = fal
       <div className="progress media-migration-progress"><span style={{ width: `${percent}%` }} /></div>
 
       <div className="admin-help-box">
-        <strong>O que será migrado?</strong>
-        <p className="muted">As próximas aulas pendentes deste produto. Os cortes continuam salvos na aula e o link do Drive fica como fallback de segurança.</p>
+        <strong>{displayPending === 0 ? 'Tudo migrado para R2' : 'O que será migrado agora?'}</strong>
+        <p className="muted">{displayPending === 0 ? 'Todas as aulas deste produto já possuem media_url no R2. O Drive permanece salvo apenas como fallback.' : 'As próximas aulas pendentes deste produto. Os cortes continuam salvos na aula e o link do Drive fica como fallback de segurança.'}</p>
         <code>{destinationPreview}</code>
       </div>
 
@@ -167,6 +185,26 @@ export function AdminMediaUploader({ productId, productName, migrationOnly = fal
         <button className="admin-clean-button secondary" type="button" onClick={() => migrateDriveBatch(5)} disabled={migrationStatus === 'running' || displayPending === 0}>
           {migrationStatus === 'running' && lastBatchSize === 5 ? 'Migrando 5 aulas...' : 'Migrar 5 aulas'}
         </button>
+      </div>
+
+      <div className="admin-help-box">
+        <strong>Mapa da migração por módulo</strong>
+        <div className="admin-list media-migration-results">
+          {moduleSummaries.map((module) => {
+            const status = moduleStatus(module);
+            const modulePercent = module.total > 0 ? Math.round((module.migrated / module.total) * 100) : 0;
+            return (
+              <div className="admin-row" key={module.id}>
+                <div>
+                  <span className={status.className}>{status.label}</span>
+                  <h3>{module.title}</h3>
+                  <p className="muted">{module.migrated}/{module.total} no R2 · {module.pending} pendentes · {modulePercent}% concluído</p>
+                </div>
+              </div>
+            );
+          })}
+          {!moduleSummaries.length ? <p className="muted">Nenhum módulo encontrado neste produto.</p> : null}
+        </div>
       </div>
 
       {migrationStatus === 'running' ? <p className="admin-save-success">Migração em andamento. Não feche esta tela até finalizar.</p> : null}
@@ -180,7 +218,7 @@ export function AdminMediaUploader({ productId, productName, migrationOnly = fal
               <div>
                 <span className={statusClass(item.status)}>{statusLabel(item.status)}</span>
                 <h3>{item.title || item.id}</h3>
-                <p className="muted">{item.folder || item.mediaUrl || item.reason || item.detail || 'Processado'}</p>
+                <p className="muted">{item.moduleTitle ? `${item.moduleTitle} · ` : ''}{item.folder || item.mediaUrl || item.reason || item.detail || 'Processado'}</p>
               </div>
             </div>
           ))}
