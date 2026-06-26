@@ -46,6 +46,10 @@ type ProductRow = {
 
 let cachedAccessToken: { token: string; expiresAt: number } | null = null;
 
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error || 'unknown_error');
+}
+
 function publicR2Base() {
   return normalizeRuntimeUrl(process.env.R2_PUBLIC_URL || process.env.NEXT_PUBLIC_R2_PUBLIC_URL || '');
 }
@@ -182,59 +186,85 @@ async function loadProductScope(productId?: string | null, moduleId?: string | n
 }
 
 async function migrateExercise(exercise: ExerciseRow, access: string, product?: ProductRow | null, module?: ModuleRow | null) {
-  normalizeR2RuntimeEnv();
-  const fileId = driveFileId(exercise.drive_url);
-  if (!fileId) return { ...resultBase(exercise, module), status: 'skipped', reason: 'invalid_drive_url' };
+  let step = 'start';
+  try {
+    normalizeR2RuntimeEnv();
+    step = 'extract_drive_file_id';
+    const fileId = driveFileId(exercise.drive_url);
+    if (!fileId) return { ...resultBase(exercise, module), status: 'skipped', reason: 'invalid_drive_url' };
 
-  const metadata = await getDriveMetadata(fileId, access);
-  const driveResponse = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&supportsAllDrives=true`, {
-    headers: { authorization: `Bearer ${access}` },
-    cache: 'no-store',
-  });
+    step = 'read_drive_metadata';
+    const metadata = await getDriveMetadata(fileId, access);
 
-  if (!driveResponse.ok || !driveResponse.body) {
-    return { ...resultBase(exercise, module), status: 'failed', reason: `drive_${driveResponse.status}` };
+    step = 'download_drive_media';
+    const driveResponse = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&supportsAllDrives=true`, {
+      headers: { authorization: `Bearer ${access}` },
+      cache: 'no-store',
+    });
+
+    if (!driveResponse.ok) {
+      const detail = await driveResponse.text().catch(() => '');
+      return { ...resultBase(exercise, module), status: 'failed', reason: `drive_${driveResponse.status}`, detail: detail.slice(0, 160) };
+    }
+
+    step = 'buffer_drive_media';
+    const mediaBuffer = await driveResponse.arrayBuffer();
+    if (!mediaBuffer.byteLength) return { ...resultBase(exercise, module), status: 'failed', reason: 'empty_drive_file' };
+
+    step = 'create_r2_signed_url';
+    const contentType = metadata?.mimeType || driveResponse.headers.get('content-type') || 'video/mp4';
+    const originalName = metadata?.name || `${safeName(exercise.title || exercise.slug)}.${extensionFromType(contentType)}`;
+    const folder = mediaFolder(product, module);
+    const signed = await createR2SignedPutUrl({ fileName: originalName, contentType, folder });
+
+    step = 'upload_to_r2';
+    const uploadResponse = await fetch(signed.uploadUrl, {
+      method: 'PUT',
+      headers: {
+        'content-type': contentType,
+        'content-length': String(mediaBuffer.byteLength),
+      },
+      body: mediaBuffer,
+    });
+
+    if (!uploadResponse.ok) {
+      const detail = await uploadResponse.text().catch(() => '');
+      return { ...resultBase(exercise, module), status: 'failed', reason: `r2_${uploadResponse.status}`, detail: detail.slice(0, 240) };
+    }
+
+    step = 'update_exercise_media_url';
+    const supabase = createAdminClient();
+    const { error } = await supabase
+      .from('exercises')
+      .update({ media_url: signed.publicUrl, media_type: mediaKind(contentType, exercise.media_type) })
+      .eq('id', exercise.id);
+
+    if (error) return { ...resultBase(exercise, module), status: 'failed', reason: error.message };
+    return { ...resultBase(exercise, module), status: 'migrated', mediaUrl: signed.publicUrl, folder, fileName: originalName, size: mediaBuffer.byteLength };
+  } catch (error) {
+    return { ...resultBase(exercise, module), status: 'failed', step, reason: errorMessage(error) };
   }
-
-  const contentType = metadata?.mimeType || driveResponse.headers.get('content-type') || 'video/mp4';
-  const originalName = metadata?.name || `${safeName(exercise.title || exercise.slug)}.${extensionFromType(contentType)}`;
-  const folder = mediaFolder(product, module);
-  const signed = await createR2SignedPutUrl({ fileName: originalName, contentType, folder });
-
-  const uploadResponse = await fetch(signed.uploadUrl, {
-    method: 'PUT',
-    headers: { 'content-type': contentType },
-    body: driveResponse.body,
-    duplex: 'half',
-  } as RequestInit & { duplex: 'half' });
-
-  if (!uploadResponse.ok) {
-    const detail = await uploadResponse.text().catch(() => '');
-    return { ...resultBase(exercise, module), status: 'failed', reason: `r2_${uploadResponse.status}`, detail: detail.slice(0, 120) };
-  }
-
-  const supabase = createAdminClient();
-  const { error } = await supabase
-    .from('exercises')
-    .update({ media_url: signed.publicUrl, media_type: mediaKind(contentType, exercise.media_type) })
-    .eq('id', exercise.id);
-
-  if (error) return { ...resultBase(exercise, module), status: 'failed', reason: error.message };
-  return { ...resultBase(exercise, module), status: 'migrated', mediaUrl: signed.publicUrl, folder, fileName: originalName };
 }
 
 export async function POST(request: Request) {
+  let step = 'start';
   try {
+    step = 'normalize_r2_env';
     normalizeR2RuntimeEnv();
+    step = 'check_auth_cookie';
     const cookieStore = await cookies();
     const email = cookieStore.get('hub_access_email')?.value;
     if (!email) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
+    step = 'parse_request';
     const body = await request.json().catch(() => ({})) as { limit?: number; force?: boolean; exerciseId?: string; productId?: string; moduleId?: string };
     const limit = Math.max(1, Math.min(5, Number(body.limit || 1)));
     const supabase = createAdminClient();
+
+    step = 'load_product_scope';
     const scope = await loadProductScope(body.productId, body.moduleId);
 
+    step = 'query_exercises';
     let query = supabase
       .from('exercises')
       .select('id,title,slug,drive_url,media_url,media_type,module_id')
@@ -252,9 +282,12 @@ export async function POST(request: Request) {
 
     const candidates = (data || []) as ExerciseRow[];
     const exercises = (body.force ? candidates : candidates.filter((exercise) => !isRealR2Url(exercise.media_url))).slice(0, limit);
+
+    step = 'load_drive_access_token';
     const access = await loadAccess();
     const results = [];
 
+    step = 'migrate_exercises';
     for (const exercise of exercises) {
       const module = scope.modules.get(String(exercise.module_id || '')) || null;
       results.push(await migrateExercise(exercise, access, scope.product, module));
@@ -262,6 +295,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ total: exercises.length, product: scope.product, r2Base: publicR2Base(), results });
   } catch (error) {
-    return NextResponse.json({ error: 'drive_to_r2_migration_failed', message: error instanceof Error ? error.message : 'unknown_error' }, { status: 500 });
+    console.error('[drive-to-r2-migration]', { step, message: errorMessage(error), stack: error instanceof Error ? error.stack : undefined });
+    return NextResponse.json({ error: 'drive_to_r2_migration_failed', step, message: errorMessage(error) }, { status: 500 });
   }
 }
