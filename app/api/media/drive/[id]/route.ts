@@ -33,6 +33,25 @@ function driveFileId(url?: string | null) {
   return match?.[1] || null;
 }
 
+function inferMediaContentType(metadata?: DriveMetadata | null, upstream?: Response | null) {
+  const metadataType = String(metadata?.mimeType || '').trim().toLowerCase();
+  if (metadataType && metadataType !== 'application/octet-stream') return metadataType;
+
+  const upstreamType = String(upstream?.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+  if (upstreamType && upstreamType !== 'application/octet-stream' && upstreamType !== 'binary/octet-stream') return upstreamType;
+
+  const name = String(metadata?.name || '').toLowerCase();
+  if (name.endsWith('.mp4') || name.endsWith('.m4v')) return 'video/mp4';
+  if (name.endsWith('.mov')) return 'video/quicktime';
+  if (name.endsWith('.webm')) return 'video/webm';
+  if (name.endsWith('.mp3')) return 'audio/mpeg';
+  if (name.endsWith('.m4a') || name.endsWith('.aac')) return 'audio/mp4';
+  if (name.endsWith('.wav')) return 'audio/wav';
+  if (name.endsWith('.ogg') || name.endsWith('.oga')) return 'audio/ogg';
+
+  return 'video/mp4';
+}
+
 async function canAccessLessonFile(fileId: string) {
   const cachedUntil = allowedFileCache.get(fileId) || 0;
   if (cachedUntil > Date.now()) return true;
@@ -132,11 +151,11 @@ async function getDriveMetadata(fileId: string, access: string): Promise<DriveMe
   return response.json() as Promise<DriveMetadata>;
 }
 
-function mediaHeaders(upstream: Response) {
+function mediaHeaders(upstream: Response, metadata?: DriveMetadata | null) {
   const headers = new Headers();
-  const contentType = upstream.headers.get('content-type') || 'video/mp4';
+  const contentType = inferMediaContentType(metadata, upstream);
   const contentRange = upstream.headers.get('content-range');
-  const contentLength = upstream.headers.get('content-length');
+  const contentLength = upstream.headers.get('content-length') || metadata?.size;
 
   headers.set('content-type', contentType);
   headers.set('accept-ranges', 'bytes');
@@ -179,7 +198,7 @@ export async function HEAD(_request: Request, { params }: Params) {
 
     const metadata = await getDriveMetadata(id, auth.access);
     const headers = new Headers();
-    headers.set('content-type', metadata?.mimeType || 'video/mp4');
+    headers.set('content-type', inferMediaContentType(metadata));
     headers.set('accept-ranges', 'bytes');
     headers.set('cache-control', 'private, max-age=300, stale-while-revalidate=600');
     headers.set('content-disposition', 'inline');
@@ -198,14 +217,17 @@ export async function GET(request: Request, { params }: Params) {
     if ('error' in auth) return auth.error;
 
     const requestedRange = request.headers.get('range');
-    const upstream = await fetchDriveMedia(id, auth.access, requestedRange);
+    const [metadata, upstream] = await Promise.all([
+      getDriveMetadata(id, auth.access),
+      fetchDriveMedia(id, auth.access, requestedRange),
+    ]);
 
     if (!upstream.ok || !upstream.body) {
       const detail = await upstream.text().catch(() => '');
       return NextResponse.json({ error: 'drive_video_unavailable', status: upstream.status, detail: detail.slice(0, 300) }, { status: upstream.status || 500 });
     }
 
-    return new Response(upstream.body, { status: upstream.status, headers: mediaHeaders(upstream) });
+    return new Response(upstream.body, { status: upstream.status, headers: mediaHeaders(upstream, metadata) });
   } catch (error) {
     return NextResponse.json({ error: 'drive_proxy_failed', message: error instanceof Error ? error.message : 'unknown_error' }, { status: 500 });
   }
