@@ -10,8 +10,8 @@ import type { DailyTrainingStep, TrainingExercise } from '@/lib/training-center'
 
 export function AdaptiveDailyTrainingPlayer({ step, exercise, total }: { step: DailyTrainingStep; exercise: TrainingExercise; total: number }) {
   const personalizedExercise = useMemo(() => personalizeDailyWarmup(exercise), [exercise]);
+  if (step.exerciseNumber === 4 || exercise.slug === 'controle-melodico-escalas-01') return <DailyMelodicControlFlow step={step} exercise={personalizedExercise} />;
   if (exercise.categorySlug === 'percepcao') return <DailyEarTrainingFlowV14 step={step} exercise={personalizedExercise} />;
-  if (exercise.slug === 'controle-melodico-escalas-01') return <DailyMelodicControlFlow step={step} exercise={personalizedExercise} />;
   if (exercise.slug === 'sustentacao-centro-da-nota-01') return <DailyPitchTrainingFlow step={step} exercise={personalizedExercise} />;
   return <DailyTrainingPlayer step={step} exercise={personalizedExercise} total={total} />;
 }
