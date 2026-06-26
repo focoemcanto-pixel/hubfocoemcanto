@@ -15,6 +15,7 @@ const summaryIcons = ['♫', '🎙', '🥁', '🎹', '♮', '🎧'];
 
 export function DailyTrainingCompletion({ step, total, next, durationSeconds }: { step: DailyTrainingStep; total: number; next?: DailyTrainingStep; durationSeconds: number }) {
   const [progress, setProgress] = useState<DailyTrainingProgress>(emptyDailyProgress());
+  const level = (step as DailyTrainingStep & { level?: string }).level ?? 'Iniciante';
 
   useEffect(() => {
     const nextProgress = completeDailyStep(step, durationSeconds);
@@ -30,7 +31,7 @@ export function DailyTrainingCompletion({ step, total, next, durationSeconds }: 
       <div className="done-premium-medal"><span>♛</span><b>◇</b></div>
 
       <section className="done-premium-level">
-        <h2>NÍVEL - {step.level}</h2>
+        <h2>NÍVEL - {level}</h2>
         <div className="done-premium-icons" aria-label="Resumo das respostas">
           {summaryIcons.map((icon, index) => (
             <span key={`${icon}-${index}`} className={marks[index] === 'wrong' ? 'wrong' : 'right'}>
