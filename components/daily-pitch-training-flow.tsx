@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { completeDailyStep } from '@/lib/daily-training-progress';
+import { noteNameToMidi } from '@/lib/audio/pitch';
+import { playPianoSample, preloadPianoSamples, stopPianoSamples } from '@/lib/audio/piano-sample-engine';
 import type { DailyTrainingStep, TrainingExercise } from '@/lib/training-center';
 import './daily-pitch-training.css';
 
@@ -16,22 +18,9 @@ const LEVELS = [{ title: 'Nível 1', sub: 'Encontrar o centro', goal: 'Encontre 
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 const cents = (freq: number, target: number) => 1200 * Math.log2(freq / target);
 
-function playTone(note: Note) {
-  const Ctor = (window as AudioWindow).AudioContext || (window as AudioWindow).webkitAudioContext;
-  if (!Ctor) return;
-  const ctx = new Ctor();
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-  osc.type = 'sine';
-  osc.frequency.value = note.hz;
-  gain.gain.setValueAtTime(0.0001, ctx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.22, ctx.currentTime + 0.04);
-  gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.82);
-  osc.connect(gain);
-  gain.connect(ctx.destination);
-  osc.start();
-  osc.stop(ctx.currentTime + 0.9);
-  setTimeout(() => void ctx.close().catch(() => null), 1050);
+function getAudioCtor() {
+  if (typeof window === 'undefined') return null;
+  return (window as AudioWindow).AudioContext || (window as AudioWindow).webkitAudioContext || null;
 }
 
 function getPitch(buffer: Float32Array, sampleRate: number) {
@@ -63,6 +52,7 @@ export function DailyPitchTrainingFlow({ step, exercise }: { step: DailyTraining
   const [msg, setMsg] = useState('Toque para ouvir e cante no centro.');
   const [score, setScore] = useState([0, 0, 0]);
   const ctxRef = useRef<AudioContext | null>(null);
+  const sampleCtxRef = useRef<AudioContext | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef<number | null>(null);
   const lastRef = useRef<number>(0);
@@ -77,12 +67,34 @@ export function DailyPitchTrainingFlow({ step, exercise }: { step: DailyTraining
   const meterX = `${50 + clamp(off / 90, -1, 1) * 44}%`;
   const feedback = !running ? 'Aguardando sua voz' : centered ? 'Afinado' : off < 0 ? 'Um pouco grave' : 'Um pouco agudo';
 
-  useEffect(() => () => stop(), []);
+  useEffect(() => {
+    const ctx = getSampleContext();
+    if (ctx) void preloadPianoSamples(ctx, targets.map((target) => noteNameToMidi(target.name) ?? 60));
+    return () => stop();
+  }, [targets]);
+
+  function getSampleContext() {
+    if (sampleCtxRef.current) return sampleCtxRef.current;
+    const Ctor = getAudioCtor();
+    sampleCtxRef.current = Ctor ? new Ctor() : null;
+    return sampleCtxRef.current;
+  }
+
+  async function playReference(target = note) {
+    const ctx = getSampleContext();
+    if (!ctx) return;
+    await ctx.resume().catch(() => null);
+    stopPianoSamples(ctx);
+    const midi = noteNameToMidi(target.name) ?? 60;
+    await preloadPianoSamples(ctx, [midi]).catch(() => null);
+    await playPianoSample(ctx, midi, ctx.currentTime + 0.025, ctx.currentTime + 0.95, 1.08).catch(() => null);
+  }
 
   function stop() {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     streamRef.current?.getTracks().forEach((t) => t.stop());
     void ctxRef.current?.close().catch(() => null);
+    stopPianoSamples(sampleCtxRef.current ?? undefined);
     rafRef.current = null;
     streamRef.current = null;
     ctxRef.current = null;
@@ -92,9 +104,11 @@ export function DailyPitchTrainingFlow({ step, exercise }: { step: DailyTraining
   async function start() {
     stop();
     setDone(false); setHold(0); setOff(0); setRunning(true); setMsg(level === 2 ? 'Entre direto no centro.' : 'Aproxime a bolinha do centro.');
-    attackRef.current = false; lastRef.current = performance.now(); if (!startRef.current) startRef.current = Date.now(); playTone(note);
+    attackRef.current = false; lastRef.current = performance.now(); if (!startRef.current) startRef.current = Date.now();
+    void playReference(note);
     try {
-      const Ctor = (window as AudioWindow).AudioContext || (window as AudioWindow).webkitAudioContext;
+      const Ctor = getAudioCtor();
+      if (!Ctor) throw new Error('AudioContext indisponível');
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
       const ctx = new Ctor();
       const source = ctx.createMediaStreamSource(stream);
@@ -132,5 +146,5 @@ export function DailyPitchTrainingFlow({ step, exercise }: { step: DailyTraining
     router.push(`/aluno/central/diarios/concluido?exercicio=${step.exerciseNumber}`);
   }
 
-  return <section className="pitch-premium-screen"><header className="pitch-top"><Link href="/aluno/central/diarios">Sair</Link><strong>Iniciante</strong><button type="button">i</button></header><main className="pitch-card"><div className="pitch-medal"><span>♢</span></div><button className="pitch-replay" type="button" onClick={() => playTone(note)}>🔊<small>Ouvir</small></button><div className="pitch-heading"><span>Atividade 3</span><h1>Afinação</h1><p>Encontre o centro da nota e mantenha sua voz estável.</p></div><div className={`pitch-target-card ${centered ? 'is-centered' : ''}`}><span className="pitch-label">Nota alvo</span><strong>{note.name}</strong><div className="pitch-radar"><i className="ring outer"/><i className="ring inner"/><i className="cross horizontal"/><i className="cross vertical"/><b className="target-dot"/><b className={`voice-ball ${centered ? 'hit' : ''}`} style={{left:ballX,top:ballY}}/></div><em>{done ? 'Centro confirmado.' : running ? msg : 'Cante agora...'}</em></div><div className="pitch-feedback"><span>Feedback em tempo real</span><div className="pitch-meter" style={{'--meter-x':meterX} as React.CSSProperties}>{Array.from({length:19},(_,i)=><i key={i}/>)}<b/></div><div className="pitch-feedback-row"><small>Muito grave</small><strong>{feedback}</strong><small>Muito agudo</small></div></div><div className="pitch-level-card"><div className="pitch-level-icon">◎</div><div><strong>{cfg.title} · {cfg.sub}</strong><span>{cfg.goal}</span></div><em>{level+1}/3</em></div><div className="pitch-progress"><span style={{width:`${progress*100}%`}}/></div>{done?<button className="pitch-start" type="button" onClick={next}>{level<2?'Próximo nível':'Concluir atividade'} ›</button>:<button className="pitch-start" type="button" onClick={running?stop:start}>{running?'Pausar':'Iniciar atividade'}</button>}<div className="pitch-score"><span>Centro: {score[0]}</span><span>Estabilidade: {score[1]}</span><span>Ataque: {score[2]}</span></div></main></section>;
+  return <section className="pitch-premium-screen"><header className="pitch-top"><Link href="/aluno/central/diarios">Sair</Link><strong>Iniciante</strong><button type="button">i</button></header><main className="pitch-card"><div className="pitch-medal"><span>♢</span></div><button className="pitch-replay" type="button" onClick={() => void playReference()}>🔊<small>Ouvir</small></button><div className="pitch-heading"><span>Atividade 3</span><h1>Afinação</h1><p>Encontre o centro da nota e mantenha sua voz estável.</p></div><div className={`pitch-target-card ${centered ? 'is-centered' : ''}`}><span className="pitch-label">Nota alvo</span><strong>{note.name}</strong><div className="pitch-radar"><i className="ring outer"/><i className="ring inner"/><i className="cross horizontal"/><i className="cross vertical"/><b className="target-dot"/><b className={`voice-ball ${centered ? 'hit' : ''}`} style={{left:ballX,top:ballY}}/></div><em>{done ? 'Centro confirmado.' : running ? msg : 'Cante agora...'}</em></div><div className="pitch-feedback"><span>Feedback em tempo real</span><div className="pitch-meter" style={{'--meter-x':meterX} as React.CSSProperties}>{Array.from({length:19},(_,i)=><i key={i}/>)}<b/></div><div className="pitch-feedback-row"><small>Muito grave</small><strong>{feedback}</strong><small>Muito agudo</small></div></div><div className="pitch-level-card"><div className="pitch-level-icon">◎</div><div><strong>{cfg.title} · {cfg.sub}</strong><span>{cfg.goal}</span></div><em>{level+1}/3</em></div><div className="pitch-progress"><span style={{width:`${progress*100}%`}}/></div>{done?<button className="pitch-start" type="button" onClick={next}>{level<2?'Próximo nível':'Concluir atividade'} ›</button>:<button className="pitch-start" type="button" onClick={running?stop:start}>{running?'Pausar':'Iniciar atividade'}</button>}<div className="pitch-score"><span>Centro: {score[0]}</span><span>Estabilidade: {score[1]}</span><span>Ataque: {score[2]}</span></div></main></section>;
 }
