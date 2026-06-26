@@ -89,9 +89,9 @@ export function AdminMediaUploader({ productId, productName, migrationOnly = fal
   }
 
   useEffect(() => {
-    refreshMigrationStatus();
+    if (!migrationOnly) refreshMigrationStatus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [productId]);
+  }, [productId, migrationOnly]);
 
   function toggleLesson(lesson: LessonRow) {
     if (lesson.status !== 'drive') return;
@@ -136,12 +136,10 @@ export function AdminMediaUploader({ productId, productName, migrationOnly = fal
     }
     setMigrationStatus('running');
     setMigrationError('');
-    const results: MigrationResult[] = [];
     try {
       for (const lesson of selectedPending) {
-        const result = await migrateOne(lesson.id);
-        results.unshift(result);
-        setMigrationResults((current) => [result, ...current].slice(0, 50));
+        const item = await migrateOne(lesson.id);
+        setMigrationResults((current) => [item, ...current].slice(0, 50));
       }
       setMigrationStatus('done');
       setSelected(new Set());
@@ -183,6 +181,19 @@ export function AdminMediaUploader({ productId, productName, migrationOnly = fal
       setError(err instanceof Error ? err.message : 'Erro desconhecido ao enviar mídia.');
       setStatus('error');
     }
+  }
+
+  if (migrationOnly) {
+    return (
+      <section className="media-migration-compact">
+        <div>
+          <span className="admin-clean-eyebrow">Mídia do produto</span>
+          <strong>Central de migração movida para a aba Mídia</strong>
+          <p className="admin-clean-muted">Conteúdo fica limpo para módulos e aulas. Use a aba Mídia para selecionar arquivos, módulos e migrar para R2.</p>
+        </div>
+        <a className="admin-clean-button primary" href={productId ? `/admin/produtos/${productId}?tab=midia` : '#'}>Abrir Mídia</a>
+      </section>
+    );
   }
 
   const migrationCard = (
@@ -275,8 +286,6 @@ export function AdminMediaUploader({ productId, productName, migrationOnly = fal
       ) : null}
     </section>
   );
-
-  if (migrationOnly) return migrationCard;
 
   return (
     <>
