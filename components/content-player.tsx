@@ -26,8 +26,18 @@ function getDriveFileId(url?: string | null) {
   return null;
 }
 
+function isHlsUrl(url: string) {
+  return /\.m3u8(\?|#|$)/i.test(url);
+}
+
 function isAllowedInternalMedia(url: string) {
-  return url.startsWith('/api/media/drive/') || url.startsWith('/api/media/library/') || url.startsWith('/storage/v1/object/');
+  if (url.startsWith('/api/media/drive/') || url.startsWith('/api/media/library/') || url.startsWith('/storage/v1/object/')) return true;
+  if (isHlsUrl(url)) return url.startsWith('/') || /^https:\/\//i.test(url);
+  return false;
+}
+
+function canPlayNativeHls(video: HTMLVideoElement) {
+  return Boolean(video.canPlayType('application/vnd.apple.mpegurl') || video.canPlayType('application/x-mpegURL'));
 }
 
 async function saveProgress(lessonId: string | null | undefined, positionSeconds: number, completed = false) {
@@ -103,12 +113,15 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
   const trimStart = Math.max(0, Number(trimStartSeconds || 0));
   const trimEnd = Math.max(0, Number(trimEndSeconds || 0));
 
-  const { source, type } = useMemo(() => {
+  const { source, type, isHls } = useMemo(() => {
     const rawSource = driveUrl || mediaUrl || '';
     const driveFileId = getDriveFileId(rawSource);
+    const resolvedSource = driveFileId ? `/api/media/drive/${driveFileId}` : isAllowedInternalMedia(rawSource) ? rawSource : '';
+    const resolvedType = String(mediaType || '').toLowerCase() || 'video';
     return {
-      type: mediaType || 'video',
-      source: driveFileId ? `/api/media/drive/${driveFileId}` : isAllowedInternalMedia(rawSource) ? rawSource : '',
+      type: resolvedType,
+      source: resolvedSource,
+      isHls: isHlsUrl(resolvedSource) || resolvedType === 'hls' || resolvedType === 'application/vnd.apple.mpegurl',
     };
   }, [driveUrl, mediaUrl, mediaType]);
 
@@ -124,10 +137,67 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
     setIsBuffering(false);
     restoredRef.current = false;
     const video = videoRef.current;
-    if (!video || !source || type === 'audio') return;
+    if (!video || !source || type === 'audio') return undefined;
+
     video.preload = 'metadata';
-    video.load();
-  }, [source, type]);
+
+    if (!isHls) {
+      video.src = source;
+      video.load();
+      return undefined;
+    }
+
+    if (canPlayNativeHls(video)) {
+      video.src = source;
+      video.load();
+      return undefined;
+    }
+
+    let destroyed = false;
+    let hlsInstance: { destroy: () => void; loadSource: (source: string) => void; attachMedia: (media: HTMLMediaElement) => void; on: (...args: any[]) => void } | null = null;
+
+    import('hls.js')
+      .then(({ default: Hls }) => {
+        if (destroyed || !Hls.isSupported()) {
+          if (!destroyed) {
+            video.src = source;
+            video.load();
+          }
+          return;
+        }
+        const hls = new Hls({
+          capLevelToPlayerSize: true,
+          enableWorker: true,
+          lowLatencyMode: false,
+          maxBufferLength: 30,
+          maxMaxBufferLength: 90,
+          startLevel: -1,
+        });
+        hlsInstance = hls;
+        hls.on(Hls.Events.MANIFEST_PARSED, () => setIsReady(true));
+        hls.on(Hls.Events.ERROR, (_event: unknown, data: { fatal?: boolean; type?: string }) => {
+          if (!data?.fatal) return;
+          if (data.type === Hls.ErrorTypes.NETWORK_ERROR) hls.startLoad();
+          else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
+          else hls.destroy();
+        });
+        hls.loadSource(source);
+        hls.attachMedia(video);
+      })
+      .catch(() => {
+        if (!destroyed) {
+          video.src = source;
+          video.load();
+        }
+      });
+
+    return () => {
+      destroyed = true;
+      hlsInstance?.destroy();
+      video.removeAttribute('src');
+      video.load();
+    };
+  }, [source, type, isHls]);
 
   function restorePosition(element: HTMLMediaElement | null) {
     if (!element || restoredRef.current) return;
@@ -135,6 +205,15 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
     const position = Math.max(trimStart, saved > trimStart ? saved : trimStart);
     if (position > 0 && Number.isFinite(element.duration) && position < element.duration - 1) element.currentTime = position;
     restoredRef.current = true;
+  }
+
+  function prepareForSmoothPlayback(element: HTMLMediaElement | null) {
+    if (!element) return;
+    if (element.preload !== 'auto') {
+      element.preload = 'auto';
+      if (!isHls) element.load();
+    }
+    if (element.currentTime < trimStart) element.currentTime = trimStart;
   }
 
   function handleTimeUpdate(element: HTMLMediaElement | null) {
@@ -172,7 +251,7 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
           preload="metadata"
           style={{ width: '100%' }}
           onLoadedMetadata={() => restorePosition(audioRef.current)}
-          onPlay={() => saveProgress(lessonId, audioRef.current?.currentTime || 0, false)}
+          onPlay={() => { prepareForSmoothPlayback(audioRef.current); saveProgress(lessonId, audioRef.current?.currentTime || 0, false); }}
           onTimeUpdate={() => handleTimeUpdate(audioRef.current)}
           onEnded={() => saveProgress(lessonId, audioRef.current?.duration || 0, true)}
         />
@@ -187,18 +266,17 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
           <span className="premium-video-glow" />
           <Loader2 size={26} className="premium-video-spinner" />
           <strong>Preparando aula</strong>
-          <small>Carregando informações do vídeo...</small>
+          <small>{isHls ? 'Preparando streaming adaptativo...' : 'Carregando informações do vídeo...'}</small>
         </div>
       ) : null}
       {isReady && !hasStarted ? (
-        <button className="premium-video-start" type="button" onClick={() => { setHasStarted(true); setIsBuffering(true); if (videoRef.current && videoRef.current.currentTime < trimStart) videoRef.current.currentTime = trimStart; videoRef.current?.play().catch(() => { setIsBuffering(false); }); }} aria-label="Reproduzir aula">
+        <button className="premium-video-start" type="button" onClick={() => { setHasStarted(true); setIsBuffering(true); prepareForSmoothPlayback(videoRef.current); videoRef.current?.play().catch(() => { setIsBuffering(false); }); }} aria-label="Reproduzir aula">
           <Play size={32} fill="currentColor" />
         </button>
       ) : null}
       {isBuffering && hasStarted ? <div className="premium-video-buffer"><Loader2 size={22} /></div> : null}
       <video
         ref={videoRef}
-        src={source}
         title={title || 'Conteúdo'}
         controls
         controlsList="nodownload noplaybackrate"
@@ -210,7 +288,7 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
         onWaiting={() => setIsBuffering(true)}
         onStalled={() => setIsBuffering(true)}
         onPlaying={() => { setHasStarted(true); setIsBuffering(false); saveProgress(lessonId, videoRef.current?.currentTime || 0, false); }}
-        onPlay={() => setHasStarted(true)}
+        onPlay={() => { setHasStarted(true); prepareForSmoothPlayback(videoRef.current); }}
         onTimeUpdate={() => handleTimeUpdate(videoRef.current)}
         onEnded={() => saveProgress(lessonId, videoRef.current?.duration || 0, true)}
       />
