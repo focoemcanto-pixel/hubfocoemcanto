@@ -23,11 +23,7 @@ export function DailyTrainingCompletion({ step, total, next, durationSeconds }: 
   }, [durationSeconds, step]);
 
   const completedCount = progress.completedExercises.length;
-  const isEarTraining = step.categorySlug === 'percepcao';
-  const marks = useMemo(() => {
-    if (!isEarTraining) return summaryIcons.map(() => 'right');
-    return summaryIcons.map((_, index) => (index === 2 ? 'wrong' : 'right'));
-  }, [isEarTraining]);
+  const marks = useMemo(() => summaryIcons.map((_, index) => (index === 2 ? 'wrong' : 'right')), []);
 
   return (
     <div className="done-premium-card">
