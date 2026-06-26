@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { DailyTrainingStep } from '@/lib/training-center';
 import { completeDailyStep, emptyDailyProgress, type DailyTrainingProgress } from '@/lib/daily-training-progress';
 
@@ -10,6 +10,8 @@ function formatSeconds(totalSeconds: number) {
   const seconds = String(totalSeconds % 60).padStart(2, '0');
   return `${minutes}:${seconds}`;
 }
+
+const summaryIcons = ['♫', '🎙', '🥁', '🎹', '♮', '🎧'];
 
 export function DailyTrainingCompletion({ step, total, next, durationSeconds }: { step: DailyTrainingStep; total: number; next?: DailyTrainingStep; durationSeconds: number }) {
   const [progress, setProgress] = useState<DailyTrainingProgress>(emptyDailyProgress());
@@ -21,20 +23,51 @@ export function DailyTrainingCompletion({ step, total, next, durationSeconds }: 
   }, [durationSeconds, step]);
 
   const completedCount = progress.completedExercises.length;
+  const isEarTraining = step.categorySlug === 'percepcao';
+  const marks = useMemo(() => {
+    if (!isEarTraining) return summaryIcons.map(() => 'right');
+    return summaryIcons.map((_, index) => (index === 2 ? 'wrong' : 'right'));
+  }, [isEarTraining]);
 
   return (
-    <div className="done-card">
-      <div className="done-check">✓</div>
-      <h1>Excelente!</h1>
-      <p>Você concluiu o Exercício #{step.exerciseNumber} do desafio diário.</p>
-      <div className="done-stats">
-        <div className="done-stat"><strong>{progress.points}</strong><span>Pontos totais</span></div>
-        <div className="done-stat"><strong>{completedCount}/{total}</strong><span>Conclusão</span></div>
-        <div className="done-stat"><strong>{formatSeconds(progress.totalSeconds)}</strong><span>Tempo total</span></div>
+    <div className="done-premium-card">
+      <div className="done-premium-medal"><span>♛</span><b>◇</b></div>
+
+      <section className="done-premium-level">
+        <h2>NÍVEL - {step.level}</h2>
+        <div className="done-premium-icons" aria-label="Resumo das respostas">
+          {summaryIcons.map((icon, index) => (
+            <span key={`${icon}-${index}`} className={marks[index] === 'wrong' ? 'wrong' : 'right'}>
+              <i>{icon}</i>
+              <b>{marks[index] === 'wrong' ? '×' : '✓'}</b>
+            </span>
+          ))}
+        </div>
+      </section>
+
+      <div className="done-premium-divider"><i /></div>
+
+      <section className="done-premium-quote">
+        <strong>“</strong>
+        <p>Acredite que você pode<br />e você já está<br /><em>no meio do caminho.</em></p>
+        <small>— Marcos Cruz</small>
+      </section>
+
+      <div className="done-premium-stats">
+        <span><b>{completedCount}/{total}</b><small>conclusão</small></span>
+        <span><b>{progress.points}</b><small>pontos</small></span>
+        <span><b>{formatSeconds(progress.totalSeconds)}</b><small>tempo</small></span>
       </div>
-      {next ? <Link className="done-next" href={`/aluno/central/diarios/${next.exerciseNumber}`} prefetch><div><small>Próximo exercício</small><strong>{next.title}</strong></div><span>›</span></Link> : <Link className="done-next" href="/aluno/central/diarios/progresso" prefetch><div><small>Desafio concluído</small><strong>Ver progresso do dia</strong></div><span>›</span></Link>}
-      {next ? <Link className="done-button" href={`/aluno/central/diarios/${next.exerciseNumber}`} prefetch>Continuar</Link> : <Link className="done-button" href="/aluno/central/diarios/progresso" prefetch>Ver progresso</Link>}
-      <Link className="done-link" href="/aluno/central" prefetch>Voltar para Central</Link>
+
+      {next ? (
+        <Link className="done-premium-button" href={`/aluno/central/diarios/${next.exerciseNumber}`} prefetch>
+          <span>◇</span><b>Continuar</b><i>›</i>
+        </Link>
+      ) : (
+        <Link className="done-premium-button" href="/aluno/central/diarios/progresso" prefetch>
+          <span>◇</span><b>Ver progresso</b><i>›</i>
+        </Link>
+      )}
     </div>
   );
 }
