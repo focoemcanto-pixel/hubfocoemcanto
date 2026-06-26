@@ -45,6 +45,17 @@ type ProductRow = {
 
 let cachedAccessToken: { token: string; expiresAt: number } | null = null;
 
+function publicR2Base() {
+  return String(process.env.R2_PUBLIC_URL || process.env.NEXT_PUBLIC_R2_PUBLIC_URL || '').replace(/\/$/, '');
+}
+
+function isRealR2Url(value?: string | null) {
+  const url = String(value || '').trim();
+  const base = publicR2Base();
+  if (!url || !base) return false;
+  return url.startsWith(`${base}/`);
+}
+
 function driveFileId(url?: string | null) {
   if (!url) return null;
   const match = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || url.match(/id=([a-zA-Z0-9_-]+)/) || url.match(/\/d\/([a-zA-Z0-9_-]+)/);
@@ -79,6 +90,10 @@ function mediaFolder(product?: ProductRow | null, module?: ModuleRow | null) {
   const productSlug = safeName(product?.slug || product?.name || 'produto');
   const moduleSlug = safeName(module?.slug || module?.title || 'modulo');
   return `produtos/${productSlug}/${moduleSlug}/originals`;
+}
+
+function resultBase(exercise: ExerciseRow, module?: ModuleRow | null) {
+  return { id: exercise.id, title: exercise.title, moduleId: exercise.module_id, moduleTitle: module?.title || null };
 }
 
 async function loadAccess() {
@@ -167,7 +182,7 @@ async function loadProductScope(productId?: string | null, moduleId?: string | n
 
 async function migrateExercise(exercise: ExerciseRow, access: string, product?: ProductRow | null, module?: ModuleRow | null) {
   const fileId = driveFileId(exercise.drive_url);
-  if (!fileId) return { id: exercise.id, title: exercise.title, status: 'skipped', reason: 'invalid_drive_url' };
+  if (!fileId) return { ...resultBase(exercise, module), status: 'skipped', reason: 'invalid_drive_url' };
 
   const metadata = await getDriveMetadata(fileId, access);
   const driveResponse = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&supportsAllDrives=true`, {
@@ -176,7 +191,7 @@ async function migrateExercise(exercise: ExerciseRow, access: string, product?: 
   });
 
   if (!driveResponse.ok || !driveResponse.body) {
-    return { id: exercise.id, title: exercise.title, status: 'failed', reason: `drive_${driveResponse.status}` };
+    return { ...resultBase(exercise, module), status: 'failed', reason: `drive_${driveResponse.status}` };
   }
 
   const contentType = metadata?.mimeType || driveResponse.headers.get('content-type') || 'video/mp4';
@@ -193,7 +208,7 @@ async function migrateExercise(exercise: ExerciseRow, access: string, product?: 
 
   if (!uploadResponse.ok) {
     const detail = await uploadResponse.text().catch(() => '');
-    return { id: exercise.id, title: exercise.title, status: 'failed', reason: `r2_${uploadResponse.status}`, detail: detail.slice(0, 120) };
+    return { ...resultBase(exercise, module), status: 'failed', reason: `r2_${uploadResponse.status}`, detail: detail.slice(0, 120) };
   }
 
   const supabase = createAdminClient();
@@ -202,8 +217,8 @@ async function migrateExercise(exercise: ExerciseRow, access: string, product?: 
     .update({ media_url: signed.publicUrl, media_type: mediaKind(contentType, exercise.media_type) })
     .eq('id', exercise.id);
 
-  if (error) return { id: exercise.id, title: exercise.title, status: 'failed', reason: error.message };
-  return { id: exercise.id, title: exercise.title, status: 'migrated', mediaUrl: signed.publicUrl, folder };
+  if (error) return { ...resultBase(exercise, module), status: 'failed', reason: error.message };
+  return { ...resultBase(exercise, module), status: 'migrated', mediaUrl: signed.publicUrl, folder, fileName: originalName };
 }
 
 export async function POST(request: Request) {
@@ -223,17 +238,17 @@ export async function POST(request: Request) {
       .not('drive_url', 'is', null)
       .order('sort_order', { ascending: true })
       .order('created_at', { ascending: true })
-      .limit(limit);
+      .limit(limit * 8);
 
     if (body.exerciseId) query = query.eq('id', body.exerciseId).limit(1);
     else if (scope.moduleIds.length) query = query.in('module_id', scope.moduleIds);
     else if (body.productId) return NextResponse.json({ total: 0, results: [], message: 'product_has_no_linked_modules' });
-    if (!body.force) query = query.is('media_url', null);
 
     const { data, error } = await query;
     if (error) throw new Error(error.message);
 
-    const exercises = (data || []) as ExerciseRow[];
+    const candidates = (data || []) as ExerciseRow[];
+    const exercises = (body.force ? candidates : candidates.filter((exercise) => !isRealR2Url(exercise.media_url))).slice(0, limit);
     const access = await loadAccess();
     const results = [];
 
@@ -242,7 +257,7 @@ export async function POST(request: Request) {
       results.push(await migrateExercise(exercise, access, scope.product, module));
     }
 
-    return NextResponse.json({ total: exercises.length, product: scope.product, results });
+    return NextResponse.json({ total: exercises.length, product: scope.product, r2Base: publicR2Base(), results });
   } catch (error) {
     return NextResponse.json({ error: 'drive_to_r2_migration_failed', message: error instanceof Error ? error.message : 'unknown_error' }, { status: 500 });
   }
