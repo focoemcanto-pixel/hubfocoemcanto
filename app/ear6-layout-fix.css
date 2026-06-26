@@ -1,0 +1,376 @@
+/* Mobile layout polish for the six-step premium ear training flow. */
+.ear6 {
+  min-height: 100dvh !important;
+  height: 100dvh !important;
+  max-height: 100dvh !important;
+  overflow: hidden !important;
+  padding-top: calc(18px + env(safe-area-inset-top)) !important;
+  padding-bottom: calc(14px + env(safe-area-inset-bottom)) !important;
+}
+
+.ear6 .top {
+  height: 6.8dvh !important;
+  max-width: 410px !important;
+  grid-template-columns: 82px 1fr 44px !important;
+}
+
+.ear6 .top button {
+  height: 36px !important;
+  font-size: 16px !important;
+}
+
+.ear6 .top span {
+  font-size: clamp(18px, 5vw, 21px) !important;
+}
+
+.ear6 .top i {
+  width: 40px !important;
+  height: 40px !important;
+}
+
+.ear6 .icons {
+  height: 6.4dvh !important;
+  max-width: 410px !important;
+  gap: 6px !important;
+}
+
+.ear6 .icons span {
+  font-size: 23px !important;
+  height: 34px !important;
+}
+
+.ear6 .icons .active:after {
+  width: 42px !important;
+  bottom: -4px !important;
+}
+
+.ear6 .icons .done b {
+  bottom: -15px !important;
+  font-size: 16px !important;
+}
+
+.ear6 .stage,
+.ear6 .sing,
+.ear6 .rhythm,
+.ear6 .piano,
+.ear6 .interval,
+.ear6 .compare {
+  min-height: calc(100dvh - 13.2dvh - 40px - env(safe-area-inset-top) - env(safe-area-inset-bottom)) !important;
+  height: calc(100dvh - 13.2dvh - 40px - env(safe-area-inset-top) - env(safe-area-inset-bottom)) !important;
+  justify-content: space-evenly !important;
+  gap: 8px !important;
+  overflow: hidden !important;
+}
+
+.ear6 .card {
+  width: min(100%, 326px) !important;
+  min-height: 148px !important;
+  max-height: 168px !important;
+  padding: 28px 18px 14px !important;
+  border-radius: 24px !important;
+}
+
+.ear6 .medal {
+  width: 46px !important;
+  height: 46px !important;
+  top: -23px !important;
+}
+
+.ear6 .rtitle .medal,
+.ear6 .ptitle .medal,
+.ear6 .ititle .medal,
+.ear6 .ctitle .medal {
+  top: 0 !important;
+}
+
+.ear6 .medal b {
+  top: -15px !important;
+  font-size: 17px !important;
+}
+
+.ear6 .medal span {
+  font-size: 22px !important;
+}
+
+.ear6 .card h1,
+.ear6 .sing h1,
+.ear6 .rtitle h1,
+.ear6 .ititle h1,
+.ear6 .ctitle h1 {
+  font-size: clamp(17px, 4.4vw, 20px) !important;
+  line-height: 1.08 !important;
+  letter-spacing: -0.035em !important;
+  max-width: 360px !important;
+}
+
+.ear6 .card h1 {
+  font-size: clamp(17px, 4.7vw, 20px) !important;
+}
+
+.ear6 .card p {
+  font-size: clamp(12px, 3.3vw, 14px) !important;
+  line-height: 1.22 !important;
+}
+
+.ear6 .set {
+  width: min(100%, 344px) !important;
+  min-height: 104px !important;
+  max-height: 112px !important;
+  padding: 16px 18px 10px !important;
+  gap: 14px !important;
+}
+
+.ear6 .set h2 {
+  top: -12px !important;
+  font-size: 13px !important;
+}
+
+.ear6 .set > button {
+  width: 52px !important;
+  height: 52px !important;
+  font-size: 23px !important;
+}
+
+.ear6 .note span,
+.ear6 .answer span {
+  font-size: 29px !important;
+}
+
+.ear6 .note b {
+  font-size: 18px !important;
+}
+
+.ear6 .answer i {
+  width: 23px !important;
+  height: 23px !important;
+}
+
+.ear6 .staff {
+  height: 39dvh !important;
+  min-height: 286px !important;
+  max-height: 342px !important;
+}
+
+.ear6 .staff button {
+  width: 42px !important;
+  height: 42px !important;
+}
+
+.ear6 .staff em {
+  width: 28px !important;
+  height: 28px !important;
+}
+
+.ear6 .rtitle,
+.ear6 .ptitle,
+.ear6 .ititle,
+.ear6 .ctitle {
+  min-height: 82px !important;
+  padding-top: 34px !important;
+  margin: 0 !important;
+}
+
+.ear6 .rtitle h1 {
+  font-size: clamp(16px, 4vw, 19px) !important;
+  font-weight: 600 !important;
+  line-height: 1.18 !important;
+}
+
+.ear6 .beats {
+  width: min(100%, 360px) !important;
+  grid-template-columns: 66px repeat(4, 1fr) !important;
+  gap: 10px !important;
+}
+
+.ear6 .beats div {
+  height: 48px !important;
+  font-size: 15px !important;
+}
+
+.ear6 .beats span {
+  width: 22px !important;
+  height: 31px !important;
+}
+
+.ear6 .tap {
+  width: min(100%, 336px) !important;
+  height: 19dvh !important;
+  min-height: 132px !important;
+  max-height: 168px !important;
+  border-radius: 21px !important;
+  font-size: 19px !important;
+}
+
+.ear6 .score {
+  width: min(100%, 336px) !important;
+  font-size: 13px !important;
+  line-height: 1.35 !important;
+  padding: 8px !important;
+}
+
+.ear6 .demo,
+.ear6 .big {
+  width: 58px !important;
+  height: 58px !important;
+  font-size: 25px !important;
+}
+
+.ear6 .ptitle h1 {
+  font-size: clamp(14px, 3.6vw, 16px) !important;
+  font-weight: 400 !important;
+}
+
+.ear6 .ptitle p {
+  font-size: clamp(13px, 3.45vw, 15px) !important;
+}
+
+.ear6 .keyboard {
+  width: min(100%, 348px) !important;
+  height: 162px !important;
+  padding: 40px 10px 18px !important;
+  border-radius: 20px !important;
+}
+
+.ear6 .keyboard > button {
+  font-size: 18px !important;
+  padding-bottom: 10px !important;
+}
+
+.ear6 .black {
+  top: 29px !important;
+  width: 33px !important;
+  height: 82px !important;
+  font-size: 12px !important;
+}
+
+.ear6 .hint {
+  font-size: 13px !important;
+  width: min(100%, 340px) !important;
+}
+
+.ear6 .slots {
+  gap: 18px !important;
+}
+
+.ear6 .slots button {
+  width: 52px !important;
+  height: 52px !important;
+}
+
+.ear6 .cards {
+  width: min(100%, 348px) !important;
+  gap: 14px !important;
+  margin: 12px auto !important;
+}
+
+.ear6 .cards article {
+  height: 138px !important;
+  border-radius: 22px !important;
+}
+
+.ear6 .cards article > b {
+  font-size: 22px !important;
+}
+
+.ear6 .cards span {
+  font-size: 52px !important;
+}
+
+.ear6 .choices {
+  gap: 12px !important;
+}
+
+.ear6 .choices button {
+  font-size: 12px !important;
+  padding: 10px 12px !important;
+  border-radius: 999px !important;
+}
+
+.ear6 .compare {
+  justify-content: space-evenly !important;
+}
+
+.ear6 .ctitle {
+  min-height: 76px !important;
+  padding-top: 32px !important;
+}
+
+.ear6 .ctitle h1 {
+  font-size: clamp(16px, 4.2vw, 19px) !important;
+  line-height: 1.1 !important;
+  max-width: 350px !important;
+}
+
+.ear6 .scoreline {
+  width: min(100%, 348px) !important;
+  height: 78px !important;
+  border-radius: 17px !important;
+  grid-template-columns: 58px 1fr !important;
+  padding: 10px 15px !important;
+}
+
+.ear6 .scoreline strong {
+  top: -25px !important;
+  left: 14px !important;
+  font-size: 21px !important;
+}
+
+.ear6 .scoreline > button {
+  width: 48px !important;
+  height: 48px !important;
+  font-size: 21px !important;
+}
+
+.ear6 .staffline {
+  height: 46px !important;
+}
+
+.ear6 .staffline i:nth-child(1) { top: 7px !important; }
+.ear6 .staffline i:nth-child(2) { top: 15px !important; }
+.ear6 .staffline i:nth-child(3) { top: 23px !important; }
+.ear6 .staffline i:nth-child(4) { top: 31px !important; }
+.ear6 .staffline i:nth-child(5) { top: 39px !important; }
+
+.ear6 .staffline b {
+  top: -5px !important;
+  font-size: 40px !important;
+}
+
+.ear6 .compare p {
+  font-size: 15px !important;
+  margin: 0 !important;
+}
+
+.ear6 .compare-choice {
+  gap: 12px !important;
+}
+
+.ear6 .compare-choice button {
+  min-width: 132px !important;
+  height: 62px !important;
+  padding: 8px 14px !important;
+  border-radius: 18px !important;
+  font-size: 13px !important;
+}
+
+@media (max-height: 720px) {
+  .ear6 .top { height: 6.2dvh !important; }
+  .ear6 .icons { height: 5.9dvh !important; }
+  .ear6 .stage,
+  .ear6 .sing,
+  .ear6 .rhythm,
+  .ear6 .piano,
+  .ear6 .interval,
+  .ear6 .compare {
+    height: calc(100dvh - 12.1dvh - 36px - env(safe-area-inset-top) - env(safe-area-inset-bottom)) !important;
+    min-height: calc(100dvh - 12.1dvh - 36px - env(safe-area-inset-top) - env(safe-area-inset-bottom)) !important;
+    gap: 5px !important;
+  }
+  .ear6 .card { min-height: 136px !important; max-height: 150px !important; }
+  .ear6 .set { min-height: 96px !important; max-height: 102px !important; }
+  .ear6 .tap { min-height: 118px !important; max-height: 142px !important; }
+  .ear6 .keyboard { height: 150px !important; }
+  .ear6 .cards article { height: 118px !important; }
+  .ear6 .scoreline { height: 70px !important; }
+  .ear6 .big, .ear6 .demo { width: 52px !important; height: 52px !important; }
+}
