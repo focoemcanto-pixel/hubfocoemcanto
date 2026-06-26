@@ -7,6 +7,17 @@ export const runtime = 'nodejs';
 
 type Row = any;
 
+function publicR2Base() {
+  return String(process.env.R2_PUBLIC_URL || process.env.NEXT_PUBLIC_R2_PUBLIC_URL || '').replace(/\/$/, '');
+}
+
+function isRealR2Url(value?: string | null) {
+  const url = String(value || '').trim();
+  const base = publicR2Base();
+  if (!url || !base) return false;
+  return url.startsWith(`${base}/`);
+}
+
 export async function GET(request: Request) {
   try {
     const cookieStore = await cookies();
@@ -30,7 +41,7 @@ export async function GET(request: Request) {
       : { data: [] };
 
     const moduleIds = ((links || []) as Row[]).map((link) => String(link.module_id));
-    if (!moduleIds.length) return NextResponse.json({ product, total: 0, migrated: 0, pending: 0, modules: [] });
+    if (!moduleIds.length) return NextResponse.json({ product, r2Base: publicR2Base(), total: 0, migrated: 0, pending: 0, modules: [] });
 
     const { data: modules } = await supabase
       .from('modules')
@@ -44,13 +55,13 @@ export async function GET(request: Request) {
       .map((module) => {
         const lessons = (module.exercises || []) as Row[];
         const total = lessons.length;
-        const migrated = lessons.filter((lesson) => lesson.media_url).length;
-        const pending = lessons.filter((lesson) => lesson.drive_url && !lesson.media_url).length;
+        const migrated = lessons.filter((lesson) => isRealR2Url(lesson.media_url)).length;
+        const pending = lessons.filter((lesson) => lesson.drive_url && !isRealR2Url(lesson.media_url)).length;
         const examples = lessons.slice(0, 8).map((lesson) => ({
           id: lesson.id,
           title: lesson.title,
           slug: lesson.slug,
-          status: lesson.media_url ? 'r2' : lesson.drive_url ? 'drive' : 'empty',
+          status: isRealR2Url(lesson.media_url) ? 'r2' : lesson.drive_url ? 'drive' : 'empty',
         }));
         return { id: module.id, title: module.title || 'Módulo sem nome', slug: module.slug, total, migrated, pending, examples };
       });
@@ -59,7 +70,7 @@ export async function GET(request: Request) {
     const migrated = summaries.reduce((sum, item) => sum + item.migrated, 0);
     const pending = summaries.reduce((sum, item) => sum + item.pending, 0);
 
-    return NextResponse.json({ product, total, migrated, pending, modules: summaries });
+    return NextResponse.json({ product, r2Base: publicR2Base(), total, migrated, pending, modules: summaries });
   } catch (error) {
     return NextResponse.json({ error: 'migration_status_failed', message: error instanceof Error ? error.message : 'unknown_error' }, { status: 500 });
   }
