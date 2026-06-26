@@ -41,15 +41,6 @@ function canPlayNativeHls(video: HTMLVideoElement) {
   return Boolean(video.canPlayType('application/vnd.apple.mpegurl') || video.canPlayType('application/x-mpegURL'));
 }
 
-function isSafariLike() {
-  if (typeof navigator === 'undefined') return false;
-  const ua = navigator.userAgent || '';
-  const vendor = navigator.vendor || '';
-  const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-  const isSafari = /Safari/i.test(ua) && /Apple/i.test(vendor) && !/CriOS|FxiOS|EdgiOS|OPiOS|Chrome|Chromium|Android/i.test(ua);
-  return isIOS || isSafari;
-}
-
 async function saveProgress(lessonId: string | null | undefined, positionSeconds: number, completed = false) {
   if (!lessonId) return;
   await fetch('/api/student/progress', {
@@ -64,7 +55,7 @@ function installLessonsPanelToggle() {
   if (!document.getElementById(styleId)) {
     const style = document.createElement('style');
     style.id = styleId;
-    style.textContent = '[class*="modules-actions"]{display:flex;align-items:center;gap:8px}.fc-lessons-toggle,.fc-module-toggle{display:inline-flex;align-items:center;justify-content:center;border-radius:999px;border:1px solid rgba(245,199,107,.22);background:rgba(255,255,255,.045);color:#f5c76b;font-weight:900;line-height:1}.fc-lessons-toggle{width:42px;height:42px;font-size:24px}.fc-module-toggle{width:34px;height:34px;font-size:18px;margin-left:auto}.fc-lessons-collapsed [class*="module-list"]{display:none}.fc-lessons-collapsed{max-height:110px!important;overflow:hidden}.fc-lessons-collapsed [class*="modules-head"]{border-bottom:0!important}.fc-module-collapsed [class*="lessons-list"]{display:none}.fc-module-collapsed{padding-bottom:0!important}.fc-module-collapsed [class*="module-title"]{margin-bottom:0!important}.drive-preview-player{position:relative;width:100%;aspect-ratio:16/9;border-radius:24px;overflow:hidden;background:#050509;border:1px solid rgba(245,199,107,.18);box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}.drive-preview-player iframe{width:100%;height:100%;border:0;display:block;background:#050509}.drive-preview-badge{position:absolute;left:14px;top:14px;z-index:2;display:inline-flex;align-items:center;gap:8px;border:1px solid rgba(245,199,107,.3);border-radius:999px;padding:8px 11px;background:rgba(0,0,0,.56);backdrop-filter:blur(12px);color:#f5c76b;font-size:12px;font-weight:900}.drive-preview-help{position:absolute;right:14px;bottom:14px;z-index:2;border-radius:999px;padding:7px 10px;background:rgba(0,0,0,.5);color:rgba(255,255,255,.72);font-size:11px;font-weight:800}';
+    style.textContent = '[class*="modules-actions"]{display:flex;align-items:center;gap:8px}.fc-lessons-toggle,.fc-module-toggle{display:inline-flex;align-items:center;justify-content:center;border-radius:999px;border:1px solid rgba(245,199,107,.22);background:rgba(255,255,255,.045);color:#f5c76b;font-weight:900;line-height:1}.fc-lessons-toggle{width:42px;height:42px;font-size:24px}.fc-module-toggle{width:34px;height:34px;font-size:18px;margin-left:auto}.fc-lessons-collapsed [class*="module-list"]{display:none}.fc-lessons-collapsed{max-height:110px!important;overflow:hidden}.fc-lessons-collapsed [class*="modules-head"]{border-bottom:0!important}.fc-module-collapsed [class*="lessons-list"]{display:none}.fc-module-collapsed{padding-bottom:0!important}.fc-module-collapsed [class*="module-title"]{margin-bottom:0!important}';
     document.head.appendChild(style);
   }
   document.querySelectorAll<HTMLElement>('[class*="modules-panel"]').forEach((panel) => {
@@ -116,7 +107,6 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
   const [isReady, setIsReady] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
-  const [useDrivePreview, setUseDrivePreview] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const lastSavedAtRef = useRef(0);
@@ -124,17 +114,15 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
   const trimStart = Math.max(0, Number(trimStartSeconds || 0));
   const trimEnd = Math.max(0, Number(trimEndSeconds || 0));
 
-  const { source, type, isHls, drivePreviewUrl, hasDrivePreview } = useMemo(() => {
+  const { source, type, isHls } = useMemo(() => {
     const rawSource = mediaUrl || driveUrl || '';
-    const driveFileId = getDriveFileId(driveUrl || rawSource);
-    const resolvedSource = driveFileId && !mediaUrl ? `/api/media/drive/${driveFileId}` : isAllowedInternalMedia(rawSource) ? rawSource : '';
+    const driveFileId = getDriveFileId(rawSource);
+    const resolvedSource = driveFileId ? `/api/media/drive/${driveFileId}` : isAllowedInternalMedia(rawSource) ? rawSource : '';
     const resolvedType = String(mediaType || '').toLowerCase() || 'video';
     return {
       type: resolvedType,
       source: resolvedSource,
       isHls: isHlsUrl(resolvedSource) || resolvedType === 'hls' || resolvedType === 'application/vnd.apple.mpegurl',
-      drivePreviewUrl: driveFileId ? `https://drive.google.com/file/d/${driveFileId}/preview` : '',
-      hasDrivePreview: Boolean(driveFileId),
     };
   }, [driveUrl, mediaUrl, mediaType]);
 
@@ -145,16 +133,12 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
   }, []);
 
   useEffect(() => {
-    if (type !== 'audio' && hasDrivePreview && isSafariLike()) setUseDrivePreview(true);
-  }, [hasDrivePreview, type]);
-
-  useEffect(() => {
     setIsReady(false);
     setHasStarted(false);
     setIsBuffering(false);
     restoredRef.current = false;
     const video = videoRef.current;
-    if (!video || !source || type === 'audio' || useDrivePreview) return undefined;
+    if (!video || !source || type === 'audio') return undefined;
 
     video.preload = 'metadata';
 
@@ -194,11 +178,6 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
         hls.on(Hls.Events.MANIFEST_PARSED, () => setIsReady(true));
         hls.on(Hls.Events.ERROR, (_event: unknown, data: { fatal?: boolean; type?: string }) => {
           if (!data?.fatal) return;
-          if (hasDrivePreview) {
-            setUseDrivePreview(true);
-            hls.destroy();
-            return;
-          }
           if (data.type === Hls.ErrorTypes.NETWORK_ERROR) hls.startLoad();
           else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
           else hls.destroy();
@@ -208,11 +187,8 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
       })
       .catch(() => {
         if (!destroyed) {
-          if (hasDrivePreview && isSafariLike()) setUseDrivePreview(true);
-          else {
-            video.src = source;
-            video.load();
-          }
+          video.src = source;
+          video.load();
         }
       });
 
@@ -222,7 +198,7 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
       video.removeAttribute('src');
       video.load();
     };
-  }, [source, type, isHls, useDrivePreview, hasDrivePreview]);
+  }, [source, type, isHls]);
 
   function restorePosition(element: HTMLMediaElement | null) {
     if (!element || restoredRef.current) return;
@@ -254,23 +230,6 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
     if (now - lastSavedAtRef.current < 10000) return;
     lastSavedAtRef.current = now;
     saveProgress(lessonId, element.currentTime, false);
-  }
-
-  if (useDrivePreview && drivePreviewUrl) {
-    return (
-      <div className="drive-preview-player">
-        <span className="drive-preview-badge">Player otimizado para Safari</span>
-        <iframe
-          title={title || 'Conteúdo'}
-          src={drivePreviewUrl}
-          allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
-          allowFullScreen
-          loading="eager"
-          referrerPolicy="no-referrer-when-downgrade"
-        />
-        <span className="drive-preview-help">Entrega pelo Google Drive</span>
-      </div>
-    );
   }
 
   if (!source) {
@@ -312,7 +271,7 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
         </div>
       ) : null}
       {isReady && !hasStarted ? (
-        <button className="premium-video-start" type="button" onClick={() => { setHasStarted(true); setIsBuffering(true); prepareForSmoothPlayback(videoRef.current); videoRef.current?.play().catch(() => { setIsBuffering(false); if (hasDrivePreview && isSafariLike()) setUseDrivePreview(true); }); }} aria-label="Reproduzir aula">
+        <button className="premium-video-start" type="button" onClick={() => { setHasStarted(true); setIsBuffering(true); prepareForSmoothPlayback(videoRef.current); videoRef.current?.play().catch(() => { setIsBuffering(false); }); }} aria-label="Reproduzir aula">
           <Play size={32} fill="currentColor" />
         </button>
       ) : null}
@@ -328,8 +287,7 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
         onCanPlay={() => { setIsReady(true); setIsBuffering(false); }}
         onCanPlayThrough={() => { setIsReady(true); setIsBuffering(false); }}
         onWaiting={() => setIsBuffering(true)}
-        onStalled={() => { setIsBuffering(true); if (hasDrivePreview && isSafariLike()) setUseDrivePreview(true); }}
-        onError={() => { if (hasDrivePreview) setUseDrivePreview(true); }}
+        onStalled={() => setIsBuffering(true)}
         onPlaying={() => { setHasStarted(true); setIsBuffering(false); saveProgress(lessonId, videoRef.current?.currentTime || 0, false); }}
         onPlay={() => { setHasStarted(true); prepareForSmoothPlayback(videoRef.current); }}
         onTimeUpdate={() => handleTimeUpdate(videoRef.current)}
