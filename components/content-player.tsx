@@ -137,6 +137,15 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
     restoredRef.current = true;
   }
 
+  function prepareForSmoothPlayback(element: HTMLMediaElement | null) {
+    if (!element) return;
+    if (element.preload !== 'auto') {
+      element.preload = 'auto';
+      element.load();
+    }
+    if (element.currentTime < trimStart) element.currentTime = trimStart;
+  }
+
   function handleTimeUpdate(element: HTMLMediaElement | null) {
     if (!element) return;
     if (trimEnd > trimStart && element.currentTime >= trimEnd) {
@@ -172,7 +181,7 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
           preload="metadata"
           style={{ width: '100%' }}
           onLoadedMetadata={() => restorePosition(audioRef.current)}
-          onPlay={() => saveProgress(lessonId, audioRef.current?.currentTime || 0, false)}
+          onPlay={() => { prepareForSmoothPlayback(audioRef.current); saveProgress(lessonId, audioRef.current?.currentTime || 0, false); }}
           onTimeUpdate={() => handleTimeUpdate(audioRef.current)}
           onEnded={() => saveProgress(lessonId, audioRef.current?.duration || 0, true)}
         />
@@ -191,7 +200,7 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
         </div>
       ) : null}
       {isReady && !hasStarted ? (
-        <button className="premium-video-start" type="button" onClick={() => { setHasStarted(true); setIsBuffering(true); if (videoRef.current && videoRef.current.currentTime < trimStart) videoRef.current.currentTime = trimStart; videoRef.current?.play().catch(() => { setIsBuffering(false); }); }} aria-label="Reproduzir aula">
+        <button className="premium-video-start" type="button" onClick={() => { setHasStarted(true); setIsBuffering(true); prepareForSmoothPlayback(videoRef.current); videoRef.current?.play().catch(() => { setIsBuffering(false); }); }} aria-label="Reproduzir aula">
           <Play size={32} fill="currentColor" />
         </button>
       ) : null}
@@ -210,7 +219,7 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
         onWaiting={() => setIsBuffering(true)}
         onStalled={() => setIsBuffering(true)}
         onPlaying={() => { setHasStarted(true); setIsBuffering(false); saveProgress(lessonId, videoRef.current?.currentTime || 0, false); }}
-        onPlay={() => setHasStarted(true)}
+        onPlay={() => { setHasStarted(true); prepareForSmoothPlayback(videoRef.current); }}
         onTimeUpdate={() => handleTimeUpdate(videoRef.current)}
         onEnded={() => saveProgress(lessonId, videoRef.current?.duration || 0, true)}
       />
