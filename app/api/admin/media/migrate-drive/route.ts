@@ -24,9 +24,23 @@ type DriveMetadata = {
 type ExerciseRow = {
   id: string;
   title?: string | null;
+  slug?: string | null;
   drive_url?: string | null;
   media_url?: string | null;
   media_type?: string | null;
+  module_id?: string | null;
+};
+
+type ModuleRow = {
+  id: string;
+  title?: string | null;
+  slug?: string | null;
+};
+
+type ProductRow = {
+  id: string;
+  name?: string | null;
+  slug?: string | null;
 };
 
 let cachedAccessToken: { token: string; expiresAt: number } | null = null;
@@ -59,6 +73,12 @@ function mediaKind(contentType: string, fallback?: string | null) {
   if (contentType.startsWith('audio/')) return 'audio';
   if (contentType.startsWith('video/')) return 'video';
   return fallback || 'video';
+}
+
+function mediaFolder(product?: ProductRow | null, module?: ModuleRow | null) {
+  const productSlug = safeName(product?.slug || product?.name || 'produto');
+  const moduleSlug = safeName(module?.slug || module?.title || 'modulo');
+  return `produtos/${productSlug}/${moduleSlug}/originals`;
 }
 
 async function loadAccess() {
@@ -125,7 +145,27 @@ async function getDriveMetadata(fileId: string, access: string): Promise<DriveMe
   return response.json() as Promise<DriveMetadata>;
 }
 
-async function migrateExercise(exercise: ExerciseRow, access: string) {
+async function loadProductScope(productId?: string | null, moduleId?: string | null) {
+  const supabase = createAdminClient();
+  const product = productId ? ((await supabase.from('products').select('id,name,slug').eq('id', productId).maybeSingle()).data as ProductRow | null) : null;
+  const course = productId ? (await supabase.from('courses').select('id').eq('product_id', productId).order('created_at', { ascending: true }).limit(1).maybeSingle()).data : null;
+
+  let moduleIds: string[] = [];
+  if (moduleId) moduleIds = [moduleId];
+  else if (course?.id) {
+    const { data: links } = await supabase.from('course_module_links').select('module_id,sort_order').eq('course_id', course.id).order('sort_order', { ascending: true });
+    moduleIds = ((links || []) as { module_id: string }[]).map((link) => String(link.module_id));
+  }
+
+  const { data: modulesData } = moduleIds.length
+    ? await supabase.from('modules').select('id,title,slug').in('id', moduleIds)
+    : await supabase.from('modules').select('id,title,slug');
+  const modules = new Map(((modulesData || []) as ModuleRow[]).map((module) => [String(module.id), module]));
+
+  return { product, moduleIds, modules };
+}
+
+async function migrateExercise(exercise: ExerciseRow, access: string, product?: ProductRow | null, module?: ModuleRow | null) {
   const fileId = driveFileId(exercise.drive_url);
   if (!fileId) return { id: exercise.id, title: exercise.title, status: 'skipped', reason: 'invalid_drive_url' };
 
@@ -140,8 +180,9 @@ async function migrateExercise(exercise: ExerciseRow, access: string) {
   }
 
   const contentType = metadata?.mimeType || driveResponse.headers.get('content-type') || 'video/mp4';
-  const originalName = metadata?.name || `${safeName(exercise.title)}.${extensionFromType(contentType)}`;
-  const signed = await createR2SignedPutUrl({ fileName: originalName, contentType, folder: 'videos/originals' });
+  const originalName = metadata?.name || `${safeName(exercise.title || exercise.slug)}.${extensionFromType(contentType)}`;
+  const folder = mediaFolder(product, module);
+  const signed = await createR2SignedPutUrl({ fileName: originalName, contentType, folder });
 
   const uploadResponse = await fetch(signed.uploadUrl, {
     method: 'PUT',
@@ -162,7 +203,7 @@ async function migrateExercise(exercise: ExerciseRow, access: string) {
     .eq('id', exercise.id);
 
   if (error) return { id: exercise.id, title: exercise.title, status: 'failed', reason: error.message };
-  return { id: exercise.id, title: exercise.title, status: 'migrated', mediaUrl: signed.publicUrl };
+  return { id: exercise.id, title: exercise.title, status: 'migrated', mediaUrl: signed.publicUrl, folder };
 }
 
 export async function POST(request: Request) {
@@ -171,18 +212,22 @@ export async function POST(request: Request) {
     const email = cookieStore.get('hub_access_email')?.value;
     if (!email) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
-    const body = await request.json().catch(() => ({})) as { limit?: number; force?: boolean; exerciseId?: string };
+    const body = await request.json().catch(() => ({})) as { limit?: number; force?: boolean; exerciseId?: string; productId?: string; moduleId?: string };
     const limit = Math.max(1, Math.min(5, Number(body.limit || 1)));
     const supabase = createAdminClient();
+    const scope = await loadProductScope(body.productId, body.moduleId);
 
     let query = supabase
       .from('exercises')
-      .select('id,title,drive_url,media_url,media_type')
+      .select('id,title,slug,drive_url,media_url,media_type,module_id')
       .not('drive_url', 'is', null)
+      .order('sort_order', { ascending: true })
       .order('created_at', { ascending: true })
       .limit(limit);
 
     if (body.exerciseId) query = query.eq('id', body.exerciseId).limit(1);
+    else if (scope.moduleIds.length) query = query.in('module_id', scope.moduleIds);
+    else if (body.productId) return NextResponse.json({ total: 0, results: [], message: 'product_has_no_linked_modules' });
     if (!body.force) query = query.is('media_url', null);
 
     const { data, error } = await query;
@@ -193,10 +238,11 @@ export async function POST(request: Request) {
     const results = [];
 
     for (const exercise of exercises) {
-      results.push(await migrateExercise(exercise, access));
+      const module = scope.modules.get(String(exercise.module_id || '')) || null;
+      results.push(await migrateExercise(exercise, access, scope.product, module));
     }
 
-    return NextResponse.json({ total: exercises.length, results });
+    return NextResponse.json({ total: exercises.length, product: scope.product, results });
   } catch (error) {
     return NextResponse.json({ error: 'drive_to_r2_migration_failed', message: error instanceof Error ? error.message : 'unknown_error' }, { status: 500 });
   }
