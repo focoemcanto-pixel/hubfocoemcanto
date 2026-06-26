@@ -14,7 +14,7 @@ type AudioWindow = Window & typeof globalThis & { webkitAudioContext?: AudioCtor
 type Level = 0 | 1 | 2;
 type Note = { name: string; hz: number };
 const NOTES: Note[] = [{ name: 'C4', hz: 261.63 }, { name: 'D4', hz: 293.66 }, { name: 'E4', hz: 329.63 }, { name: 'F4', hz: 349.23 }, { name: 'G4', hz: 392 }, { name: 'A4', hz: 440 }];
-const LEVELS = [{ title: 'Nível 1', sub: 'Encontrar o centro', goal: 'Encontre o centro da nota.', seconds: 1.1, tol: 28 }, { title: 'Nível 2', sub: 'Sustentar', goal: 'Mantenha a voz estável por 3 segundos.', seconds: 3, tol: 24 }, { title: 'Nível 3', sub: 'Ataque preciso', goal: 'Entre afinado sem escorregar.', seconds: 1.4, tol: 20 }] as const;
+const LEVELS = [{ title: 'Nível 1', sub: 'Encontrar o centro', goal: 'Encontre o centro da nota.', seconds: 1.15, tol: 38 }, { title: 'Nível 2', sub: 'Sustentar', goal: 'Mantenha a voz estável por 3 segundos.', seconds: 2.6, tol: 34 }, { title: 'Nível 3', sub: 'Ataque preciso', goal: 'Entre afinado sem escorregar.', seconds: 1.45, tol: 30 }] as const;
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 const cents = (freq: number, target: number) => 1200 * Math.log2(freq / target);
 
@@ -26,18 +26,19 @@ function getAudioCtor() {
 function getPitch(buffer: Float32Array, sampleRate: number) {
   let rms = 0;
   for (let i = 0; i < buffer.length; i++) rms += buffer[i] * buffer[i];
-  if (Math.sqrt(rms / buffer.length) < 0.014) return null;
+  if (Math.sqrt(rms / buffer.length) < 0.01) return null;
   let bestLag = -1;
   let best = 0;
   const minLag = Math.floor(sampleRate / 900);
-  const maxLag = Math.floor(sampleRate / 75);
+  const maxLag = Math.floor(sampleRate / 70);
   for (let lag = minLag; lag <= maxLag; lag++) {
     let sum = 0;
-    for (let i = 0; i < buffer.length - lag; i++) sum += buffer[i] * buffer[i + lag];
-    const corr = sum / (buffer.length - lag);
+    let energy = 0;
+    for (let i = 0; i < buffer.length - lag; i++) { sum += buffer[i] * buffer[i + lag]; energy += buffer[i] * buffer[i] + buffer[i + lag] * buffer[i + lag]; }
+    const corr = energy > 0 ? (2 * sum) / energy : 0;
     if (corr > best) { best = corr; bestLag = lag; }
   }
-  return bestLag > 0 && best > 0.0025 ? sampleRate / bestLag : null;
+  return bestLag > 0 && best > 0.18 ? sampleRate / bestLag : null;
 }
 
 export function DailyPitchTrainingFlow({ step, exercise }: { step: DailyTrainingStep; exercise: TrainingExercise }) {
@@ -62,10 +63,10 @@ export function DailyPitchTrainingFlow({ step, exercise }: { step: DailyTraining
   const cfg = LEVELS[level];
   const centered = Math.abs(off) <= cfg.tol && running;
   const progress = clamp(hold / cfg.seconds, 0, 1);
-  const ballX = `${50 + clamp(off / 75, -1, 1) * 8}%`;
-  const ballY = `${50 + clamp(off / 75, -1, 1) * 35}%`;
-  const meterX = `${50 + clamp(off / 90, -1, 1) * 44}%`;
-  const feedback = !running ? 'Aguardando sua voz' : centered ? 'Afinado' : off < 0 ? 'Um pouco grave' : 'Um pouco agudo';
+  const ballX = `${50 + clamp(off / 95, -1, 1) * 9}%`;
+  const ballY = `${50 + clamp(off / 95, -1, 1) * 34}%`;
+  const meterX = `${50 + clamp(off / 110, -1, 1) * 44}%`;
+  const feedback = !running ? 'Aguardando sua voz' : centered ? `Afinado · ${Math.round(progress * 100)}%` : off < 0 ? 'Um pouco grave' : 'Um pouco agudo';
 
   useEffect(() => {
     const ctx = getSampleContext();
@@ -87,14 +88,13 @@ export function DailyPitchTrainingFlow({ step, exercise }: { step: DailyTraining
     stopPianoSamples(ctx);
     const midi = noteNameToMidi(target.name) ?? 60;
     await preloadPianoSamples(ctx, [midi]).catch(() => null);
-    await playPianoSample(ctx, midi, ctx.currentTime + 0.025, ctx.currentTime + 0.95, 1.08).catch(() => null);
+    await playPianoSample(ctx, midi, ctx.currentTime + 0.025, ctx.currentTime + 2.15, 1.12).catch(() => null);
   }
 
   function stop() {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     streamRef.current?.getTracks().forEach((t) => t.stop());
     void ctxRef.current?.close().catch(() => null);
-    stopPianoSamples(sampleCtxRef.current ?? undefined);
     rafRef.current = null;
     streamRef.current = null;
     ctxRef.current = null;
@@ -113,7 +113,7 @@ export function DailyPitchTrainingFlow({ step, exercise }: { step: DailyTraining
       const ctx = new Ctor();
       const source = ctx.createMediaStreamSource(stream);
       const analyser = ctx.createAnalyser();
-      analyser.fftSize = 2048; analyser.smoothingTimeConstant = 0.08; source.connect(analyser);
+      analyser.fftSize = 4096; analyser.smoothingTimeConstant = 0.04; source.connect(analyser);
       streamRef.current = stream; ctxRef.current = ctx; loop(analyser, ctx.sampleRate);
     } catch { setMsg('Permita o microfone para medir sua afinação.'); setRunning(false); }
   }
@@ -125,13 +125,15 @@ export function DailyPitchTrainingFlow({ step, exercise }: { step: DailyTraining
       const delta = Math.min(0.08, Math.max(0, (now - lastRef.current) / 1000));
       lastRef.current = now; analyser.getFloatTimeDomainData(data);
       const pitch = getPitch(data, sampleRate);
-      if (!pitch) { setMsg('Cante para ativar o afinador.'); setHold((v) => Math.max(0, v - delta * .55)); }
+      if (!pitch) { setMsg('Cante para ativar o afinador.'); setHold((v) => Math.max(0, v - delta * .32)); }
       else {
-        const c = clamp(cents(pitch, note.hz), -90, 90); setOff((old) => old * .62 + c * .38);
-        const ok = Math.abs(c) <= cfg.tol;
-        if (level === 2 && !attackRef.current) { attackRef.current = true; if (!ok) { setMsg(c < 0 ? 'Entrou grave. Tente de novo.' : 'Entrou agudo. Tente de novo.'); setTimeout(() => { stop(); setHold(0); }, 650); return; } }
-        setMsg(ok ? (level === 1 ? 'Segure no centro.' : 'Centro encontrado.') : c < 0 ? 'Suba um pouco.' : 'Desça um pouco.');
-        setHold((v) => ok ? Math.min(cfg.seconds, v + delta) : Math.max(0, v - delta * .9));
+        const raw = clamp(cents(pitch, note.hz), -110, 110);
+        const smooth = off * .74 + raw * .26;
+        setOff(smooth);
+        const ok = Math.abs(smooth) <= cfg.tol;
+        if (level === 2 && !attackRef.current) { attackRef.current = true; if (!ok && Math.abs(smooth) > cfg.tol + 18) { setMsg(smooth < 0 ? 'Entrou grave. Refaça o ataque.' : 'Entrou agudo. Refaça o ataque.'); setHold(0); } }
+        setMsg(ok ? (level === 1 ? 'Segure no centro.' : 'Centro encontrado.') : smooth < 0 ? 'Suba um pouco.' : 'Desça um pouco.');
+        setHold((v) => ok ? Math.min(cfg.seconds, v + delta) : Math.max(0, v - delta * .45));
       }
       rafRef.current = requestAnimationFrame(tick);
     };
@@ -141,10 +143,10 @@ export function DailyPitchTrainingFlow({ step, exercise }: { step: DailyTraining
   useEffect(() => { if (running && hold >= cfg.seconds) { stop(); setDone(true); setMsg('Perfeito. Centro encaixado.'); setScore((s) => s.map((v, i) => i === level ? v + 1 : v)); } }, [hold, running, cfg.seconds, level]);
 
   function next() {
-    if (level < 2) { setLevel((v) => (v + 1) as Level); setDone(false); setHold(0); setOff(0); setMsg('Toque para ouvir e cante no centro.'); return; }
+    if (level < 2) { setLevel((v) => (v + 1) as Level); setDone(false); setHold(0); setOff(0); setMsg('Toque para ouvir e cante no centro.'); window.setTimeout(() => void playReference(targets[(level + 1) as Level]), 120); return; }
     completeDailyStep(step, startRef.current ? (Date.now() - startRef.current) / 1000 : 1);
     router.push(`/aluno/central/diarios/concluido?exercicio=${step.exerciseNumber}`);
   }
 
-  return <section className="pitch-premium-screen"><header className="pitch-top"><Link href="/aluno/central/diarios">Sair</Link><strong>Iniciante</strong><button type="button">i</button></header><main className="pitch-card"><div className="pitch-medal"><span>♢</span></div><button className="pitch-replay" type="button" onClick={() => void playReference()}>🔊<small>Ouvir</small></button><div className="pitch-heading"><span>Atividade 3</span><h1>Afinação</h1><p>Encontre o centro da nota e mantenha sua voz estável.</p></div><div className={`pitch-target-card ${centered ? 'is-centered' : ''}`}><span className="pitch-label">Nota alvo</span><strong>{note.name}</strong><div className="pitch-radar"><i className="ring outer"/><i className="ring inner"/><i className="cross horizontal"/><i className="cross vertical"/><b className="target-dot"/><b className={`voice-ball ${centered ? 'hit' : ''}`} style={{left:ballX,top:ballY}}/></div><em>{done ? 'Centro confirmado.' : running ? msg : 'Cante agora...'}</em></div><div className="pitch-feedback"><span>Feedback em tempo real</span><div className="pitch-meter" style={{'--meter-x':meterX} as React.CSSProperties}>{Array.from({length:19},(_,i)=><i key={i}/>)}<b/></div><div className="pitch-feedback-row"><small>Muito grave</small><strong>{feedback}</strong><small>Muito agudo</small></div></div><div className="pitch-level-card"><div className="pitch-level-icon">◎</div><div><strong>{cfg.title} · {cfg.sub}</strong><span>{cfg.goal}</span></div><em>{level+1}/3</em></div><div className="pitch-progress"><span style={{width:`${progress*100}%`}}/></div>{done?<button className="pitch-start" type="button" onClick={next}>{level<2?'Próximo nível':'Concluir atividade'} ›</button>:<button className="pitch-start" type="button" onClick={running?stop:start}>{running?'Pausar':'Iniciar atividade'}</button>}<div className="pitch-score"><span>Centro: {score[0]}</span><span>Estabilidade: {score[1]}</span><span>Ataque: {score[2]}</span></div></main></section>;
+  return <section className="pitch-premium-screen"><header className="pitch-top"><Link href="/aluno/central/diarios">Sair</Link><strong>Iniciante</strong><button type="button">i</button></header><main className="pitch-card"><div className="pitch-medal"><span>♢</span></div><button className="pitch-replay" type="button" onClick={() => void playReference()}>🔊<small>Ouvir</small></button><div className="pitch-heading"><span>Atividade 3</span><h1>Afinação</h1><p>Encontre o centro da nota e mantenha sua voz estável.</p></div><div className={`pitch-target-card ${centered ? 'is-centered' : ''}`}><span className="pitch-label">Nota alvo</span><strong>{note.name}</strong><div className="pitch-radar" style={{'--hold-progress':`${Math.round(progress*360)}deg`} as React.CSSProperties}><i className="ring outer"/><i className="ring inner"/><i className="ring load"/><i className="cross horizontal"/><i className="cross vertical"/><b className="target-dot"/><b className={`voice-ball ${centered ? 'hit' : ''}`} style={{left:ballX,top:ballY}}/></div><em>{done ? 'Centro confirmado.' : running ? msg : 'Cante agora...'}</em></div><div className="pitch-feedback"><span>Feedback em tempo real</span><div className="pitch-meter" style={{'--meter-x':meterX} as React.CSSProperties}>{Array.from({length:19},(_,i)=><i key={i}/>)}<b/></div><div className="pitch-feedback-row"><small>Muito grave</small><strong>{feedback}</strong><small>Muito agudo</small></div></div><div className="pitch-level-card"><div className="pitch-level-icon">◎</div><div><strong>{cfg.title} · {cfg.sub}</strong><span>{cfg.goal}</span></div><em>{level+1}/3</em></div><div className="pitch-progress"><span style={{width:`${progress*100}%`}}/></div>{done?<button className="pitch-start" type="button" onClick={next}>{level<2?'Próximo nível':'Concluir atividade'} ›</button>:<button className="pitch-start" type="button" onClick={running?stop:start}>{running?'Pausar':'Iniciar atividade'}</button>}<div className="pitch-score"><span>Centro: {score[0]}</span><span>Estabilidade: {score[1]}</span><span>Ataque: {score[2]}</span></div></main></section>;
 }
