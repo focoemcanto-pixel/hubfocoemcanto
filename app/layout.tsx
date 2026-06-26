@@ -44,6 +44,7 @@ import './vocal-emergency-layout-fix.css';
 import './guided-training-polish.css';
 import './ear-training-reference.css';
 import './ear-piano-no-hint.css';
+import './ear6-layout-fix.css';
 
 export default function RootLayout(props: { children: React.ReactNode }) {
   return <html lang="pt-BR"><body>{props.children}</body></html>;
