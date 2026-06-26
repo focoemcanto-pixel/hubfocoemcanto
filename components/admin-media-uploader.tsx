@@ -16,6 +16,12 @@ type MigrationResult = {
   reason?: string;
   detail?: string;
   mediaUrl?: string;
+  folder?: string;
+};
+
+type AdminMediaUploaderProps = {
+  productId?: string;
+  productName?: string | null;
 };
 
 function mediaFolder(file: File) {
@@ -25,7 +31,7 @@ function mediaFolder(file: File) {
   return 'files';
 }
 
-export function AdminMediaUploader() {
+export function AdminMediaUploader({ productId, productName }: AdminMediaUploaderProps = {}) {
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState<'idle' | 'signing' | 'uploading' | 'done' | 'error'>('idle');
   const [progress, setProgress] = useState(0);
@@ -77,18 +83,18 @@ export function AdminMediaUploader() {
     }
   }
 
-  async function migrateDriveBatch() {
+  async function migrateDriveBatch(limit = 1) {
     setMigrationStatus('running');
     setMigrationError('');
     try {
       const response = await fetch('/api/admin/media/migrate-drive', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ limit: 1 }),
+        body: JSON.stringify({ limit, productId }),
       });
       const json = await response.json();
       if (!response.ok) throw new Error(json?.message || json?.error || 'Migração falhou.');
-      setMigrationResults((current) => [...(json.results || []), ...current].slice(0, 20));
+      setMigrationResults((current) => [...(json.results || []), ...current].slice(0, 30));
       setMigrationStatus('done');
     } catch (err) {
       setMigrationError(err instanceof Error ? err.message : 'Erro desconhecido na migração.');
@@ -155,15 +161,20 @@ export function AdminMediaUploader() {
         <div className="section-heading">
           <div>
             <p className="eyebrow">Migração automática</p>
-            <h2>Drive para R2</h2>
-            <p className="muted">Migra a próxima aula com Drive URL para o R2 e preserva os cortes já salvos.</p>
+            <h2>{productName ? `Drive para R2 · ${productName}` : 'Drive para R2'}</h2>
+            <p className="muted">Migra aulas deste produto para pastas organizadas por produto e módulo, preservando cortes e mantendo Drive como fallback.</p>
           </div>
         </div>
 
-        <button className="button" type="button" onClick={migrateDriveBatch} disabled={migrationStatus === 'running'}>
-          {migrationStatus === 'running' ? 'Migrando 1 aula...' : 'Migrar próxima aula do Drive'}
-        </button>
-        <p className="muted">Rode primeiro uma aula. Depois que validar no Safari, repetimos em lote maior.</p>
+        <div className="admin-clean-actions">
+          <button className="button" type="button" onClick={() => migrateDriveBatch(1)} disabled={migrationStatus === 'running'}>
+            {migrationStatus === 'running' ? 'Migrando...' : 'Migrar 1 aula'}
+          </button>
+          <button className="button secondary" type="button" onClick={() => migrateDriveBatch(5)} disabled={migrationStatus === 'running'}>
+            Migrar 5 aulas
+          </button>
+        </div>
+        <p className="muted">Destino exemplo: produtos/{productName ? productName.toLowerCase().replace(/\s+/g, '-') : 'produto'}/modulo/originals/video.mp4</p>
         {migrationError ? <p className="error-text">{migrationError}</p> : null}
 
         {migrationResults.length > 0 ? (
@@ -173,7 +184,7 @@ export function AdminMediaUploader() {
                 <div>
                   <span className="pill">{item.status}</span>
                   <h3>{item.title || item.id}</h3>
-                  <p className="muted">{item.mediaUrl || item.reason || item.detail || 'Processado'}</p>
+                  <p className="muted">{item.folder || item.mediaUrl || item.reason || item.detail || 'Processado'}</p>
                 </div>
               </div>
             ))}
