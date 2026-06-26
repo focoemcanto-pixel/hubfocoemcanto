@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 type UploadResult = {
   key: string;
@@ -20,12 +20,20 @@ type MigrationResult = {
   moduleTitle?: string | null;
 };
 
+type LessonExample = {
+  id: string;
+  title?: string | null;
+  slug?: string | null;
+  status: 'r2' | 'drive' | 'empty';
+};
+
 type ModuleSummary = {
   id: string;
   title: string;
   total: number;
   migrated: number;
   pending: number;
+  examples?: LessonExample[];
 };
 
 type AdminMediaUploaderProps = {
@@ -66,6 +74,12 @@ function moduleStatus(module: ModuleSummary) {
   return { label: 'Pendente', className: 'admin-clean-pill danger' };
 }
 
+function lessonStatusLabel(status: LessonExample['status']) {
+  if (status === 'r2') return 'R2';
+  if (status === 'drive') return 'Drive';
+  return 'Sem mídia';
+}
+
 export function AdminMediaUploader({ productId, productName, migrationOnly = false, totalLessons = 0, migratedLessons = 0, driveLessons = 0, moduleSummaries = [] }: AdminMediaUploaderProps = {}) {
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState<'idle' | 'signing' | 'uploading' | 'done' | 'error'>('idle');
@@ -76,11 +90,41 @@ export function AdminMediaUploader({ productId, productName, migrationOnly = fal
   const [migrationResults, setMigrationResults] = useState<MigrationResult[]>([]);
   const [migrationError, setMigrationError] = useState('');
   const [lastBatchSize, setLastBatchSize] = useState(0);
+  const [statusLoading, setStatusLoading] = useState(false);
+  const [liveStatus, setLiveStatus] = useState<{ total: number; migrated: number; pending: number; modules: ModuleSummary[] } | null>(null);
 
+  async function refreshMigrationStatus() {
+    if (!productId) return;
+    setStatusLoading(true);
+    try {
+      const response = await fetch(`/api/admin/media/migration-status?productId=${encodeURIComponent(productId)}`, { cache: 'no-store' });
+      const json = await response.json().catch(() => null);
+      if (response.ok && json) {
+        setLiveStatus({
+          total: Number(json.total || 0),
+          migrated: Number(json.migrated || 0),
+          pending: Number(json.pending || 0),
+          modules: (json.modules || []) as ModuleSummary[],
+        });
+      }
+    } finally {
+      setStatusLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    refreshMigrationStatus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productId]);
+
+  const baseTotal = liveStatus?.total ?? totalLessons;
+  const baseMigrated = liveStatus?.migrated ?? migratedLessons;
+  const basePending = liveStatus?.pending ?? driveLessons;
+  const modules = liveStatus?.modules?.length ? liveStatus.modules : moduleSummaries;
   const migratedNow = migrationResults.filter((item) => item.status === 'migrated').length;
-  const displayMigrated = migratedLessons + migratedNow;
-  const displayPending = Math.max(0, driveLessons - migratedNow);
-  const percent = totalLessons > 0 ? Math.min(100, Math.round((displayMigrated / totalLessons) * 100)) : 0;
+  const displayMigrated = baseMigrated + migratedNow;
+  const displayPending = Math.max(0, basePending - migratedNow);
+  const percent = baseTotal > 0 ? Math.min(100, Math.round((displayMigrated / baseTotal) * 100)) : 0;
   const destinationPreview = useMemo(() => `produtos/${(productName || 'produto').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'produto'}/nome-do-modulo/originals/nome-da-aula.mp4`, [productName]);
 
   async function upload() {
@@ -147,6 +191,7 @@ export function AdminMediaUploader({ productId, productName, migrationOnly = fal
       setMigrationResults((current) => [...results, ...current].slice(0, 30));
       if (!results.length) setMigrationError(json?.message || 'Nenhuma aula pendente encontrada para este produto.');
       setMigrationStatus('done');
+      await refreshMigrationStatus();
     } catch (err) {
       setMigrationError(err instanceof Error ? err.message : 'Erro desconhecido na migração.');
       setMigrationStatus('error');
@@ -161,11 +206,11 @@ export function AdminMediaUploader({ productId, productName, migrationOnly = fal
           <h2>{productName ? `Drive → R2 · ${productName}` : 'Drive → R2'}</h2>
           <p className="muted">O Hub baixa as aulas já vinculadas, publica no Cloudflare R2 e organiza tudo por produto, módulo e aula.</p>
         </div>
-        <span className="admin-clean-pill">{percent}% no R2</span>
+        <span className="admin-clean-pill">{statusLoading ? 'Atualizando...' : `${percent}% no R2`}</span>
       </div>
 
       <div className="admin-grid admin-section">
-        <article className="admin-stat"><span>Total</span><strong>{totalLessons || '—'}</strong><p className="muted">Aulas vinculadas.</p></article>
+        <article className="admin-stat"><span>Total</span><strong>{baseTotal || '—'}</strong><p className="muted">Aulas vinculadas.</p></article>
         <article className="admin-stat"><span>Migradas</span><strong>{displayMigrated}</strong><p className="muted">Já usam R2.</p></article>
         <article className="admin-stat"><span>Pendentes</span><strong>{displayPending || '0'}</strong><p className="muted">Ainda usam Drive.</p></article>
       </div>
@@ -185,25 +230,33 @@ export function AdminMediaUploader({ productId, productName, migrationOnly = fal
         <button className="admin-clean-button secondary" type="button" onClick={() => migrateDriveBatch(5)} disabled={migrationStatus === 'running' || displayPending === 0}>
           {migrationStatus === 'running' && lastBatchSize === 5 ? 'Migrando 5 aulas...' : 'Migrar 5 aulas'}
         </button>
+        <button className="admin-clean-button secondary" type="button" onClick={refreshMigrationStatus} disabled={statusLoading}>
+          Atualizar mapa
+        </button>
       </div>
 
       <div className="admin-help-box">
         <strong>Mapa da migração por módulo</strong>
         <div className="admin-list media-migration-results">
-          {moduleSummaries.map((module) => {
-            const status = moduleStatus(module);
+          {modules.map((module) => {
+            const statusInfo = moduleStatus(module);
             const modulePercent = module.total > 0 ? Math.round((module.migrated / module.total) * 100) : 0;
             return (
               <div className="admin-row" key={module.id}>
                 <div>
-                  <span className={status.className}>{status.label}</span>
+                  <span className={statusInfo.className}>{statusInfo.label}</span>
                   <h3>{module.title}</h3>
                   <p className="muted">{module.migrated}/{module.total} no R2 · {module.pending} pendentes · {modulePercent}% concluído</p>
+                  {module.examples?.length ? (
+                    <p className="muted">
+                      {module.examples.map((lesson) => `${lessonStatusLabel(lesson.status)}: ${lesson.title || lesson.slug || 'Aula'}`).join(' · ')}
+                    </p>
+                  ) : null}
                 </div>
               </div>
             );
           })}
-          {!moduleSummaries.length ? <p className="muted">Nenhum módulo encontrado neste produto.</p> : null}
+          {!modules.length ? <p className="muted">Nenhum módulo encontrado neste produto.</p> : null}
         </div>
       </div>
 
