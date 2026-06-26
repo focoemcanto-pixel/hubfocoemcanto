@@ -185,6 +185,18 @@ async function loadProductScope(productId?: string | null, moduleId?: string | n
   return { product, moduleIds, modules };
 }
 
+async function verifyPublicObject(publicUrl: string, expectedSize: number) {
+  const response = await fetch(publicUrl, { method: 'HEAD', cache: 'no-store' });
+  if (!response.ok) {
+    return { ok: false, status: response.status, detail: `public_head_${response.status}` };
+  }
+  const length = Number(response.headers.get('content-length') || 0);
+  if (length > 0 && expectedSize > 0 && length !== expectedSize) {
+    return { ok: false, status: response.status, detail: `public_size_mismatch_${length}_${expectedSize}` };
+  }
+  return { ok: true, status: response.status, detail: 'public_ok' };
+}
+
 async function migrateExercise(exercise: ExerciseRow, access: string, product?: ProductRow | null, module?: ModuleRow | null) {
   let step = 'start';
   try {
@@ -230,6 +242,12 @@ async function migrateExercise(exercise: ExerciseRow, access: string, product?: 
     if (!uploadResponse.ok) {
       const detail = await uploadResponse.text().catch(() => '');
       return { ...resultBase(exercise, module), status: 'failed', reason: `r2_${uploadResponse.status}`, detail: detail.slice(0, 240) };
+    }
+
+    step = 'verify_public_r2_url';
+    const verification = await verifyPublicObject(signed.publicUrl, mediaBuffer.byteLength);
+    if (!verification.ok) {
+      return { ...resultBase(exercise, module), status: 'failed', step, reason: verification.detail, mediaUrl: signed.publicUrl };
     }
 
     step = 'update_exercise_media_url';
