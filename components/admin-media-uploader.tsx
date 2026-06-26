@@ -22,6 +22,7 @@ type MigrationResult = {
 type AdminMediaUploaderProps = {
   productId?: string;
   productName?: string | null;
+  migrationOnly?: boolean;
 };
 
 function mediaFolder(file: File) {
@@ -31,7 +32,7 @@ function mediaFolder(file: File) {
   return 'files';
 }
 
-export function AdminMediaUploader({ productId, productName }: AdminMediaUploaderProps = {}) {
+export function AdminMediaUploader({ productId, productName, migrationOnly = false }: AdminMediaUploaderProps = {}) {
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState<'idle' | 'signing' | 'uploading' | 'done' | 'error'>('idle');
   const [progress, setProgress] = useState(0);
@@ -102,6 +103,45 @@ export function AdminMediaUploader({ productId, productName }: AdminMediaUploade
     }
   }
 
+  const migrationCard = (
+    <section className="card admin-section">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Migração automática</p>
+          <h2>{productName ? `Drive para R2 · ${productName}` : 'Drive para R2'}</h2>
+          <p className="muted">Migra aulas deste produto para pastas organizadas por produto e módulo, preservando cortes e mantendo Drive como fallback.</p>
+        </div>
+      </div>
+
+      <div className="admin-clean-actions">
+        <button className="button" type="button" onClick={() => migrateDriveBatch(1)} disabled={migrationStatus === 'running'}>
+          {migrationStatus === 'running' ? 'Migrando...' : 'Migrar 1 aula'}
+        </button>
+        <button className="button secondary" type="button" onClick={() => migrateDriveBatch(5)} disabled={migrationStatus === 'running'}>
+          Migrar 5 aulas
+        </button>
+      </div>
+      <p className="muted">Destino exemplo: produtos/{productName ? productName.toLowerCase().replace(/\s+/g, '-') : 'produto'}/modulo/originals/video.mp4</p>
+      {migrationError ? <p className="error-text">{migrationError}</p> : null}
+
+      {migrationResults.length > 0 ? (
+        <div className="admin-list">
+          {migrationResults.map((item, index) => (
+            <div className="admin-row" key={`${item.id}-${index}`}>
+              <div>
+                <span className="pill">{item.status}</span>
+                <h3>{item.title || item.id}</h3>
+                <p className="muted">{item.folder || item.mediaUrl || item.reason || item.detail || 'Processado'}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+
+  if (migrationOnly) return migrationCard;
+
   return (
     <>
       <section className="card admin-section">
@@ -157,40 +197,7 @@ export function AdminMediaUploader({ productId, productName }: AdminMediaUploade
         </div>
       </section>
 
-      <section className="card admin-section">
-        <div className="section-heading">
-          <div>
-            <p className="eyebrow">Migração automática</p>
-            <h2>{productName ? `Drive para R2 · ${productName}` : 'Drive para R2'}</h2>
-            <p className="muted">Migra aulas deste produto para pastas organizadas por produto e módulo, preservando cortes e mantendo Drive como fallback.</p>
-          </div>
-        </div>
-
-        <div className="admin-clean-actions">
-          <button className="button" type="button" onClick={() => migrateDriveBatch(1)} disabled={migrationStatus === 'running'}>
-            {migrationStatus === 'running' ? 'Migrando...' : 'Migrar 1 aula'}
-          </button>
-          <button className="button secondary" type="button" onClick={() => migrateDriveBatch(5)} disabled={migrationStatus === 'running'}>
-            Migrar 5 aulas
-          </button>
-        </div>
-        <p className="muted">Destino exemplo: produtos/{productName ? productName.toLowerCase().replace(/\s+/g, '-') : 'produto'}/modulo/originals/video.mp4</p>
-        {migrationError ? <p className="error-text">{migrationError}</p> : null}
-
-        {migrationResults.length > 0 ? (
-          <div className="admin-list">
-            {migrationResults.map((item, index) => (
-              <div className="admin-row" key={`${item.id}-${index}`}>
-                <div>
-                  <span className="pill">{item.status}</span>
-                  <h3>{item.title || item.id}</h3>
-                  <p className="muted">{item.folder || item.mediaUrl || item.reason || item.detail || 'Processado'}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : null}
-      </section>
+      {migrationCard}
     </>
   );
 }
