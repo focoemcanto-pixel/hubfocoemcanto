@@ -5,7 +5,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useRouter } from 'next/navigation';
 import { completeDailyStep } from '@/lib/daily-training-progress';
-import { noteNameToMidi } from '@/lib/audio/pitch';
 import { playPianoSample, preloadPianoSamples, stopPianoSamples } from '@/lib/audio/piano-sample-engine';
 import type { DailyTrainingStep, TrainingExercise } from '@/lib/training-center';
 import './daily-pitch-note-replica.css';
@@ -107,7 +106,7 @@ export function DailyPitchTrainingFlow({ step, exercise }: { step: DailyTraining
   const [phase, setPhase] = useState<Phase>('ready');
   const [recordProgress, setRecordProgress] = useState(0);
   const [result, setResult] = useState<Result>(null);
-  const [history, setHistory] = useState<Result[]>([]);
+  const [, setHistory] = useState<Result[]>([]);
   const sampleCtxRef = useRef<AudioContext | null>(null);
   const micCtxRef = useRef<AudioContext | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -115,13 +114,17 @@ export function DailyPitchTrainingFlow({ step, exercise }: { step: DailyTraining
   const startRef = useRef(Date.now());
   const samplesRef = useRef<VoiceSample[]>([]);
   const progressRef = useRef<HTMLButtonElement | null>(null);
+  const activeTargetRef = useRef<TargetNote | null>(null);
   const target = targets[index] ?? targets[0];
   const overall = `${((index + (phase === 'result' ? 1 : recordProgress)) / targets.length) * 100}%`;
 
   useEffect(() => {
     const ctx = getSampleContext();
     if (ctx) void preloadPianoSamples(ctx, targets.map((item) => item.midi));
-    const timer = window.setTimeout(() => void playCurrent(true), 320);
+    const firstTarget = targets[0];
+    const timer = window.setTimeout(() => {
+      if (firstTarget) void playCurrent(true, firstTarget);
+    }, 320);
     return () => {
       window.clearTimeout(timer);
       stopCapture();
@@ -140,20 +143,21 @@ export function DailyPitchTrainingFlow({ step, exercise }: { step: DailyTraining
     progressRef.current?.style.setProperty('--record-progress', `${(clamp(value, 0, 1) * 360).toFixed(2)}deg`);
   }
 
-  async function playCurrent(autoRecord = false) {
+  async function playCurrent(autoRecord = false, noteToPlay = target) {
     const ctx = getSampleContext();
-    if (!ctx || !target) return;
+    if (!ctx || !noteToPlay) return;
     stopCapture();
+    activeTargetRef.current = noteToPlay;
     setResult(null);
     setPhase('playing');
     setRecordProgress(0);
     paintRecordProgress(0);
     await ctx.resume().catch(() => null);
     stopPianoSamples(ctx);
-    await preloadPianoSamples(ctx, [target.midi]).catch(() => null);
-    await playPianoSample(ctx, target.midi, ctx.currentTime + 0.04, ctx.currentTime + 2.85, 1.08).catch(() => null);
+    await preloadPianoSamples(ctx, [noteToPlay.midi]).catch(() => null);
+    await playPianoSample(ctx, noteToPlay.midi, ctx.currentTime + 0.04, ctx.currentTime + 2.85, 1.08).catch(() => null);
     await wait(2300);
-    if (autoRecord) void startCapture();
+    if (autoRecord) void startCapture(noteToPlay);
     else setPhase('ready');
   }
 
@@ -166,9 +170,10 @@ export function DailyPitchTrainingFlow({ step, exercise }: { step: DailyTraining
     micCtxRef.current = null;
   }
 
-  async function startCapture() {
-    if (!target) return;
+  async function startCapture(noteToCapture = target) {
+    if (!noteToCapture) return;
     stopCapture();
+    activeTargetRef.current = noteToCapture;
     samplesRef.current = [];
     setPhase('recording');
     setRecordProgress(0);
@@ -196,13 +201,13 @@ export function DailyPitchTrainingFlow({ step, exercise }: { step: DailyTraining
         const pitch = getPitch(data, ctx.sampleRate);
         if (pitch) {
           heardSeconds = Math.min(RECORD_SECONDS, heardSeconds + delta);
-          samplesRef.current.push(nearestTarget(pitch, target));
+          samplesRef.current.push(nearestTarget(pitch, noteToCapture));
         }
         const progress = clamp(heardSeconds / RECORD_SECONDS, 0, 1);
         setRecordProgress(progress);
         paintRecordProgress(progress);
         if (heardSeconds >= RECORD_SECONDS) {
-          finishAttempt();
+          finishAttempt(noteToCapture);
           return;
         }
         rafRef.current = requestAnimationFrame(tick);
@@ -213,9 +218,9 @@ export function DailyPitchTrainingFlow({ step, exercise }: { step: DailyTraining
     }
   }
 
-  function finishAttempt() {
+  function finishAttempt(noteToFinish = activeTargetRef.current ?? target) {
     stopCapture();
-    const finalResult = summarize(samplesRef.current, target);
+    const finalResult = summarize(samplesRef.current, noteToFinish);
     setResult(finalResult);
     setHistory((current) => [...current.slice(0, index), finalResult]);
     setPhase('result');
@@ -224,7 +229,7 @@ export function DailyPitchTrainingFlow({ step, exercise }: { step: DailyTraining
   function repeat() {
     samplesRef.current = [];
     setResult(null);
-    void playCurrent(true);
+    void playCurrent(true, target);
   }
 
   function nextNote() {
@@ -238,19 +243,23 @@ export function DailyPitchTrainingFlow({ step, exercise }: { step: DailyTraining
       router.push(`/aluno/central/diarios/concluido?exercicio=${step.exerciseNumber}`);
       return;
     }
-    setIndex((current) => current + 1);
+    const nextIndex = index + 1;
+    const nextTarget = targets[nextIndex];
+    setIndex(nextIndex);
     setPhase('ready');
-    window.setTimeout(() => void playCurrent(true), 120);
+    window.setTimeout(() => {
+      if (nextTarget) void playCurrent(true, nextTarget);
+    }, 120);
   }
 
-  const isResult = phase === 'result' && result;
-  const statusText = result?.ok ? 'Excelente!' : 'Por pouco!';
-  const resultDescription = result?.ok ? 'A nota que você cantou corresponde à nota alvo.' : 'A nota que você cantou foi diferente da nota alvo.';
-  const centsDirection = result ? result.cents < 0 ? 'baixo' : result.cents > 0 ? 'acima' : 'no centro' : 'no centro';
+  const currentResult = phase === 'result' ? result : null;
+  const statusText = currentResult?.ok ? 'Excelente!' : 'Por pouco!';
+  const resultDescription = currentResult?.ok ? 'A nota que você cantou corresponde à nota alvo.' : 'A nota que você cantou foi diferente da nota alvo.';
+  const centsDirection = currentResult ? currentResult.cents < 0 ? 'baixo' : currentResult.cents > 0 ? 'acima' : 'no centro' : 'no centro';
   const activeStepDots = [0, 1, 2, 3, 4].map((item) => Math.min(targets.length, Math.round(1 + item * 3.5)));
 
   return (
-    <section className={`note-rep-screen ${isResult ? 'note-result-mode' : ''}`}>
+    <section className={`note-rep-screen ${currentResult ? 'note-result-mode' : ''}`}>
       <div className="note-rep-inner">
         <header className="note-rep-top">
           <Link href="/aluno/central/diarios">Sair</Link>
@@ -274,42 +283,42 @@ export function DailyPitchTrainingFlow({ step, exercise }: { step: DailyTraining
           <div>
             <span className="note-label">Nota alvo</span>
             <strong className="note-target-name">{target.display}</strong>
-            <button className="note-sound-button" type="button" onClick={() => void playCurrent(false)} aria-label="Repetir nota alvo">🔊</button>
+            <button className="note-sound-button" type="button" onClick={() => void playCurrent(false, target)} aria-label="Repetir nota alvo">🔊</button>
           </div>
           <div className={`note-wave ${phase === 'playing' ? 'is-playing' : ''}`} aria-hidden="true">
             {Array.from({ length: 44 }, (_, i) => <i key={i} style={{ '--h': 8 + ((i * 17) % 36), '--d': i } as CSSProperties} />)}
           </div>
         </div>
 
-        {!isResult && <p className="note-prompt">{phase === 'recording' ? 'Gravando sua voz...' : phase === 'playing' ? 'Ouça com atenção.' : 'Cante a nota que você ouviu.'}</p>}
+        {!currentResult && <p className="note-prompt">{phase === 'recording' ? 'Gravando sua voz...' : phase === 'playing' ? 'Ouça com atenção.' : 'Cante a nota que você ouviu.'}</p>}
 
-        {!isResult && (
+        {!currentResult && (
           <div className="note-mic-wrap">
-            <button ref={progressRef} className={`note-mic-ring ${phase === 'recording' ? 'is-recording' : ''}`} type="button" onClick={() => phase === 'recording' ? finishAttempt() : void startCapture()} aria-label="Gravar resposta">
+            <button ref={progressRef} className={`note-mic-ring ${phase === 'recording' ? 'is-recording' : ''}`} type="button" onClick={() => phase === 'recording' ? finishAttempt() : void startCapture(target)} aria-label="Gravar resposta">
               <b>🎙</b>
             </button>
           </div>
         )}
 
-        {isResult && (
+        {currentResult && (
           <>
             <p className="note-prompt">Você cantou. Vamos ver como foi:</p>
-            <div className={`note-result-card ${result.ok ? 'ok' : ''}`}>
+            <div className={`note-result-card ${currentResult.ok ? 'ok' : ''}`}>
               <div>
                 <span className="note-label">Sua nota</span>
-                <strong className="note-target-name">{result.sungDisplay}</strong>
-                <button className="note-sound-button" type="button" onClick={() => void playCurrent(false)} aria-label="Ouvir nota alvo">🔊</button>
+                <strong className="note-target-name">{currentResult.sungDisplay}</strong>
+                <button className="note-sound-button" type="button" onClick={() => void playCurrent(false, target)} aria-label="Ouvir nota alvo">🔊</button>
               </div>
               <div className="note-result-text">
-                <strong>{result.ok ? '✓' : '×'} {statusText}</strong>
+                <strong>{currentResult.ok ? '✓' : '×'} {statusText}</strong>
                 <p>{resultDescription}</p>
               </div>
               <div className="note-wave is-playing" aria-hidden="true">
                 {Array.from({ length: 38 }, (_, i) => <i key={i} style={{ '--h': 8 + ((i * 23) % 37), '--d': i } as CSSProperties} />)}
               </div>
               <div className="note-diff">
-                <strong>Diferença: {result.cents > 0 ? '+' : ''}{result.cents} centavos ({centsDirection})</strong>
-                <span>{result.cents === 0 ? 'Sua nota ficou exatamente no centro.' : `Sua nota está ${Math.abs(result.cents)} centavos ${centsDirection} da nota alvo.`}</span>
+                <strong>Diferença: {currentResult.cents > 0 ? '+' : ''}{currentResult.cents} centavos ({centsDirection})</strong>
+                <span>{currentResult.cents === 0 ? 'Sua nota ficou exatamente no centro.' : `Sua nota está ${Math.abs(currentResult.cents)} centavos ${centsDirection} da nota alvo.`}</span>
               </div>
             </div>
           </>
@@ -317,7 +326,7 @@ export function DailyPitchTrainingFlow({ step, exercise }: { step: DailyTraining
 
         <div className="note-tip">
           <strong>💡 Dica</strong>
-          <span>{isResult ? 'Respire, escute e tente novamente.' : 'Concentre-se no timbre e na altura do som.'}</span>
+          <span>{currentResult ? 'Respire, escute e tente novamente.' : 'Concentre-se no timbre e na altura do som.'}</span>
         </div>
 
         <div className="note-actions">
@@ -329,7 +338,7 @@ export function DailyPitchTrainingFlow({ step, exercise }: { step: DailyTraining
           {activeStepDots.map((value, dotIndex) => <span key={dotIndex} className={index + 1 >= value ? 'active' : ''}>{dotIndex + 1}</span>)}
         </div>
 
-        {isResult && (
+        {currentResult && (
           <div className="note-quote">
             <b>“</b>
             <span>A afinação não é sorte, é treino e atenção.<br />Cada tentativa te aproxima da excelência.</span>
