@@ -75,7 +75,8 @@ export function stopPianoSamples(context?: AudioContext) {
   activeGains.forEach((gain) => {
     try {
       gain.gain.cancelScheduledValues(now);
-      gain.gain.setTargetAtTime(0.0001, now, 0.065);
+      gain.gain.setValueAtTime(Math.max(0.0001, gain.gain.value), now);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.28);
     } catch {}
   });
   window.setTimeout(() => {
@@ -84,7 +85,7 @@ export function stopPianoSamples(context?: AudioContext) {
     });
     activeSources.clear();
     activeGains.clear();
-  }, 420);
+  }, 520);
 }
 
 export async function playPianoSample(context: AudioContext, midiValue: number, at: number, end: number, velocity = 1) {
@@ -128,17 +129,19 @@ export async function playPianoSample(context: AudioContext, midiValue: number, 
   compressor.release.value = 0.34;
 
   const startAt = Math.max(context.currentTime + 0.01, at);
-  const requestedLength = Math.max(1.2, end - startAt);
-  const sampleLimit = Math.max(1.1, buffer.duration / Math.max(0.35, source.playbackRate.value) - 0.08);
-  const sustainUntil = startAt + Math.min(requestedLength, sampleLimit);
-  const stopAt = Math.max(sustainUntil + 0.85, end + 0.85);
+  const requestedLength = Math.max(2, end - startAt);
+  const availableLength = Math.max(1.7, buffer.duration / Math.max(0.35, source.playbackRate.value) - 0.05);
+  const fadeSeconds = 0.72;
+  const audibleUntil = startAt + Math.min(requestedLength, availableLength);
+  const fadeStart = Math.max(startAt + 1.25, audibleUntil - fadeSeconds);
+  const stopAt = audibleUntil + 0.06;
 
+  gain.gain.cancelScheduledValues(startAt);
   gain.gain.setValueAtTime(0.0001, startAt);
-  gain.gain.exponentialRampToValueAtTime(1.18 * velocity, startAt + 0.018);
-  gain.gain.exponentialRampToValueAtTime(0.72 * velocity, startAt + 0.24);
-  gain.gain.setTargetAtTime(0.46 * velocity, startAt + 0.34, 1.05);
-  gain.gain.setValueAtTime(0.34 * velocity, sustainUntil);
-  gain.gain.exponentialRampToValueAtTime(0.0001, stopAt);
+  gain.gain.exponentialRampToValueAtTime(1.15 * velocity, startAt + 0.022);
+  gain.gain.exponentialRampToValueAtTime(0.76 * velocity, startAt + 0.24);
+  gain.gain.setValueAtTime(0.56 * velocity, fadeStart);
+  gain.gain.exponentialRampToValueAtTime(0.0001, audibleUntil);
 
   source.connect(body);
   body.connect(presence);
@@ -155,5 +158,5 @@ export async function playPianoSample(context: AudioContext, midiValue: number, 
   };
 
   source.start(startAt);
-  source.stop(stopAt + 0.08);
+  source.stop(stopAt);
 }
