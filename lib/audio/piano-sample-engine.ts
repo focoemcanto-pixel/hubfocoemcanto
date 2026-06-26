@@ -75,7 +75,7 @@ export function stopPianoSamples(context?: AudioContext) {
   activeGains.forEach((gain) => {
     try {
       gain.gain.cancelScheduledValues(now);
-      gain.gain.setTargetAtTime(0.0001, now, 0.018);
+      gain.gain.setTargetAtTime(0.0001, now, 0.065);
     } catch {}
   });
   window.setTimeout(() => {
@@ -84,7 +84,7 @@ export function stopPianoSamples(context?: AudioContext) {
     });
     activeSources.clear();
     activeGains.clear();
-  }, 90);
+  }, 420);
 }
 
 export async function playPianoSample(context: AudioContext, midiValue: number, at: number, end: number, velocity = 1) {
@@ -110,32 +110,34 @@ export async function playPianoSample(context: AudioContext, midiValue: number, 
 
   body.type = 'lowshelf';
   body.frequency.value = 170;
-  body.gain.value = 2.2;
+  body.gain.value = 2.4;
 
   presence.type = 'peaking';
-  presence.frequency.value = 2500;
+  presence.frequency.value = 2300;
   presence.Q.value = 0.85;
-  presence.gain.value = 1.1;
+  presence.gain.value = 0.8;
 
   air.type = 'highshelf';
   air.frequency.value = 5600;
-  air.gain.value = -1.2;
+  air.gain.value = -1.8;
 
-  compressor.threshold.value = -7;
-  compressor.knee.value = 16;
-  compressor.ratio.value = 2.4;
-  compressor.attack.value = 0.004;
-  compressor.release.value = 0.26;
+  compressor.threshold.value = -8;
+  compressor.knee.value = 18;
+  compressor.ratio.value = 2.1;
+  compressor.attack.value = 0.006;
+  compressor.release.value = 0.34;
 
-  const startAt = Math.max(context.currentTime + 0.008, at);
-  const noteLength = Math.max(0.42, end - startAt);
-  const releaseAt = startAt + Math.min(noteLength, 0.78);
-  const stopAt = Math.max(startAt + 0.76, end + 0.46);
+  const startAt = Math.max(context.currentTime + 0.01, at);
+  const requestedLength = Math.max(1.2, end - startAt);
+  const sampleLimit = Math.max(1.1, buffer.duration / Math.max(0.35, source.playbackRate.value) - 0.08);
+  const sustainUntil = startAt + Math.min(requestedLength, sampleLimit);
+  const stopAt = Math.max(sustainUntil + 0.85, end + 0.85);
 
   gain.gain.setValueAtTime(0.0001, startAt);
-  gain.gain.exponentialRampToValueAtTime(1.32 * velocity, startAt + 0.014);
-  gain.gain.exponentialRampToValueAtTime(0.68 * velocity, startAt + 0.2);
-  gain.gain.setValueAtTime(0.46 * velocity, releaseAt);
+  gain.gain.exponentialRampToValueAtTime(1.18 * velocity, startAt + 0.018);
+  gain.gain.exponentialRampToValueAtTime(0.72 * velocity, startAt + 0.24);
+  gain.gain.setTargetAtTime(0.46 * velocity, startAt + 0.34, 1.05);
+  gain.gain.setValueAtTime(0.34 * velocity, sustainUntil);
   gain.gain.exponentialRampToValueAtTime(0.0001, stopAt);
 
   source.connect(body);
@@ -153,5 +155,5 @@ export async function playPianoSample(context: AudioContext, midiValue: number, 
   };
 
   source.start(startAt);
-  source.stop(stopAt + 0.06);
+  source.stop(stopAt + 0.08);
 }
