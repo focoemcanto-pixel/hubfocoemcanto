@@ -214,12 +214,7 @@ export default async function ProductEditPage({ params, searchParams }: { params
             <button className="admin-clean-button primary" type="submit">Criar modulo</button>
           </form>
 
-          <section className="admin-grid admin-section">
-            <article className="admin-stat"><span>Aulas</span><strong>{totalLessons}</strong><p className="muted">Conteúdos vinculados a este produto.</p></article>
-            <article className="admin-stat"><span>No R2</span><strong>{migratedLessons}</strong><p className="muted">Já usam media_url.</p></article>
-            <article className="admin-stat"><span>Pendentes</span><strong>{driveLessons}</strong><p className="muted">Ainda dependem do Drive.</p></article>
-          </section>
-          <AdminMediaUploader productId={product.id} productName={product.name} migrationOnly />
+          <AdminMediaUploader productId={product.id} productName={product.name} migrationOnly totalLessons={totalLessons} migratedLessons={migratedLessons} driveLessons={driveLessons} />
 
           <div className="admin-member-modules">
             {modules.map((module, index) => {
@@ -260,7 +255,7 @@ export default async function ProductEditPage({ params, searchParams }: { params
             <article className="admin-stat"><span>No R2</span><strong>{migratedLessons}</strong><p className="muted">Já usam media_url.</p></article>
             <article className="admin-stat"><span>Pendentes</span><strong>{driveLessons}</strong><p className="muted">Ainda usam Drive como origem principal.</p></article>
           </section>
-          <AdminMediaUploader productId={product.id} productName={product.name} />
+          <AdminMediaUploader productId={product.id} productName={product.name} totalLessons={totalLessons} migratedLessons={migratedLessons} driveLessons={driveLessons} />
         </section>
       ) : null}
 
