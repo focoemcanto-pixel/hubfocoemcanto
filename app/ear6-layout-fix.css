@@ -1,15 +1,15 @@
 /* Mobile layout polish for the six-step premium ear training flow. */
 .ear6 {
-  min-height: 100dvh !important;
-  height: 100dvh !important;
-  max-height: 100dvh !important;
-  overflow: hidden !important;
-  padding-top: calc(18px + env(safe-area-inset-top)) !important;
-  padding-bottom: calc(14px + env(safe-area-inset-bottom)) !important;
+  min-height: 100svh !important;
+  height: auto !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  padding-top: calc(14px + env(safe-area-inset-top)) !important;
+  padding-bottom: calc(18px + env(safe-area-inset-bottom)) !important;
 }
 
 .ear6 .top {
-  height: 6.8dvh !important;
+  height: 6.4svh !important;
   max-width: 410px !important;
   grid-template-columns: 82px 1fr 44px !important;
 }
@@ -29,7 +29,7 @@
 }
 
 .ear6 .icons {
-  height: 6.4dvh !important;
+  height: 6svh !important;
   max-width: 410px !important;
   gap: 6px !important;
 }
@@ -55,17 +55,18 @@
 .ear6 .piano,
 .ear6 .interval,
 .ear6 .compare {
-  min-height: calc(100dvh - 13.2dvh - 40px - env(safe-area-inset-top) - env(safe-area-inset-bottom)) !important;
-  height: calc(100dvh - 13.2dvh - 40px - env(safe-area-inset-top) - env(safe-area-inset-bottom)) !important;
-  justify-content: space-evenly !important;
-  gap: 8px !important;
-  overflow: hidden !important;
+  min-height: auto !important;
+  height: auto !important;
+  justify-content: flex-start !important;
+  gap: 12px !important;
+  overflow: visible !important;
+  padding: 18px 0 26px !important;
 }
 
 .ear6 .card {
   width: min(100%, 326px) !important;
-  min-height: 148px !important;
-  max-height: 168px !important;
+  min-height: 144px !important;
+  max-height: none !important;
   padding: 28px 18px 14px !important;
   border-radius: 24px !important;
 }
@@ -115,7 +116,7 @@
 .ear6 .set {
   width: min(100%, 344px) !important;
   min-height: 104px !important;
-  max-height: 112px !important;
+  max-height: none !important;
   padding: 16px 18px 10px !important;
   gap: 14px !important;
 }
@@ -145,8 +146,21 @@
   height: 23px !important;
 }
 
+.ear6 .send,
+.ear6 .reset {
+  position: static !important;
+  inset: auto !important;
+  margin: 4px auto 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-width: 124px !important;
+  height: 42px !important;
+  z-index: 2 !important;
+}
+
 .ear6 .staff {
-  height: 39dvh !important;
+  height: 39svh !important;
   min-height: 286px !important;
   max-height: 342px !important;
 }
@@ -194,9 +208,9 @@
 
 .ear6 .tap {
   width: min(100%, 336px) !important;
-  height: 19dvh !important;
-  min-height: 132px !important;
-  max-height: 168px !important;
+  height: 18svh !important;
+  min-height: 126px !important;
+  max-height: 160px !important;
   border-radius: 21px !important;
   font-size: 19px !important;
 }
@@ -260,11 +274,11 @@
 .ear6 .cards {
   width: min(100%, 348px) !important;
   gap: 14px !important;
-  margin: 12px auto !important;
+  margin: 8px auto !important;
 }
 
 .ear6 .cards article {
-  height: 138px !important;
+  height: 132px !important;
   border-radius: 22px !important;
 }
 
@@ -287,7 +301,7 @@
 }
 
 .ear6 .compare {
-  justify-content: space-evenly !important;
+  justify-content: flex-start !important;
 }
 
 .ear6 .ctitle {
@@ -307,6 +321,7 @@
   border-radius: 17px !important;
   grid-template-columns: 58px 1fr !important;
   padding: 10px 15px !important;
+  margin-top: 16px !important;
 }
 
 .ear6 .scoreline strong {
@@ -354,23 +369,22 @@
 }
 
 @media (max-height: 720px) {
-  .ear6 .top { height: 6.2dvh !important; }
-  .ear6 .icons { height: 5.9dvh !important; }
+  .ear6 .top { height: 6svh !important; }
+  .ear6 .icons { height: 5.7svh !important; }
   .ear6 .stage,
   .ear6 .sing,
   .ear6 .rhythm,
   .ear6 .piano,
   .ear6 .interval,
   .ear6 .compare {
-    height: calc(100dvh - 12.1dvh - 36px - env(safe-area-inset-top) - env(safe-area-inset-bottom)) !important;
-    min-height: calc(100dvh - 12.1dvh - 36px - env(safe-area-inset-top) - env(safe-area-inset-bottom)) !important;
-    gap: 5px !important;
+    gap: 8px !important;
+    padding-top: 12px !important;
   }
-  .ear6 .card { min-height: 136px !important; max-height: 150px !important; }
-  .ear6 .set { min-height: 96px !important; max-height: 102px !important; }
-  .ear6 .tap { min-height: 118px !important; max-height: 142px !important; }
-  .ear6 .keyboard { height: 150px !important; }
-  .ear6 .cards article { height: 118px !important; }
+  .ear6 .card { min-height: 132px !important; }
+  .ear6 .set { min-height: 94px !important; }
+  .ear6 .tap { min-height: 112px !important; max-height: 138px !important; }
+  .ear6 .keyboard { height: 148px !important; }
+  .ear6 .cards article { height: 112px !important; }
   .ear6 .scoreline { height: 70px !important; }
   .ear6 .big, .ear6 .demo { width: 52px !important; height: 52px !important; }
 }
