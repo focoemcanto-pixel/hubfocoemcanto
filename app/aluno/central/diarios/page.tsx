@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { AppShell } from '@/components/app-shell';
+import { DailyTrainingScrollRestorer } from '@/components/daily-training-scroll-restorer';
 import { dailyTrainingSteps, getDailyTrainingExercise } from '@/lib/training-center';
 
 export const dynamic = 'force-dynamic';
@@ -27,6 +28,7 @@ export default function DailyTrainingEntryPage() {
     <AppShell hideNav>
       <main className="daily-workout-shell">
         <style dangerouslySetInnerHTML={{ __html: css }} />
+        <DailyTrainingScrollRestorer />
         <div className="daily-workout-carousel" aria-label="Treinos diários">
           {dailyTrainingSteps.map((step, index) => {
             const exercise = getDailyTrainingExercise(step);
