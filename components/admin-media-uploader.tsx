@@ -53,6 +53,19 @@ async function putWithProgress(url: string, file: File, onProgress: (progress: n
   });
 }
 
+async function postFormWithProgress(url: string, file: File, onProgress: (progress: number) => void) {
+  await new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const form = new FormData();
+    form.append('file', file, file.name);
+    xhr.open('POST', url);
+    xhr.upload.onprogress = (event) => event.lengthComputable && onProgress(Math.round((event.loaded / event.total) * 100));
+    xhr.onload = () => xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`Cloudflare Stream recusou o arquivo com status ${xhr.status}.`));
+    xhr.onerror = () => reject(new Error('Upload interrompido. Verifique sua conexão.'));
+    xhr.send(form);
+  });
+}
+
 export function AdminMediaUploader({ productId, productName, migrationOnly = false, totalLessons = 0, migratedLessons = 0, driveLessons = 0 }: AdminMediaUploaderProps = {}) {
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState<'idle' | 'signing' | 'uploading' | 'done' | 'error'>('idle');
@@ -101,7 +114,7 @@ export function AdminMediaUploader({ productId, productName, migrationOnly = fal
     if (!createResponse.ok) throw new Error(createJson?.message || createJson?.error || 'Não foi possível criar upload no Stream.');
 
     updateStreamItem(item.id, { status: 'uploading', uid: createJson.uid, progress: 1 });
-    await putWithProgress(createJson.uploadURL, item.file, (nextProgress) => updateStreamItem(item.id, { progress: Math.max(1, nextProgress) }));
+    await postFormWithProgress(createJson.uploadURL, item.file, (nextProgress) => updateStreamItem(item.id, { progress: Math.max(1, nextProgress) }));
 
     updateStreamItem(item.id, { status: 'saving', progress: 100 });
     const completeResponse = await fetch('/api/admin/media/stream-upload-complete', {
