@@ -37,7 +37,7 @@ async function findBestExercise(productId: string | null, fileName: string) {
     }
   }
 
-  let query = supabase.from('exercises').select('id,title,slug,module_id,modules(title)').limit(500);
+  let query = supabase.from('exercises').select('id,title,slug,module_id,modules(title)').limit(800);
   if (moduleIds.length) query = query.in('module_id', moduleIds);
   const { data } = await query;
   const candidates = ((data || []) as ExerciseRow[]).map((exercise) => {
@@ -66,6 +66,19 @@ async function fetchStreamVideo(uid: string) {
   return response.ok && json?.success ? json.result : null;
 }
 
+async function saveMediaAsset(payload: Record<string, unknown>) {
+  const supabase = createAdminClient();
+  const streamUid = String(payload.stream_uid || '');
+  if (!streamUid) return;
+
+  const { data: existing } = await supabase.from('media_assets').select('id').eq('stream_uid', streamUid).maybeSingle();
+  if (existing?.id) {
+    await supabase.from('media_assets').update(payload).eq('id', existing.id);
+    return;
+  }
+  await supabase.from('media_assets').insert(payload);
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
@@ -86,7 +99,7 @@ export async function POST(request: Request) {
     const moduleId = match?.exercise.module_id || null;
     const mediaUrl = streamHlsUrl(uid);
 
-    await supabase.from('media_assets').upsert({
+    await saveMediaAsset({
       provider: 'cloudflare_stream',
       media_type: 'video',
       title: fileName,
@@ -100,7 +113,7 @@ export async function POST(request: Request) {
       status,
       raw: { fileName, relativePath, matchScore: match?.score || 0, stream: video || null },
       updated_at: new Date().toISOString(),
-    }, { onConflict: 'stream_uid' }).then(() => null);
+    });
 
     if (exerciseId) {
       await supabase.from('exercises').update({
