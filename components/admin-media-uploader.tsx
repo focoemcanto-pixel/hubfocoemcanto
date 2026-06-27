@@ -3,8 +3,10 @@
 import { useMemo, useRef, useState } from 'react';
 import { Check, FolderUp, Loader2, RefreshCw, UploadCloud, Video, XCircle } from 'lucide-react';
 
-type Props = { productId?: string; productName?: string | null; migrationOnly?: boolean; totalLessons?: number; migratedLessons?: number; driveLessons?: number };
-type UploadResult = { key: string; publicUrl: string; uploadUrl: string; expiresIn: number };
+type ModuleOption = { id: string; title: string; slug?: string | null };
+type Props = { productId?: string; productName?: string | null; modules?: ModuleOption[]; migrationOnly?: boolean; totalLessons?: number; migratedLessons?: number; driveLessons?: number };
+type QueueStatus = 'Na fila' | 'Enviando' | 'Salvo' | 'Vinculado' | 'Falhou';
+type QueueItem = { id: string; file: File; relativePath: string; mediaType: 'audio' | 'image' | 'file'; progress: number; status: QueueStatus; message?: string; publicUrl?: string };
 type SyncResult = { total: number; linked: number; unmatchedCount: number; errorsCount: number; durationSeconds: number; sizeBytes: number; syncedAt: string; unmatched: Array<{ uid: string; name: string; status: string }>; errors?: Array<{ uid: string; name: string; message: string }> };
 type R2Status = 'queued' | 'uploading' | 'done' | 'error';
 type R2Item = { id: string; file: File; name: string; relativePath: string; type: string; size: number; status: R2Status; progress: number; url?: string; error?: string };
@@ -33,7 +35,7 @@ async function xhrPut(url: string, file: File, onProgress: (n: number) => void) 
   });
 }
 
-export function AdminMediaUploader({ productId, productName, migrationOnly = false, totalLessons = 0, migratedLessons = 0, driveLessons = 0 }: Props = {}) {
+export function AdminMediaUploader({ productId, productName, modules = [], migrationOnly = false, totalLessons = 0, migratedLessons = 0, driveLessons = 0 }: Props = {}) {
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
   const [syncError, setSyncError] = useState('');
