@@ -1,4 +1,4 @@
-export type CompressionProfile = 'auto' | 'quality' | 'compact';
+export type CompressionProfile = 'auto' | 'quality' | 'compact' | 'aggressive' | 'ultra';
 
 const MIN_SIZE_FOR_COMPRESSION = 150 * 1024 * 1024;
 
@@ -22,16 +22,20 @@ function supportedMimeType() {
   return candidates.find((type) => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(type)) || '';
 }
 
-function targetFor(profile: CompressionProfile, width: number, height: number) {
-  const maxHeight = profile === 'compact' ? 720 : 1080;
+function targetFor(profile: CompressionProfile, width: number, height: number, duration = 0) {
+  const maxHeight = profile === 'ultra' ? 540 : profile === 'aggressive' || profile === 'compact' ? 720 : 1080;
   const scale = height > maxHeight ? maxHeight / height : 1;
   const targetWidth = Math.max(2, Math.round((width * scale) / 2) * 2);
   const targetHeight = Math.max(2, Math.round((height * scale) / 2) * 2);
 
-  // Bitrates conservadores. Para aulas em celular/desktop, isso reduz bastante
-  // sem destruir a imagem. Não queremos transformar 600MB em 5MB.
-  const videoBitsPerSecond = profile === 'quality' ? 8_000_000 : profile === 'compact' ? 4_000_000 : 6_000_000;
-  const audioBitsPerSecond = profile === 'compact' ? 128_000 : 160_000;
+  // Bitrates conservadores por padrão. Perfis agressivos miram uploads diretos
+  // abaixo do limite operacional do Hub, preservando áudio aceitável para aulas
+  // musicais/vocais (Opus em 128-144 kbps costuma manter fala e canto utilizáveis).
+  const targetBytes = profile === 'ultra' ? 150 * 1024 * 1024 : profile === 'aggressive' ? 175 * 1024 * 1024 : 0;
+  const audioBitsPerSecond = profile === 'ultra' ? 128_000 : profile === 'aggressive' ? 144_000 : profile === 'compact' ? 128_000 : 160_000;
+  const fixedVideoBitsPerSecond = profile === 'quality' ? 8_000_000 : profile === 'compact' ? 4_000_000 : profile === 'ultra' ? 1_200_000 : profile === 'aggressive' ? 2_000_000 : 6_000_000;
+  const budgetVideoBitsPerSecond = targetBytes && duration > 0 ? Math.floor((targetBytes * 8) / duration - audioBitsPerSecond) : fixedVideoBitsPerSecond;
+  const videoBitsPerSecond = Math.max(profile === 'ultra' ? 700_000 : profile === 'aggressive' ? 1_000_000 : 1_500_000, Math.min(fixedVideoBitsPerSecond, budgetVideoBitsPerSecond));
   return { targetWidth, targetHeight, videoBitsPerSecond, audioBitsPerSecond };
 }
 
@@ -78,7 +82,7 @@ export async function compressVideoForUpload(file: File, options: CompressOption
     const width = video.videoWidth || 1920;
     const height = video.videoHeight || 1080;
     const originalDuration = Number.isFinite(video.duration) ? video.duration : 0;
-    const { targetWidth, targetHeight, videoBitsPerSecond, audioBitsPerSecond } = targetFor(options.profile, width, height);
+    const { targetWidth, targetHeight, videoBitsPerSecond, audioBitsPerSecond } = targetFor(options.profile, width, height, originalDuration);
 
     const canvas = document.createElement('canvas');
     canvas.width = targetWidth;
