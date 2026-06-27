@@ -13,7 +13,7 @@ import './daily-melodic-control-flow.css';
 type AudioCtor = typeof AudioContext;
 type WinAudio = Window & typeof globalThis & { webkitAudioContext?: AudioCtor };
 type Stage = 'intro' | 'training' | 'finished';
-type Drill = { title: string; subtitle: string; syllable: string; bpm: number; notes: number[]; beats: number };
+type Drill = { title: string; subtitle: string; syllable: string; bpm: number; notes: number[]; durations: number[] };
 type LiveVoice = { midi: number | null; cents: number | null; feedback: string };
 
 const MIN_MIDI = 36;
@@ -26,7 +26,7 @@ const MAJOR = [0, 2, 4, 5, 7, 9, 11, 12];
 const DEFAULT_LOW = noteNameToMidi('A2') ?? 45;
 const DEFAULT_HIGH = noteNameToMidi('A4') ?? 69;
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
-const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+const sum = (items: number[]) => items.reduce((total, item) => total + item, 0);
 
 function getAudioCtor() {
   if (typeof window === 'undefined') return null;
@@ -46,20 +46,46 @@ function bestRoot(low = DEFAULT_LOW, high = DEFAULT_HIGH) {
   if (maxRoot >= minRoot) return minRoot;
   return Math.max(36, Math.min(60, high - span));
 }
+function startOf(durations: number[], index: number) { return sum(durations.slice(0, index)); }
+function activeIndexAt(durations: number[], beat: number) {
+  let cursor = 0;
+  for (let index = 0; index < durations.length; index += 1) {
+    cursor += durations[index];
+    if (beat < cursor) return index;
+  }
+  return Math.max(0, durations.length - 1);
+}
+function buildCumulativeExercise(root: number) {
+  const notes: number[] = [];
+  const durations: number[] = [];
+
+  for (let len = 1; len <= MAJOR.length; len += 1) {
+    const ascent = MAJOR.slice(0, len);
+    const descent = MAJOR.slice(0, Math.max(0, len - 1)).reverse();
+    const phrase = [...ascent, ...descent];
+
+    phrase.forEach((interval, index) => {
+      notes.push(root + interval);
+      if (len === 1) durations.push(1);
+      else if (len === 2) durations.push(index === phrase.length - 1 ? 1 : 0.5);
+      else if (len === 3) durations.push(index === phrase.length - 1 ? 1 : 0.25);
+      else durations.push(index === phrase.length - 1 ? 1 : 0.5);
+    });
+  }
+
+  return { notes, durations };
+}
 function makeDrills() {
   const root = bestRoot();
   const scaleUp = MAJOR.map((i) => root + i);
   const scaleDown = MAJOR.slice(0, -1).reverse().map((i) => root + i);
-  const cumulative: number[] = [];
-  for (let len = 1; len <= MAJOR.length; len += 1) {
-    MAJOR.slice(0, len).forEach((i) => cumulative.push(root + i));
-    MAJOR.slice(0, Math.max(0, len - 1)).reverse().forEach((i) => cumulative.push(root + i));
-  }
+  const scaleNotes = [...scaleUp, ...scaleDown];
+  const cumulative = buildCumulativeExercise(root);
   const triads = [0, 4, 7, 12, 7, 4, 0, 4, 7, 9, 7, 4, 0, 5, 9, 12, 9, 5, 0].map((i) => root + i);
   return [
-    { title: 'Escala guiada', subtitle: 'Suba e volte mantendo o centro da nota.', syllable: '(Uhh...)', bpm: 74, notes: [...scaleUp, ...scaleDown], beats: 1.15 },
-    { title: 'Escala acumulativa', subtitle: 'Dó, Dó-Ré-Dó, Dó-Ré-Mi-Ré-Dó... sempre voltando ao centro tonal.', syllable: '(Uhh...)', bpm: 82, notes: cumulative, beats: 0.78 },
-    { title: 'Tríades e saltos', subtitle: 'Controle a altura nos saltos principais da tonalidade.', syllable: '(Uhh...)', bpm: 78, notes: triads, beats: 1 },
+    { title: 'Escala guiada', subtitle: 'Suba e volte mantendo o centro da nota.', syllable: '(Uhh...)', bpm: 74, notes: scaleNotes, durations: scaleNotes.map(() => 1.15) },
+    { title: 'Escala acumulativa', subtitle: 'Dó | Dó-Ré-Dó | Dó-Ré-Mi-Ré-Dó, na pulsação escrita.', syllable: '(Uhh...)', bpm: 82, notes: cumulative.notes, durations: cumulative.durations },
+    { title: 'Tríades e saltos', subtitle: 'Controle a altura nos saltos principais da tonalidade.', syllable: '(Uhh...)', bpm: 78, notes: triads, durations: triads.map(() => 1) },
   ] satisfies Drill[];
 }
 
@@ -92,10 +118,10 @@ export function DailyMelodicControlFlow({ step, exercise }: { step: DailyTrainin
   const scoreRef = useRef({ hitFrames: 0, missFrames: 0, counted: new Set<number>() });
   const drill = drills[drillIndex];
   const activeBpm = clamp(drill.bpm + bpmOffset, 54, 118);
-  const totalBeats = drill.notes.length * drill.beats;
+  const totalBeats = sum(drill.durations);
   const beatSeconds = 60 / activeBpm;
   const progress = totalBeats ? clamp((currentBeat / totalBeats) * 100, 0, 100) : 0;
-  const activeIndex = clamp(Math.floor(currentBeat / drill.beats), 0, drill.notes.length - 1);
+  const activeIndex = activeIndexAt(drill.durations, currentBeat);
   const activeMidi = playing && !paused ? drill.notes[activeIndex] : null;
   targetMidiRef.current = activeMidi;
 
@@ -190,10 +216,11 @@ export function DailyMelodicControlFlow({ step, exercise }: { step: DailyTrainin
       nextClickBeatRef.current = clickBeat + 1;
     }
     drill.notes.forEach((midi, index) => {
-      const noteStart = index * drill.beats;
+      const noteStart = startOf(drill.durations, index);
+      const noteDuration = drill.durations[index];
       if (noteStart < startBeat || noteStart >= endBeat) return;
       const startDelay = Math.max(0, noteStart - visualBeat) * beatSeconds;
-      const endDelay = Math.max(startDelay + 0.55, (noteStart + drill.beats - visualBeat) * beatSeconds);
+      const endDelay = Math.max(startDelay + 0.22, (noteStart + noteDuration - visualBeat) * beatSeconds);
       void playPianoSample(ctx, midi, now + startDelay, now + endDelay, 0.94);
     });
     nextAudioBeatRef.current = endBeat;
@@ -243,12 +270,8 @@ export function DailyMelodicControlFlow({ step, exercise }: { step: DailyTrainin
     scheduleAudio(currentBeat, currentBeat);
     tick();
   }
-  function restartTraining() {
-    void startTraining();
-  }
-  function adjustBpm(delta: number) {
-    setBpmOffset((value) => clamp(value + delta, -20, 20));
-  }
+  function restartTraining() { void startTraining(); }
+  function adjustBpm(delta: number) { setBpmOffset((value) => clamp(value + delta, -20, 20)); }
   function tick() {
     const now = performance.now();
     const last = lastFrameRef.current ?? now;
@@ -258,8 +281,10 @@ export function DailyMelodicControlFlow({ step, exercise }: { step: DailyTrainin
     setCurrentBeat((old) => {
       const next = old + delta / beatSeconds;
       scheduleAudio(Math.max(0, old - 0.08), next);
-      const noteIndex = Math.floor(old / drill.beats);
-      if (!scoreRef.current.counted.has(noteIndex) && old % drill.beats > drill.beats * 0.72) {
+      const noteIndex = activeIndexAt(drill.durations, old);
+      const noteStart = startOf(drill.durations, noteIndex);
+      const noteDuration = drill.durations[noteIndex];
+      if (!scoreRef.current.counted.has(noteIndex) && old - noteStart > noteDuration * 0.72) {
         scoreRef.current.counted.add(noteIndex);
         const ok = scoreRef.current.hitFrames >= scoreRef.current.missFrames;
         if (ok) setHits((value) => value + 1); else setMisses((value) => value + 1);
@@ -317,9 +342,10 @@ export function DailyMelodicControlFlow({ step, exercise }: { step: DailyTrainin
       <div className="melodic-stage">
         <div className="melodic-ruler">{SCALE.map((midi) => <span key={midi} className={activeMidi === midi ? 'active' : ''}>{midiToBrazilianNoteName(midi)}</span>)}</div>
         <div className="melodic-lane"><div className="melodic-hit" />{drill.notes.map((midi, index) => {
-          const startBeat = index * drill.beats;
-          const left = HIT_X + (startBeat - currentBeat) * PX_PER_BEAT;
-          const width = Math.max(5, drill.beats * PX_PER_BEAT);
+          const noteStart = startOf(drill.durations, index);
+          const noteDuration = drill.durations[index];
+          const left = HIT_X + (noteStart - currentBeat) * PX_PER_BEAT;
+          const width = Math.max(5, noteDuration * PX_PER_BEAT);
           if (left + width < -8 || left > HIT_X + PREVIEW_BEATS * PX_PER_BEAT) return null;
           return <span key={`${midi}-${index}`} className="melodic-note" style={{ left: `${left}%`, width: `${width}%`, top: `${yFromMidi(midi)}%` }} />;
         })}<div className="melodic-voice"><i /></div></div>
