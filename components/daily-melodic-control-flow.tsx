@@ -58,7 +58,7 @@ function makeDrills() {
   const triads = [0, 4, 7, 12, 7, 4, 0, 4, 7, 9, 7, 4, 0, 5, 9, 12, 9, 5, 0].map((i) => root + i);
   return [
     { title: 'Escala guiada', subtitle: 'Suba e volte mantendo o centro da nota.', syllable: '(Uhh...)', bpm: 74, notes: [...scaleUp, ...scaleDown], beats: 1.15 },
-    { title: 'Escala acumulativa', subtitle: 'Memorize e expanda a sequência sem perder a afinação.', syllable: '(Uhh...)', bpm: 82, notes: cumulative, beats: 0.78 },
+    { title: 'Escala acumulativa', subtitle: 'Dó, Dó-Ré-Dó, Dó-Ré-Mi-Ré-Dó... sempre voltando ao centro tonal.', syllable: '(Uhh...)', bpm: 82, notes: cumulative, beats: 0.78 },
     { title: 'Tríades e saltos', subtitle: 'Controle a altura nos saltos principais da tonalidade.', syllable: '(Uhh...)', bpm: 78, notes: triads, beats: 1 },
   ] satisfies Drill[];
 }
@@ -71,6 +71,9 @@ export function DailyMelodicControlFlow({ step, exercise }: { step: DailyTrainin
   const [currentBeat, setCurrentBeat] = useState(0);
   const [count, setCount] = useState<number | null>(null);
   const [playing, setPlaying] = useState(false);
+  const [paused, setPaused] = useState(false);
+  const [controlsOpen, setControlsOpen] = useState(false);
+  const [bpmOffset, setBpmOffset] = useState(0);
   const [voice, setVoice] = useState<LiveVoice>({ midi: null, cents: null, feedback: 'Toque para iniciar' });
   const [hits, setHits] = useState(0);
   const [misses, setMisses] = useState(0);
@@ -84,14 +87,16 @@ export function DailyMelodicControlFlow({ step, exercise }: { step: DailyTrainin
   const timersRef = useRef<number[]>([]);
   const lastFrameRef = useRef<number | null>(null);
   const nextAudioBeatRef = useRef(0);
+  const nextClickBeatRef = useRef(0);
   const targetMidiRef = useRef<number | null>(null);
   const scoreRef = useRef({ hitFrames: 0, missFrames: 0, counted: new Set<number>() });
   const drill = drills[drillIndex];
+  const activeBpm = clamp(drill.bpm + bpmOffset, 54, 118);
   const totalBeats = drill.notes.length * drill.beats;
-  const beatSeconds = 60 / drill.bpm;
+  const beatSeconds = 60 / activeBpm;
   const progress = totalBeats ? clamp((currentBeat / totalBeats) * 100, 0, 100) : 0;
   const activeIndex = clamp(Math.floor(currentBeat / drill.beats), 0, drill.notes.length - 1);
-  const activeMidi = playing ? drill.notes[activeIndex] : null;
+  const activeMidi = playing && !paused ? drill.notes[activeIndex] : null;
   targetMidiRef.current = activeMidi;
 
   useEffect(() => () => stopAll(), []);
@@ -154,13 +159,36 @@ export function DailyMelodicControlFlow({ step, exercise }: { step: DailyTrainin
       loop();
     } catch { setVoice((old) => ({ ...old, feedback: 'Permita o microfone' })); }
   }
+  function playMetronomeClick(ctx: AudioContext, at: number, strong = false) {
+    const oscillator = ctx.createOscillator();
+    const gain = ctx.createGain();
+    const filter = ctx.createBiquadFilter();
+    oscillator.type = strong ? 'triangle' : 'sine';
+    oscillator.frequency.setValueAtTime(strong ? 1320 : 940, at);
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(strong ? 1500 : 1080, at);
+    filter.Q.setValueAtTime(8, at);
+    gain.gain.setValueAtTime(0.0001, at);
+    gain.gain.exponentialRampToValueAtTime(strong ? 0.18 : 0.10, at + 0.006);
+    gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.055);
+    oscillator.connect(filter);
+    filter.connect(gain);
+    gain.connect(ctx.destination);
+    oscillator.start(at);
+    oscillator.stop(at + 0.07);
+  }
   function scheduleAudio(fromBeat: number, visualBeat: number) {
     const ctx = getAudioContext();
-    if (!ctx) return;
+    if (!ctx || paused) return;
     void ctx.resume().catch(() => null);
     const now = ctx.currentTime + 0.045;
     const startBeat = Math.max(fromBeat, nextAudioBeatRef.current);
     const endBeat = Math.min(totalBeats, startBeat + 8);
+    for (let clickBeat = Math.max(Math.floor(startBeat), nextClickBeatRef.current); clickBeat < Math.ceil(endBeat); clickBeat += 1) {
+      const startDelay = Math.max(0, clickBeat - visualBeat) * beatSeconds;
+      playMetronomeClick(ctx, now + startDelay, clickBeat % 4 === 0);
+      nextClickBeatRef.current = clickBeat + 1;
+    }
     drill.notes.forEach((midi, index) => {
       const noteStart = index * drill.beats;
       if (noteStart < startBeat || noteStart >= endBeat) return;
@@ -174,6 +202,8 @@ export function DailyMelodicControlFlow({ step, exercise }: { step: DailyTrainin
     stopAll();
     setStage('training');
     setPlaying(false);
+    setPaused(false);
+    setControlsOpen(false);
     setCurrentBeat(0);
     setVoice({ midi: null, cents: null, feedback: 'Prepare-se' });
     scoreRef.current = { hitFrames: 0, missFrames: 0, counted: new Set<number>() };
@@ -183,15 +213,41 @@ export function DailyMelodicControlFlow({ step, exercise }: { step: DailyTrainin
     await ctx.resume().catch(() => null);
     void preloadPianoSamples(ctx, drill.notes);
     const beatMs = beatSeconds * 1000;
-    [4, 3, 2, 1].forEach((value, i) => timersRef.current.push(window.setTimeout(() => setCount(value), i * beatMs)));
+    [4, 3, 2, 1].forEach((value, i) => timersRef.current.push(window.setTimeout(() => { setCount(value); playMetronomeClick(ctx, ctx.currentTime + 0.015, value === 1); }, i * beatMs)));
     timersRef.current.push(window.setTimeout(() => {
       setCount(null);
       lastFrameRef.current = performance.now();
       nextAudioBeatRef.current = 0;
+      nextClickBeatRef.current = 0;
       scheduleAudio(0, 0);
       setPlaying(true);
       tick();
     }, 4 * beatMs));
+  }
+  function pauseTraining() {
+    if (!playing || stage === 'finished') return;
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    rafRef.current = null;
+    stopPianoSamples(audioCtxRef.current ?? undefined);
+    setPaused(true);
+    setPlaying(false);
+    setVoice((old) => ({ ...old, feedback: 'Pausado' }));
+  }
+  function resumeTraining() {
+    if (stage !== 'training' || !paused) return;
+    setPaused(false);
+    setPlaying(true);
+    nextAudioBeatRef.current = currentBeat;
+    nextClickBeatRef.current = Math.floor(currentBeat);
+    lastFrameRef.current = performance.now();
+    scheduleAudio(currentBeat, currentBeat);
+    tick();
+  }
+  function restartTraining() {
+    void startTraining();
+  }
+  function adjustBpm(delta: number) {
+    setBpmOffset((value) => clamp(value + delta, -20, 20));
   }
   function tick() {
     const now = performance.now();
@@ -246,7 +302,7 @@ export function DailyMelodicControlFlow({ step, exercise }: { step: DailyTrainin
           <h1>Controle de Altura</h1>
           <p>{drill.title}</p>
           <small>{drill.subtitle}</small>
-          <div className="melodic-range">Tessitura do treino: <b>{midiToBrazilianNoteName(drill.notes[0])}</b> → <b>{midiToBrazilianNoteName(Math.max(...drill.notes))}</b></div>
+          <div className="melodic-range">Tessitura do treino: <b>{midiToBrazilianNoteName(drill.notes[0])}</b> → <b>{midiToBrazilianNoteName(Math.max(...drill.notes))}</b><br /><small>Pulsação regular com metrônomo: {activeBpm} BPM</small></div>
           <button type="button" onClick={startTraining}>Iniciar exercício {drillIndex + 1}/3</button>
         </div>
       </section>
@@ -254,7 +310,7 @@ export function DailyMelodicControlFlow({ step, exercise }: { step: DailyTrainin
   }
 
   return (
-    <section className="melodic-player" style={cssVars}>
+    <section className="melodic-player" style={cssVars} onClick={() => setControlsOpen(true)}>
       <div className="melodic-bg" />
       <div className="melodic-top"><Link href="/aluno/central/diarios">←</Link><strong>{drill.title}</strong><span>{secondsToClock(currentBeat * beatSeconds)} / {secondsToClock(totalBeats * beatSeconds)}</span></div>
       <div className="melodic-progress"><i /></div>
@@ -271,6 +327,16 @@ export function DailyMelodicControlFlow({ step, exercise }: { step: DailyTrainin
       <div className="melodic-syllable">{drill.syllable}</div>
       <div className="melodic-feedback">{stage === 'finished' ? 'Exercício concluído' : voice.feedback}</div>
       {count ? <div className="melodic-count">{count}</div> : null}
+      {controlsOpen && stage !== 'finished' ? (
+        <div className="melodic-controls" onClick={(event) => event.stopPropagation()}>
+          <button type="button" onClick={paused ? resumeTraining : pauseTraining}>{paused ? '▶ Continuar' : '⏸ Pausar'}</button>
+          <button type="button" onClick={() => adjustBpm(-4)}>− BPM</button>
+          <strong>{activeBpm} BPM</strong>
+          <button type="button" onClick={() => adjustBpm(4)}>+ BPM</button>
+          <button type="button" onClick={restartTraining}>↻ Reiniciar</button>
+          <button type="button" onClick={() => setControlsOpen(false)}>×</button>
+        </div>
+      ) : null}
       {stage === 'finished' ? <div className="melodic-finished"><b>{hits}</b> acertos · <b>{misses}</b> ajustes<button type="button" onClick={nextDrill}>{drillIndex >= drills.length - 1 ? 'Concluir atividade' : 'Próximo exercício'}</button></div> : null}
     </section>
   );
