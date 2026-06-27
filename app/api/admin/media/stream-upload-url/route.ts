@@ -11,6 +11,19 @@ function cloudflareConfig() {
   return { accountId, token };
 }
 
+async function saveMediaAsset(payload: Record<string, unknown>) {
+  const supabase = createAdminClient();
+  const streamUid = String(payload.stream_uid || '');
+  if (!streamUid) return;
+
+  const { data: existing } = await supabase.from('media_assets').select('id').eq('stream_uid', streamUid).maybeSingle();
+  if (existing?.id) {
+    await supabase.from('media_assets').update(payload).eq('id', existing.id);
+    return;
+  }
+  await supabase.from('media_assets').insert(payload);
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
@@ -50,8 +63,7 @@ export async function POST(request: Request) {
     const uploadURL = String(json.result?.uploadURL || '');
     if (!uid || !uploadURL) return NextResponse.json({ error: 'stream_uid_missing', detail: json }, { status: 500 });
 
-    const supabase = createAdminClient();
-    await supabase.from('media_assets').upsert({
+    await saveMediaAsset({
       provider: 'cloudflare_stream',
       media_type: 'video',
       title: fileName,
@@ -62,7 +74,7 @@ export async function POST(request: Request) {
       status: 'upload_url_created',
       raw: { fileName, relativePath, directUpload: json.result },
       updated_at: new Date().toISOString(),
-    }, { onConflict: 'stream_uid' }).then(() => null);
+    });
 
     return NextResponse.json({ uid, uploadURL, thumbnailUrl: streamThumbnailUrl(uid) });
   } catch (error) {
