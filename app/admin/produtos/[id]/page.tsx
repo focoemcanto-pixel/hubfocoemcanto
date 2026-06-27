@@ -169,7 +169,7 @@ export default async function ProductEditPage({ params, searchParams }: { params
   const tabHref = (tab: string) => `/admin/produtos/${product.id}?tab=${tab}`;
 
   const totalLessons = modules.reduce((sum, module) => sum + ((module.exercises || []) as Row[]).length, 0);
-  const migratedLessons = modules.reduce((sum, module) => sum + ((module.exercises || []) as Row[]).filter((lesson) => lesson.media_url).length, 0);
+  const optimizedLessons = modules.reduce((sum, module) => sum + ((module.exercises || []) as Row[]).filter((lesson) => lesson.media_url).length, 0);
   const driveLessons = modules.reduce((sum, module) => sum + ((module.exercises || []) as Row[]).filter((lesson) => lesson.drive_url && !lesson.media_url).length, 0);
 
   const subsByProfile = new Map<string, Row[]>();
@@ -210,19 +210,19 @@ export default async function ProductEditPage({ params, searchParams }: { params
             <input type="hidden" name="course_id" value={courseId} />
             <label>Nome do modulo<input name="title" placeholder="Ex: Introducao" required /></label>
             <label>Descricao<textarea name="description" placeholder="O que o aluno vera neste modulo?" /></label>
-            <div className="admin-clean-form-row"><label>Origem<select name="storage_provider" defaultValue="drive"><option value="drive">Google Drive</option><option value="r2">Cloudflare R2</option></select></label><label>Ordem<input name="sort_order" type="number" placeholder="automático" /></label></div>
+            <div className="admin-clean-form-row"><label>Origem<select name="storage_provider" defaultValue="drive"><option value="drive">Google Drive</option><option value="stream">Cloudflare Stream</option><option value="r2">Cloudflare R2</option></select></label><label>Ordem<input name="sort_order" type="number" placeholder="automático" /></label></div>
             <button className="admin-clean-button primary" type="submit">Criar modulo</button>
           </form>
 
-          <AdminMediaUploader productId={product.id} productName={product.name} migrationOnly totalLessons={totalLessons} migratedLessons={migratedLessons} driveLessons={driveLessons} />
+          <AdminMediaUploader productId={product.id} productName={product.name} migrationOnly totalLessons={totalLessons} migratedLessons={optimizedLessons} driveLessons={driveLessons} />
 
           <div className="admin-member-modules">
             {modules.map((module, index) => {
               const lessons = ((module.exercises || []) as Row[]).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
               const importUrl = `/admin/conteudos/selecionar-drive?module=${module.id}`;
               const displayOrder = String(index + 1).padStart(2, '0');
-              const moduleMigrated = lessons.filter((lesson) => lesson.media_url).length;
-              const sourceLabel = moduleMigrated === lessons.length && lessons.length ? 'R2' : moduleMigrated ? 'Drive/R2' : 'drive';
+              const optimizedInModule = lessons.filter((lesson) => lesson.media_url).length;
+              const sourceLabel = optimizedInModule === lessons.length && lessons.length ? 'otimizado' : optimizedInModule ? 'misto' : 'drive';
               return (
                 <article className="admin-member-module" key={module.id}>
                   <div className="admin-member-module-head">
@@ -236,26 +236,26 @@ export default async function ProductEditPage({ params, searchParams }: { params
                     </div>
                   </div>
                   <div className="admin-lesson-list">
-                    {lessons.map((lesson) => <div className="admin-lesson-row" key={lesson.id}><span className="admin-drag-dot">::</span><AdminInlineLessonName moduleId={module.id} lessonId={lesson.id} initialTitle={lesson.title || ''} /><small>{lesson.media_url ? 'R2' : lesson.media_type || 'video'}</small><div className="admin-lesson-actions"><a href={`/aluno/aula/${lesson.slug}`} title="Abrir aula">Abrir</a><a href={`/admin/conteudos/exercicios/${lesson.id}/editar`} title="Editar aula">Editar</a><form action={deleteLesson}><input type="hidden" name="product_id" value={product.id} /><input type="hidden" name="lesson_id" value={lesson.id} /><button type="submit" title="Excluir aula">Excluir</button></form></div></div>)}
-                    {!lessons.length ? <p className="admin-clean-muted">Nenhuma aula ainda. Clique em + Aula para puxar do Drive ou preparar R2.</p> : null}
+                    {lessons.map((lesson) => <div className="admin-lesson-row" key={lesson.id}><span className="admin-drag-dot">::</span><AdminInlineLessonName moduleId={module.id} lessonId={lesson.id} initialTitle={lesson.title || ''} /><small>{lesson.media_url ? 'otimizado' : lesson.media_type || 'video'}</small><div className="admin-lesson-actions"><a href={`/aluno/aula/${lesson.slug}`} title="Abrir aula">Abrir</a><a href={`/admin/conteudos/exercicios/${lesson.id}/editar`} title="Editar aula">Editar</a><form action={deleteLesson}><input type="hidden" name="product_id" value={product.id} /><input type="hidden" name="lesson_id" value={lesson.id} /><button type="submit" title="Excluir aula">Excluir</button></form></div></div>)}
+                    {!lessons.length ? <p className="admin-clean-muted">Nenhuma aula ainda. Clique em + Aula para puxar do Drive ou preparar Stream.</p> : null}
                   </div>
                 </article>
               );
             })}
-            {!modules.length ? <div className="admin-empty-state"><strong>Nenhum modulo criado.</strong><p>Crie o primeiro modulo e depois adicione aulas pelo Drive/R2.</p></div> : null}
+            {!modules.length ? <div className="admin-empty-state"><strong>Nenhum modulo criado.</strong><p>Crie o primeiro modulo e depois adicione aulas pelo Drive/Stream.</p></div> : null}
           </div>
         </section>
       ) : null}
 
       {activeTab === 'midia' ? (
         <section className="admin-clean-section">
-          <div className="admin-clean-heading"><div><span className="admin-clean-eyebrow">Mídia do produto</span><h2>Biblioteca e migração</h2><p className="admin-clean-muted">Organização por produto e módulo no Cloudflare R2.</p></div></div>
+          <div className="admin-clean-heading"><div><span className="admin-clean-eyebrow">Mídia do produto</span><h2>Biblioteca Stream</h2><p className="admin-clean-muted">Vídeos no Cloudflare Stream. Áudios e imagens no Cloudflare R2.</p></div></div>
           <section className="admin-grid admin-section">
             <article className="admin-stat"><span>Aulas</span><strong>{totalLessons}</strong><p className="muted">Conteúdos vinculados ao produto.</p></article>
-            <article className="admin-stat"><span>No R2</span><strong>{migratedLessons}</strong><p className="muted">Já usam media_url.</p></article>
-            <article className="admin-stat"><span>Pendentes</span><strong>{driveLessons}</strong><p className="muted">Ainda usam Drive como origem principal.</p></article>
+            <article className="admin-stat"><span>Drive atual</span><strong>{driveLessons}</strong><p className="muted">Ainda aguardam UID do Stream.</p></article>
+            <article className="admin-stat"><span>Otimizadas</span><strong>{optimizedLessons}</strong><p className="muted">Já usam uma origem interna/media_url.</p></article>
           </section>
-          <AdminMediaUploader productId={product.id} productName={product.name} totalLessons={totalLessons} migratedLessons={migratedLessons} driveLessons={driveLessons} />
+          <AdminMediaUploader productId={product.id} productName={product.name} totalLessons={totalLessons} migratedLessons={optimizedLessons} driveLessons={driveLessons} />
         </section>
       ) : null}
 
