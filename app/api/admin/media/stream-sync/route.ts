@@ -6,6 +6,7 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 type ExerciseRow = { id: string; title?: string | null; slug?: string | null; module_id?: string | null };
+type ManualLink = { uid?: string; exerciseId?: string };
 
 function score(a: string, b: string) {
   if (!a || !b) return 0;
@@ -65,18 +66,39 @@ async function productExercises(productId: string, moduleId?: string) {
 
 export async function POST(request: Request) {
   try {
-    const { productId, moduleId } = await request.json().catch(() => ({}));
+    const { productId, moduleId, manualLinks = [] } = await request.json().catch(() => ({}));
     const cleanProductId = String(productId || '').trim();
     const cleanModuleId = String(moduleId || '').trim();
     if (!cleanProductId) return NextResponse.json({ error: 'missing_product_id', message: 'Informe productId.' }, { status: 400 });
 
     const supabase = createAdminClient();
     const [videos, exercises] = await Promise.all([listStreamVideos(), productExercises(cleanProductId, cleanModuleId || undefined)]);
+    const manual = Array.isArray(manualLinks) ? (manualLinks as ManualLink[]) : [];
     const unmatched: Array<{ uid: string; name: string; status: string; score: number }> = [];
     const errors: Array<{ uid: string; name: string; message: string }> = [];
     let linked = 0;
     let durationSeconds = 0;
     let sizeBytes = 0;
+
+    for (const link of manual) {
+      const uid = String(link.uid || '').trim();
+      const exerciseId = String(link.exerciseId || '').trim();
+      if (!uid || !exerciseId) continue;
+      const video = videos.find((item) => String(item.uid || '') === uid);
+      const exercise = exercises.find((item) => item.id === exerciseId);
+      if (!video || !exercise) continue;
+      const name = String((video as any).meta?.name || video.name || uid || 'Vídeo sem nome');
+      const status = String(video.status?.state || 'unknown');
+      const duration = Number(video.duration || 0) || null;
+      const thumbnail = String(video.thumbnail || '') || streamThumbnailUrl(uid);
+      const mediaUrl = streamHlsUrl(uid);
+      const payload = { provider: 'cloudflare_stream', media_type: 'video', title: name, normalized_title: normalizeMediaTitle(name), product_id: cleanProductId, module_id: exercise.module_id || cleanModuleId || null, exercise_id: exercise.id, stream_uid: uid, thumbnail_url: thumbnail, duration_seconds: duration, status, raw: { stream: video, manualLink: true, destinationModuleId: cleanModuleId || null }, updated_at: new Date().toISOString() };
+      const { data: existing } = await supabase.from('media_assets').select('id').eq('stream_uid', uid).maybeSingle();
+      const assetError = existing?.id ? (await supabase.from('media_assets').update(payload).eq('id', existing.id)).error : (await supabase.from('media_assets').insert(payload)).error;
+      if (assetError) throw assetError;
+      const { error } = await supabase.from('exercises').update({ stream_uid: uid, stream_status: status, stream_thumbnail_url: thumbnail, stream_duration_seconds: duration, stream_synced_at: new Date().toISOString(), media_url: mediaUrl, media_type: 'video' }).eq('id', exercise.id);
+      if (error) throw error;
+    }
 
     for (const video of videos) {
       const uid = String(video.uid || '');
@@ -87,6 +109,7 @@ export async function POST(request: Request) {
       durationSeconds += duration || 0;
       sizeBytes += size;
       const thumbnail = String(video.thumbnail || '') || streamThumbnailUrl(uid);
+      if (manual.some((link) => String(link.uid || '').trim() === uid)) continue;
       const match = bestMatch(name, exercises);
       const mediaUrl = streamHlsUrl(uid);
       try {
@@ -106,7 +129,7 @@ export async function POST(request: Request) {
       }
     }
 
-    return NextResponse.json({ total: videos.length, linked, unmatchedCount: unmatched.length, errorsCount: errors.length, durationSeconds, sizeBytes, syncedAt: new Date().toISOString(), unmatched, errors });
+    return NextResponse.json({ total: videos.length, linked, unmatchedCount: unmatched.length, errorsCount: errors.length, durationSeconds, sizeBytes, syncedAt: new Date().toISOString(), unmatched, errors, exercises });
   } catch (error) {
     return NextResponse.json({ error: 'stream_sync_error', message: error instanceof Error ? error.message : 'Erro ao sincronizar Stream.' }, { status: 500 });
   }
