@@ -282,7 +282,7 @@ export function AdminMediaUploader({ productId, productName, migrationOnly = fal
   }
 
   async function startStreamUpload() {
-    const queue = streamQueue.filter((item) => (item.status === 'queued' || item.status === 'error') && !item.needsFile && item.status !== 'done');
+    const queue = streamQueue.filter((item) => (item.status === 'queued' || item.status === 'error') && !item.needsFile);
     if (!queue.length) return;
     setStreamRunning(true);
     setStreamError('');
