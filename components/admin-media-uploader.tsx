@@ -31,8 +31,9 @@ type AdminMediaUploaderProps = {
   driveLessons?: number;
 };
 
-const RETRY_LIMIT = 3;
-const RETRY_DELAYS = [2500, 7000, 15000];
+const RETRY_LIMIT = 5;
+const RETRY_DELAYS = [2000, 5000, 10000, 20000, 30000];
+const STREAM_CHUNK_SIZE = 8 * 1024 * 1024;
 const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 
 function mediaFolder(file: File) {
@@ -62,16 +63,34 @@ async function putWithProgress(url: string, file: File, onProgress: (progress: n
   });
 }
 
-async function postFormWithProgress(url: string, file: File, onProgress: (progress: number) => void) {
+async function uploadWithTus(uploadUrl: string, file: File, onProgress: (progress: number) => void) {
+  const tus = await import('tus-js-client');
   await new Promise<void>((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    const form = new FormData();
-    form.append('file', file, file.name);
-    xhr.open('POST', url);
-    xhr.upload.onprogress = (event) => event.lengthComputable && onProgress(Math.round((event.loaded / event.total) * 100));
-    xhr.onload = () => xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`Cloudflare Stream recusou o arquivo com status ${xhr.status}.`));
-    xhr.onerror = () => reject(new Error('Upload interrompido. Verifique sua conexão.'));
-    xhr.send(form);
+    const upload = new tus.Upload(file, {
+      endpoint: uploadUrl,
+      chunkSize: STREAM_CHUNK_SIZE,
+      retryDelays: RETRY_DELAYS,
+      removeFingerprintOnSuccess: true,
+      metadata: {
+        filename: file.name,
+        filetype: file.type || 'video/mp4',
+      },
+      onError(error) {
+        reject(error instanceof Error ? error : new Error(String(error)));
+      },
+      onProgress(bytesUploaded, bytesTotal) {
+        if (!bytesTotal) return;
+        onProgress(Math.max(1, Math.min(99, Math.round((bytesUploaded / bytesTotal) * 100))));
+      },
+      onSuccess() {
+        onProgress(100);
+        resolve();
+      },
+    });
+    upload.findPreviousUploads().then((previousUploads) => {
+      if (previousUploads.length) upload.resumeFromPreviousUpload(previousUploads[0]);
+      upload.start();
+    }).catch(() => upload.start());
   });
 }
 
@@ -126,7 +145,7 @@ export function AdminMediaUploader({ productId, productName, migrationOnly = fal
         attempts: merged.attempts || 0,
         lastError: merged.error || '',
         matchedExerciseTitle: merged.exerciseTitle || null,
-        raw: { needsFile: merged.needsFile || false },
+        raw: { needsFile: merged.needsFile || false, uploadMode: 'tus' },
       }),
     }).catch(() => null);
   }
@@ -169,7 +188,7 @@ export function AdminMediaUploader({ productId, productName, migrationOnly = fal
       uploadUrl: item.upload_url || undefined,
       attempts: Number(item.attempts || 0),
       exerciseTitle: item.matched_exercise_title || null,
-      error: item.last_error || (['uploading', 'creating', 'saving'].includes(String(item.status)) ? 'Upload interrompido. Selecione o arquivo novamente para continuar.' : ''),
+      error: item.last_error || (['uploading', 'creating', 'saving'].includes(String(item.status)) ? 'Upload interrompido. Selecione a mesma pasta novamente para continuar.' : ''),
       needsFile: true,
     }));
     if (restored.length) {
@@ -210,6 +229,28 @@ export function AdminMediaUploader({ productId, productName, migrationOnly = fal
     });
   }
 
+  async function createStreamUpload(item: StreamQueueItem) {
+    const response = await fetch('/api/admin/media/stream-upload-url', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fileName: item.name, relativePath: item.relativePath, productId }),
+    });
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(json?.message || json?.error || 'Não foi possível criar upload no Stream.');
+    return json as { uid: string; uploadURL: string };
+  }
+
+  async function completeStreamUpload(item: StreamQueueItem, uid: string) {
+    const response = await fetch('/api/admin/media/stream-upload-complete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uid, fileName: item.name, relativePath: item.relativePath, productId }),
+    });
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(json?.message || json?.error || 'Upload enviado, mas não consegui salvar no Hub.');
+    return json as { matched?: boolean; exerciseTitle?: string | null };
+  }
+
   async function uploadStreamItem(item: StreamQueueItem) {
     if (!item.file) {
       await patchQueueItem(item, { status: 'error', error: 'Selecione este arquivo novamente para continuar.', needsFile: true });
@@ -221,33 +262,21 @@ export function AdminMediaUploader({ productId, productName, migrationOnly = fal
       try {
         attempt += 1;
         await patchQueueItem(item, { status: 'creating', error: '', attempts: attempt });
-        const createResponse = await fetch('/api/admin/media/stream-upload-url', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fileName: item.name, relativePath: item.relativePath, productId }),
-        });
-        const createJson = await createResponse.json().catch(() => ({}));
-        if (!createResponse.ok) throw new Error(createJson?.message || createJson?.error || 'Não foi possível criar upload no Stream.');
+        const created = await createStreamUpload(item);
 
-        await patchQueueItem(item, { status: 'uploading', uid: createJson.uid, uploadUrl: createJson.uploadURL, progress: 1, attempts: attempt });
-        await postFormWithProgress(createJson.uploadURL, item.file, (nextProgress) => updateStreamItem(item.id, { progress: Math.max(1, nextProgress) }));
+        await patchQueueItem(item, { status: 'uploading', uid: created.uid, uploadUrl: created.uploadURL, progress: 1, attempts: attempt });
+        await uploadWithTus(created.uploadURL, item.file, (nextProgress) => updateStreamItem(item.id, { progress: nextProgress }));
 
         await patchQueueItem(item, { status: 'saving', progress: 100, attempts: attempt });
-        const completeResponse = await fetch('/api/admin/media/stream-upload-complete', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ uid: createJson.uid, fileName: item.name, relativePath: item.relativePath, productId }),
-        });
-        const completeJson = await completeResponse.json().catch(() => ({}));
-        if (!completeResponse.ok) throw new Error(completeJson?.message || completeJson?.error || 'Upload enviado, mas não consegui salvar no Hub.');
+        const completed = await completeStreamUpload(item, created.uid);
 
-        await patchQueueItem(item, { status: 'done', matched: completeJson.matched, exerciseTitle: completeJson.exerciseTitle || null, uid: createJson.uid, progress: 100, error: '', attempts: attempt });
+        await patchQueueItem(item, { status: 'done', matched: completed.matched, exerciseTitle: completed.exerciseTitle || null, uid: created.uid, progress: 100, error: '', attempts: attempt });
         return;
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Erro desconhecido';
         await patchQueueItem(item, { status: 'error', error: `${message} · tentativa ${attempt}/${RETRY_LIMIT}`, attempts: attempt });
         if (attempt >= RETRY_LIMIT) return;
-        await wait(RETRY_DELAYS[attempt - 1] || 15000);
+        await wait(RETRY_DELAYS[attempt - 1] || 30000);
       }
     }
   }
@@ -257,7 +286,7 @@ export function AdminMediaUploader({ productId, productName, migrationOnly = fal
     if (!queue.length) return;
     setStreamRunning(true);
     setStreamError('');
-    const concurrency = 2;
+    const concurrency = 1;
     let cursor = 0;
 
     async function worker() {
@@ -319,10 +348,10 @@ export function AdminMediaUploader({ productId, productName, migrationOnly = fal
         <div className="section-heading">
           <div>
             <p className="eyebrow">Cloudflare Stream</p>
-            <h2>{productName ? `Upload em lote · ${productName}` : 'Upload em lote'}</h2>
-            <p className="muted">Selecione uma pasta ou vários vídeos. O Hub salva a fila, tenta reenviar falhas e vincula automaticamente pelo nome.</p>
+            <h2>{productName ? `Upload resumível · ${productName}` : 'Upload resumível'}</h2>
+            <p className="muted">Envio por chunks com retomada. Se cair a internet, selecione a mesma pasta e continue sem reenviar os vídeos concluídos.</p>
           </div>
-          <span className="admin-clean-pill success">{streamRunning ? 'Enviando...' : 'Pronto'}</span>
+          <span className="admin-clean-pill success">{streamRunning ? 'Enviando em chunks...' : 'Pronto'}</span>
         </div>
 
         <div className="admin-grid admin-section">
@@ -343,8 +372,8 @@ export function AdminMediaUploader({ productId, productName, migrationOnly = fal
         </div>
 
         <div className="admin-help-box">
-          <strong>Fila resiliente</strong>
-          <p className="muted">Se a internet cair, os vídeos já concluídos ficam salvos. Ao voltar, selecione a mesma pasta e clique em continuar. O Hub ignora concluídos e tenta novamente os pendentes.</p>
+          <strong>Modo seguro ativado</strong>
+          <p className="muted">Agora o Hub envia 1 vídeo por vez, em blocos de 8MB, com até {RETRY_LIMIT} tentativas automáticas. Isso é mais lento que paralelo, mas muito mais estável para deixar subindo durante a noite.</p>
           {pendingRestored ? <p className="admin-save-success">{pendingRestored} upload(s) pendente(s) encontrados no banco.</p> : null}
           {streamStats.needsFile ? <p className="admin-save-error">{streamStats.needsFile} item(ns) precisam que você selecione novamente os arquivos locais.</p> : null}
         </div>
