@@ -10,6 +10,7 @@ type Props = { productId?: string; productName?: string | null; modules?: Module
 type UploadResult = { key: string; publicUrl: string; uploadUrl: string; expiresIn: number };
 type StreamUploadResult = { uid?: string; uploadUrl?: string; uploadURL?: string; formField?: string; existing?: boolean; skippedUpload?: boolean; message?: string; error?: string };
 type StreamCompleteResult = { linked?: boolean; createdExercise?: boolean; message?: string; error?: string };
+type StreamStatusResult = { state?: string; received?: boolean; ready?: boolean; message?: string; error?: string };
 type SyncResult = { total?: number; linked?: number; unmatchedCount?: number; errorsCount?: number; syncedAt?: string; unmatched?: Array<{ uid: string; name: string; status: string }> };
 type QueueStatus = 'queued' | 'uploading' | 'compressing' | 'done' | 'linked' | 'error';
 type MediaType = 'audio' | 'image' | 'file';
@@ -110,6 +111,22 @@ async function xhrPut(url: string, file: File, onProgress: (n: number) => void) 
   await xhrUpload('PUT', url, file, file.type || null, onProgress);
 }
 
+async function waitForStreamReceived(uid: string, onProgress?: (message: string, progress: number) => void) {
+  for (let i = 0; i < 30; i += 1) {
+    await sleep(i === 0 ? 2000 : 3000);
+    const response = await fetch(`/api/admin/media/stream-status?uid=${encodeURIComponent(uid)}`, { cache: 'no-store' });
+    const json: StreamStatusResult = await response.json().catch(() => ({}));
+    if (!response.ok || json.error) throw new Error(json.message || json.error || 'Não foi possível confirmar o status no Cloudflare.');
+    const state = String(json.state || 'unknown');
+    if (json.received || state === 'ready' || state === 'queued' || state === 'inprogress' || state === 'downloading') {
+      onProgress?.(`Cloudflare recebeu o vídeo. Status: ${state}.`, 92);
+      return state;
+    }
+    onProgress?.(`Aguardando Cloudflare receber o arquivo... (${state})`, Math.min(90, 62 + i));
+  }
+  throw new Error('O Cloudflare ainda mostra Pending Upload. O arquivo não foi confirmado, então o Hub não vinculou esta aula.');
+}
+
 export function AdminMediaUploader({ productId, productName, modules = [], migrationOnly = false, totalLessons = 0, migratedLessons = 0, driveLessons = 0 }: Props = {}) {
   const [destinationModuleId, setDestinationModuleId] = useState(modules[0]?.id || '');
   const [compressionEnabled, setCompressionEnabled] = useState(true);
@@ -202,7 +219,7 @@ export function AdminMediaUploader({ productId, productName, modules = [], migra
           if (!uploadUrl) throw new Error('Cloudflare não retornou uploadURL.');
           setStreamItem(item.id, { progress: 60, uid: created.uid, error: 'Enviando por formulário seguro para Cloudflare Stream...' });
           await uploadToCloudflareStream(uploadUrl, uploadFile, created.formField || 'file');
-          setStreamItem(item.id, { progress: 92, uid: created.uid, error: 'Upload recebido. Salvando no Hub...' });
+          await waitForStreamReceived(created.uid, (message, progress) => setStreamItem(item.id, { progress, uid: created.uid, error: message }));
         } else {
           setStreamItem(item.id, { progress: 92, uid: created.uid, error: 'Já existia no Stream. Upload ignorado.' });
         }
@@ -292,7 +309,7 @@ export function AdminMediaUploader({ productId, productName, modules = [], migra
       <div className="admin-grid admin-section"><article className="admin-stat"><span>Na fila</span><strong>{streamStats.total}</strong><p className="muted">Vídeos selecionados.</p></article><article className="admin-stat"><span>Enviados</span><strong>{streamStats.done}</strong><p className="muted">Criados ou reutilizados.</p></article><article className="admin-stat"><span>Vinculados</span><strong>{streamStats.linked}</strong><p className="muted">Ligados às aulas.</p></article></div>
       {streamItems.length ? <div className="progress media-migration-progress"><span style={{ width: `${streamStats.overall}%` }} /></div> : null}
       <div className="media-migration-toolbar"><input ref={streamFileInputRef} type="file" accept="video/*,.mp4,.mov,.m4v,.webm" multiple style={{ display: 'none' }} onChange={(event) => addItems(event.target.files, 'stream')} /><input ref={streamFolderInputRef} type="file" accept="video/*,.mp4,.mov,.m4v,.webm" multiple {...({ webkitdirectory: '', directory: '' } as Record<string, string>)} style={{ display: 'none' }} onChange={(event) => addItems(event.target.files, 'stream')} /><button className="admin-clean-button secondary" type="button" onClick={() => streamFileInputRef.current?.click()}>Selecionar vídeos</button><button className="admin-clean-button secondary" type="button" onClick={() => streamFolderInputRef.current?.click()}><FolderUp size={16} /> Selecionar pasta</button><button className="admin-clean-button primary" type="button" onClick={() => runStreamQueue(false)} disabled={streamRunning || !destinationModuleId || !streamItems.some((item) => item.status === 'queued' || item.status === 'error')}>{streamRunning ? <><Loader2 size={16} className="premium-video-spinner" /> Enviando {streamStats.overall}%</> : <><UploadCloud size={16} /> Enviar para Stream</>}</button><button className="admin-clean-button secondary" type="button" onClick={() => setStreamItems([])} disabled={streamRunning}>Cancelar fila</button></div>
-      <div className="admin-help-box"><strong>Correção CORS aplicada</strong><p className="muted">O upload direto para o Cloudflare agora usa form POST em iframe oculto, evitando fetch/XHR e o bloqueio CORS.</p></div>
+      <div className="admin-help-box"><strong>Confirmação real</strong><p className="muted">O Hub só marca como vinculado depois que o Cloudflare deixa de mostrar Pending Upload para o UID enviado.</p></div>
       {streamStats.failed ? <button className="admin-clean-button secondary" type="button" onClick={() => runStreamQueue(true)} disabled={streamRunning}>Reenviar falhas do Stream</button> : null}
       {streamItems.length ? <QueueList items={streamItems} /> : null}
     </section>
