@@ -67,8 +67,6 @@ function buildCumulativeExercise(root: number) {
     phrase.forEach((interval, index) => {
       notes.push(root + interval);
       if (len === 1) durations.push(1);
-      else if (len === 2) durations.push(index === phrase.length - 1 ? 1 : 0.5);
-      else if (len === 3) durations.push(index === phrase.length - 1 ? 1 : 0.25);
       else durations.push(index === phrase.length - 1 ? 1 : 0.5);
     });
   }
