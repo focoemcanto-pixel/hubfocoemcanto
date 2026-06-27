@@ -6,7 +6,6 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 type ExerciseRow = { id: string; title?: string | null; slug?: string | null; module_id?: string | null };
-type Match = { exercise: ExerciseRow; score: number } | null;
 
 function score(a: string, b: string) {
   if (!a || !b) return 0;
@@ -18,22 +17,22 @@ function score(a: string, b: string) {
   return Math.round((common / (new Set([...aw, ...bw]).size || 1)) * 100);
 }
 
-function bestMatch(videoName: string, exercises: ExerciseRow[]): Match {
+function bestMatch(videoName: string, exercises: ExerciseRow[]) {
   const normalized = normalizeMediaTitle(videoName);
   const ranked = exercises.map((exercise) => ({ exercise, score: Math.max(score(normalized, normalizeMediaTitle(exercise.title)), score(normalized, normalizeMediaTitle(exercise.slug))) })).sort((a, b) => b.score - a.score);
   return ranked[0]?.score >= 62 ? ranked[0] : null;
 }
 
-function config() {
-  return { accountId: process.env.CLOUDFLARE_ACCOUNT_ID || '', token: process.env.CLOUDFLARE_STREAM_TOKEN || '', subdomain: process.env.NEXT_PUBLIC_CLOUDFLARE_STREAM_SUBDOMAIN || process.env.CLOUDFLARE_STREAM_SUBDOMAIN || '' };
+function streamConfig() {
+  return { accountId: process.env.CLOUDFLARE_ACCOUNT_ID || '', token: process.env.CLOUDFLARE_STREAM_TOKEN || '' };
 }
 
 async function listStreamVideos() {
-  const { accountId, token } = config();
+  const { accountId, token } = streamConfig();
   if (!accountId || !token) throw new Error('Configure CLOUDFLARE_ACCOUNT_ID e CLOUDFLARE_STREAM_TOKEN.');
   const videos: CloudflareStreamVideo[] = [];
   for (let page = 1; page <= 50; page += 1) {
-    const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/stream?per_page=100&page=${page}`, { headers: { authorization: `Bearer ${token}` }, cache: 'no-store' });
+    const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/stream?per_page=100&page=${page}`, { headers: { authorization: ['Bearer', token].join(' ') }, cache: 'no-store' });
     const json = await response.json().catch(() => ({}));
     if (!response.ok || json?.success === false) throw new Error(json?.errors?.[0]?.message || `Cloudflare Stream respondeu ${response.status}.`);
     const batch = Array.isArray(json?.result) ? json.result : [];
@@ -44,8 +43,13 @@ async function listStreamVideos() {
   return videos;
 }
 
-async function productExercises(productId: string) {
+async function productExercises(productId: string, moduleId?: string) {
   const supabase = createAdminClient();
+  if (moduleId) {
+    const { data, error } = await supabase.from('exercises').select('id,title,slug,module_id').eq('module_id', moduleId).limit(1200);
+    if (error) throw new Error(error.message);
+    return (data || []) as ExerciseRow[];
+  }
   const { data: course } = await supabase.from('courses').select('id').eq('product_id', productId).order('created_at', { ascending: true }).limit(1).maybeSingle();
   let moduleIds: string[] = [];
   if (course?.id) {
@@ -61,12 +65,13 @@ async function productExercises(productId: string) {
 
 export async function POST(request: Request) {
   try {
-    const { productId } = await request.json().catch(() => ({}));
+    const { productId, moduleId } = await request.json().catch(() => ({}));
     const cleanProductId = String(productId || '').trim();
+    const cleanModuleId = String(moduleId || '').trim();
     if (!cleanProductId) return NextResponse.json({ error: 'missing_product_id', message: 'Informe productId.' }, { status: 400 });
 
     const supabase = createAdminClient();
-    const [videos, exercises] = await Promise.all([listStreamVideos(), productExercises(cleanProductId)]);
+    const [videos, exercises] = await Promise.all([listStreamVideos(), productExercises(cleanProductId, cleanModuleId || undefined)]);
     const unmatched: Array<{ uid: string; name: string; status: string; score: number }> = [];
     const errors: Array<{ uid: string; name: string; message: string }> = [];
     let linked = 0;
@@ -85,7 +90,7 @@ export async function POST(request: Request) {
       const match = bestMatch(name, exercises);
       const mediaUrl = streamHlsUrl(uid);
       try {
-        const payload = { provider: 'cloudflare_stream', media_type: 'video', title: name, normalized_title: normalizeMediaTitle(name), product_id: cleanProductId, module_id: match?.exercise.module_id || null, exercise_id: match?.exercise.id || null, stream_uid: uid, thumbnail_url: thumbnail, duration_seconds: duration, status, raw: { stream: video, matchScore: match?.score || 0 }, updated_at: new Date().toISOString() };
+        const payload = { provider: 'cloudflare_stream', media_type: 'video', title: name, normalized_title: normalizeMediaTitle(name), product_id: cleanProductId, module_id: match?.exercise.module_id || cleanModuleId || null, exercise_id: match?.exercise.id || null, stream_uid: uid, thumbnail_url: thumbnail, duration_seconds: duration, status, raw: { stream: video, matchScore: match?.score || 0, destinationModuleId: cleanModuleId || null }, updated_at: new Date().toISOString() };
         const { data: existing } = await supabase.from('media_assets').select('id').eq('stream_uid', uid).maybeSingle();
         const assetError = existing?.id ? (await supabase.from('media_assets').update(payload).eq('id', existing.id)).error : (await supabase.from('media_assets').insert(payload)).error;
         if (assetError) throw assetError;
