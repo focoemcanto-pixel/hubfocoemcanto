@@ -7,25 +7,18 @@ type FormState = { songName: string; youtubeUrl: string; originalKey: string; st
 type YouTubeResult = { videoId: string; title: string; channelTitle: string; thumbnail: string; url: string; publishedAt: string | null };
 
 const keys = ['C', 'C# / Db', 'D', 'D# / Eb', 'E', 'F', 'F# / Gb', 'G', 'G# / Ab', 'A', 'A# / Bb', 'B', 'Cm', 'C#m / Dbm', 'Dm', 'D#m / Ebm', 'Em', 'Fm', 'F#m / Gbm', 'Gm', 'G#m / Abm', 'Am', 'A#m / Bbm', 'Bm'];
+const majorNotes = ['C', 'C# / Db', 'D', 'D# / Eb', 'E', 'F', 'F# / Gb', 'G', 'G# / Ab', 'A', 'A# / Bb', 'B'];
+const minorNotes = ['Cm', 'C#m / Dbm', 'Dm', 'D#m / Ebm', 'Em', 'Fm', 'F#m / Gbm', 'Gm', 'G#m / Abm', 'Am', 'A#m / Bbm', 'Bm'];
+const noteNames: Record<string, string> = { C: 'Dó', 'C# / Db': 'Dó sustenido / Ré bemol', D: 'Ré', 'D# / Eb': 'Ré sustenido / Mi bemol', E: 'Mi', F: 'Fá', 'F# / Gb': 'Fá sustenido / Sol bemol', G: 'Sol', 'G# / Ab': 'Sol sustenido / Lá bemol', A: 'Lá', 'A# / Bb': 'Lá sustenido / Si bemol', B: 'Si', Cm: 'Dó menor', 'C#m / Dbm': 'Dó sustenido menor / Ré bemol menor', Dm: 'Ré menor', 'D#m / Ebm': 'Ré sustenido menor / Mi bemol menor', Em: 'Mi menor', Fm: 'Fá menor', 'F#m / Gbm': 'Fá sustenido menor / Sol bemol menor', Gm: 'Sol menor', 'G#m / Abm': 'Sol sustenido menor / Lá bemol menor', Am: 'Lá menor', 'A#m / Bbm': 'Lá sustenido menor / Si bemol menor', Bm: 'Si menor' };
 const initialForm: FormState = { songName: '', youtubeUrl: '', originalKey: 'G', studyKey: 'G', semitones: '0', bpm: '', notes: '' };
 
-function extractYouTubeId(url: string) {
-  const value = url.trim();
-  if (!value) return '';
-  try {
-    const parsed = new URL(value);
-    const host = parsed.hostname.replace(/^www\./, '');
-    if (host === 'youtu.be') return parsed.pathname.split('/').filter(Boolean)[0] || '';
-    if (host === 'youtube.com' || host === 'm.youtube.com' || host === 'music.youtube.com') {
-      if (parsed.pathname.startsWith('/shorts/') || parsed.pathname.startsWith('/embed/')) return parsed.pathname.split('/').filter(Boolean)[1] || '';
-      return parsed.searchParams.get('v') || '';
-    }
-  } catch { return ''; }
-  return '';
-}
-
-function formatSemitones(value: string) { const semitones = Number(value || 0); return `${semitones > 0 ? '+' : ''}${semitones} semitom(ns)`; }
-function buildSummary(form: FormState) { return [`🎶 Estudo de Repertório — ${form.songName || 'Música sem nome'}`, '', `Link: ${form.youtubeUrl || 'Não informado'}`, `Tom original: ${form.originalKey}`, `Meu tom: ${form.studyKey}`, `Transposição: ${formatSemitones(form.semitones)}`, form.bpm ? `BPM: ${form.bpm}` : 'BPM: não definido', '', 'Observações:', form.notes || 'Sem observações.', '', 'Preparado no Hub Foco em Canto.'].join('\n'); }
+function extractYouTubeId(url: string) { try { const parsed = new URL(url.trim()); const host = parsed.hostname.replace(/^www\./, ''); if (host === 'youtu.be') return parsed.pathname.split('/').filter(Boolean)[0] || ''; if (host === 'youtube.com' || host === 'm.youtube.com' || host === 'music.youtube.com') { if (parsed.pathname.startsWith('/shorts/') || parsed.pathname.startsWith('/embed/')) return parsed.pathname.split('/').filter(Boolean)[1] || ''; return parsed.searchParams.get('v') || ''; } } catch { return ''; } return ''; }
+function clamp(value: number, min: number, max: number) { return Math.min(max, Math.max(min, value)); }
+function normalizeIndex(value: number) { return ((value % 12) + 12) % 12; }
+function getKeyMode(key: string) { return key.endsWith('m') || key.includes('/ Dbm') || key.includes('/ Ebm') || key.includes('/ Gbm') || key.includes('/ Abm') || key.includes('/ Bbm') ? 'minor' : 'major'; }
+function transposeKey(originalKey: string, semitones: number) { const mode = getKeyMode(originalKey); const list = mode === 'minor' ? minorNotes : majorNotes; const index = list.indexOf(originalKey); if (index < 0) return originalKey; return list[normalizeIndex(index + semitones)]; }
+function formatSemitones(value: string) { const semitones = Number(value || 0); if (semitones === 0) return 'Tom original'; return semitones > 0 ? `Subiu ${semitones} semitom(ns)` : `Desceu ${Math.abs(semitones)} semitom(ns)`; }
+function buildSummary(form: FormState) { return [`🎶 Estudo de Repertório — ${form.songName || 'Música sem nome'}`, '', `Link: ${form.youtubeUrl || 'Não informado'}`, `Tom original: ${noteNames[form.originalKey] || form.originalKey} (${form.originalKey})`, `Meu tom: ${noteNames[form.studyKey] || form.studyKey} (${form.studyKey})`, `Ajuste: ${formatSemitones(form.semitones)}`, form.bpm ? `BPM: ${form.bpm}` : 'BPM: não definido', '', 'Observações:', form.notes || 'Sem observações.', '', 'Preparado no Hub Foco em Canto.'].join('\n'); }
 function studyToForm(study: Study): FormState { return { songName: study.song_name, youtubeUrl: study.youtube_url, originalKey: study.original_key, studyKey: study.study_key, semitones: String(study.semitone_transposition), bpm: study.bpm ? String(study.bpm) : '', notes: study.notes || '' }; }
 
 export function RepertoireStudyClient({ initialStudies }: { initialStudies: Study[] }) {
@@ -46,112 +39,28 @@ export function RepertoireStudyClient({ initialStudies }: { initialStudies: Stud
   const currentSummary = summary || buildSummary(form);
   const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(currentSummary)}`;
   const selectedStudy = studies.find((study) => study.id === selectedStudyId) || null;
+  const semitoneValue = Number(form.semitones || 0);
 
-  useEffect(() => {
-    const query = searchQuery.trim();
-    if (query.length < 2 || !resultsOpen) return;
-    const timer = window.setTimeout(() => { void runYouTubeSearch(query, true); }, 550);
-    return () => window.clearTimeout(timer);
-  }, [searchQuery, resultsOpen]);
+  useEffect(() => { const query = searchQuery.trim(); if (query.length < 2 || !resultsOpen) return; const timer = window.setTimeout(() => { void runYouTubeSearch(query, true); }, 550); return () => window.clearTimeout(timer); }, [searchQuery, resultsOpen]);
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) { setForm((current) => ({ ...current, [key]: value })); setSummary(''); }
+  function setOriginalKey(nextKey: string) { const nextStudyKey = transposeKey(nextKey, semitoneValue); setForm((current) => ({ ...current, originalKey: nextKey, studyKey: nextStudyKey })); setSummary(''); }
+  function adjustTranspose(delta: number) { const next = clamp(semitoneValue + delta, -12, 12); const nextStudyKey = transposeKey(form.originalKey, next); setForm((current) => ({ ...current, semitones: String(next), studyKey: nextStudyKey })); setSummary(''); }
+  function resetTranspose() { const nextStudyKey = transposeKey(form.originalKey, 0); setForm((current) => ({ ...current, semitones: '0', studyKey: nextStudyKey })); setSummary(''); }
   function generate() { const next = buildSummary(form); setSummary(next); return next; }
   function startNewStudy() { setForm(initialForm); setSelectedStudyId(null); setSummary(''); setSearchQuery(''); setResults([]); setResultsOpen(false); setStatus('Novo estudo iniciado.'); }
   function loadStudy(study: Study) { setForm(studyToForm(study)); setSelectedStudyId(study.id); setSummary(study.summary || ''); setResultsOpen(false); setStatus(`Editando: ${study.song_name}`); }
   function duplicateStudy(study: Study) { setForm({ ...studyToForm(study), songName: `${study.song_name} — nova versão` }); setSelectedStudyId(null); setSummary(''); setResultsOpen(false); setStatus('Versão duplicada. Ajuste o tom e salve como novo estudo.'); }
 
-  async function runYouTubeSearch(query: string, silent = false) {
-    if (!query.trim()) { setStatus('Digite o nome da música para pesquisar.'); return; }
-    setSearching(true);
-    if (!silent) setStatus('Pesquisando no YouTube...');
-    try {
-      const response = await fetch(`/api/youtube-search?q=${encodeURIComponent(query.trim())}`);
-      const data = await response.json();
-      if (!response.ok || !data.ok) throw new Error(data.message || 'Não foi possível pesquisar no YouTube.');
-      setResults(data.items || []);
-      setResultsOpen(true);
-      if (!silent) setStatus(data.items?.length ? 'Escolha um vídeo para abrir no estudo.' : 'Nenhum vídeo encontrado para essa busca.');
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Não foi possível pesquisar.');
-    } finally {
-      setSearching(false);
-    }
-  }
+  async function runYouTubeSearch(query: string, silent = false) { if (!query.trim()) { setStatus('Digite o nome da música para pesquisar.'); return; } setSearching(true); if (!silent) setStatus('Pesquisando no YouTube...'); try { const response = await fetch(`/api/youtube-search?q=${encodeURIComponent(query.trim())}`); const data = await response.json(); if (!response.ok || !data.ok) throw new Error(data.message || 'Não foi possível pesquisar no YouTube.'); setResults(data.items || []); setResultsOpen(true); if (!silent) setStatus(data.items?.length ? 'Escolha um vídeo para abrir no estudo.' : 'Nenhum vídeo encontrado para essa busca.'); } catch (error) { setStatus(error instanceof Error ? error.message : 'Não foi possível pesquisar.'); } finally { setSearching(false); } }
+  async function searchYouTube(event?: React.FormEvent) { event?.preventDefault(); await runYouTubeSearch(searchQuery, false); }
+  function handleSearchChange(value: string) { setSearchQuery(value); setResultsOpen(true); if (value.trim().length < 2) setResults([]); }
+  function handleSearchFocus() { setResultsOpen(true); if (!results.length && searchQuery.trim().length >= 2) void runYouTubeSearch(searchQuery, true); }
+  function selectVideo(video: YouTubeResult) { setForm((current) => ({ ...current, songName: current.songName || searchQuery || video.title, youtubeUrl: video.url })); setSelectedStudyId(null); setSummary(''); setResultsOpen(false); setStatus(`Vídeo selecionado: ${video.title}`); }
 
-  async function searchYouTube(event?: React.FormEvent) {
-    event?.preventDefault();
-    await runYouTubeSearch(searchQuery, false);
-  }
-
-  function handleSearchChange(value: string) {
-    setSearchQuery(value);
-    setResultsOpen(true);
-    if (value.trim().length < 2) setResults([]);
-  }
-
-  function handleSearchFocus() {
-    setResultsOpen(true);
-    if (!results.length && searchQuery.trim().length >= 2) void runYouTubeSearch(searchQuery, true);
-  }
-
-  function selectVideo(video: YouTubeResult) {
-    setForm((current) => ({ ...current, songName: current.songName || searchQuery || video.title, youtubeUrl: video.url }));
-    setSelectedStudyId(null); setSummary(''); setResultsOpen(false); setStatus(`Vídeo selecionado: ${video.title}`);
-  }
-
-  async function saveStudy() {
-    setSaving(true); setStatus(selectedStudyId ? 'Atualizando estudo...' : 'Salvando estudo...');
-    const nextSummary = summary || generate();
-    const payload = { ...(selectedStudyId ? { id: selectedStudyId } : {}), songName: form.songName, youtubeUrl: form.youtubeUrl, originalKey: form.originalKey, studyKey: form.studyKey, semitoneTransposition: Number(form.semitones || 0), bpm: form.bpm ? Number(form.bpm) : null, notes: form.notes, summary: nextSummary };
-    try {
-      const response = await fetch('/api/repertoire-studies', { method: selectedStudyId ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      const data = await response.json();
-      if (!response.ok || !data.ok) throw new Error(data.message || 'Erro ao salvar.');
-      setStudies((current) => [data.study, ...current.filter((item) => item.id !== data.study.id)]);
-      setSelectedStudyId(data.study.id); setSummary(data.study.summary || nextSummary);
-      setStatus(data.mode === 'updated-existing' ? 'Já existia um estudo para esse vídeo. Atualizei a versão salva.' : selectedStudyId ? 'Estudo atualizado com sucesso.' : 'Estudo salvo com segurança no seu perfil.');
-    } catch (error) { setStatus(error instanceof Error ? error.message : 'Não foi possível salvar.'); }
-    finally { setSaving(false); }
-  }
-
-  async function deleteStudy(study: Study) {
-    if (!window.confirm(`Excluir o estudo "${study.song_name}"?`)) return;
-    setDeletingId(study.id); setStatus('Excluindo estudo...');
-    try {
-      const response = await fetch(`/api/repertoire-studies?id=${encodeURIComponent(study.id)}`, { method: 'DELETE' });
-      const data = await response.json();
-      if (!response.ok || !data.ok) throw new Error(data.message || 'Erro ao excluir.');
-      setStudies((current) => current.filter((item) => item.id !== study.id));
-      if (selectedStudyId === study.id) startNewStudy();
-      setStatus('Estudo excluído.');
-    } catch (error) { setStatus(error instanceof Error ? error.message : 'Não foi possível excluir.'); }
-    finally { setDeletingId(null); }
-  }
-
+  async function saveStudy() { setSaving(true); setStatus(selectedStudyId ? 'Atualizando estudo...' : 'Salvando estudo...'); const nextSummary = summary || generate(); const payload = { ...(selectedStudyId ? { id: selectedStudyId } : {}), songName: form.songName, youtubeUrl: form.youtubeUrl, originalKey: form.originalKey, studyKey: form.studyKey, semitoneTransposition: semitoneValue, bpm: form.bpm ? Number(form.bpm) : null, notes: form.notes, summary: nextSummary }; try { const response = await fetch('/api/repertoire-studies', { method: selectedStudyId ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); const data = await response.json(); if (!response.ok || !data.ok) throw new Error(data.message || 'Erro ao salvar.'); setStudies((current) => [data.study, ...current.filter((item) => item.id !== data.study.id)]); setSelectedStudyId(data.study.id); setSummary(data.study.summary || nextSummary); setStatus(data.mode === 'updated-existing' ? 'Já existia um estudo para esse vídeo. Atualizei a versão salva.' : selectedStudyId ? 'Estudo atualizado com sucesso.' : 'Estudo salvo com segurança no seu perfil.'); } catch (error) { setStatus(error instanceof Error ? error.message : 'Não foi possível salvar.'); } finally { setSaving(false); } }
+  async function deleteStudy(study: Study) { if (!window.confirm(`Excluir o estudo "${study.song_name}"?`)) return; setDeletingId(study.id); setStatus('Excluindo estudo...'); try { const response = await fetch(`/api/repertoire-studies?id=${encodeURIComponent(study.id)}`, { method: 'DELETE' }); const data = await response.json(); if (!response.ok || !data.ok) throw new Error(data.message || 'Erro ao excluir.'); setStudies((current) => current.filter((item) => item.id !== study.id)); if (selectedStudyId === study.id) startNewStudy(); setStatus('Estudo excluído.'); } catch (error) { setStatus(error instanceof Error ? error.message : 'Não foi possível excluir.'); } finally { setDeletingId(null); } }
   async function copySummary() { const text = summary || generate(); await navigator.clipboard.writeText(text); setStatus('Resumo copiado. Agora é só colar no grupo da banda.'); }
 
-  return <div className="repertoire-layout">
-    <section className="repertoire-panel main-panel">
-      <div className="panel-heading"><p className="eyebrow">Caderno digital de repertório</p><h2>{selectedStudy ? 'Edite seu estudo salvo' : 'Monte seu estudo da música'}</h2><span>Pesquise no YouTube dentro do Hub, escolha o vídeo e organize o tom para a banda.</span></div>
-      {selectedStudy ? <div className="editing-banner"><span>Editando</span><strong>{selectedStudy.song_name}</strong><button type="button" onClick={startNewStudy}>Novo estudo</button></div> : null}
-
-      <form className="youtube-search-box" onSubmit={searchYouTube}>
-        <label>Pesquisar música no YouTube<input value={searchQuery} onFocus={handleSearchFocus} onChange={(event) => handleSearchChange(event.target.value)} placeholder="Ex.: Bondade de Deus Isaias Saad playback" /></label>
-        <button type="submit" disabled={searching}>{searching ? 'Buscando...' : 'Pesquisar'}</button>
-      </form>
-
-      {resultsOpen && results.length ? <div className="youtube-results">{results.map((video) => <button type="button" className={`youtube-result ${video.url === form.youtubeUrl ? 'selected' : ''}`} key={video.videoId} onClick={() => selectVideo(video)}>{video.thumbnail ? <img src={video.thumbnail} alt="" /> : <span className="thumb-fallback">▶</span>}<span><strong>{video.title}</strong><small>{video.channelTitle}</small></span></button>)}</div> : null}
-
-      <button type="button" className="manual-link-toggle" onClick={() => setManualLinkOpen((value) => !value)}>{manualLinkOpen ? 'Ocultar link manual' : 'Tenho o link do YouTube'}</button>
-      {manualLinkOpen ? <label>Link do YouTube<input value={form.youtubeUrl} onChange={(event) => update('youtubeUrl', event.target.value)} placeholder="https://www.youtube.com/watch?v=..." /></label> : null}
-
-      <label>Nome da música<input value={form.songName} onChange={(event) => update('songName', event.target.value)} placeholder="Ex.: Bondade de Deus" /></label>
-      <div className="video-shell">{embedUrl ? <iframe src={embedUrl} title={`Vídeo para estudar ${form.songName || 'repertório'}`} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" /> : <div><strong>Pesquise e selecione um vídeo do YouTube.</strong><p>O estudo abre aqui sem baixar áudio ou vídeo.</p></div>}</div>
-      <div className="control-grid"><label>Tom original<select value={form.originalKey} onChange={(event) => update('originalKey', event.target.value)}>{keys.map((key) => <option key={key}>{key}</option>)}</select></label><label>Meu tom<select value={form.studyKey} onChange={(event) => update('studyKey', event.target.value)}>{keys.map((key) => <option key={key}>{key}</option>)}</select></label><label>Transposição<input type="number" min="-12" max="12" value={form.semitones} onChange={(event) => update('semitones', event.target.value)} /></label><label>BPM opcional<input type="number" min="30" max="260" value={form.bpm} onChange={(event) => update('bpm', event.target.value)} placeholder="Ex.: 72" /></label></div>
-      <label>Observações<textarea value={form.notes} onChange={(event) => update('notes', event.target.value)} placeholder="Entradas, dinâmica, respirações, divisão, dicas para backing vocal..." /></label>
-      <div className="action-row"><button onClick={() => generate()}>Gerar resumo</button><button onClick={saveStudy} disabled={saving}>{saving ? 'Salvando...' : selectedStudyId ? 'Atualizar estudo' : 'Salvar estudo'}</button><button onClick={copySummary}>Copiar resumo</button><a href={whatsappUrl} target="_blank" rel="noreferrer">Enviar no WhatsApp</a></div>
-      {status ? <p className="save-status">{status}</p> : null}
-    </section>
-    <aside className="repertoire-panel summary-panel"><p className="eyebrow">Resumo compartilhável</p><pre>{currentSummary}</pre><div className="saved-header"><h3>Estudos salvos</h3><button type="button" onClick={startNewStudy}>+</button></div>{studies.length ? studies.map((study) => <article className={`saved-study-card ${selectedStudyId === study.id ? 'active' : ''}`} key={study.id}><button className="saved-study-main" onClick={() => loadStudy(study)}><strong>{study.song_name}</strong><span>{study.original_key} → {study.study_key} · {formatSemitones(String(study.semitone_transposition))}</span><small>{new Date(study.updated_at).toLocaleDateString('pt-BR')}</small></button><div className="saved-study-actions"><button type="button" onClick={() => loadStudy(study)}>Editar</button><button type="button" onClick={() => duplicateStudy(study)}>Duplicar</button><button type="button" disabled={deletingId === study.id} onClick={() => deleteStudy(study)}>{deletingId === study.id ? '...' : 'Excluir'}</button></div></article>) : <div className="empty-list"><strong>Nenhum estudo salvo ainda.</strong><span>Salve sua primeira música para montar seu caderno digital de repertório.</span></div>}</aside>
-  </div>;
+  return <div className="repertoire-layout"><section className="repertoire-panel main-panel"><div className="panel-heading"><p className="eyebrow">Caderno digital de repertório</p><h2>{selectedStudy ? 'Edite seu estudo salvo' : 'Monte seu estudo da música'}</h2><span>Pesquise no YouTube dentro do Hub, escolha o vídeo e ajuste o tom de forma simples.</span></div>{selectedStudy ? <div className="editing-banner"><span>Editando</span><strong>{selectedStudy.song_name}</strong><button type="button" onClick={startNewStudy}>Novo estudo</button></div> : null}<form className="youtube-search-box" onSubmit={searchYouTube}><label>Pesquisar música no YouTube<input value={searchQuery} onFocus={handleSearchFocus} onChange={(event) => handleSearchChange(event.target.value)} placeholder="Ex.: Bondade de Deus Isaias Saad playback" /></label><button type="submit" disabled={searching}>{searching ? 'Buscando...' : 'Pesquisar'}</button></form>{resultsOpen && results.length ? <div className="youtube-results">{results.map((video) => <button type="button" className={`youtube-result ${video.url === form.youtubeUrl ? 'selected' : ''}`} key={video.videoId} onClick={() => selectVideo(video)}>{video.thumbnail ? <img src={video.thumbnail} alt="" /> : <span className="thumb-fallback">▶</span>}<span><strong>{video.title}</strong><small>{video.channelTitle}</small></span></button>)}</div> : null}<button type="button" className="manual-link-toggle" onClick={() => setManualLinkOpen((value) => !value)}>{manualLinkOpen ? 'Ocultar link manual' : 'Tenho o link do YouTube'}</button>{manualLinkOpen ? <label>Link do YouTube<input value={form.youtubeUrl} onChange={(event) => update('youtubeUrl', event.target.value)} placeholder="https://www.youtube.com/watch?v=..." /></label> : null}<label>Nome da música<input value={form.songName} onChange={(event) => update('songName', event.target.value)} placeholder="Ex.: Bondade de Deus" /></label><div className="video-shell">{embedUrl ? <iframe src={embedUrl} title={`Vídeo para estudar ${form.songName || 'repertório'}`} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" /> : <div><strong>Pesquise e selecione um vídeo do YouTube.</strong><p>O estudo abre aqui sem baixar áudio ou vídeo.</p></div>}</div><div className="transpose-card"><div><p className="eyebrow">Ajuste de tom</p><h3>{noteNames[form.studyKey] || form.studyKey}</h3><span>Tom para cantar: {form.studyKey}</span></div><div className="transpose-buttons"><button type="button" onClick={() => adjustTranspose(-1)} aria-label="Descer meio tom">↓ Descer</button><button type="button" onClick={resetTranspose}>Original</button><button type="button" onClick={() => adjustTranspose(1)} aria-label="Subir meio tom">↑ Subir</button></div><small>{formatSemitones(form.semitones)} a partir de {noteNames[form.originalKey] || form.originalKey}</small></div><div className="control-grid"><label>Tom original<select value={form.originalKey} onChange={(event) => setOriginalKey(event.target.value)}>{keys.map((key) => <option key={key}>{noteNames[key] || key} ({key})</option>)}</select></label><label>Meu tom<input value={`${noteNames[form.studyKey] || form.studyKey} (${form.studyKey})`} readOnly /></label><label>Ajuste<input value={formatSemitones(form.semitones)} readOnly /></label><label>BPM opcional<input type="number" min="30" max="260" value={form.bpm} onChange={(event) => update('bpm', event.target.value)} placeholder="Ex.: 72" /></label></div><label>Observações<textarea value={form.notes} onChange={(event) => update('notes', event.target.value)} placeholder="Entradas, dinâmica, respirações, divisão, dicas para backing vocal..." /></label><div className="action-row"><button onClick={() => generate()}>Gerar resumo</button><button onClick={saveStudy} disabled={saving}>{saving ? 'Salvando...' : selectedStudyId ? 'Atualizar estudo' : 'Salvar estudo'}</button><button onClick={copySummary}>Copiar resumo</button><a href={whatsappUrl} target="_blank" rel="noreferrer">Enviar no WhatsApp</a></div>{status ? <p className="save-status">{status}</p> : null}</section><aside className="repertoire-panel summary-panel"><p className="eyebrow">Resumo compartilhável</p><pre>{currentSummary}</pre><div className="saved-header"><h3>Estudos salvos</h3><button type="button" onClick={startNewStudy}>+</button></div>{studies.length ? studies.map((study) => <article className={`saved-study-card ${selectedStudyId === study.id ? 'active' : ''}`} key={study.id}><button className="saved-study-main" onClick={() => loadStudy(study)}><strong>{study.song_name}</strong><span>{noteNames[study.original_key] || study.original_key} → {noteNames[study.study_key] || study.study_key} · {formatSemitones(String(study.semitone_transposition))}</span><small>{new Date(study.updated_at).toLocaleDateString('pt-BR')}</small></button><div className="saved-study-actions"><button type="button" onClick={() => loadStudy(study)}>Editar</button><button type="button" onClick={() => duplicateStudy(study)}>Duplicar</button><button type="button" disabled={deletingId === study.id} onClick={() => deleteStudy(study)}>{deletingId === study.id ? '...' : 'Excluir'}</button></div></article>) : <div className="empty-list"><strong>Nenhum estudo salvo ainda.</strong><span>Salve sua primeira música para montar seu caderno digital de repertório.</span></div>}</aside></div>;
 }
