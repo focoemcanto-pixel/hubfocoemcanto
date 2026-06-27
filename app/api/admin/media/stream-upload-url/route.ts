@@ -1,6 +1,7 @@
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { normalizeMediaTitle } from '@/lib/media/cloudflare-stream';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -15,6 +16,10 @@ function cfg() {
 
 function isVideo(fileName: string, contentType: string) {
   return contentType.startsWith('video/') || /\.(mp4|mov|m4v|webm)$/i.test(fileName);
+}
+
+function cleanTitle(fileName: string) {
+  return fileName.replace(/\.[^/.]+$/, '').trim();
 }
 
 function metaValue(value: unknown) {
@@ -59,6 +64,28 @@ export async function POST(request: Request) {
     ]);
     if (!product?.id || !module?.id) return NextResponse.json({ error: 'invalid_destination', message: 'Produto ou módulo inválido.' }, { status: 400 });
 
+    const normalizedTitle = normalizeMediaTitle(cleanTitle(fileName));
+    const { data: existingAsset } = await supabase
+      .from('media_assets')
+      .select('id,stream_uid,title,status')
+      .eq('provider', 'cloudflare_stream')
+      .eq('module_id', moduleId)
+      .eq('normalized_title', normalizedTitle)
+      .not('stream_uid', 'is', null)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (existingAsset?.stream_uid) {
+      return NextResponse.json({
+        uid: existingAsset.stream_uid,
+        existing: true,
+        skippedUpload: true,
+        reason: 'already_exists_for_module_title',
+        message: 'Vídeo já existe no Stream para este módulo. O Hub vai reutilizar o UID.',
+      });
+    }
+
     const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/stream/direct_upload`, {
       method: 'POST',
       headers: {
@@ -70,6 +97,7 @@ export async function POST(request: Request) {
         requireSignedURLs: false,
         meta: {
           name: metaValue(fileName),
+          normalizedTitle: metaValue(normalizedTitle),
           relativePath: metaValue(relativePath),
           productId: metaValue(productId),
           productSlug: metaValue(product.slug || ''),
