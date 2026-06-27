@@ -32,7 +32,7 @@ create table if not exists public.media_assets (
 );
 
 create index if not exists media_assets_provider_idx on public.media_assets(provider);
-create index if not exists media_assets_stream_uid_idx on public.media_assets(stream_uid);
+create unique index if not exists media_assets_stream_uid_unique_idx on public.media_assets(stream_uid) where stream_uid is not null;
 create index if not exists media_assets_normalized_title_idx on public.media_assets(normalized_title);
 create index if not exists media_assets_exercise_id_idx on public.media_assets(exercise_id);
 create index if not exists media_assets_module_id_idx on public.media_assets(module_id);
