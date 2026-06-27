@@ -1,1 +1,5 @@
-export { AdminMediaUploader } from './admin-media-uploader-v2';
+'use client';
+
+export function AdminMediaUploader() {
+  return null;
+}
