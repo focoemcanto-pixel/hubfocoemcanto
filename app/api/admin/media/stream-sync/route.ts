@@ -70,12 +70,17 @@ export async function POST(request: Request) {
     const unmatched: Array<{ uid: string; name: string; status: string; score: number }> = [];
     const errors: Array<{ uid: string; name: string; message: string }> = [];
     let linked = 0;
+    let durationSeconds = 0;
+    let sizeBytes = 0;
 
     for (const video of videos) {
       const uid = String(video.uid || '');
       const name = String((video as any).meta?.name || video.name || uid || 'Vídeo sem nome');
       const status = String(video.status?.state || 'unknown');
       const duration = Number(video.duration || 0) || null;
+      const size = Number((video as any).size || 0) || 0;
+      durationSeconds += duration || 0;
+      sizeBytes += size;
       const thumbnail = String(video.thumbnail || '') || streamThumbnailUrl(uid);
       const match = bestMatch(name, exercises);
       const mediaUrl = streamHlsUrl(uid);
@@ -96,7 +101,7 @@ export async function POST(request: Request) {
       }
     }
 
-    return NextResponse.json({ total: videos.length, linked, unmatchedCount: unmatched.length, errorsCount: errors.length, unmatched, errors });
+    return NextResponse.json({ total: videos.length, linked, unmatchedCount: unmatched.length, errorsCount: errors.length, durationSeconds, sizeBytes, syncedAt: new Date().toISOString(), unmatched, errors });
   } catch (error) {
     return NextResponse.json({ error: 'stream_sync_error', message: error instanceof Error ? error.message : 'Erro ao sincronizar Stream.' }, { status: 500 });
   }
