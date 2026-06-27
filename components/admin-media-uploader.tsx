@@ -38,10 +38,72 @@ async function xhrUpload(method: 'PUT' | 'POST', url: string, body: BodyInit | D
 }
 
 async function uploadToCloudflareStream(uploadUrl: string, file: File, field = 'file') {
-  const form = new FormData();
-  form.append(field, file, file.name);
-  const response = await fetch(uploadUrl, { method: 'POST', body: form, cache: 'no-store' });
-  if (!response.ok) throw new Error((await response.text().catch(() => '')) || `Cloudflare Stream respondeu ${response.status}.`);
+  return new Promise<void>((resolve, reject) => {
+    if (typeof document === 'undefined') {
+      reject(new Error('Upload direto indisponível neste navegador.'));
+      return;
+    }
+
+    const targetName = `cf-stream-upload-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const iframe = document.createElement('iframe');
+    const form = document.createElement('form');
+    const input = document.createElement('input');
+    let submitted = false;
+    let settled = false;
+
+    const cleanup = () => {
+      window.clearTimeout(timeout);
+      window.setTimeout(() => {
+        form.remove();
+        iframe.remove();
+      }, 250);
+    };
+
+    const finish = () => {
+      if (settled || !submitted) return;
+      settled = true;
+      cleanup();
+      resolve();
+    };
+
+    const timeout = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(new Error('Cloudflare Stream demorou demais para responder ao upload.'));
+    }, 1000 * 60 * 60);
+
+    iframe.name = targetName;
+    iframe.style.display = 'none';
+    iframe.onload = () => window.setTimeout(finish, 1200);
+
+    input.type = 'file';
+    input.name = field || 'file';
+    input.style.display = 'none';
+
+    try {
+      const transfer = new DataTransfer();
+      transfer.items.add(file);
+      input.files = transfer.files;
+    } catch {
+      cleanup();
+      reject(new Error('Não foi possível preparar o arquivo para envio direto ao Cloudflare.'));
+      return;
+    }
+
+    form.method = 'POST';
+    form.action = uploadUrl;
+    form.enctype = 'multipart/form-data';
+    form.target = targetName;
+    form.style.display = 'none';
+    form.appendChild(input);
+
+    document.body.appendChild(iframe);
+    document.body.appendChild(form);
+
+    submitted = true;
+    form.submit();
+  });
 }
 
 async function xhrPut(url: string, file: File, onProgress: (n: number) => void) {
@@ -138,7 +200,7 @@ export function AdminMediaUploader({ productId, productName, modules = [], migra
         if (!created.uid) throw new Error('Cloudflare não retornou UID.');
         if (!created.existing && !created.skippedUpload) {
           if (!uploadUrl) throw new Error('Cloudflare não retornou uploadURL.');
-          setStreamItem(item.id, { progress: 60, uid: created.uid, error: 'Enviando direto para Cloudflare Stream...' });
+          setStreamItem(item.id, { progress: 60, uid: created.uid, error: 'Enviando por formulário seguro para Cloudflare Stream...' });
           await uploadToCloudflareStream(uploadUrl, uploadFile, created.formField || 'file');
           setStreamItem(item.id, { progress: 92, uid: created.uid, error: 'Upload recebido. Salvando no Hub...' });
         } else {
@@ -230,7 +292,7 @@ export function AdminMediaUploader({ productId, productName, modules = [], migra
       <div className="admin-grid admin-section"><article className="admin-stat"><span>Na fila</span><strong>{streamStats.total}</strong><p className="muted">Vídeos selecionados.</p></article><article className="admin-stat"><span>Enviados</span><strong>{streamStats.done}</strong><p className="muted">Criados ou reutilizados.</p></article><article className="admin-stat"><span>Vinculados</span><strong>{streamStats.linked}</strong><p className="muted">Ligados às aulas.</p></article></div>
       {streamItems.length ? <div className="progress media-migration-progress"><span style={{ width: `${streamStats.overall}%` }} /></div> : null}
       <div className="media-migration-toolbar"><input ref={streamFileInputRef} type="file" accept="video/*,.mp4,.mov,.m4v,.webm" multiple style={{ display: 'none' }} onChange={(event) => addItems(event.target.files, 'stream')} /><input ref={streamFolderInputRef} type="file" accept="video/*,.mp4,.mov,.m4v,.webm" multiple {...({ webkitdirectory: '', directory: '' } as Record<string, string>)} style={{ display: 'none' }} onChange={(event) => addItems(event.target.files, 'stream')} /><button className="admin-clean-button secondary" type="button" onClick={() => streamFileInputRef.current?.click()}>Selecionar vídeos</button><button className="admin-clean-button secondary" type="button" onClick={() => streamFolderInputRef.current?.click()}><FolderUp size={16} /> Selecionar pasta</button><button className="admin-clean-button primary" type="button" onClick={() => runStreamQueue(false)} disabled={streamRunning || !destinationModuleId || !streamItems.some((item) => item.status === 'queued' || item.status === 'error')}>{streamRunning ? <><Loader2 size={16} className="premium-video-spinner" /> Enviando {streamStats.overall}%</> : <><UploadCloud size={16} /> Enviar para Stream</>}</button><button className="admin-clean-button secondary" type="button" onClick={() => setStreamItems([])} disabled={streamRunning}>Cancelar fila</button></div>
-      <div className="admin-help-box"><strong>Correção CORS aplicada</strong><p className="muted">O upload direto para o Cloudflare não usa mais XMLHttpRequest com progress, evitando o preflight CORS que causava bloqueio.</p></div>
+      <div className="admin-help-box"><strong>Correção CORS aplicada</strong><p className="muted">O upload direto para o Cloudflare agora usa form POST em iframe oculto, evitando fetch/XHR e o bloqueio CORS.</p></div>
       {streamStats.failed ? <button className="admin-clean-button secondary" type="button" onClick={() => runStreamQueue(true)} disabled={streamRunning}>Reenviar falhas do Stream</button> : null}
       {streamItems.length ? <QueueList items={streamItems} /> : null}
     </section>
