@@ -15,7 +15,7 @@ function fileKey(file: File) { return `${(file as File & { webkitRelativePath?: 
 function isVideo(file: File) { return file.type.startsWith('video/') || /\.(mp4|mov|m4v|webm)$/i.test(file.name); }
 function mediaFolder(file: File) { return file.type.startsWith('audio/') ? 'audios/originals' : file.type.startsWith('image/') ? 'images' : 'files'; }
 
-async function xhrSend(method: 'POST' | 'PUT', url: string, body: BodyInit, onProgress: (n: number) => void, contentType?: string) {
+async function xhrSend(method: 'POST' | 'PUT', url: string, body: XMLHttpRequestBodyInit, onProgress: (n: number) => void, contentType?: string) {
   await new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open(method, url);
@@ -137,7 +137,7 @@ export function AdminMediaUploader({ productId, productName, migrationOnly = fal
   }
 
   async function startStreamUpload() {
-    const queue = items.filter((item) => (item.status === 'queued' || item.status === 'error') && !item.needsFile && item.status !== 'done');
+    const queue = items.filter((item) => (item.status === 'queued' || item.status === 'error') && !item.needsFile);
     if (!queue.length) return;
     setRunning(true);
     for (const item of queue) await uploadItem(item);
