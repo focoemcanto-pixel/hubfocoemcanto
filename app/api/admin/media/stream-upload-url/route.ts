@@ -17,6 +17,10 @@ function isVideo(fileName: string, contentType: string) {
   return contentType.startsWith('video/') || /\.(mp4|mov|m4v|webm)$/i.test(fileName);
 }
 
+function metaValue(value: unknown) {
+  return String(value ?? '').slice(0, 500);
+}
+
 export async function POST(request: Request) {
   try {
     const cookieStore = await cookies();
@@ -29,7 +33,7 @@ export async function POST(request: Request) {
     const productId = String(body?.productId || '').trim();
     const moduleId = String(body?.moduleId || '').trim();
     const relativePath = String(body?.relativePath || '').trim();
-    const size = Number(body?.size || 0) || null;
+    const size = Number(body?.size || 0) || 0;
 
     if (!fileName || fileName.length > MAX_NAME_LENGTH) return NextResponse.json({ error: 'invalid_file_name', message: 'Nome de arquivo inválido.' }, { status: 400 });
     if (!isVideo(fileName, contentType)) return NextResponse.json({ error: 'invalid_video', message: 'O Cloudflare Stream deve receber apenas vídeos.' }, { status: 400 });
@@ -53,24 +57,30 @@ export async function POST(request: Request) {
         maxDurationSeconds: 14400,
         requireSignedURLs: false,
         meta: {
-          name: fileName,
-          productId,
-          productSlug: product.slug || '',
-          productName: product.name || '',
-          moduleId,
-          moduleSlug: module.slug || '',
-          moduleTitle: module.title || '',
-          relativePath,
-          size,
+          name: metaValue(fileName),
+          productId: metaValue(productId),
+          productSlug: metaValue(product.slug),
+          productName: metaValue(product.name),
+          moduleId: metaValue(moduleId),
+          moduleSlug: metaValue(module.slug),
+          moduleTitle: metaValue(module.title),
+          relativePath: metaValue(relativePath),
+          size: metaValue(size),
           source: 'hubfocoemcanto-admin',
         },
       }),
       cache: 'no-store',
     });
     const json = await response.json().catch(() => ({}));
-    if (!response.ok || json?.success === false) throw new Error(json?.errors?.[0]?.message || `Cloudflare Stream respondeu ${response.status}.`);
+    if (!response.ok || json?.success === false) {
+      const details = Array.isArray(json?.errors) ? json.errors.map((item: any) => item?.message || item?.code).filter(Boolean).join(' · ') : '';
+      throw new Error(details || `Cloudflare Stream respondeu ${response.status}.`);
+    }
 
-    return NextResponse.json({ uid: json?.result?.uid, uploadUrl: json?.result?.uploadURL, expiresIn: 60 * 60 * 6 });
+    const uid = String(json?.result?.uid || '');
+    const uploadUrl = String(json?.result?.uploadURL || '');
+    if (!uid || !uploadUrl) throw new Error('Cloudflare não retornou URL de upload do Stream.');
+    return NextResponse.json({ uid, uploadUrl, expiresIn: 60 * 60 * 6 });
   } catch (error) {
     return NextResponse.json({ error: 'stream_upload_url_failed', message: error instanceof Error ? error.message : 'Não foi possível preparar o upload para o Stream.' }, { status: 500 });
   }
