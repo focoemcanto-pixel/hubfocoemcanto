@@ -8,6 +8,7 @@ type ContentPlayerProps = {
   mediaType?: string | null;
   driveUrl?: string | null;
   mediaUrl?: string | null;
+  streamUid?: string | null;
   lessonId?: string | null;
   initialPositionSeconds?: number | null;
   trimStartSeconds?: number | null;
@@ -124,7 +125,7 @@ function installLessonsPanelToggle() {
   });
 }
 
-export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, initialPositionSeconds = 0, trimStartSeconds = 0, trimEndSeconds = 0, nextLessonSlug: _nextLessonSlug, nextLessonTitle: _nextLessonTitle }: ContentPlayerProps) {
+export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, streamUid, lessonId, initialPositionSeconds = 0, trimStartSeconds = 0, trimEndSeconds = 0, nextLessonSlug: _nextLessonSlug, nextLessonTitle: _nextLessonTitle }: ContentPlayerProps) {
   const [isReady, setIsReady] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
@@ -137,7 +138,9 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
   const trimEnd = Math.max(0, Number(trimEndSeconds || 0));
 
   const { source, type, isHls } = useMemo(() => {
-    const rawSource = mediaUrl || driveUrl || '';
+    const streamHost = process.env.NEXT_PUBLIC_CLOUDFLARE_STREAM_SUBDOMAIN || 'videodelivery.net';
+    const streamSource = streamUid ? `https://${streamHost}/${streamUid}/manifest/video.m3u8` : '';
+    const rawSource = streamSource || mediaUrl || driveUrl || '';
     const driveFileId = getDriveFileId(rawSource);
     const resolvedSource = driveFileId ? `/api/media/drive/${driveFileId}` : isAllowedInternalMedia(rawSource) ? rawSource : '';
     const resolvedType = String(mediaType || '').toLowerCase() || 'video';
@@ -146,7 +149,7 @@ export function ContentPlayer({ title, mediaType, driveUrl, mediaUrl, lessonId, 
       source: resolvedSource,
       isHls: isHlsUrl(resolvedSource) || resolvedType === 'hls' || resolvedType === 'application/vnd.apple.mpegurl',
     };
-  }, [driveUrl, mediaUrl, mediaType]);
+  }, [driveUrl, mediaUrl, mediaType, streamUid]);
 
   useEffect(() => {
     installLessonsPanelToggle();
