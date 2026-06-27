@@ -2,7 +2,14 @@
 
 import { useState } from 'react';
 
-type Props = { productId?: string; productName?: string | null };
+type Props = {
+  productId?: string;
+  productName?: string | null;
+  migrationOnly?: boolean;
+  totalLessons?: number;
+  migratedLessons?: number;
+  driveLessons?: number;
+};
 type Row = { name: string; status: string; detail?: string };
 
 export function AdminMediaUploader({ productId, productName }: Props) {
