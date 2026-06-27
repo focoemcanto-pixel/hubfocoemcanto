@@ -214,7 +214,7 @@ export default async function ProductEditPage({ params, searchParams }: { params
             <button className="admin-clean-button primary" type="submit">Criar modulo</button>
           </form>
 
-          <AdminMediaUploader productId={product.id} productName={product.name} migrationOnly totalLessons={totalLessons} migratedLessons={optimizedLessons} driveLessons={driveLessons} />
+          <AdminMediaUploader productId={product.id} productName={product.name} modules={modules.map((module) => ({ id: module.id, title: module.title, slug: module.slug }))} migrationOnly totalLessons={totalLessons} migratedLessons={optimizedLessons} driveLessons={driveLessons} />
 
           <div className="admin-member-modules">
             {modules.map((module, index) => {
@@ -255,7 +255,7 @@ export default async function ProductEditPage({ params, searchParams }: { params
             <article className="admin-stat"><span>Drive atual</span><strong>{driveLessons}</strong><p className="muted">Ainda aguardam UID do Stream.</p></article>
             <article className="admin-stat"><span>Otimizadas</span><strong>{optimizedLessons}</strong><p className="muted">Já usam uma origem interna/media_url.</p></article>
           </section>
-          <AdminMediaUploader productId={product.id} productName={product.name} totalLessons={totalLessons} migratedLessons={optimizedLessons} driveLessons={driveLessons} />
+          <AdminMediaUploader productId={product.id} productName={product.name} modules={modules.map((module) => ({ id: module.id, title: module.title, slug: module.slug }))} totalLessons={totalLessons} migratedLessons={optimizedLessons} driveLessons={driveLessons} />
         </section>
       ) : null}
 

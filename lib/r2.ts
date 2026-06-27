@@ -2,6 +2,12 @@ type SignedUploadInput = {
   fileName: string;
   contentType?: string | null;
   folder?: string | null;
+  productId?: string | null;
+  productSlug?: string | null;
+  moduleId?: string | null;
+  moduleSlug?: string | null;
+  relativePath?: string | null;
+  mediaType?: 'audio' | 'image' | 'file' | 'video' | string | null;
 };
 
 type R2Config = {
@@ -48,6 +54,17 @@ function cleanFileName(fileName: string) {
   return extension ? `${safeBase}.${extension.toLowerCase().replace(/[^a-z0-9]/g, '')}` : safeBase;
 }
 
+export function cleanR2Segment(value?: string | null, fallback = 'item') {
+  const clean = String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 100);
+  return clean || fallback;
+}
+
 function cleanFolder(folder?: string | null) {
   const value = String(folder || 'uploads').trim();
   return value
@@ -57,7 +74,30 @@ function cleanFolder(folder?: string | null) {
     .join('/') || 'uploads';
 }
 
-export function createMediaKey({ fileName, folder, contentType }: SignedUploadInput) {
+export function mediaTypeFolder(mediaType?: string | null, contentType?: string | null) {
+  if (mediaType === 'audio' || contentType?.startsWith('audio/')) return 'audios';
+  if (mediaType === 'image' || contentType?.startsWith('image/')) return 'images';
+  return 'files';
+}
+
+function cleanRelativePath(relativePath?: string | null) {
+  return String(relativePath || '')
+    .split('/')
+    .map((part) => cleanFileName(part))
+    .filter(Boolean)
+    .join('/');
+}
+
+export function createMediaKey(input: SignedUploadInput) {
+  const { fileName, folder, contentType, productId, productSlug, moduleId, moduleSlug, relativePath, mediaType } = input;
+  if (productId && moduleId) {
+    const productPart = cleanR2Segment(productSlug || productId, 'product');
+    const modulePart = cleanR2Segment(moduleSlug || moduleId, 'module');
+    const typeFolder = mediaTypeFolder(mediaType, contentType);
+    const path = cleanRelativePath(relativePath);
+    const finalName = cleanFileName(fileName);
+    return `products/${productPart}/modules/${modulePart}/${typeFolder}/${path ? `${path}/` : ''}${finalName}`;
+  }
   const typeFolder = contentType?.startsWith('video/') ? 'videos' : contentType?.startsWith('audio/') ? 'audios' : contentType?.startsWith('image/') ? 'images' : 'files';
   const date = new Date();
   const yyyy = date.getUTCFullYear();
