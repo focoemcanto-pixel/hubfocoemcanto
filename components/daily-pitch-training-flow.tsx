@@ -279,7 +279,7 @@ export function DailyPitchTrainingFlow({ step, exercise }: { step: DailyTraining
       <div className="note-rep-inner">
         <header className="note-rep-top">
           <Link href="/aluno/central/diarios">Sair</Link>
-          <strong>Iniciante</strong>
+          <strong>{exercise.level}</strong>
           <button type="button" aria-label="Informações">i</button>
         </header>
 
@@ -290,9 +290,9 @@ export function DailyPitchTrainingFlow({ step, exercise }: { step: DailyTraining
         </div>
 
         <div className="note-rep-title">
-          <span>Afinação</span>
-          <h1>Exercício 1</h1>
-          <p>Ouça o som e reproduza a mesma nota.</p>
+          <span>{step.title}</span>
+          <h1>Exercício {step.exerciseNumber}</h1>
+          <p>{step.intro || exercise.objective}</p>
         </div>
 
         <div className="note-target-card">
