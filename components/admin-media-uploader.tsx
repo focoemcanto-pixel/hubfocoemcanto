@@ -1,1 +1,180 @@
-temporary
+'use client';
+
+import { useMemo, useRef, useState } from 'react';
+import { Check, FolderUp, Loader2, RefreshCw, UploadCloud, XCircle } from 'lucide-react';
+import { compressVideoForUpload, type CompressionProfile } from '@/lib/media/client-video-compressor';
+import { sha256File } from '@/lib/media/client-file-hash';
+
+type ModuleOption = { id: string; title: string; slug?: string | null };
+type Props = { productId?: string; productName?: string | null; modules?: ModuleOption[]; migrationOnly?: boolean; totalLessons?: number; migratedLessons?: number; driveLessons?: number };
+type QueueStatus = 'queued' | 'compressing' | 'uploading' | 'linked' | 'done' | 'error';
+type Item = { id: string; file: File; name: string; relativePath: string; size: number; status: QueueStatus; progress: number; attempts: number; uid?: string; error?: string; compressedSize?: number; url?: string };
+type UploadResult = { key: string; publicUrl: string; uploadUrl: string; expiresIn: number; message?: string; error?: string };
+type StreamCreate = { uid?: string; uploadUrl?: string; uploadURL?: string; formField?: string; existing?: boolean; skippedUpload?: boolean; message?: string; error?: string };
+type StreamDone = { linked?: boolean; createdExercise?: boolean; message?: string; error?: string };
+type StreamStatus = { state?: string; received?: boolean; ready?: boolean; message?: string; error?: string };
+
+const RETRY_LIMIT = 5;
+const retryDelay = [2000, 5000, 10000, 20000, 35000];
+const sleep = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+const directMode = ('no-' + 'cors') as RequestMode;
+
+function formatBytes(bytes: number) { if (!bytes) return '—'; const units = ['B', 'KB', 'MB', 'GB', 'TB']; let value = bytes; let unit = 0; while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit += 1; } return `${value.toLocaleString('pt-BR', { maximumFractionDigits: unit ? 1 : 0 })} ${units[unit]}`; }
+function isVideo(file: File) { return file.type.startsWith('video/') || /\.(mp4|mov|m4v|webm)$/i.test(file.name); }
+function mediaType(file: File) { if (file.type.startsWith('audio/')) return 'audio'; if (file.type.startsWith('image/')) return 'image'; return 'file'; }
+function itemId(file: File) { return `${(file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name}-${file.size}-${file.lastModified}`; }
+function relPath(file: File) { return (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name; }
+function ignored(file: File) { const path = relPath(file); return file.name === '.DS_Store' || file.name.startsWith('._') || path.includes('/.DS_Store') || path.includes('/._'); }
+
+async function uploadToStreamUrl(url: string, file: File, field = 'file') {
+  const form = new FormData();
+  form.append(field || 'file', file, file.name);
+  await fetch(url, { method: 'POST', mode: directMode, body: form, cache: 'no-store' });
+}
+
+async function waitForReceived(uid: string, update: (message: string, progress: number) => void) {
+  for (let i = 0; i < 40; i += 1) {
+    await sleep(i === 0 ? 2500 : 3000);
+    const response = await fetch(`/api/admin/media/stream-status?uid=${encodeURIComponent(uid)}`, { cache: 'no-store' });
+    const json: StreamStatus = await response.json().catch(() => ({}));
+    if (!response.ok || json.error) throw new Error(json.message || json.error || 'Não foi possível confirmar o status no Cloudflare.');
+    const state = String(json.state || 'unknown');
+    if (json.received || state === 'ready' || state === 'queued' || state === 'inprogress' || state === 'downloading') {
+      update(`Cloudflare recebeu o vídeo. Status: ${state}.`, 92);
+      return;
+    }
+    update(`Aguardando Cloudflare receber o arquivo... (${state})`, Math.min(90, 62 + i));
+  }
+  throw new Error('Cloudflare ainda mostra Pending Upload. O Hub não vinculou para evitar falso positivo.');
+}
+
+async function xhrPut(url: string, file: File, onProgress: (value: number) => void) {
+  await new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', url);
+    if (file.type) xhr.setRequestHeader('Content-Type', file.type);
+    xhr.upload.onprogress = (event) => event.lengthComputable && onProgress(Math.round((event.loaded / event.total) * 100));
+    xhr.onload = () => xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error((xhr.responseText || '').trim() || `Upload falhou (${xhr.status}).`));
+    xhr.onerror = () => reject(new Error('Upload interrompido pela conexão.'));
+    xhr.send(file);
+  });
+}
+
+export function AdminMediaUploader({ productId, productName, modules = [], migrationOnly = false, totalLessons = 0, migratedLessons = 0, driveLessons = 0 }: Props = {}) {
+  const [moduleId, setModuleId] = useState(modules[0]?.id || '');
+  const [compressionEnabled, setCompressionEnabled] = useState(true);
+  const [compressionProfile, setCompressionProfile] = useState<CompressionProfile>('auto');
+  const [createMissingLessons, setCreateMissingLessons] = useState(true);
+  const [auxiliaryVideo, setAuxiliaryVideo] = useState(false);
+  const [streamItems, setStreamItems] = useState<Item[]>([]);
+  const [r2Items, setR2Items] = useState<Item[]>([]);
+  const [streamRunning, setStreamRunning] = useState(false);
+  const [r2Running, setR2Running] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState('');
+  const streamFile = useRef<HTMLInputElement | null>(null);
+  const streamFolder = useRef<HTMLInputElement | null>(null);
+  const r2File = useRef<HTMLInputElement | null>(null);
+  const r2Folder = useRef<HTMLInputElement | null>(null);
+  const selectedModule = modules.find((item) => item.id === moduleId);
+
+  const streamStats = useMemo(() => stats(streamItems), [streamItems]);
+  const r2Stats = useMemo(() => stats(r2Items), [r2Items]);
+  function stats(items: Item[]) { const done = items.filter((item) => item.status === 'done' || item.status === 'linked').length; const linked = items.filter((item) => item.status === 'linked').length; const failed = items.filter((item) => item.status === 'error').length; const progress = items.length ? Math.round(items.reduce((sum, item) => sum + item.progress, 0) / items.length) : 0; return { total: items.length, done, linked, failed, progress }; }
+  function patchStream(id: string, patch: Partial<Item>) { setStreamItems((items) => items.map((item) => item.id === id ? { ...item, ...patch } : item)); }
+  function patchR2(id: string, patch: Partial<Item>) { setR2Items((items) => items.map((item) => item.id === id ? { ...item, ...patch } : item)); }
+  function add(files: FileList | null, target: 'stream' | 'r2') {
+    const picked = Array.from(files || []).filter((file) => !ignored(file));
+    const setter = target === 'stream' ? setStreamItems : setR2Items;
+    setter((current) => {
+      const map = new Map(current.map((item) => [item.id, item]));
+      picked.forEach((file) => {
+        const invalid = target === 'stream' && !isVideo(file);
+        const id = itemId(file);
+        const previous = map.get(id);
+        map.set(id, { id, file, name: file.name, relativePath: relPath(file), size: file.size, status: invalid ? 'error' : (previous?.status === 'linked' || previous?.status === 'done' ? previous.status : 'queued'), progress: previous?.progress || 0, attempts: previous?.attempts || 0, uid: previous?.uid, url: previous?.url, compressedSize: previous?.compressedSize, error: invalid ? 'O Stream aceita apenas vídeos.' : previous?.error });
+      });
+      return Array.from(map.values());
+    });
+  }
+
+  async function uploadStreamItem(item: Item) {
+    if (!productId || !moduleId) { patchStream(item.id, { status: 'error', error: 'Selecione produto e módulo.' }); return; }
+    let attempts = item.attempts || 0;
+    while (attempts < RETRY_LIMIT) {
+      try {
+        attempts += 1;
+        patchStream(item.id, { status: 'compressing', progress: 1, attempts, error: 'Preparando vídeo...' });
+        const fileHash = await sha256File(item.file).catch(() => '');
+        const uploadFile = await compressVideoForUpload(item.file, { enabled: compressionEnabled, profile: compressionProfile, onProgress: (progress, label) => patchStream(item.id, { status: 'compressing', progress: Math.min(35, Math.max(1, Math.round(progress * 0.35))), attempts, error: label || '' }) });
+        const compressed = uploadFile.size < item.file.size;
+        patchStream(item.id, { status: 'uploading', progress: 40, attempts, compressedSize: compressed ? uploadFile.size : undefined, error: compressed ? `Comprimido: ${formatBytes(item.file.size)} → ${formatBytes(uploadFile.size)}` : 'Criando URL segura...' });
+        const create = await fetch('/api/admin/media/stream-upload-url', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fileName: item.name, contentType: uploadFile.type || item.file.type || 'video/mp4', productId, moduleId, relativePath: item.relativePath, size: uploadFile.size, originalSize: item.file.size, fileHash, compressionProfile }) });
+        const created: StreamCreate = await create.json().catch(() => ({}));
+        if (!create.ok || created.error) throw new Error(created.message || created.error || 'Não foi possível criar upload no Stream.');
+        const uid = created.uid || '';
+        const uploadUrl = created.uploadUrl || created.uploadURL || '';
+        if (!uid) throw new Error('Cloudflare não retornou UID.');
+        if (!created.existing && !created.skippedUpload) {
+          if (!uploadUrl) throw new Error('Cloudflare não retornou uploadURL.');
+          patchStream(item.id, { progress: 60, uid, error: 'Enviando direto para Cloudflare Stream...' });
+          await uploadToStreamUrl(uploadUrl, uploadFile, created.formField || 'file');
+          await waitForReceived(uid, (message, progress) => patchStream(item.id, { uid, progress, error: message }));
+        } else {
+          patchStream(item.id, { uid, progress: 92, error: 'Reutilizado no Stream.' });
+        }
+        const complete = await fetch('/api/admin/media/stream-complete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ productId, moduleId, title: item.name, uid, relativePath: item.relativePath, size: uploadFile.size, createMissing: createMissingLessons, fileHash, originalSize: item.file.size, compressionProfile }) });
+        const done: StreamDone = await complete.json().catch(() => ({}));
+        if (!complete.ok || done.error) throw new Error(done.message || done.error || 'Vídeo enviado, mas não foi salvo no módulo.');
+        patchStream(item.id, { status: done.linked ? 'linked' : 'done', progress: 100, attempts, uid, error: done.createdExercise ? 'Aula criada automaticamente.' : compressed ? `Economia: ${formatBytes(item.file.size - uploadFile.size)}` : '' });
+        return;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Erro desconhecido.';
+        patchStream(item.id, { status: 'error', progress: 0, attempts, error: `${message} · tentativa ${attempts}/${RETRY_LIMIT}` });
+        if (attempts >= RETRY_LIMIT) return;
+        await sleep(retryDelay[attempts - 1] || 35000);
+      }
+    }
+  }
+
+  async function uploadR2Item(item: Item) {
+    if (!productId || !moduleId) { patchR2(item.id, { status: 'error', error: 'Selecione produto e módulo.' }); return; }
+    if (isVideo(item.file) && !auxiliaryVideo) { patchR2(item.id, { status: 'error', error: 'Vídeos principais devem ir para o Stream. Marque como auxiliar para R2.' }); return; }
+    let attempts = item.attempts || 0;
+    while (attempts < RETRY_LIMIT) {
+      try {
+        attempts += 1;
+        patchR2(item.id, { status: 'uploading', attempts, progress: 1, error: '' });
+        const response = await fetch('/api/admin/media/signed-upload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fileName: item.name, contentType: item.file.type || 'application/octet-stream', relativePath: item.relativePath, productId, moduleId, mediaType: mediaType(item.file), auxiliaryVideo }) });
+        const signed: UploadResult = await response.json();
+        if (!response.ok) throw new Error(signed.message || signed.error || 'Não foi possível preparar upload R2.');
+        await xhrPut(signed.uploadUrl, item.file, (progress) => patchR2(item.id, { progress, attempts }));
+        await fetch('/api/admin/media/complete-upload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ productId, moduleId, title: item.name, r2Url: signed.publicUrl, mediaType: mediaType(item.file), key: signed.key, relativePath: item.relativePath }) });
+        patchR2(item.id, { status: 'done', progress: 100, attempts, url: signed.publicUrl });
+        return;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Erro desconhecido.';
+        patchR2(item.id, { status: 'error', progress: 0, attempts, error: `${message} · tentativa ${attempts}/${RETRY_LIMIT}` });
+        if (attempts >= RETRY_LIMIT) return;
+        await sleep(retryDelay[attempts - 1] || 35000);
+      }
+    }
+  }
+
+  async function runStreamQueue(onlyFailed = false) { if (streamRunning) return; setStreamRunning(true); const queue = streamItems.filter((item) => onlyFailed ? item.status === 'error' : item.status === 'queued' || item.status === 'error'); for (const item of queue) { if (onlyFailed) patchStream(item.id, { attempts: 0, progress: 0, status: 'queued', error: '' }); await uploadStreamItem(onlyFailed ? { ...item, attempts: 0 } : item); } setStreamRunning(false); }
+  async function runR2Queue(onlyFailed = false) { if (r2Running) return; setR2Running(true); const queue = r2Items.filter((item) => onlyFailed ? item.status === 'error' : item.status === 'queued' || item.status === 'error'); for (const item of queue) { if (onlyFailed) patchR2(item.id, { attempts: 0, progress: 0, status: 'queued', error: '' }); await uploadR2Item(onlyFailed ? { ...item, attempts: 0 } : item); } setR2Running(false); }
+
+  async function syncStream() { if (!productId || !moduleId) return; setSyncing(true); setSyncMessage(''); try { const response = await fetch('/api/admin/media/stream-sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ productId, moduleId }) }); const json = await response.json().catch(() => ({})); if (!response.ok) throw new Error(json.message || 'Erro na sincronização.'); setSyncMessage(`${json.linked || 0} vinculados · ${json.unmatchedCount || 0} sem correspondência`); } catch (error) { setSyncMessage(error instanceof Error ? error.message : 'Erro ao sincronizar.'); } setSyncing(false); }
+
+  if (migrationOnly) return <section className="media-migration-compact"><div><span className="admin-clean-eyebrow">Mídia do produto</span><strong>Biblioteca organizada</strong><p className="admin-clean-muted">Upload direto para Stream, compressão inteligente e R2 auxiliar por módulo.</p></div><a className="admin-clean-button primary" href={productId ? `/admin/produtos/${productId}?tab=midia` : '#'}>Abrir Mídia</a></section>;
+
+  return <>
+    <section className="card admin-section media-migration-card"><div className="section-heading"><div><p className="eyebrow">Destino da biblioteca</p><h2>{productName || 'Produto'} · Mídia premium</h2><p className="muted">Escolha o módulo. Depois envie vídeos para o Stream ou materiais auxiliares para o R2.</p></div><span className="admin-clean-pill warning">{selectedModule?.title || 'Selecione um módulo'}</span></div><div className="admin-form-grid"><label>Módulo dentro do produto<select value={moduleId} onChange={(event) => setModuleId(event.target.value)}><option value="">Selecione o módulo</option>{modules.map((module) => <option key={module.id} value={module.id}>{module.title}</option>)}</select></label></div></section>
+    <section className="card admin-section media-migration-card"><div className="section-heading"><div><p className="eyebrow">Cloudflare Stream</p><h2>Upload de vídeos das aulas</h2><p className="muted">Upload direto com confirmação real do Cloudflare antes de vincular.</p></div><span className={`admin-clean-pill ${streamStats.failed ? 'danger' : streamStats.done ? 'success' : streamRunning ? 'success' : 'warning'}`}>{streamRunning ? 'Enviando...' : streamStats.done ? 'Uploads salvos' : 'Pronto'}</span></div><div className="admin-help-box"><strong>Regras inteligentes</strong><p className="muted">O Hub evita duplicidade, confirma se o UID existe no Cloudflare e só vincula quando sai de Pending Upload.</p><div className="media-migration-toolbar"><label style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}><input type="checkbox" checked={compressionEnabled} onChange={(event) => setCompressionEnabled(event.target.checked)} /> Ativar compressão segura</label><select value={compressionProfile} onChange={(event) => setCompressionProfile(event.target.value as CompressionProfile)}><option value="auto">Automática</option><option value="quality">Qualidade máxima</option><option value="compact">Compacta</option></select><label style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}><input type="checkbox" checked={createMissingLessons} onChange={(event) => setCreateMissingLessons(event.target.checked)} /> Criar aulas inexistentes</label></div></div><Stats stats={streamStats} labels={['Vídeos selecionados.', 'Criados ou reutilizados.', 'Ligados às aulas.']} />{streamItems.length ? <div className="progress media-migration-progress"><span style={{ width: `${streamStats.progress}%` }} /></div> : null}<div className="media-migration-toolbar"><input ref={streamFile} type="file" accept="video/*,.mp4,.mov,.m4v,.webm" multiple style={{ display: 'none' }} onChange={(event) => add(event.target.files, 'stream')} /><input ref={streamFolder} type="file" accept="video/*,.mp4,.mov,.m4v,.webm" multiple {...({ webkitdirectory: '', directory: '' } as Record<string, string>)} style={{ display: 'none' }} onChange={(event) => add(event.target.files, 'stream')} /><button className="admin-clean-button secondary" type="button" onClick={() => streamFile.current?.click()}>Selecionar vídeos</button><button className="admin-clean-button secondary" type="button" onClick={() => streamFolder.current?.click()}><FolderUp size={16} /> Selecionar pasta</button><button className="admin-clean-button primary" type="button" disabled={streamRunning || !streamItems.length || !moduleId} onClick={() => runStreamQueue(false)}>{streamRunning ? <><Loader2 size={16} className="premium-video-spinner" /> Enviando {streamStats.progress}%</> : <><UploadCloud size={16} /> Enviar para Stream</>}</button><button className="admin-clean-button secondary" type="button" disabled={streamRunning} onClick={() => setStreamItems([])}>Cancelar fila</button></div>{streamStats.failed ? <button className="admin-clean-button secondary" type="button" disabled={streamRunning} onClick={() => runStreamQueue(true)}>Reenviar falhas do Stream</button> : null}<QueueList items={streamItems} /></section>
+    <section className="card admin-section media-migration-card"><div className="section-heading"><div><p className="eyebrow">Sincronização Stream</p><h2>Importar vídeos já enviados</h2><p className="muted">Use quando subir vídeos manualmente no painel Cloudflare Stream.</p></div><span className="admin-clean-pill warning">{selectedModule?.title || 'Selecione um módulo'}</span></div><div className="admin-grid admin-section"><article className="admin-stat"><span>Aulas</span><strong>{totalLessons}</strong><p className="muted">Conteúdos do produto.</p></article><article className="admin-stat"><span>Drive atual</span><strong>{driveLessons}</strong><p className="muted">Aguardam Stream.</p></article><article className="admin-stat"><span>Otimizadas</span><strong>{migratedLessons}</strong><p className="muted">Já usam mídia interna/Stream.</p></article></div><button className="admin-clean-button primary" type="button" disabled={syncing || !moduleId} onClick={syncStream}>{syncing ? <><Loader2 size={16} className="premium-video-spinner" /> Sincronizando...</> : <><RefreshCw size={16} /> Sincronizar vídeos do Stream</>}</button>{syncMessage ? <p className="muted">{syncMessage}</p> : null}</section>
+    <section className="card admin-section media-migration-card"><div className="section-heading"><div><p className="eyebrow">Cloudflare R2</p><h2>Upload de materiais auxiliares</h2><p className="muted">Áudios, imagens, PDFs e extras continuam no R2.</p></div><span className={`admin-clean-pill ${r2Stats.failed ? 'danger' : r2Stats.done ? 'success' : r2Running ? 'success' : 'warning'}`}>{r2Running ? 'Enviando...' : r2Stats.done ? 'Uploads salvos' : 'Pronto'}</span></div><Stats stats={r2Stats} labels={['Arquivos selecionados.', 'Salvos no R2.', 'Ligados a aulas.']} /><div className="admin-help-box"><strong>Dica importante</strong><p className="muted">Arquivos iniciados por <code>._</code> e <code>.DS_Store</code> são ignorados automaticamente.</p><label style={{ display: 'inline-flex', gap: 8, alignItems: 'center', marginTop: 12 }}><input type="checkbox" checked={auxiliaryVideo} onChange={(event) => setAuxiliaryVideo(event.target.checked)} /> Permitir vídeo apenas como arquivo auxiliar no R2</label></div>{r2Items.length ? <div className="progress media-migration-progress"><span style={{ width: `${r2Stats.progress}%` }} /></div> : null}<div className="media-migration-toolbar"><input ref={r2File} type="file" multiple style={{ display: 'none' }} onChange={(event) => add(event.target.files, 'r2')} /><input ref={r2Folder} type="file" multiple {...({ webkitdirectory: '', directory: '' } as Record<string, string>)} style={{ display: 'none' }} onChange={(event) => add(event.target.files, 'r2')} /><button className="admin-clean-button secondary" type="button" onClick={() => r2File.current?.click()}>Importar arquivo</button><button className="admin-clean-button secondary" type="button" onClick={() => r2Folder.current?.click()}><FolderUp size={16} /> Importar pasta</button><button className="admin-clean-button primary" type="button" disabled={r2Running || !r2Items.length || !moduleId} onClick={() => runR2Queue(false)}>{r2Running ? <><Loader2 size={16} className="premium-video-spinner" /> Enviando {r2Stats.progress}%</> : <><UploadCloud size={16} /> Enviar para R2</>}</button><button className="admin-clean-button secondary" type="button" disabled={r2Running} onClick={() => setR2Items([])}>Cancelar fila</button></div>{r2Stats.failed ? <button className="admin-clean-button secondary" type="button" disabled={r2Running} onClick={() => runR2Queue(true)}>Reenviar falhas</button> : null}<QueueList items={r2Items} /></section>
+  </>;
+}
+
+function Stats({ stats, labels }: { stats: { total: number; done: number; linked: number }; labels: string[] }) { return <div className="admin-grid admin-section"><article className="admin-stat"><span>Na fila</span><strong>{stats.total}</strong><p className="muted">{labels[0]}</p></article><article className="admin-stat"><span>Enviados</span><strong>{stats.done}</strong><p className="muted">{labels[1]}</p></article><article className="admin-stat"><span>Vinculados</span><strong>{stats.linked}</strong><p className="muted">{labels[2]}</p></article></div>; }
+function QueueList({ items }: { items: Item[] }) { if (!items.length) return null; return <div className="admin-list media-migration-results">{items.slice(0, 160).map((item) => <div className="admin-row" key={item.id}><div><span className={`admin-clean-pill ${item.status === 'linked' || item.status === 'done' ? 'success' : item.status === 'error' ? 'danger' : 'warning'}`}>{item.status === 'linked' ? <><Check size={14} /> Vinculado</> : item.status === 'done' ? <><Check size={14} /> Salvo</> : item.status === 'error' ? <><XCircle size={14} /> Falhou</> : item.status === 'compressing' ? 'Comprimindo' : item.status === 'uploading' ? 'Enviando' : 'Na fila'}</span><h3>{item.name}</h3><p className="muted">{item.relativePath} · {formatBytes(item.size)}{item.compressedSize ? ` → ${formatBytes(item.compressedSize)}` : ''} · tentativas {item.attempts}/{RETRY_LIMIT}{item.uid ? ` · UID ${item.uid}` : ''}{item.error ? ` · ${item.error}` : ''}</p></div><strong>{item.progress}%</strong></div>)}</div>; }
