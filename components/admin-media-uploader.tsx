@@ -6,7 +6,7 @@ import { Check, FolderUp, Loader2, RefreshCw, UploadCloud, Video, XCircle } from
 type ModuleOption = { id: string; title: string; slug?: string | null };
 type Props = { productId?: string; productName?: string | null; modules?: ModuleOption[]; migrationOnly?: boolean; totalLessons?: number; migratedLessons?: number; driveLessons?: number };
 type UploadResult = { key: string; publicUrl: string; uploadUrl: string; expiresIn: number };
-type StreamUploadResult = { uid: string; uploadUrl: string; uploadURL?: string; expiresIn?: number };
+type StreamUploadResult = { uid: string; uploadUrl: string; uploadURL?: string; uploadMethod?: 'POST'; uploadField?: string; expiresIn?: number };
 type SyncResult = { total: number; linked: number; unmatchedCount: number; errorsCount: number; durationSeconds: number; sizeBytes: number; syncedAt: string; unmatched: Array<{ uid: string; name: string; status: string }>; errors?: Array<{ uid: string; name: string; message: string }> };
 type QueueStatus = 'queued' | 'uploading' | 'done' | 'linked' | 'error';
 type MediaType = 'audio' | 'image' | 'file';
@@ -30,8 +30,13 @@ async function xhrUpload(method: 'PUT' | 'POST', url: string, body: BodyInit | D
     xhr.open(method, url);
     if (contentType) xhr.setRequestHeader('Content-Type', contentType);
     xhr.upload.onprogress = (event) => event.lengthComputable && onProgress(Math.round((event.loaded / event.total) * 100));
-    xhr.onload = () => xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`Upload falhou (${xhr.status}).`));
-    xhr.onerror = () => reject(new Error('Upload interrompido pela conexão.'));
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) { resolve(); return; }
+      const details = (xhr.responseText || '').trim();
+      reject(new Error(details || `Upload falhou (${xhr.status}).`));
+    };
+    xhr.onerror = () => reject(new Error('Upload direto para o Cloudflare Stream foi interrompido pela conexão. O vídeo não passa pelo backend do Hub.'));
+    xhr.ontimeout = () => reject(new Error('Upload direto para o Cloudflare Stream excedeu o tempo limite da conexão.'));
     xhr.send(body as XMLHttpRequestBodyInit);
   });
 }
@@ -40,9 +45,9 @@ async function xhrPut(url: string, file: File, onProgress: (n: number) => void) 
   await xhrUpload('PUT', url, file, file.type || null, onProgress);
 }
 
-async function xhrStreamPost(url: string, file: File, onProgress: (n: number) => void) {
+async function xhrStreamPost(url: string, file: File, onProgress: (n: number) => void, fieldName = 'file') {
   const formData = new FormData();
-  formData.append('file', file, file.name);
+  formData.append(fieldName || 'file', file, file.name);
   await xhrUpload('POST', url, formData, null, onProgress);
 }
 
@@ -136,7 +141,7 @@ export function AdminMediaUploader({ productId, productName, modules = [], migra
         const uploadUrl = signed.uploadUrl || signed.uploadURL || '';
         if (!uploadUrl || !signed.uid) throw new Error('Cloudflare não retornou URL de upload.');
         setStreamItem(item.id, { uid: signed.uid, attempts: attempt });
-        await xhrStreamPost(uploadUrl, item.file, (progress) => setStreamItem(item.id, { progress, attempts: attempt, uid: signed.uid }));
+        await xhrStreamPost(uploadUrl, item.file, (progress) => setStreamItem(item.id, { progress, attempts: attempt, uid: signed.uid }), signed.uploadField || 'file');
         const completed = await fetch('/api/admin/media/stream-complete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ productId, moduleId: destinationModuleId, title: item.name, uid: signed.uid, relativePath: item.relativePath, size: item.size }) });
         const completedJson = await completed.json().catch(() => ({}));
         if (!completed.ok) throw new Error(completedJson?.message || 'Vídeo enviado, mas não foi salvo no módulo.');
