@@ -8,6 +8,8 @@ export type CloudflareStreamVideo = {
     errorReasonText?: string | null;
   } | null;
   duration?: number | null;
+  size?: number | null;
+  input?: { width?: number | null; height?: number | null; } | null;
   thumbnail?: string | null;
   preview?: string | null;
   playback?: {
