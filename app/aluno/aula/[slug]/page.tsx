@@ -135,7 +135,7 @@ export default async function StudentLessonPage({ params }: { params: Promise<{ 
     getAdminSettings(),
     supabase
       .from('exercises')
-      .select('id,title,slug,description,objective,media_type,difficulty,drive_url,media_url,audio_url,module_id,trim_start_seconds,trim_end_seconds,modules(title,slug,description)')
+      .select('id,title,slug,description,objective,media_type,difficulty,drive_url,media_url,audio_url,stream_uid,module_id,trim_start_seconds,trim_end_seconds,modules(title,slug,description)')
       .eq('slug', slug)
       .single(),
     email ? supabase.from('profiles').select('id,name,email,avatar_url').eq('email', email).maybeSingle() : Promise.resolve({ data: null } as any),
@@ -212,6 +212,7 @@ export default async function StudentLessonPage({ params }: { params: Promise<{ 
                   title={lesson?.title || 'Conteúdo'}
                   mediaType={lesson?.media_type}
                   mediaUrl={lesson?.media_url || lesson?.audio_url}
+                  streamUid={lesson?.stream_uid}
                   driveUrl={lesson?.drive_url}
                   lessonId={lesson?.id}
                   initialPositionSeconds={savedPosition}

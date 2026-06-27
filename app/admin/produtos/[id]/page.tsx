@@ -152,7 +152,7 @@ export default async function ProductEditPage({ params, searchParams }: { params
   const isVipProduct = String(product.slug || '').includes('grupo-vip') || String(product.name || '').toLowerCase().includes('grupo vip');
   const [{ data: links }, { data: allModules }, { data: profiles }, { data: subscriptions }] = await Promise.all([
     courseId ? supabase.from('course_module_links').select('module_id,sort_order').eq('course_id', courseId).order('sort_order', { ascending: true }) : Promise.resolve({ data: [] }),
-    supabase.from('modules').select('id,title,slug,description,sort_order,cover_url,is_active,exercises(id,title,slug,media_type,sort_order,media_url,drive_url)').order('sort_order', { ascending: true }).order('created_at', { ascending: true }),
+    supabase.from('modules').select('id,title,slug,description,sort_order,cover_url,is_active,exercises(id,title,slug,media_type,sort_order,media_url,drive_url,stream_uid)').order('sort_order', { ascending: true }).order('created_at', { ascending: true }),
     supabase.from('profiles').select('id,name,email,whatsapp,avatar_url,role,created_at').order('created_at', { ascending: false }),
     supabase.from('subscriptions').select('profile_id,status,product_name,current_period_end,created_at').order('created_at', { ascending: false }),
   ]);
@@ -169,8 +169,8 @@ export default async function ProductEditPage({ params, searchParams }: { params
   const tabHref = (tab: string) => `/admin/produtos/${product.id}?tab=${tab}`;
 
   const totalLessons = modules.reduce((sum, module) => sum + ((module.exercises || []) as Row[]).length, 0);
-  const optimizedLessons = modules.reduce((sum, module) => sum + ((module.exercises || []) as Row[]).filter((lesson) => lesson.media_url).length, 0);
-  const driveLessons = modules.reduce((sum, module) => sum + ((module.exercises || []) as Row[]).filter((lesson) => lesson.drive_url && !lesson.media_url).length, 0);
+  const optimizedLessons = modules.reduce((sum, module) => sum + ((module.exercises || []) as Row[]).filter((lesson) => lesson.stream_uid || lesson.media_url).length, 0);
+  const driveLessons = modules.reduce((sum, module) => sum + ((module.exercises || []) as Row[]).filter((lesson) => lesson.drive_url && !lesson.stream_uid && !lesson.media_url).length, 0);
 
   const subsByProfile = new Map<string, Row[]>();
   ((subscriptions || []) as Row[]).forEach((sub) => {
@@ -221,7 +221,7 @@ export default async function ProductEditPage({ params, searchParams }: { params
               const lessons = ((module.exercises || []) as Row[]).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
               const importUrl = `/admin/conteudos/selecionar-drive?module=${module.id}`;
               const displayOrder = String(index + 1).padStart(2, '0');
-              const optimizedInModule = lessons.filter((lesson) => lesson.media_url).length;
+              const optimizedInModule = lessons.filter((lesson) => lesson.stream_uid || lesson.media_url).length;
               const sourceLabel = optimizedInModule === lessons.length && lessons.length ? 'otimizado' : optimizedInModule ? 'misto' : 'drive';
               return (
                 <article className="admin-member-module" key={module.id}>
@@ -236,7 +236,7 @@ export default async function ProductEditPage({ params, searchParams }: { params
                     </div>
                   </div>
                   <div className="admin-lesson-list">
-                    {lessons.map((lesson) => <div className="admin-lesson-row" key={lesson.id}><span className="admin-drag-dot">::</span><AdminInlineLessonName moduleId={module.id} lessonId={lesson.id} initialTitle={lesson.title || ''} /><small>{lesson.media_url ? 'otimizado' : lesson.media_type || 'video'}</small><div className="admin-lesson-actions"><a href={`/aluno/aula/${lesson.slug}`} title="Abrir aula">Abrir</a><a href={`/admin/conteudos/exercicios/${lesson.id}/editar`} title="Editar aula">Editar</a><form action={deleteLesson}><input type="hidden" name="product_id" value={product.id} /><input type="hidden" name="lesson_id" value={lesson.id} /><button type="submit" title="Excluir aula">Excluir</button></form></div></div>)}
+                    {lessons.map((lesson) => <div className="admin-lesson-row" key={lesson.id}><span className="admin-drag-dot">::</span><AdminInlineLessonName moduleId={module.id} lessonId={lesson.id} initialTitle={lesson.title || ''} /><small>{lesson.stream_uid ? 'stream' : lesson.media_url ? 'otimizado' : lesson.media_type || 'video'}</small><div className="admin-lesson-actions"><a href={`/aluno/aula/${lesson.slug}`} title="Abrir aula">Abrir</a><a href={`/admin/conteudos/exercicios/${lesson.id}/editar`} title="Editar aula">Editar</a><form action={deleteLesson}><input type="hidden" name="product_id" value={product.id} /><input type="hidden" name="lesson_id" value={lesson.id} /><button type="submit" title="Excluir aula">Excluir</button></form></div></div>)}
                     {!lessons.length ? <p className="admin-clean-muted">Nenhuma aula ainda. Clique em + Aula para puxar do Drive ou preparar Stream.</p> : null}
                   </div>
                 </article>
