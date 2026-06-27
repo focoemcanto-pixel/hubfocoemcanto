@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 type Study = { id: string; song_name: string; youtube_url: string; youtube_video_id: string | null; original_key: string; study_key: string; semitone_transposition: number; bpm: number | null; notes: string | null; summary: string | null; updated_at: string };
 type FormState = { songName: string; youtubeUrl: string; originalKey: string; studyKey: string; semitones: string; bpm: string; notes: string };
@@ -39,6 +39,7 @@ export function RepertoireStudyClient({ initialStudies }: { initialStudies: Stud
   const [searchQuery, setSearchQuery] = useState('');
   const [results, setResults] = useState<YouTubeResult[]>([]);
   const [searching, setSearching] = useState(false);
+  const [resultsOpen, setResultsOpen] = useState(false);
   const [manualLinkOpen, setManualLinkOpen] = useState(false);
   const videoId = useMemo(() => extractYouTubeId(form.youtubeUrl), [form.youtubeUrl]);
   const embedUrl = videoId ? `https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoId)}` : '';
@@ -46,29 +47,56 @@ export function RepertoireStudyClient({ initialStudies }: { initialStudies: Stud
   const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(currentSummary)}`;
   const selectedStudy = studies.find((study) => study.id === selectedStudyId) || null;
 
+  useEffect(() => {
+    const query = searchQuery.trim();
+    if (query.length < 2 || !resultsOpen) return;
+    const timer = window.setTimeout(() => { void runYouTubeSearch(query, true); }, 550);
+    return () => window.clearTimeout(timer);
+  }, [searchQuery, resultsOpen]);
+
   function update<K extends keyof FormState>(key: K, value: FormState[K]) { setForm((current) => ({ ...current, [key]: value })); setSummary(''); }
   function generate() { const next = buildSummary(form); setSummary(next); return next; }
-  function startNewStudy() { setForm(initialForm); setSelectedStudyId(null); setSummary(''); setSearchQuery(''); setResults([]); setStatus('Novo estudo iniciado.'); }
-  function loadStudy(study: Study) { setForm(studyToForm(study)); setSelectedStudyId(study.id); setSummary(study.summary || ''); setStatus(`Editando: ${study.song_name}`); }
-  function duplicateStudy(study: Study) { setForm({ ...studyToForm(study), songName: `${study.song_name} — nova versão` }); setSelectedStudyId(null); setSummary(''); setStatus('Versão duplicada. Ajuste o tom e salve como novo estudo.'); }
+  function startNewStudy() { setForm(initialForm); setSelectedStudyId(null); setSummary(''); setSearchQuery(''); setResults([]); setResultsOpen(false); setStatus('Novo estudo iniciado.'); }
+  function loadStudy(study: Study) { setForm(studyToForm(study)); setSelectedStudyId(study.id); setSummary(study.summary || ''); setResultsOpen(false); setStatus(`Editando: ${study.song_name}`); }
+  function duplicateStudy(study: Study) { setForm({ ...studyToForm(study), songName: `${study.song_name} — nova versão` }); setSelectedStudyId(null); setSummary(''); setResultsOpen(false); setStatus('Versão duplicada. Ajuste o tom e salve como novo estudo.'); }
 
-  async function searchYouTube(event?: React.FormEvent) {
-    event?.preventDefault();
-    if (!searchQuery.trim()) { setStatus('Digite o nome da música para pesquisar.'); return; }
-    setSearching(true); setStatus('Pesquisando no YouTube...');
+  async function runYouTubeSearch(query: string, silent = false) {
+    if (!query.trim()) { setStatus('Digite o nome da música para pesquisar.'); return; }
+    setSearching(true);
+    if (!silent) setStatus('Pesquisando no YouTube...');
     try {
-      const response = await fetch(`/api/youtube-search?q=${encodeURIComponent(searchQuery.trim())}`);
+      const response = await fetch(`/api/youtube-search?q=${encodeURIComponent(query.trim())}`);
       const data = await response.json();
       if (!response.ok || !data.ok) throw new Error(data.message || 'Não foi possível pesquisar no YouTube.');
       setResults(data.items || []);
-      setStatus(data.items?.length ? 'Escolha um vídeo para abrir no estudo.' : 'Nenhum vídeo encontrado para essa busca.');
-    } catch (error) { setStatus(error instanceof Error ? error.message : 'Não foi possível pesquisar.'); }
-    finally { setSearching(false); }
+      setResultsOpen(true);
+      if (!silent) setStatus(data.items?.length ? 'Escolha um vídeo para abrir no estudo.' : 'Nenhum vídeo encontrado para essa busca.');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Não foi possível pesquisar.');
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  async function searchYouTube(event?: React.FormEvent) {
+    event?.preventDefault();
+    await runYouTubeSearch(searchQuery, false);
+  }
+
+  function handleSearchChange(value: string) {
+    setSearchQuery(value);
+    setResultsOpen(true);
+    if (value.trim().length < 2) setResults([]);
+  }
+
+  function handleSearchFocus() {
+    setResultsOpen(true);
+    if (!results.length && searchQuery.trim().length >= 2) void runYouTubeSearch(searchQuery, true);
   }
 
   function selectVideo(video: YouTubeResult) {
     setForm((current) => ({ ...current, songName: current.songName || searchQuery || video.title, youtubeUrl: video.url }));
-    setSelectedStudyId(null); setSummary(''); setStatus(`Vídeo selecionado: ${video.title}`);
+    setSelectedStudyId(null); setSummary(''); setResultsOpen(false); setStatus(`Vídeo selecionado: ${video.title}`);
   }
 
   async function saveStudy() {
@@ -108,11 +136,11 @@ export function RepertoireStudyClient({ initialStudies }: { initialStudies: Stud
       {selectedStudy ? <div className="editing-banner"><span>Editando</span><strong>{selectedStudy.song_name}</strong><button type="button" onClick={startNewStudy}>Novo estudo</button></div> : null}
 
       <form className="youtube-search-box" onSubmit={searchYouTube}>
-        <label>Pesquisar música no YouTube<input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Ex.: Bondade de Deus Isaias Saad playback" /></label>
-        <button type="submit" disabled={searching}>{searching ? 'Pesquisando...' : 'Pesquisar'}</button>
+        <label>Pesquisar música no YouTube<input value={searchQuery} onFocus={handleSearchFocus} onChange={(event) => handleSearchChange(event.target.value)} placeholder="Ex.: Bondade de Deus Isaias Saad playback" /></label>
+        <button type="submit" disabled={searching}>{searching ? 'Buscando...' : 'Pesquisar'}</button>
       </form>
 
-      {results.length ? <div className="youtube-results">{results.map((video) => <button type="button" className={`youtube-result ${video.url === form.youtubeUrl ? 'selected' : ''}`} key={video.videoId} onClick={() => selectVideo(video)}>{video.thumbnail ? <img src={video.thumbnail} alt="" /> : <span className="thumb-fallback">▶</span>}<span><strong>{video.title}</strong><small>{video.channelTitle}</small></span></button>)}</div> : null}
+      {resultsOpen && results.length ? <div className="youtube-results">{results.map((video) => <button type="button" className={`youtube-result ${video.url === form.youtubeUrl ? 'selected' : ''}`} key={video.videoId} onClick={() => selectVideo(video)}>{video.thumbnail ? <img src={video.thumbnail} alt="" /> : <span className="thumb-fallback">▶</span>}<span><strong>{video.title}</strong><small>{video.channelTitle}</small></span></button>)}</div> : null}
 
       <button type="button" className="manual-link-toggle" onClick={() => setManualLinkOpen((value) => !value)}>{manualLinkOpen ? 'Ocultar link manual' : 'Tenho o link do YouTube'}</button>
       {manualLinkOpen ? <label>Link do YouTube<input value={form.youtubeUrl} onChange={(event) => update('youtubeUrl', event.target.value)} placeholder="https://www.youtube.com/watch?v=..." /></label> : null}
