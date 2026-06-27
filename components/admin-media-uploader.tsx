@@ -17,7 +17,6 @@ type StreamStatus = { state?: string; received?: boolean; ready?: boolean; messa
 const RETRY_LIMIT = 5;
 const retryDelay = [2000, 5000, 10000, 20000, 35000];
 const sleep = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
-const directMode = ('no-' + 'cors') as RequestMode;
 
 function formatBytes(bytes: number) { if (!bytes) return '—'; const units = ['B', 'KB', 'MB', 'GB', 'TB']; let value = bytes; let unit = 0; while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit += 1; } return `${value.toLocaleString('pt-BR', { maximumFractionDigits: unit ? 1 : 0 })} ${units[unit]}`; }
 function isVideo(file: File) { return file.type.startsWith('video/') || /\.(mp4|mov|m4v|webm)$/i.test(file.name); }
@@ -27,9 +26,77 @@ function relPath(file: File) { return (file as File & { webkitRelativePath?: str
 function ignored(file: File) { const path = relPath(file); return file.name === '.DS_Store' || file.name.startsWith('._') || path.includes('/.DS_Store') || path.includes('/._'); }
 
 async function uploadToStreamUrl(url: string, file: File, field = 'file') {
-  const form = new FormData();
-  form.append(field || 'file', file, file.name);
-  await fetch(url, { method: 'POST', mode: directMode, body: form, cache: 'no-store' });
+  await new Promise<void>((resolve, reject) => {
+    if (typeof document === 'undefined') return reject(new Error('Upload direto indisponível neste navegador.'));
+
+    const target = `cf-stream-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const iframe = document.createElement('iframe');
+    const form = document.createElement('form');
+    const input = document.createElement('input');
+    let settled = false;
+    let submitted = false;
+    let ignoredInitialLoad = false;
+
+    const cleanup = () => {
+      window.clearTimeout(timeout);
+      window.setTimeout(() => {
+        form.remove();
+        iframe.remove();
+      }, 500);
+    };
+
+    const finish = () => {
+      if (settled || !submitted) return;
+      if (!ignoredInitialLoad) {
+        ignoredInitialLoad = true;
+        return;
+      }
+      settled = true;
+      cleanup();
+      resolve();
+    };
+
+    const timeout = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(new Error('Cloudflare Stream demorou demais para responder ao upload.'));
+    }, 1000 * 60 * 60);
+
+    iframe.name = target;
+    iframe.style.display = 'none';
+    iframe.onload = finish;
+
+    input.type = 'file';
+    input.name = field || 'file';
+    input.style.display = 'none';
+
+    try {
+      const transfer = new DataTransfer();
+      transfer.items.add(file);
+      input.files = transfer.files;
+    } catch {
+      cleanup();
+      reject(new Error('Não foi possível preparar o arquivo para envio direto ao Cloudflare.'));
+      return;
+    }
+
+    form.method = 'POST';
+    form.action = url;
+    form.enctype = 'multipart/form-data';
+    form.target = target;
+    form.style.display = 'none';
+    form.appendChild(input);
+
+    document.body.appendChild(iframe);
+    document.body.appendChild(form);
+
+    window.setTimeout(() => {
+      if (settled) return;
+      submitted = true;
+      form.submit();
+    }, 100);
+  });
 }
 
 async function waitForReceived(uid: string, update: (message: string, progress: number) => void) {
