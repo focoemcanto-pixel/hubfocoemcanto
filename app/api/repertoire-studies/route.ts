@@ -16,6 +16,10 @@ const StudySchema = z.object({
   summary: z.string().trim().max(5000).optional().default(''),
 });
 
+const UpdateStudySchema = StudySchema.extend({
+  id: z.string().uuid(),
+});
+
 function extractYouTubeId(value: string) {
   try {
     const parsed = new URL(value);
@@ -40,6 +44,22 @@ async function getProfileId() {
   return { profileId: profile.id as string, error: null };
 }
 
+function buildPayload(profileId: string, data: z.infer<typeof StudySchema>, youtubeVideoId: string) {
+  return {
+    profile_id: profileId,
+    song_name: data.songName,
+    youtube_url: data.youtubeUrl,
+    youtube_video_id: youtubeVideoId,
+    original_key: data.originalKey,
+    study_key: data.studyKey,
+    semitone_transposition: data.semitoneTransposition,
+    bpm: data.bpm || null,
+    notes: data.notes || null,
+    summary: data.summary || null,
+    updated_at: new Date().toISOString(),
+  };
+}
+
 export async function POST(request: Request) {
   const parsed = StudySchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ ok: false, message: 'Preencha música, link do YouTube e controles do estudo.' }, { status: 400 });
@@ -51,21 +71,55 @@ export async function POST(request: Request) {
   if (!profileId) return NextResponse.json({ ok: false, message: profileError }, { status: 401 });
 
   const supabase = createAdminClient();
-  const payload = {
-    profile_id: profileId,
-    song_name: parsed.data.songName,
-    youtube_url: parsed.data.youtubeUrl,
-    youtube_video_id: youtubeVideoId,
-    original_key: parsed.data.originalKey,
-    study_key: parsed.data.studyKey,
-    semitone_transposition: parsed.data.semitoneTransposition,
-    bpm: parsed.data.bpm || null,
-    notes: parsed.data.notes || null,
-    summary: parsed.data.summary || null,
-    updated_at: new Date().toISOString(),
-  };
+  const payload = buildPayload(profileId, parsed.data, youtubeVideoId);
+
+  const { data: existing } = await supabase
+    .from('repertoire_studies')
+    .select('id')
+    .eq('profile_id', profileId)
+    .eq('youtube_video_id', youtubeVideoId)
+    .ilike('song_name', parsed.data.songName)
+    .maybeSingle();
+
+  if (existing?.id) {
+    const { data, error } = await supabase.from('repertoire_studies').update(payload).eq('id', existing.id).eq('profile_id', profileId).select('*').single();
+    if (error) return NextResponse.json({ ok: false, message: 'Não foi possível atualizar o estudo existente.', error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true, study: data, mode: 'updated-existing' });
+  }
 
   const { data, error } = await supabase.from('repertoire_studies').insert(payload).select('*').single();
   if (error) return NextResponse.json({ ok: false, message: 'Não foi possível salvar o estudo.', error: error.message, sql: 'supabase/migrations/20260627_create_repertoire_studies.sql' }, { status: 500 });
-  return NextResponse.json({ ok: true, study: data });
+  return NextResponse.json({ ok: true, study: data, mode: 'created' });
+}
+
+export async function PUT(request: Request) {
+  const parsed = UpdateStudySchema.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) return NextResponse.json({ ok: false, message: 'Não foi possível atualizar. Confira os dados do estudo.' }, { status: 400 });
+
+  const youtubeVideoId = extractYouTubeId(parsed.data.youtubeUrl);
+  if (!youtubeVideoId) return NextResponse.json({ ok: false, message: 'Informe um link válido do YouTube.' }, { status: 400 });
+
+  const { profileId, error: profileError } = await getProfileId();
+  if (!profileId) return NextResponse.json({ ok: false, message: profileError }, { status: 401 });
+
+  const { id, ...studyData } = parsed.data;
+  const supabase = createAdminClient();
+  const payload = buildPayload(profileId, studyData, youtubeVideoId);
+  const { data, error } = await supabase.from('repertoire_studies').update(payload).eq('id', id).eq('profile_id', profileId).select('*').single();
+
+  if (error) return NextResponse.json({ ok: false, message: 'Não foi possível atualizar este estudo.', error: error.message }, { status: 500 });
+  return NextResponse.json({ ok: true, study: data, mode: 'updated' });
+}
+
+export async function DELETE(request: Request) {
+  const id = new URL(request.url).searchParams.get('id');
+  if (!id) return NextResponse.json({ ok: false, message: 'Estudo não informado.' }, { status: 400 });
+
+  const { profileId, error: profileError } = await getProfileId();
+  if (!profileId) return NextResponse.json({ ok: false, message: profileError }, { status: 401 });
+
+  const supabase = createAdminClient();
+  const { error } = await supabase.from('repertoire_studies').delete().eq('id', id).eq('profile_id', profileId);
+  if (error) return NextResponse.json({ ok: false, message: 'Não foi possível excluir este estudo.', error: error.message }, { status: 500 });
+  return NextResponse.json({ ok: true, deletedId: id });
 }
