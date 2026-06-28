@@ -1,6 +1,6 @@
 export type CompressionProfile = 'auto' | 'quality' | 'compact' | 'aggressive' | 'ultra';
 
-const MIN_SIZE_FOR_COMPRESSION = 300 * 1024 * 1024;
+const MIN_SIZE_FOR_COMPRESSION = 120 * 1024 * 1024;
 const DIRECT_UPLOAD_SAFE_LIMIT = 190 * 1024 * 1024;
 const VERY_LARGE_VIDEO = 600 * 1024 * 1024;
 const MIN_DURATION_RATIO = 0.9;
@@ -32,6 +32,7 @@ function supportedMimeType() { return supportedFormat()?.mimeType || ''; }
 function compressionPlan(profile: CompressionProfile, originalSize: number): CompressionProfile[] {
   if (originalSize >= VERY_LARGE_VIDEO) return ['quality', 'compact', 'aggressive', 'ultra'];
   if (originalSize >= DIRECT_UPLOAD_SAFE_LIMIT) return ['quality', 'compact', 'aggressive', 'ultra'];
+  if (originalSize >= MIN_SIZE_FOR_COMPRESSION) return ['quality', 'compact', 'aggressive'];
   return [profile === 'auto' ? 'compact' : profile];
 }
 
