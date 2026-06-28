@@ -3,7 +3,7 @@ export type CompressionProfile = 'auto' | 'quality' | 'compact' | 'aggressive' |
 const MIN_SIZE_FOR_COMPRESSION = 120 * 1024 * 1024;
 const DIRECT_UPLOAD_SAFE_LIMIT = 190 * 1024 * 1024;
 const VERY_LARGE_VIDEO = 600 * 1024 * 1024;
-const MIN_DURATION_RATIO = 0.9;
+const MIN_DURATION_RATIO = 0.985;
 const MIN_ACCEPTABLE_OUTPUT = 130 * 1024 * 1024;
 const IDEAL_MIN_OUTPUT = 150 * 1024 * 1024;
 const DEBUG = true;
@@ -120,9 +120,10 @@ async function compressOnce(file: File, profile: CompressionProfile, options: Co
     await audioContext?.close().catch(() => undefined);
     if (!blob.size) throw new Error(`Compressão ${profile} gerou arquivo vazio.`);
     const compressedDuration = await readDuration(blob);
-    if (originalDuration && compressedDuration && compressedDuration < originalDuration * MIN_DURATION_RATIO) throw new Error(`Compressão ${profile} encurtou o vídeo.`);
+    if (originalDuration && !compressedDuration) throw new Error(`Compressão ${profile} não permitiu validar a duração final.`);
+    if (originalDuration && compressedDuration && compressedDuration < originalDuration * MIN_DURATION_RATIO) throw new Error(`Compressão ${profile} encurtou o vídeo: ${Math.round(compressedDuration)}s de ${Math.round(originalDuration)}s.`);
     const baseName = file.name.replace(/\.[^.]+$/, '');
-    debug('blob generated', { profile, format: format.label, mimeType: format.mimeType, size: blob.size, originalWidth, originalHeight, targetWidth, targetHeight });
+    debug('blob generated', { profile, format: format.label, mimeType: format.mimeType, size: blob.size, originalWidth, originalHeight, targetWidth, targetHeight, originalDuration, compressedDuration });
     return new File([blob], `${baseName}.${format.extension}`, { type: blob.type || (format.extension === 'mp4' ? 'video/mp4' : 'video/webm'), lastModified: Date.now() });
   });
 }
@@ -148,7 +149,7 @@ export async function compressVideoForUpload(file: File, options: CompressOption
       if (candidate.size <= DIRECT_UPLOAD_SAFE_LIMIT && (!floor || candidate.size >= floor)) { options.onProgress?.(100, `Vídeo comprimido para envio direto (${formatCompression(file.size, candidate.size)})`); return candidate; }
     } catch (error) { lastError = error; debug('profile failed', profile, error); options.onProgress?.(Math.min(99, Math.round(((index + 1) / plan.length) * 100)), `Compressão ${profile} falhou, tentando próximo perfil...`); }
   }
-  if (best.size < file.size) { options.onProgress?.(100, `Melhor compressão possível (${formatCompression(file.size, best.size)})`); return best; }
+  if (best.size < file.size && best !== file) { options.onProgress?.(100, `Melhor compressão possível (${formatCompression(file.size, best.size)})`); return best; }
   if (lastError) throw new Error(`Não foi possível comprimir este vídeo no navegador: ${lastError instanceof Error ? lastError.message : 'compressão local falhou'}`);
   return file;
 }
