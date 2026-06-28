@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Foco Transpose</title>
+    <style>
+      body{width:320px;margin:0;font-family:Inter,Arial,sans-serif;background:#0b0b10;color:#fff}.wrap{padding:16px}.brand{color:#f5c76b;font-weight:900;text-transform:uppercase;letter-spacing:.12em;font-size:12px}h1{font-size:24px;margin:6px 0 12px}.card{border:1px solid rgba(255,255,255,.12);border-radius:18px;background:rgba(255,255,255,.06);padding:14px;display:grid;gap:10px}.tone{font-size:42px;font-family:Georgia,serif;line-height:1}.row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}button{border:0;border-radius:14px;background:#f5c76b;color:#090909;font-weight:950;padding:11px 10px;cursor:pointer}button.secondary{background:rgba(255,255,255,.1);color:#fff;border:1px solid rgba(255,255,255,.13)}button.danger{background:#ffb3b3;color:#290909}.status{color:#c8ccd5;font-size:13px;line-height:1.4;min-height:36px}.hint{color:#9da2ad;font-size:12px;line-height:1.4;margin-top:12px}
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <div class="brand">Foco Transpose</div>
+      <h1>Áudio em tempo real</h1>
+      <section class="card">
+        <span>Transposição</span>
+        <strong class="tone" id="tone">0</strong>
+        <div class="row">
+          <button id="down">↓ Descer</button>
+          <button class="secondary" id="reset">Original</button>
+          <button id="up">↑ Subir</button>
+        </div>
+        <button id="start">Ativar nesta guia</button>
+        <button class="danger" id="stop">Desligar</button>
+        <p class="status" id="status">Abra o Hub ou YouTube, toque um vídeo e ative a extensão.</p>
+      </section>
+      <p class="hint">Experimental: funciona melhor no Chrome desktop. O áudio pode ter artefatos até refinarmos o algoritmo.</p>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>
