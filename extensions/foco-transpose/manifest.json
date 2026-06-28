@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Foco Transpose Experimental",
+  "description": "Extensão experimental para testar transposição de áudio em tempo real junto ao Hub Foco em Canto.",
+  "version": "0.1.0",
+  "action": {
+    "default_title": "Foco Transpose",
+    "default_popup": "popup.html"
+  },
+  "permissions": [
+    "tabCapture",
+    "offscreen",
+    "activeTab",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://hub.focoemcanto.com/*",
+    "https://www.youtube.com/*",
+    "https://youtube.com/*"
+  ],
+  "background": {
+    "service_worker": "service-worker.js"
+  }
+}
