@@ -4,6 +4,7 @@ import { AdminInlineLessonName } from '@/components/admin-inline-lesson-name';
 import { AdminLoadingLink } from '@/components/admin-loading-link';
 import { AdminProductCoverPreview } from '@/components/admin-product-cover-preview';
 import { AdminMediaUploader } from '@/components/admin-media-uploader';
+import { AdminStreamFolderAudit } from '@/components/admin-stream-folder-audit';
 
 export const dynamic = 'force-dynamic';
 
@@ -167,6 +168,7 @@ export default async function ProductEditPage({ params, searchParams }: { params
     return aOrder - bOrder;
   });
   const tabHref = (tab: string) => `/admin/produtos/${product.id}?tab=${tab}`;
+  const moduleOptions = modules.map((module) => ({ id: module.id, title: module.title, slug: module.slug }));
 
   const totalLessons = modules.reduce((sum, module) => sum + ((module.exercises || []) as Row[]).length, 0);
   const optimizedLessons = modules.reduce((sum, module) => sum + ((module.exercises || []) as Row[]).filter((lesson) => lesson.stream_uid || lesson.media_url).length, 0);
@@ -214,7 +216,7 @@ export default async function ProductEditPage({ params, searchParams }: { params
             <button className="admin-clean-button primary" type="submit">Criar modulo</button>
           </form>
 
-          <AdminMediaUploader productId={product.id} productName={product.name} modules={modules.map((module) => ({ id: module.id, title: module.title, slug: module.slug }))} migrationOnly totalLessons={totalLessons} migratedLessons={optimizedLessons} driveLessons={driveLessons} />
+          <AdminMediaUploader productId={product.id} productName={product.name} modules={moduleOptions} migrationOnly totalLessons={totalLessons} migratedLessons={optimizedLessons} driveLessons={driveLessons} />
 
           <div className="admin-member-modules">
             {modules.map((module, index) => {
@@ -255,7 +257,8 @@ export default async function ProductEditPage({ params, searchParams }: { params
             <article className="admin-stat"><span>Drive atual</span><strong>{driveLessons}</strong><p className="muted">Ainda aguardam UID do Stream.</p></article>
             <article className="admin-stat"><span>Otimizadas</span><strong>{optimizedLessons}</strong><p className="muted">Já usam uma origem interna/media_url.</p></article>
           </section>
-          <AdminMediaUploader productId={product.id} productName={product.name} modules={modules.map((module) => ({ id: module.id, title: module.title, slug: module.slug }))} totalLessons={totalLessons} migratedLessons={optimizedLessons} driveLessons={driveLessons} />
+          <AdminStreamFolderAudit productId={product.id} modules={moduleOptions} />
+          <AdminMediaUploader productId={product.id} productName={product.name} modules={moduleOptions} totalLessons={totalLessons} migratedLessons={optimizedLessons} driveLessons={driveLessons} />
         </section>
       ) : null}
 
