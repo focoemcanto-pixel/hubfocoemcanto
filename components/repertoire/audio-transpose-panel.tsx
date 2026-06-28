@@ -111,7 +111,7 @@ export function AudioTransposePanel({ semitones }: { semitones: number }) {
 
       const audioTracks = stream.getAudioTracks();
       const videoTracks = stream.getVideoTracks();
-      setDiagnostic(`Áudio: ${audioTracks.length} faixa(s). Vídeo: ${videoTracks.length} faixa(s). Mudo original: ${shouldMuteOriginal ? 'sim' : 'não'}.`);
+      setDiagnostic(`Áudio capturado: ${audioTracks.length} faixa(s). Vídeo capturado: ${videoTracks.length} faixa(s). Original silenciado: ${shouldMuteOriginal ? 'sim' : 'não'}.`);
 
       if (!audioTracks.length) {
         stream.getTracks().forEach((track) => track.stop());
@@ -132,7 +132,7 @@ export function AudioTransposePanel({ semitones }: { semitones: number }) {
       rebuildGraph(nextMode, semitones);
       audioTracks[0].addEventListener('ended', () => stopCapture('A captura foi encerrada pelo navegador.'));
       setActive(true);
-      setStatus(nextMode === 'monitor' ? 'Monitor ativo: o áudio original deve continuar tocando normal.' : nextMode === 'passthrough' ? 'Teste ativo: você pode ouvir áudio duplicado/eco. Isso confirma que a captura voltou para a página.' : 'Transposição ativa: se o original mutar, o som processado deve sair pela página.');
+      setStatus(nextMode === 'monitor' ? 'Monitor ativo: só confirma a permissão. Não deve mudar o som.' : nextMode === 'passthrough' ? 'Retorno ativo: eco/reverb é esperado. Esse modo NÃO transpõe; só prova que o áudio voltou para a página.' : 'Transpose ativo: agora o Hub tenta silenciar o original e devolver o áudio processado.');
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Não foi possível ativar a captura de áudio.');
     }
@@ -140,11 +140,11 @@ export function AudioTransposePanel({ semitones }: { semitones: number }) {
 
   return <div className="audio-transpose-panel">
     <style dangerouslySetInnerHTML={{ __html: `.audio-transpose-panel{display:grid;gap:12px;border:1px solid rgba(38,224,196,.22);border-radius:22px;background:linear-gradient(145deg,rgba(38,224,196,.08),rgba(255,255,255,.035));padding:16px;margin-top:12px}.audio-transpose-panel strong{display:block;color:#fff;font-size:18px;margin:3px 0}.audio-transpose-panel span,.audio-transpose-panel small{display:block;color:#c8ccd5;line-height:1.45}.audio-transpose-actions{display:flex;gap:10px;flex-wrap:wrap}.audio-transpose-actions button{border:0;border-radius:999px;background:#26e0c4;color:#06100f;padding:11px 15px;font-weight:950;cursor:pointer}.audio-transpose-actions button:nth-child(3){background:#f5c76b}.audio-transpose-actions button:disabled{opacity:.55;cursor:not-allowed}.audio-transpose-diagnostic{border:1px solid rgba(255,255,255,.1);border-radius:14px;background:rgba(0,0,0,.18);padding:10px}` }} />
-    <div><p className="eyebrow">Laboratório de áudio</p><strong>{active ? `Captura ativa: ${mode}` : 'Testar áudio da guia'}</strong><span>Comece pelo “Monitor sem mutar”. Depois teste captura e transpose.</span></div>
+    <div><p className="eyebrow">Laboratório de áudio</p><strong>{active ? `Modo ativo: ${mode === 'passthrough' ? 'retorno com eco' : mode === 'transpose' ? 'transpose real' : 'monitor'}` : 'Testar áudio da guia'}</strong><span>O modo com retorno dá eco mesmo. Para modular, use somente “Testar transpose”.</span></div>
     <div className="audio-transpose-actions">
-      <button type="button" onClick={() => startCapture('monitor')} disabled={!supported}>Monitor sem mutar</button>
-      <button type="button" onClick={() => startCapture('passthrough')} disabled={!supported}>Teste com retorno</button>
-      <button type="button" onClick={() => startCapture('transpose')} disabled={!supported}>Testar transpose</button>
+      <button type="button" onClick={() => startCapture('monitor')} disabled={!supported}>1. Monitor</button>
+      <button type="button" onClick={() => startCapture('passthrough')} disabled={!supported}>2. Retorno com eco</button>
+      <button type="button" onClick={() => startCapture('transpose')} disabled={!supported}>3. Testar transpose</button>
       {active ? <button type="button" onClick={() => stopCapture()}>Desligar</button> : null}
     </div>
     <small className="audio-transpose-diagnostic">{diagnostic}</small>
