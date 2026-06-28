@@ -52,7 +52,7 @@ function achievementsFrom(progress: DailyTrainingProgress, accuracy: number | nu
   return count;
 }
 
-export function TrainingCenterRealStats() {
+function useRealTrainingStats() {
   const [progress, setProgress] = useState<DailyTrainingProgress>(emptyDailyProgress());
   const [accuracy, setAccuracy] = useState<number | null>(null);
 
@@ -83,28 +83,35 @@ export function TrainingCenterRealStats() {
   const total = dailyTrainingSteps.length;
   const achievements = achievementsFrom(progress, accuracy, activeDays);
   const track = dailyTrainingSteps.map((step) => progress.completedExercises.includes(step.exerciseNumber));
+  return { progress, accuracy, activeDays, completedCount, total, achievements, track };
+}
 
+export function TrainingCenterDailyMetric() {
+  const { activeDays, completedCount, total, track } = useRealTrainingStats();
   return (
-    <>
-      <div className="path-metric daily-real-metric">
-        <span>🔥</span>
-        <strong>{activeDays}</strong>
-        <span>{activeDays === 1 ? 'dia acessado' : 'dias acessados'}</span>
-        <div className="mini-track" aria-label={`${completedCount} de ${total} treinos concluídos`}>
-          {track.map((done, index) => <i className={done ? 'done' : ''} key={index} />)}
-        </div>
+    <div className="path-metric daily-real-metric">
+      <span>🔥</span>
+      <strong>{activeDays}</strong>
+      <span>{activeDays === 1 ? 'dia acessado' : 'dias acessados'}</span>
+      <div className="mini-track" aria-label={`${completedCount} de ${total} treinos concluídos`}>
+        {track.map((done, index) => <i className={done ? 'done' : ''} key={index} />)}
       </div>
+    </div>
+  );
+}
 
-      <section className="progress-card">
-        <div className="progress-head"><h2>Seu progresso geral</h2><a className="report-button" href="/aluno/central/diarios/progresso">▥ Ver relatório</a></div>
-        <div className="stats-grid">
-          <div className="stat-item"><div className="stat-icon">◎</div><strong className="stat-value green">{completedCount}</strong><span className="stat-label">Exercícios<br />concluídos</span></div>
-          <div className="stat-item"><div className="stat-icon">🔥</div><strong className="stat-value orange">{activeDays}</strong><span className="stat-label">Dias<br />acessados</span></div>
-          <div className="stat-item"><div className="stat-icon">〰</div><strong className="stat-value blue">{accuracy == null ? '—' : `${accuracy}%`}</strong><span className="stat-label">Precisão<br />média</span></div>
-          <div className="stat-item"><div className="stat-icon">🏆</div><strong className="stat-value gold">{achievements}</strong><span className="stat-label">Conquistas<br />alcançadas</span></div>
-        </div>
-        <div className="progress-foot"><span>{completedCount}/{total} hoje</span><span>{progress.points} pontos</span><span>{formatSeconds(progress.totalSeconds)} de treino</span></div>
-      </section>
-    </>
+export function TrainingCenterProgressCard() {
+  const { progress, accuracy, activeDays, completedCount, total, achievements } = useRealTrainingStats();
+  return (
+    <section className="progress-card">
+      <div className="progress-head"><h2>Seu progresso geral</h2><a className="report-button" href="/aluno/central/diarios/progresso">▥ Ver relatório</a></div>
+      <div className="stats-grid">
+        <div className="stat-item"><div className="stat-icon">◎</div><strong className="stat-value green">{completedCount}</strong><span className="stat-label">Exercícios<br />concluídos</span></div>
+        <div className="stat-item"><div className="stat-icon">🔥</div><strong className="stat-value orange">{activeDays}</strong><span className="stat-label">Dias<br />acessados</span></div>
+        <div className="stat-item"><div className="stat-icon">〰</div><strong className="stat-value blue">{accuracy == null ? '—' : `${accuracy}%`}</strong><span className="stat-label">Precisão<br />média</span></div>
+        <div className="stat-item"><div className="stat-icon">🏆</div><strong className="stat-value gold">{achievements}</strong><span className="stat-label">Conquistas<br />alcançadas</span></div>
+      </div>
+      <div className="progress-foot"><span>{completedCount}/{total} hoje</span><span>{progress.points} pontos</span><span>{formatSeconds(progress.totalSeconds)} de treino</span></div>
+    </section>
   );
 }
