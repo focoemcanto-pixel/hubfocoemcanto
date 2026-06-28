@@ -4,6 +4,8 @@ const MIN_SIZE_FOR_COMPRESSION = 150 * 1024 * 1024;
 const DIRECT_UPLOAD_SAFE_LIMIT = 180 * 1024 * 1024;
 const VERY_LARGE_VIDEO = 350 * 1024 * 1024;
 const MIN_DURATION_RATIO = 0.9;
+const MIN_ACCEPTABLE_OUTPUT = 60 * 1024 * 1024;
+const IDEAL_MIN_OUTPUT = 80 * 1024 * 1024;
 const DEBUG = true;
 
 type CompressOptions = {
@@ -47,31 +49,51 @@ function compressionPlan(profile: CompressionProfile, originalSize: number): Com
 }
 
 function profileLabel(profile: CompressionProfile) {
-  if (profile === 'ultra') return 'Compressão ultra aplicada por tamanho do arquivo';
-  if (profile === 'aggressive') return 'Compressão agressiva aplicada por tamanho do arquivo';
+  if (profile === 'ultra') return 'Compressão ultra com qualidade mínima preservada';
+  if (profile === 'aggressive') return 'Compressão forte com qualidade preservada';
   if (profile === 'compact') return 'Compressão compacta aplicada';
   if (profile === 'quality') return 'Compressão em qualidade máxima';
   return 'Compressão automática';
 }
 
+function qualityFloorFor(profile: CompressionProfile, originalSize: number) {
+  if (originalSize < DIRECT_UPLOAD_SAFE_LIMIT) return 0;
+  if (profile === 'ultra') return MIN_ACCEPTABLE_OUTPUT;
+  return IDEAL_MIN_OUTPUT;
+}
+
+function scoreCandidate(file: File, candidate: File, profile: CompressionProfile) {
+  const target = DIRECT_UPLOAD_SAFE_LIMIT;
+  const floor = qualityFloorFor(profile, file.size);
+  const belowLimit = candidate.size <= target;
+  const aboveFloor = !floor || candidate.size >= floor;
+
+  if (belowLimit && aboveFloor) return 1000 - Math.abs(candidate.size - 100 * 1024 * 1024);
+  if (belowLimit) return 500 - Math.abs(candidate.size - floor);
+  return 100 - candidate.size;
+}
+
 function targetFor(profile: CompressionProfile, width: number, height: number, duration = 0) {
-  const maxHeight = profile === 'ultra' ? 540 : profile === 'aggressive' || profile === 'compact' ? 720 : 1080;
+  const maxHeight = profile === 'ultra' ? 720 : profile === 'aggressive' || profile === 'compact' ? 720 : 1080;
   const scale = height > maxHeight ? maxHeight / height : 1;
   const targetWidth = Math.max(2, Math.round((width * scale) / 2) * 2);
   const targetHeight = Math.max(2, Math.round((height * scale) / 2) * 2);
 
+  // O objetivo agora não é esmagar o vídeo. Para aulas, mantemos um piso real
+  // de qualidade mirando 80-120MB quando o original é muito grande, e só usamos
+  // ultra para ficar abaixo do limite seguro sem cair para arquivos minúsculos.
   const targetBytes = profile === 'ultra'
-    ? 80 * 1024 * 1024
+    ? 95 * 1024 * 1024
     : profile === 'aggressive'
-      ? 130 * 1024 * 1024
+      ? 120 * 1024 * 1024
       : profile === 'compact'
-        ? 170 * 1024 * 1024
+        ? 160 * 1024 * 1024
         : 0;
 
-  const audioBitsPerSecond = profile === 'ultra' ? 112_000 : profile === 'aggressive' ? 128_000 : profile === 'compact' ? 144_000 : 160_000;
-  const fixedVideoBitsPerSecond = profile === 'quality' ? 8_000_000 : profile === 'compact' ? 2_400_000 : profile === 'ultra' ? 450_000 : profile === 'aggressive' ? 950_000 : 6_000_000;
+  const audioBitsPerSecond = profile === 'ultra' ? 128_000 : profile === 'aggressive' ? 144_000 : profile === 'compact' ? 160_000 : 192_000;
+  const fixedVideoBitsPerSecond = profile === 'quality' ? 8_000_000 : profile === 'compact' ? 3_000_000 : profile === 'ultra' ? 1_350_000 : profile === 'aggressive' ? 1_850_000 : 6_000_000;
   const budgetVideoBitsPerSecond = targetBytes && duration > 0 ? Math.floor((targetBytes * 8) / duration - audioBitsPerSecond) : fixedVideoBitsPerSecond;
-  const minimumVideoBitsPerSecond = profile === 'ultra' ? 180_000 : profile === 'aggressive' ? 350_000 : 850_000;
+  const minimumVideoBitsPerSecond = profile === 'ultra' ? 900_000 : profile === 'aggressive' ? 1_250_000 : 1_500_000;
   const videoBitsPerSecond = Math.max(minimumVideoBitsPerSecond, Math.min(fixedVideoBitsPerSecond, budgetVideoBitsPerSecond));
 
   return { targetWidth, targetHeight, videoBitsPerSecond, audioBitsPerSecond };
@@ -158,7 +180,7 @@ async function compressOnce(file: File, profile: CompressionProfile, options: Co
       destination = null;
     }
 
-    const stream = canvas.captureStream(profile === 'ultra' ? 24 : 30);
+    const stream = canvas.captureStream(30);
 
     const chunks: Blob[] = [];
     let recorder: MediaRecorder | null = null;
@@ -228,6 +250,7 @@ export async function compressVideoForUpload(file: File, options: CompressOption
 
   const plan = compressionPlan(options.profile, file.size);
   let best = file;
+  let bestScore = Number.NEGATIVE_INFINITY;
   let lastError: unknown = null;
   debug('plan', { file: file.name, size: file.size, selectedProfile: options.profile, plan });
 
@@ -235,10 +258,16 @@ export async function compressVideoForUpload(file: File, options: CompressOption
     const profile = plan[index];
     try {
       const candidate = await compressOnce(file, profile, options, index, plan.length);
-      debug('candidate', { profile, size: candidate.size, original: file.size });
+      const floor = qualityFloorFor(profile, file.size);
+      const candidateScore = scoreCandidate(file, candidate, profile);
+      debug('candidate', { profile, size: candidate.size, original: file.size, floor, candidateScore });
 
-      if (candidate.size < best.size) best = candidate;
-      if (candidate.size <= DIRECT_UPLOAD_SAFE_LIMIT) {
+      if (candidate.size < file.size && candidateScore > bestScore) {
+        best = candidate;
+        bestScore = candidateScore;
+      }
+
+      if (candidate.size <= DIRECT_UPLOAD_SAFE_LIMIT && (!floor || candidate.size >= floor)) {
         options.onProgress?.(100, `Vídeo comprimido para envio direto (${formatCompression(file.size, candidate.size)})`);
         return candidate;
       }
@@ -250,7 +279,10 @@ export async function compressVideoForUpload(file: File, options: CompressOption
   }
 
   if (best.size < file.size) {
-    options.onProgress?.(100, `Melhor compressão possível (${formatCompression(file.size, best.size)})`);
+    const tooSmall = file.size >= DIRECT_UPLOAD_SAFE_LIMIT && best.size < MIN_ACCEPTABLE_OUTPUT;
+    options.onProgress?.(100, tooSmall
+      ? `Melhor compressão ficou muito pequena, mas será usada se for o único caminho (${formatCompression(file.size, best.size)})`
+      : `Melhor compressão possível (${formatCompression(file.size, best.size)})`);
     return best;
   }
 
