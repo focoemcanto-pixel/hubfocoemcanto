@@ -3,9 +3,11 @@
 import { useRef, useState } from 'react';
 import { FolderUp, Loader2 } from 'lucide-react';
 
+type ModuleOption = { id: string; title: string; slug?: string | null };
+
 type Props = {
   productId: string;
-  moduleId?: string;
+  modules?: ModuleOption[];
   createMissing?: boolean;
 };
 
@@ -52,8 +54,9 @@ function badge(item: AuditItem) {
   return { label: 'Sem ação', tone: 'warning' };
 }
 
-export function AdminStreamFolderAudit({ productId, moduleId, createMissing = true }: Props) {
+export function AdminStreamFolderAudit({ productId, modules = [], createMissing = true }: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const [moduleId, setModuleId] = useState(modules[0]?.id || '');
   const [loading, setLoading] = useState(false);
   const [details, setDetails] = useState(false);
   const [message, setMessage] = useState('');
@@ -63,7 +66,7 @@ export function AdminStreamFolderAudit({ productId, moduleId, createMissing = tr
     const selected = Array.from(files || []).filter((file) => !isIgnored(file) && isVideo(file));
     if (!selected.length) return;
     if (!moduleId) {
-      setMessage('Selecione um módulo no card de destino antes de mapear a pasta.');
+      setMessage('Selecione um módulo antes de mapear a pasta.');
       return;
     }
 
@@ -107,6 +110,15 @@ export function AdminStreamFolderAudit({ productId, moduleId, createMissing = tr
           <p className="muted">Escolha a pasta completa para saber o que já está válido, o que está quebrado e o que ainda precisa subir.</p>
         </div>
         <span className="admin-clean-pill warning">Pré-upload</span>
+      </div>
+
+      <div className="admin-form-grid">
+        <label>Módulo para auditar
+          <select value={moduleId} onChange={(event) => { setModuleId(event.target.value); setResult(null); setMessage(''); }}>
+            <option value="">Selecione o módulo</option>
+            {modules.map((module) => <option key={module.id} value={module.id}>{module.title}</option>)}
+          </select>
+        </label>
       </div>
 
       <input
