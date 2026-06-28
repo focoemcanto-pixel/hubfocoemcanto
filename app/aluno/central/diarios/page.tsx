@@ -12,14 +12,16 @@ const backgrounds = [
   'radial-gradient(circle at 52% 47%,rgba(80,232,255,.3),transparent 18%),radial-gradient(circle at 22% 78%,rgba(255,255,255,.13),transparent 18%),linear-gradient(145deg,#8fa4aa,#657277 40%,#161d22 74%,#050608)',
   'radial-gradient(circle at 50% 48%,rgba(255,74,74,.24),transparent 19%),radial-gradient(circle at 25% 78%,rgba(0,0,0,.75),transparent 27%),linear-gradient(145deg,#b9b4aa,#827a75 42%,#21191d 78%,#050507)',
   'radial-gradient(circle at 50% 48%,rgba(151,108,255,.32),transparent 21%),radial-gradient(circle at 32% 76%,rgba(0,0,0,.6),transparent 24%),linear-gradient(145deg,#a8a5b8,#757087 42%,#191625 76%,#040406)',
+  'radial-gradient(circle at 50% 48%,rgba(245,199,107,.24),transparent 20%),radial-gradient(circle at 32% 76%,rgba(0,0,0,.65),transparent 24%),linear-gradient(145deg,#a7a093,#6f6c6a 42%,#18191f 76%,#040406)',
 ];
 
-const icons = ['♫', '◌', '♪', '≋'];
-const activityNames = ['Aquecimento', 'Respiração', 'Afinação', 'Percepção'];
+const icons = ['♫', '◌', '♪', '≋', '◉'];
+const activityNames = ['Aquecimento', 'Respiração', 'Afinação', 'Precisão Melódica', 'Percepção'];
 const activityDescriptions = [
   'Prepare a voz percorrendo sua tessitura confortável, com leveza e sem tensão.',
   'Organize o fluxo de ar antes de cantar, mantendo controle e tranquilidade.',
   'Treine o centro da nota com referência visual e resposta do afinador.',
+  'Execute escalas, intervalos e sequências melódicas com precisão de altura e ritmo.',
   'Desenvolva percepção para reconhecer caminhos melódicos e divisões com segurança.',
 ];
 
