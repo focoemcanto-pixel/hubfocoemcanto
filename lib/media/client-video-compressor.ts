@@ -17,9 +17,9 @@ function debug(...args: unknown[]) { if (DEBUG) console.info('[hub-compress]', .
 function supportedFormat(): RecorderFormat | null {
   if (typeof MediaRecorder === 'undefined') return null;
   const candidates: RecorderFormat[] = [
-    { mimeType: 'video/mp4;codecs="avc1.42E01E,mp4a.40.2"', extension: 'mp4', label: 'MP4/H.264 + AAC' },
-    { mimeType: 'video/mp4;codecs=avc1.42E01E,mp4a.40.2', extension: 'mp4', label: 'MP4/H.264 + AAC' },
-    { mimeType: 'video/mp4;codecs="avc1.640028,mp4a.40.2"', extension: 'mp4', label: 'MP4/H.264 High + AAC' },
+    { mimeType: 'video/mp4;codecs="avc3.42E01E,mp4a.40.2"', extension: 'mp4', label: 'MP4/H.264 avc3 + AAC' },
+    { mimeType: 'video/mp4;codecs=avc3.42E01E,mp4a.40.2', extension: 'mp4', label: 'MP4/H.264 avc3 + AAC' },
+    { mimeType: 'video/mp4;codecs="avc3.640028,mp4a.40.2"', extension: 'mp4', label: 'MP4/H.264 avc3 High + AAC' },
     { mimeType: 'video/mp4', extension: 'mp4', label: 'MP4' },
     { mimeType: 'video/webm;codecs=vp9,opus', extension: 'webm', label: 'WebM/VP9 + Opus' },
     { mimeType: 'video/webm;codecs=vp8,opus', extension: 'webm', label: 'WebM/VP8 + Opus' },
