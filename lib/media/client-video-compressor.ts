@@ -1,11 +1,11 @@
 export type CompressionProfile = 'auto' | 'quality' | 'compact' | 'aggressive' | 'ultra';
 
-const MIN_SIZE_FOR_COMPRESSION = 150 * 1024 * 1024;
-const DIRECT_UPLOAD_SAFE_LIMIT = 180 * 1024 * 1024;
-const VERY_LARGE_VIDEO = 350 * 1024 * 1024;
+const MIN_SIZE_FOR_COMPRESSION = 300 * 1024 * 1024;
+const DIRECT_UPLOAD_SAFE_LIMIT = 320 * 1024 * 1024;
+const VERY_LARGE_VIDEO = 600 * 1024 * 1024;
 const MIN_DURATION_RATIO = 0.9;
-const MIN_ACCEPTABLE_OUTPUT = 60 * 1024 * 1024;
-const IDEAL_MIN_OUTPUT = 80 * 1024 * 1024;
+const MIN_ACCEPTABLE_OUTPUT = 220 * 1024 * 1024;
+const IDEAL_MIN_OUTPUT = 260 * 1024 * 1024;
 const DEBUG = true;
 
 type CompressOptions = { profile: CompressionProfile; enabled: boolean; onProgress?: (progress: number, label?: string) => void };
@@ -15,38 +15,32 @@ function debug(...args: unknown[]) { if (DEBUG) console.info('[hub-compress]', .
 function supportedMimeType() { return ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'].find((type) => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(type)) || ''; }
 
 function compressionPlan(profile: CompressionProfile, originalSize: number): CompressionProfile[] {
-  if (originalSize >= VERY_LARGE_VIDEO) {
-    if (profile === 'quality') return ['quality', 'compact', 'aggressive', 'ultra'];
-    return ['quality', 'compact', 'aggressive', 'ultra'];
-  }
-  if (originalSize >= DIRECT_UPLOAD_SAFE_LIMIT) {
-    if (profile === 'aggressive') return ['aggressive', 'ultra'];
-    return ['quality', 'compact', 'aggressive', 'ultra'];
-  }
+  if (originalSize >= VERY_LARGE_VIDEO) return ['quality', 'compact', 'aggressive', 'ultra'];
+  if (originalSize >= DIRECT_UPLOAD_SAFE_LIMIT) return ['quality', 'compact', 'aggressive', 'ultra'];
   return [profile === 'auto' ? 'compact' : profile];
 }
 
 function profileLabel(profile: CompressionProfile) {
-  if (profile === 'ultra') return 'Compressão ultra 1080p';
-  if (profile === 'aggressive') return 'Compressão forte 1080p';
-  if (profile === 'compact') return 'Compressão compacta 1080p';
-  if (profile === 'quality') return 'Compressão 1080p alta qualidade';
+  if (profile === 'ultra') return 'Compressão 1080p forte';
+  if (profile === 'aggressive') return 'Compressão 1080p equilibrada';
+  if (profile === 'compact') return 'Compressão 1080p alta';
+  if (profile === 'quality') return 'Compressão 1080p máxima';
   return 'Compressão automática';
 }
 
 function qualityFloorFor(profile: CompressionProfile, originalSize: number) { if (originalSize < DIRECT_UPLOAD_SAFE_LIMIT) return 0; return profile === 'ultra' ? MIN_ACCEPTABLE_OUTPUT : IDEAL_MIN_OUTPUT; }
-function scoreCandidate(file: File, candidate: File, profile: CompressionProfile) { const floor = qualityFloorFor(profile, file.size); if (candidate.size <= DIRECT_UPLOAD_SAFE_LIMIT && (!floor || candidate.size >= floor)) return 1000 - Math.abs(candidate.size - 130 * 1024 * 1024); if (candidate.size <= DIRECT_UPLOAD_SAFE_LIMIT) return 500 - Math.abs(candidate.size - floor); return 100 - candidate.size; }
+function scoreCandidate(file: File, candidate: File, profile: CompressionProfile) { const floor = qualityFloorFor(profile, file.size); if (candidate.size <= DIRECT_UPLOAD_SAFE_LIMIT && (!floor || candidate.size >= floor)) return 1000 - Math.abs(candidate.size - 300 * 1024 * 1024); if (candidate.size <= DIRECT_UPLOAD_SAFE_LIMIT) return 500 - Math.abs(candidate.size - floor); return 100 - candidate.size; }
 
 function targetFor(profile: CompressionProfile, width: number, height: number, duration = 0) {
   const maxHeight = 1080;
   const scale = height > maxHeight ? maxHeight / height : 1;
   const targetWidth = Math.max(2, Math.round((width * scale) / 2) * 2);
   const targetHeight = Math.max(2, Math.round((height * scale) / 2) * 2);
-  const targetBytes = profile === 'ultra' ? 150 * 1024 * 1024 : profile === 'aggressive' ? 165 * 1024 * 1024 : profile === 'compact' ? 175 * 1024 * 1024 : 178 * 1024 * 1024;
-  const audioBitsPerSecond = profile === 'ultra' ? 160_000 : profile === 'aggressive' ? 176_000 : profile === 'compact' ? 192_000 : 224_000;
-  const fixedVideoBitsPerSecond = profile === 'quality' ? 12_000_000 : profile === 'compact' ? 8_000_000 : profile === 'ultra' ? 4_500_000 : profile === 'aggressive' ? 6_000_000 : 10_000_000;
+  const targetBytes = profile === 'ultra' ? 240 * 1024 * 1024 : profile === 'aggressive' ? 280 * 1024 * 1024 : profile === 'compact' ? 305 * 1024 * 1024 : 315 * 1024 * 1024;
+  const audioBitsPerSecond = profile === 'ultra' ? 192_000 : profile === 'aggressive' ? 224_000 : profile === 'compact' ? 256_000 : 320_000;
+  const fixedVideoBitsPerSecond = profile === 'quality' ? 24_000_000 : profile === 'compact' ? 18_000_000 : profile === 'ultra' ? 10_000_000 : profile === 'aggressive' ? 14_000_000 : 20_000_000;
   const budgetVideoBitsPerSecond = targetBytes && duration > 0 ? Math.floor((targetBytes * 8) / duration - audioBitsPerSecond) : fixedVideoBitsPerSecond;
-  const minimumVideoBitsPerSecond = profile === 'ultra' ? 3_000_000 : profile === 'aggressive' ? 4_000_000 : profile === 'compact' ? 5_000_000 : 6_000_000;
+  const minimumVideoBitsPerSecond = profile === 'ultra' ? 7_000_000 : profile === 'aggressive' ? 9_000_000 : profile === 'compact' ? 11_000_000 : 13_000_000;
   const videoBitsPerSecond = Math.max(minimumVideoBitsPerSecond, Math.min(fixedVideoBitsPerSecond, budgetVideoBitsPerSecond));
   return { targetWidth, targetHeight, videoBitsPerSecond, audioBitsPerSecond };
 }
