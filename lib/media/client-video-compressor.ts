@@ -49,9 +49,9 @@ function compressionPlan(profile: CompressionProfile, originalSize: number): Com
 }
 
 function profileLabel(profile: CompressionProfile) {
-  if (profile === 'ultra') return 'Compressão ultra com qualidade mínima preservada';
-  if (profile === 'aggressive') return 'Compressão forte com qualidade preservada';
-  if (profile === 'compact') return 'Compressão compacta aplicada';
+  if (profile === 'ultra') return 'Compressão ultra 1080p';
+  if (profile === 'aggressive') return 'Compressão forte 1080p';
+  if (profile === 'compact') return 'Compressão compacta 1080p';
   if (profile === 'quality') return 'Compressão em qualidade máxima';
   return 'Compressão automática';
 }
@@ -68,32 +68,31 @@ function scoreCandidate(file: File, candidate: File, profile: CompressionProfile
   const belowLimit = candidate.size <= target;
   const aboveFloor = !floor || candidate.size >= floor;
 
-  if (belowLimit && aboveFloor) return 1000 - Math.abs(candidate.size - 100 * 1024 * 1024);
+  if (belowLimit && aboveFloor) return 1000 - Math.abs(candidate.size - 120 * 1024 * 1024);
   if (belowLimit) return 500 - Math.abs(candidate.size - floor);
   return 100 - candidate.size;
 }
 
 function targetFor(profile: CompressionProfile, width: number, height: number, duration = 0) {
-  const maxHeight = profile === 'ultra' ? 720 : profile === 'aggressive' || profile === 'compact' ? 720 : 1080;
+  // Para aulas, preservar nitidez é mais importante que esmagar o arquivo.
+  // Mantemos 1080p sempre que o original permitir e comprimimos principalmente por bitrate.
+  const maxHeight = 1080;
   const scale = height > maxHeight ? maxHeight / height : 1;
   const targetWidth = Math.max(2, Math.round((width * scale) / 2) * 2);
   const targetHeight = Math.max(2, Math.round((height * scale) / 2) * 2);
 
-  // O objetivo agora não é esmagar o vídeo. Para aulas, mantemos um piso real
-  // de qualidade mirando 80-120MB quando o original é muito grande, e só usamos
-  // ultra para ficar abaixo do limite seguro sem cair para arquivos minúsculos.
   const targetBytes = profile === 'ultra'
-    ? 95 * 1024 * 1024
+    ? 130 * 1024 * 1024
     : profile === 'aggressive'
-      ? 120 * 1024 * 1024
+      ? 150 * 1024 * 1024
       : profile === 'compact'
-        ? 160 * 1024 * 1024
+        ? 175 * 1024 * 1024
         : 0;
 
-  const audioBitsPerSecond = profile === 'ultra' ? 128_000 : profile === 'aggressive' ? 144_000 : profile === 'compact' ? 160_000 : 192_000;
-  const fixedVideoBitsPerSecond = profile === 'quality' ? 8_000_000 : profile === 'compact' ? 3_000_000 : profile === 'ultra' ? 1_350_000 : profile === 'aggressive' ? 1_850_000 : 6_000_000;
+  const audioBitsPerSecond = profile === 'ultra' ? 144_000 : profile === 'aggressive' ? 160_000 : profile === 'compact' ? 176_000 : 192_000;
+  const fixedVideoBitsPerSecond = profile === 'quality' ? 8_000_000 : profile === 'compact' ? 4_500_000 : profile === 'ultra' ? 2_200_000 : profile === 'aggressive' ? 3_000_000 : 6_000_000;
   const budgetVideoBitsPerSecond = targetBytes && duration > 0 ? Math.floor((targetBytes * 8) / duration - audioBitsPerSecond) : fixedVideoBitsPerSecond;
-  const minimumVideoBitsPerSecond = profile === 'ultra' ? 900_000 : profile === 'aggressive' ? 1_250_000 : 1_500_000;
+  const minimumVideoBitsPerSecond = profile === 'ultra' ? 1_500_000 : profile === 'aggressive' ? 2_000_000 : 2_600_000;
   const videoBitsPerSecond = Math.max(minimumVideoBitsPerSecond, Math.min(fixedVideoBitsPerSecond, budgetVideoBitsPerSecond));
 
   return { targetWidth, targetHeight, videoBitsPerSecond, audioBitsPerSecond };
