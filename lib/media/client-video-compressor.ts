@@ -1,11 +1,11 @@
 export type CompressionProfile = 'auto' | 'quality' | 'compact' | 'aggressive' | 'ultra';
 
 const MIN_SIZE_FOR_COMPRESSION = 300 * 1024 * 1024;
-const DIRECT_UPLOAD_SAFE_LIMIT = 320 * 1024 * 1024;
+const DIRECT_UPLOAD_SAFE_LIMIT = 190 * 1024 * 1024;
 const VERY_LARGE_VIDEO = 600 * 1024 * 1024;
 const MIN_DURATION_RATIO = 0.9;
-const MIN_ACCEPTABLE_OUTPUT = 220 * 1024 * 1024;
-const IDEAL_MIN_OUTPUT = 260 * 1024 * 1024;
+const MIN_ACCEPTABLE_OUTPUT = 130 * 1024 * 1024;
+const IDEAL_MIN_OUTPUT = 150 * 1024 * 1024;
 const DEBUG = true;
 
 type CompressionTarget = { targetWidth: number; targetHeight: number; videoBitsPerSecond: number; audioBitsPerSecond: number };
@@ -44,7 +44,7 @@ function profileLabel(profile: CompressionProfile) {
 }
 
 function qualityFloorFor(profile: CompressionProfile, originalSize: number) { if (originalSize < DIRECT_UPLOAD_SAFE_LIMIT) return 0; return profile === 'ultra' ? MIN_ACCEPTABLE_OUTPUT : IDEAL_MIN_OUTPUT; }
-function scoreCandidate(file: File, candidate: File, profile: CompressionProfile) { const floor = qualityFloorFor(profile, file.size); if (candidate.size <= DIRECT_UPLOAD_SAFE_LIMIT && (!floor || candidate.size >= floor)) return 1000 - Math.abs(candidate.size - 300 * 1024 * 1024); if (candidate.size <= DIRECT_UPLOAD_SAFE_LIMIT) return 500 - Math.abs(candidate.size - floor); return 100 - candidate.size; }
+function scoreCandidate(file: File, candidate: File, profile: CompressionProfile) { const floor = qualityFloorFor(profile, file.size); if (candidate.size <= DIRECT_UPLOAD_SAFE_LIMIT && (!floor || candidate.size >= floor)) return 1000 - Math.abs(candidate.size - 175 * 1024 * 1024); if (candidate.size <= DIRECT_UPLOAD_SAFE_LIMIT) return 500 - Math.abs(candidate.size - floor); return 100 - candidate.size; }
 
 function computeDimensions(width: number, height: number) {
   const safeWidth = width || 1920;
@@ -59,12 +59,12 @@ function computeDimensions(width: number, height: number) {
 function targetFor(profile: CompressionProfile, width: number, height: number, duration = 0): CompressionTarget {
   const { targetWidth, targetHeight } = computeDimensions(width, height);
   const isPortrait1080 = targetHeight >= 1920;
-  const targetBytes = profile === 'ultra' ? 240 * 1024 * 1024 : profile === 'aggressive' ? 280 * 1024 * 1024 : profile === 'compact' ? 305 * 1024 * 1024 : 315 * 1024 * 1024;
-  const audioBitsPerSecond = profile === 'ultra' ? 192_000 : profile === 'aggressive' ? 224_000 : profile === 'compact' ? 256_000 : 320_000;
-  const qualityBoost = isPortrait1080 ? 1.2 : 1;
-  const fixedVideoBitsPerSecond = Math.round((profile === 'quality' ? 24_000_000 : profile === 'compact' ? 18_000_000 : profile === 'ultra' ? 10_000_000 : profile === 'aggressive' ? 14_000_000 : 20_000_000) * qualityBoost);
+  const targetBytes = profile === 'ultra' ? 145 * 1024 * 1024 : profile === 'aggressive' ? 165 * 1024 * 1024 : profile === 'compact' ? 180 * 1024 * 1024 : 185 * 1024 * 1024;
+  const audioBitsPerSecond = profile === 'ultra' ? 160_000 : profile === 'aggressive' ? 192_000 : profile === 'compact' ? 224_000 : 256_000;
+  const qualityBoost = isPortrait1080 ? 1.15 : 1;
+  const fixedVideoBitsPerSecond = Math.round((profile === 'quality' ? 18_000_000 : profile === 'compact' ? 14_000_000 : profile === 'ultra' ? 7_500_000 : profile === 'aggressive' ? 10_000_000 : 16_000_000) * qualityBoost);
   const budgetVideoBitsPerSecond = targetBytes && duration > 0 ? Math.floor((targetBytes * 8) / duration - audioBitsPerSecond) : fixedVideoBitsPerSecond;
-  const minimumVideoBitsPerSecond = Math.round((profile === 'ultra' ? 7_000_000 : profile === 'aggressive' ? 9_000_000 : profile === 'compact' ? 11_000_000 : 13_000_000) * qualityBoost);
+  const minimumVideoBitsPerSecond = Math.round((profile === 'ultra' ? 4_500_000 : profile === 'aggressive' ? 6_000_000 : profile === 'compact' ? 7_500_000 : 9_000_000) * qualityBoost);
   const videoBitsPerSecond = Math.max(minimumVideoBitsPerSecond, Math.min(fixedVideoBitsPerSecond, budgetVideoBitsPerSecond));
   return { targetWidth, targetHeight, videoBitsPerSecond, audioBitsPerSecond };
 }
