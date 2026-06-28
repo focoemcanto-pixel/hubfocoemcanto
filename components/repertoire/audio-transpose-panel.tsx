@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-type Mode = 'passthrough' | 'transpose';
+type Mode = 'passthrough' | 'transpose' | 'monitor';
 type PitchGraph = { cleanup: () => void };
 type DisplayAudioOptions = MediaTrackConstraints & { suppressLocalAudioPlayback?: boolean };
 
@@ -12,6 +12,12 @@ function createPassthroughGraph(audioContext: AudioContext, source: MediaStreamA
   source.connect(output);
   output.connect(audioContext.destination);
   return { cleanup: () => { source.disconnect(); output.disconnect(); } };
+}
+
+function createSilentMonitorGraph(audioContext: AudioContext, source: MediaStreamAudioSourceNode): PitchGraph {
+  const analyser = audioContext.createAnalyser();
+  source.connect(analyser);
+  return { cleanup: () => { source.disconnect(); analyser.disconnect(); } };
 }
 
 function createDelayPitchGraph(audioContext: AudioContext, source: MediaStreamAudioSourceNode, semitones: number): PitchGraph {
@@ -80,7 +86,7 @@ export function AudioTransposePanel({ semitones }: { semitones: number }) {
     if (!stream || !context) return;
     graphRef.current?.cleanup();
     const source = context.createMediaStreamSource(stream);
-    graphRef.current = nextMode === 'passthrough' ? createPassthroughGraph(context, source) : createDelayPitchGraph(context, source, nextSemitones);
+    graphRef.current = nextMode === 'monitor' ? createSilentMonitorGraph(context, source) : nextMode === 'passthrough' ? createPassthroughGraph(context, source) : createDelayPitchGraph(context, source, nextSemitones);
   }
 
   useEffect(() => { if (active) rebuildGraph(mode, semitones); }, [semitones, mode, active]);
@@ -97,14 +103,15 @@ export function AudioTransposePanel({ semitones }: { semitones: number }) {
     try {
       if (active) stopCapture('Reiniciando captura...');
       setStatus('Na janela que abrir, escolha esta guia e marque compartilhar áudio.');
+      const shouldMuteOriginal = nextMode === 'transpose';
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: true,
-        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, suppressLocalAudioPlayback: true } as DisplayAudioOptions,
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, suppressLocalAudioPlayback: shouldMuteOriginal } as DisplayAudioOptions,
       });
 
       const audioTracks = stream.getAudioTracks();
       const videoTracks = stream.getVideoTracks();
-      setDiagnostic(`Áudio: ${audioTracks.length} faixa(s). Vídeo: ${videoTracks.length} faixa(s).`);
+      setDiagnostic(`Áudio: ${audioTracks.length} faixa(s). Vídeo: ${videoTracks.length} faixa(s). Mudo original: ${shouldMuteOriginal ? 'sim' : 'não'}.`);
 
       if (!audioTracks.length) {
         stream.getTracks().forEach((track) => track.stop());
@@ -119,24 +126,24 @@ export function AudioTransposePanel({ semitones }: { semitones: number }) {
         return;
       }
 
-      videoTracks.forEach((track) => track.enabled = false);
       const context = new AudioContextClass({ latencyHint: 'interactive' });
       streamRef.current = stream;
       contextRef.current = context;
       rebuildGraph(nextMode, semitones);
       audioTracks[0].addEventListener('ended', () => stopCapture('A captura foi encerrada pelo navegador.'));
       setActive(true);
-      setStatus(nextMode === 'passthrough' ? 'Teste ativo: se você ouvir o vídeo, a captura funcionou.' : 'Transposição ativa: use subir/descer tom e compare o áudio.');
+      setStatus(nextMode === 'monitor' ? 'Monitor ativo: o áudio original deve continuar tocando normal.' : nextMode === 'passthrough' ? 'Teste ativo: você pode ouvir áudio duplicado/eco. Isso confirma que a captura voltou para a página.' : 'Transposição ativa: se o original mutar, o som processado deve sair pela página.');
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Não foi possível ativar a captura de áudio.');
     }
   }
 
   return <div className="audio-transpose-panel">
-    <style dangerouslySetInnerHTML={{ __html: `.audio-transpose-panel{display:grid;gap:12px;border:1px solid rgba(38,224,196,.22);border-radius:22px;background:linear-gradient(145deg,rgba(38,224,196,.08),rgba(255,255,255,.035));padding:16px;margin-top:12px}.audio-transpose-panel strong{display:block;color:#fff;font-size:18px;margin:3px 0}.audio-transpose-panel span,.audio-transpose-panel small{display:block;color:#c8ccd5;line-height:1.45}.audio-transpose-actions{display:flex;gap:10px;flex-wrap:wrap}.audio-transpose-actions button{border:0;border-radius:999px;background:#26e0c4;color:#06100f;padding:11px 15px;font-weight:950;cursor:pointer}.audio-transpose-actions button:nth-child(2){background:#f5c76b}.audio-transpose-actions button:disabled{opacity:.55;cursor:not-allowed}.audio-transpose-diagnostic{border:1px solid rgba(255,255,255,.1);border-radius:14px;background:rgba(0,0,0,.18);padding:10px}` }} />
-    <div><p className="eyebrow">Laboratório de áudio</p><strong>{active ? `Captura ativa: ${mode === 'passthrough' ? 'teste simples' : 'transpose'}` : 'Testar áudio da guia'}</strong><span>Primeiro rode “Teste de captura”. Se sair som, rode “Testar transpose”.</span></div>
+    <style dangerouslySetInnerHTML={{ __html: `.audio-transpose-panel{display:grid;gap:12px;border:1px solid rgba(38,224,196,.22);border-radius:22px;background:linear-gradient(145deg,rgba(38,224,196,.08),rgba(255,255,255,.035));padding:16px;margin-top:12px}.audio-transpose-panel strong{display:block;color:#fff;font-size:18px;margin:3px 0}.audio-transpose-panel span,.audio-transpose-panel small{display:block;color:#c8ccd5;line-height:1.45}.audio-transpose-actions{display:flex;gap:10px;flex-wrap:wrap}.audio-transpose-actions button{border:0;border-radius:999px;background:#26e0c4;color:#06100f;padding:11px 15px;font-weight:950;cursor:pointer}.audio-transpose-actions button:nth-child(3){background:#f5c76b}.audio-transpose-actions button:disabled{opacity:.55;cursor:not-allowed}.audio-transpose-diagnostic{border:1px solid rgba(255,255,255,.1);border-radius:14px;background:rgba(0,0,0,.18);padding:10px}` }} />
+    <div><p className="eyebrow">Laboratório de áudio</p><strong>{active ? `Captura ativa: ${mode}` : 'Testar áudio da guia'}</strong><span>Comece pelo “Monitor sem mutar”. Depois teste captura e transpose.</span></div>
     <div className="audio-transpose-actions">
-      <button type="button" onClick={() => startCapture('passthrough')} disabled={!supported}>Teste de captura</button>
+      <button type="button" onClick={() => startCapture('monitor')} disabled={!supported}>Monitor sem mutar</button>
+      <button type="button" onClick={() => startCapture('passthrough')} disabled={!supported}>Teste com retorno</button>
       <button type="button" onClick={() => startCapture('transpose')} disabled={!supported}>Testar transpose</button>
       {active ? <button type="button" onClick={() => stopCapture()}>Desligar</button> : null}
     </div>
