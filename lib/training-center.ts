@@ -51,10 +51,10 @@ function midiToPitch(midi: number) {
   return `${NOTE_NAMES[((midi % 12) + 12) % 12]}${octave}`;
 }
 
-function buildBeatGridNotes(bpm: number, pitches: string[], beatsPerNote = 4): TrainingNote[] {
+function buildBeatGridNotes(bpm: number, pitches: string[], beatsPerNote = 4, label = 'NG'): TrainingNote[] {
   return pitches.map((pitch, index) => ({
     pitch,
-    label: 'NG',
+    label,
     start: beat(bpm, index * beatsPerNote),
     duration: beat(bpm, beatsPerNote),
   }));
@@ -70,13 +70,37 @@ function buildMajorChord(rootMidi: number, bpm: number, beatCursor: number, dura
   }));
 }
 
-function buildAdaptiveFiveToneWarmup({ bpm, lowMidi = DEFAULT_TESSITURA_LOW, highMidi = DEFAULT_TESSITURA_HIGH, beatsPerNote = 1 }: { bpm: number; lowMidi?: number; highMidi?: number; beatsPerNote?: number }): TrainingNote[] {
-  const pattern = [0, 2, 4, 5, 7, 5, 4, 2, 0];
+function buildAdaptivePattern({
+  bpm,
+  pattern,
+  label,
+  lowMidi = DEFAULT_TESSITURA_LOW,
+  highMidi = DEFAULT_TESSITURA_HIGH,
+  beatsPerNote = 1,
+  semitoneStep = 1,
+  guideChords = true,
+  limitPhrases,
+}: {
+  bpm: number;
+  pattern: number[];
+  label: string;
+  lowMidi?: number;
+  highMidi?: number;
+  beatsPerNote?: number;
+  semitoneStep?: number;
+  guideChords?: boolean;
+  limitPhrases?: number;
+}): TrainingNote[] {
   const maxPatternInterval = Math.max(...pattern);
-  const highestStart = Math.max(lowMidi, highMidi - maxPatternInterval);
-  const startsUp = Array.from({ length: highestStart - lowMidi + 1 }, (_, index) => lowMidi + index);
-  const startsDown = startsUp.slice(0, -1).reverse();
-  const starts = [...startsUp, ...startsDown];
+  const minPatternInterval = Math.min(...pattern);
+  const lowestStart = Math.max(lowMidi - minPatternInterval, 36);
+  const highestStart = Math.min(highMidi - maxPatternInterval, 79);
+  const startsRaw = highestStart >= lowestStart
+    ? Array.from({ length: Math.floor((highestStart - lowestStart) / semitoneStep) + 1 }, (_, index) => lowestStart + index * semitoneStep)
+    : [Math.max(36, Math.min(60, lowMidi))];
+  const middle = Math.floor(startsRaw.length / 2);
+  const startsBalanced = [...startsRaw.slice(middle), ...startsRaw.slice(0, middle).reverse()];
+  const starts = limitPhrases ? startsBalanced.slice(0, limitPhrases) : startsBalanced;
   const notes: TrainingNote[] = [];
   let beatCursor = 0;
 
@@ -84,7 +108,7 @@ function buildAdaptiveFiveToneWarmup({ bpm, lowMidi = DEFAULT_TESSITURA_LOW, hig
     pattern.forEach((interval) => {
       notes.push({
         pitch: midiToPitch(rootMidi + interval),
-        label: 'Mmm',
+        label,
         start: beat(bpm, beatCursor),
         duration: beat(bpm, beatsPerNote),
       });
@@ -92,19 +116,26 @@ function buildAdaptiveFiveToneWarmup({ bpm, lowMidi = DEFAULT_TESSITURA_LOW, hig
     });
 
     const nextRoot = starts[phraseIndex + 1];
-    if (nextRoot != null) {
+    if (guideChords && nextRoot != null) {
       beatCursor += 0.25;
       notes.push(...buildMajorChord(rootMidi, bpm, beatCursor, 0.62));
       beatCursor += 0.72;
       notes.push(...buildMajorChord(nextRoot, bpm, beatCursor, 0.68));
       beatCursor += 1.03;
+    } else {
+      beatCursor += 0.55;
     }
   });
 
   return notes;
 }
 
+function buildAdaptiveFiveToneWarmup({ bpm, lowMidi = DEFAULT_TESSITURA_LOW, highMidi = DEFAULT_TESSITURA_HIGH, beatsPerNote = 1 }: { bpm: number; lowMidi?: number; highMidi?: number; beatsPerNote?: number }): TrainingNote[] {
+  return buildAdaptivePattern({ bpm, lowMidi, highMidi, beatsPerNote, pattern: [0, 2, 4, 5, 7, 5, 4, 2, 0], label: 'Mmm' });
+}
+
 export const trainingCategories: TrainingCategory[] = [
+  { slug: 'aquecimentos', title: 'Aquecimentos', subtitle: 'Preparação vocal', description: 'Rotinas guiadas para preparar a voz antes de aula, ensaio, culto ou apresentação, sempre respeitando a tessitura confortável.', icon: '🔥', gradient: 'radial-gradient(circle at 70% 20%,rgba(245,199,107,.42),transparent 38%),linear-gradient(145deg,#3a240c,#07070b)' },
   { slug: 'afinacao', title: 'Afinação', subtitle: 'Precisão e estabilidade', description: 'Vocalizes guiados para sustentar notas, corrigir oscilações e perceber quando a voz está acima ou abaixo do centro tonal.', icon: '🎯', gradient: 'radial-gradient(circle at 70% 20%,rgba(245,199,107,.38),transparent 38%),linear-gradient(145deg,#33210f,#07070b)' },
   { slug: 'divisao-vocal', title: 'Divisão Vocal', subtitle: 'Segunda voz e independência', description: 'Exercícios para enxergar a linha da segunda voz, treinar entradas e desenvolver segurança em terças, sextas e movimentos contrários.', icon: '🎼', gradient: 'radial-gradient(circle at 70% 20%,rgba(142,92,255,.38),transparent 38%),linear-gradient(145deg,#211334,#07070b)' },
   { slug: 'respiracao', title: 'Respiração', subtitle: 'Fluxo, apoio e controle', description: 'Treinos com guia visual para inspirar, dosar o ar e sustentar frases longas com mais organização corporal.', icon: '🌬️', gradient: 'radial-gradient(circle at 70% 20%,rgba(55,155,255,.35),transparent 38%),linear-gradient(145deg,#0b203f,#05060a)' },
@@ -114,6 +145,69 @@ export const trainingCategories: TrainingCategory[] = [
 ];
 
 export const trainingExercises: TrainingExercise[] = [
+  {
+    slug: 'aquecimento-express-lip-trill-01',
+    title: 'Aquecimento Express',
+    categorySlug: 'aquecimentos',
+    objective: 'Faça Brrrr/Lip Trill com fluxo leve. Deixe os lábios vibrarem sem empurrar volume e acompanhe as barras no tempo.',
+    description: 'Rotina rápida de 5 graus para entrar em voz em poucos minutos, com transposição automática pela região confortável da tessitura.',
+    level: 'Iniciante',
+    durationLabel: '3 min',
+    bpm: 76,
+    focus: ['Lip Trill', '5 graus', 'Express'],
+    notes: buildAdaptivePattern({ bpm: 76, pattern: [0, 2, 4, 5, 7, 5, 4, 2, 0], label: 'Brrrr', beatsPerNote: 0.9, limitPhrases: 12 }),
+  },
+  {
+    slug: 'aquecimento-completo-ng-mum-01',
+    title: 'Aquecimento Completo',
+    categorySlug: 'aquecimentos',
+    objective: 'Comece com NG, passe por Mmm/Mum e termine com Gee, mantendo voz estável e sem tensão na passagem.',
+    description: 'Sequência mais completa para aula, ensaio ou gravação: ressonância, articulação e conexão de registros dentro da tessitura.',
+    level: 'Iniciante',
+    durationLabel: '8 min',
+    bpm: 72,
+    focus: ['NG', 'Mum', 'Gee'],
+    notes: [
+      ...buildAdaptivePattern({ bpm: 72, pattern: [0, 2, 4, 2, 0], label: 'NG', beatsPerNote: 1, limitPhrases: 8 }),
+      ...buildAdaptivePattern({ bpm: 72, pattern: [0, 2, 4, 5, 7, 5, 4, 2, 0], label: 'Mum', beatsPerNote: 0.92, limitPhrases: 8 }).map((note, index, list) => ({ ...note, start: note.start + Math.max(...list.map((item) => item.start + item.duration), 0) + 1 })),
+    ],
+  },
+  {
+    slug: 'aquecimento-pre-culto-estavel-01',
+    title: 'Pré-Culto Estável',
+    categorySlug: 'aquecimentos',
+    objective: 'Aqueça sem cansar. Priorize emissão leve, centro da nota e segurança para cantar repertório depois.',
+    description: 'Aquecimento moderado para ministério de louvor: poucas notas agudas, mais estabilidade e controle de entrada.',
+    level: 'Iniciante',
+    durationLabel: '5 min',
+    bpm: 70,
+    focus: ['Pré-culto', 'Estabilidade', 'Leveza'],
+    notes: buildAdaptivePattern({ bpm: 70, pattern: [0, 2, 4, 2, 0, 0, 3, 5, 3, 0], label: 'Mmm', beatsPerNote: 1, semitoneStep: 2, limitPhrases: 10 }),
+  },
+  {
+    slug: 'aquecimento-pre-show-projecao-01',
+    title: 'Pré-Show Projeção',
+    categorySlug: 'aquecimentos',
+    objective: 'Ative a voz com energia controlada. Use Gee/Ney com clareza, sem gritar e sem travar a mandíbula.',
+    description: 'Rotina mais energética para preparar projeção, ataque vocal e resistência antes de cantar por mais tempo.',
+    level: 'Intermediário',
+    durationLabel: '6 min',
+    bpm: 84,
+    focus: ['Projeção', 'Gee', 'Resistência'],
+    notes: buildAdaptivePattern({ bpm: 84, pattern: [0, 4, 7, 12, 7, 4, 0], label: 'Gee', beatsPerNote: 0.82, semitoneStep: 1, limitPhrases: 12 }),
+  },
+  {
+    slug: 'aquecimento-recuperacao-suave-01',
+    title: 'Recuperação Suave',
+    categorySlug: 'aquecimentos',
+    objective: 'Faça tudo pequeno, confortável e sem volume. O objetivo é reorganizar a voz, não forçar desempenho.',
+    description: 'Exercício leve para dias de cansaço vocal, pós-aula ou pós-apresentação, usando padrões curtos e tessitura reduzida.',
+    level: 'Iniciante',
+    durationLabel: '4 min',
+    bpm: 64,
+    focus: ['Recuperação', 'Suave', 'SOVT'],
+    notes: buildAdaptivePattern({ bpm: 64, pattern: [0, 1, 2, 1, 0], label: 'Vvv', beatsPerNote: 1.15, semitoneStep: 2, limitPhrases: 9 }),
+  },
   {
     slug: 'aquecimento-boca-chiusa-5-graus-01',
     title: 'Boca Chiusa: 5 graus',
