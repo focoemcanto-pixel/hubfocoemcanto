@@ -17,12 +17,11 @@ function supportedMimeType() { return ['video/webm;codecs=vp9,opus', 'video/webm
 function compressionPlan(profile: CompressionProfile, originalSize: number): CompressionProfile[] {
   if (originalSize >= VERY_LARGE_VIDEO) {
     if (profile === 'quality') return ['quality', 'compact', 'aggressive', 'ultra'];
-    return ['compact', 'aggressive', 'ultra'];
+    return ['quality', 'compact', 'aggressive', 'ultra'];
   }
   if (originalSize >= DIRECT_UPLOAD_SAFE_LIMIT) {
-    if (profile === 'quality') return ['quality', 'compact', 'aggressive', 'ultra'];
     if (profile === 'aggressive') return ['aggressive', 'ultra'];
-    return ['compact', 'aggressive', 'ultra'];
+    return ['quality', 'compact', 'aggressive', 'ultra'];
   }
   return [profile === 'auto' ? 'compact' : profile];
 }
@@ -31,23 +30,23 @@ function profileLabel(profile: CompressionProfile) {
   if (profile === 'ultra') return 'Compressão ultra 1080p';
   if (profile === 'aggressive') return 'Compressão forte 1080p';
   if (profile === 'compact') return 'Compressão compacta 1080p';
-  if (profile === 'quality') return 'Compressão em qualidade máxima';
+  if (profile === 'quality') return 'Compressão 1080p alta qualidade';
   return 'Compressão automática';
 }
 
 function qualityFloorFor(profile: CompressionProfile, originalSize: number) { if (originalSize < DIRECT_UPLOAD_SAFE_LIMIT) return 0; return profile === 'ultra' ? MIN_ACCEPTABLE_OUTPUT : IDEAL_MIN_OUTPUT; }
-function scoreCandidate(file: File, candidate: File, profile: CompressionProfile) { const floor = qualityFloorFor(profile, file.size); if (candidate.size <= DIRECT_UPLOAD_SAFE_LIMIT && (!floor || candidate.size >= floor)) return 1000 - Math.abs(candidate.size - 120 * 1024 * 1024); if (candidate.size <= DIRECT_UPLOAD_SAFE_LIMIT) return 500 - Math.abs(candidate.size - floor); return 100 - candidate.size; }
+function scoreCandidate(file: File, candidate: File, profile: CompressionProfile) { const floor = qualityFloorFor(profile, file.size); if (candidate.size <= DIRECT_UPLOAD_SAFE_LIMIT && (!floor || candidate.size >= floor)) return 1000 - Math.abs(candidate.size - 130 * 1024 * 1024); if (candidate.size <= DIRECT_UPLOAD_SAFE_LIMIT) return 500 - Math.abs(candidate.size - floor); return 100 - candidate.size; }
 
 function targetFor(profile: CompressionProfile, width: number, height: number, duration = 0) {
   const maxHeight = 1080;
   const scale = height > maxHeight ? maxHeight / height : 1;
   const targetWidth = Math.max(2, Math.round((width * scale) / 2) * 2);
   const targetHeight = Math.max(2, Math.round((height * scale) / 2) * 2);
-  const targetBytes = profile === 'ultra' ? 130 * 1024 * 1024 : profile === 'aggressive' ? 150 * 1024 * 1024 : profile === 'compact' ? 175 * 1024 * 1024 : 0;
-  const audioBitsPerSecond = profile === 'ultra' ? 144_000 : profile === 'aggressive' ? 160_000 : profile === 'compact' ? 176_000 : 192_000;
-  const fixedVideoBitsPerSecond = profile === 'quality' ? 8_000_000 : profile === 'compact' ? 4_500_000 : profile === 'ultra' ? 2_200_000 : profile === 'aggressive' ? 3_000_000 : 6_000_000;
+  const targetBytes = profile === 'ultra' ? 150 * 1024 * 1024 : profile === 'aggressive' ? 165 * 1024 * 1024 : profile === 'compact' ? 175 * 1024 * 1024 : 178 * 1024 * 1024;
+  const audioBitsPerSecond = profile === 'ultra' ? 160_000 : profile === 'aggressive' ? 176_000 : profile === 'compact' ? 192_000 : 224_000;
+  const fixedVideoBitsPerSecond = profile === 'quality' ? 12_000_000 : profile === 'compact' ? 8_000_000 : profile === 'ultra' ? 4_500_000 : profile === 'aggressive' ? 6_000_000 : 10_000_000;
   const budgetVideoBitsPerSecond = targetBytes && duration > 0 ? Math.floor((targetBytes * 8) / duration - audioBitsPerSecond) : fixedVideoBitsPerSecond;
-  const minimumVideoBitsPerSecond = profile === 'ultra' ? 1_500_000 : profile === 'aggressive' ? 2_000_000 : 2_600_000;
+  const minimumVideoBitsPerSecond = profile === 'ultra' ? 3_000_000 : profile === 'aggressive' ? 4_000_000 : profile === 'compact' ? 5_000_000 : 6_000_000;
   const videoBitsPerSecond = Math.max(minimumVideoBitsPerSecond, Math.min(fixedVideoBitsPerSecond, budgetVideoBitsPerSecond));
   return { targetWidth, targetHeight, videoBitsPerSecond, audioBitsPerSecond };
 }
