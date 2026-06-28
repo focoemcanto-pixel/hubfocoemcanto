@@ -12,6 +12,8 @@ type CompressOptions = {
   onProgress?: (progress: number, label?: string) => void;
 };
 
+type CaptureVideoElement = HTMLVideoElement & { captureStream?: () => MediaStream; mozCaptureStream?: () => MediaStream };
+
 function debug(...args: unknown[]) {
   if (DEBUG) console.info('[hub-compress]', ...args);
 }
@@ -66,7 +68,7 @@ function targetFor(profile: CompressionProfile, width: number, height: number, d
         ? 170 * 1024 * 1024
         : 0;
 
-  const audioBitsPerSecond = profile === 'ultra' ? 80_000 : profile === 'aggressive' ? 96_000 : profile === 'compact' ? 112_000 : 160_000;
+  const audioBitsPerSecond = profile === 'ultra' ? 112_000 : profile === 'aggressive' ? 128_000 : profile === 'compact' ? 144_000 : 160_000;
   const fixedVideoBitsPerSecond = profile === 'quality' ? 8_000_000 : profile === 'compact' ? 2_400_000 : profile === 'ultra' ? 450_000 : profile === 'aggressive' ? 950_000 : 6_000_000;
   const budgetVideoBitsPerSecond = targetBytes && duration > 0 ? Math.floor((targetBytes * 8) / duration - audioBitsPerSecond) : fixedVideoBitsPerSecond;
   const minimumVideoBitsPerSecond = profile === 'ultra' ? 180_000 : profile === 'aggressive' ? 350_000 : 850_000;
@@ -97,15 +99,31 @@ async function readDuration(blob: Blob) {
   });
 }
 
+async function waitForAudioTrack(video: CaptureVideoElement, audioContext: AudioContext | null, destination: MediaStreamAudioDestinationNode | null) {
+  const capture = video.captureStream?.bind(video) || video.mozCaptureStream?.bind(video);
+  const capturedStream = capture ? capture() : null;
+  const capturedAudioTracks = capturedStream?.getAudioTracks?.() || [];
+  if (capturedAudioTracks.length) return capturedAudioTracks;
+
+  if (audioContext && destination) {
+    if (audioContext.state === 'suspended') await audioContext.resume().catch(() => undefined);
+    const destinationTracks = destination.stream.getAudioTracks();
+    if (destinationTracks.length) return destinationTracks;
+  }
+
+  return [];
+}
+
 async function compressOnce(file: File, profile: CompressionProfile, options: CompressOptions, planIndex: number, planLength: number): Promise<File> {
   const mimeType = supportedMimeType();
   if (!mimeType) throw new Error('Este navegador não suporta MediaRecorder/WebM para compressão local.');
 
   return withObjectUrl(file, async (url) => {
     debug('start profile', profile, 'input', file.name, file.size);
-    const video = document.createElement('video');
+    const video = document.createElement('video') as CaptureVideoElement;
     video.src = url;
-    video.muted = true;
+    video.muted = false;
+    video.volume = 0;
     video.playsInline = true;
     video.preload = 'metadata';
     video.crossOrigin = 'anonymous';
@@ -135,18 +153,15 @@ async function compressOnce(file: File, profile: CompressionProfile, options: Co
       const source = audioContext.createMediaElementSource(video);
       source.connect(destination);
     } catch (error) {
-      debug('audio capture unavailable, compressing video without original audio track', error);
+      debug('audio context capture unavailable, trying media element captureStream audio', error);
       audioContext = null;
       destination = null;
     }
 
     const stream = canvas.captureStream(profile === 'ultra' ? 24 : 30);
-    destination?.stream.getAudioTracks().forEach((track) => stream.addTrack(track));
 
     const chunks: Blob[] = [];
-    const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond, audioBitsPerSecond });
-    recorder.ondataavailable = (event) => event.data.size && chunks.push(event.data);
-
+    let recorder: MediaRecorder | null = null;
     let raf = 0;
     const baseProgress = Math.round((planIndex / planLength) * 100);
     const maxProgressForStep = Math.round(((planIndex + 1) / planLength) * 100);
@@ -160,19 +175,26 @@ async function compressOnce(file: File, profile: CompressionProfile, options: Co
     };
 
     const done = new Promise<Blob>((resolve, reject) => {
-      recorder.onerror = () => reject(new Error('Falha ao comprimir vídeo.'));
-      recorder.onstop = () => resolve(new Blob(chunks, { type: mimeType.split(';')[0] || 'video/webm' }));
       video.onended = () => {
         cancelAnimationFrame(raf);
-        if (recorder.state !== 'inactive') recorder.stop();
+        if (recorder && recorder.state !== 'inactive') recorder.stop();
       };
       video.onerror = () => reject(new Error('Falha ao reproduzir vídeo durante compressão.'));
+      options.onProgress?.(baseProgress || 1, `${profileLabel(profile)} (${planIndex + 1}/${planLength})`);
+      raf = requestAnimationFrame(draw);
+      video.play().then(async () => {
+        const audioTracks = await waitForAudioTrack(video, audioContext, destination);
+        debug('audio tracks', { count: audioTracks.length, labels: audioTracks.map((track) => track.label || track.kind) });
+        if (!audioTracks.length) throw new Error('Não foi possível capturar a trilha de áudio do vídeo. Compressão cancelada para evitar vídeo mudo.');
+        audioTracks.forEach((track) => stream.addTrack(track));
+        recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond, audioBitsPerSecond });
+        recorder.ondataavailable = (event) => event.data.size && chunks.push(event.data);
+        recorder.onerror = () => reject(new Error('Falha ao comprimir vídeo.'));
+        recorder.onstop = () => resolve(new Blob(chunks, { type: mimeType.split(';')[0] || 'video/webm' }));
+        recorder.start(1000);
+      }).catch((error) => reject(error instanceof Error ? error : new Error('Falha ao iniciar reprodução para compressão.')));
     });
 
-    options.onProgress?.(baseProgress || 1, `${profileLabel(profile)} (${planIndex + 1}/${planLength})`);
-    recorder.start(1000);
-    raf = requestAnimationFrame(draw);
-    await video.play();
     const blob = await done;
     await audioContext?.close().catch(() => undefined);
 
