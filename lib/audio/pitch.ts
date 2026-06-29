@@ -23,11 +23,12 @@ export function autoCorrelate(buffer: Float32Array, sampleRate: number): number 
   let rms = 0;
   for (let i = 0; i < size; i += 1) rms += buffer[i] * buffer[i];
   rms = Math.sqrt(rms / size);
-  if (rms < 0.012) return null;
+  if (rms < 0.0035) return null;
 
   let start = 0;
   let end = size - 1;
-  const threshold = 0.2;
+  const threshold = Math.max(0.035, Math.min(0.18, rms * 2.4));
+
   for (let i = 0; i < size / 2; i += 1) {
     if (Math.abs(buffer[i]) < threshold) { start = i; break; }
   }
@@ -39,32 +40,63 @@ export function autoCorrelate(buffer: Float32Array, sampleRate: number): number 
   const trimmedSize = trimmed.length;
   if (trimmedSize < 32) return null;
 
-  const correlations = new Array<number>(trimmedSize).fill(0);
-  for (let lag = 0; lag < trimmedSize; lag += 1) {
-    for (let i = 0; i < trimmedSize - lag; i += 1) {
-      correlations[lag] += trimmed[i] * trimmed[i + lag];
+  const minFrequency = 35;
+  const maxFrequency = 2000;
+  const minLag = Math.max(2, Math.floor(sampleRate / maxFrequency));
+  const maxLag = Math.min(trimmedSize - 2, Math.ceil(sampleRate / minFrequency));
+
+  let bestCorrelation = 0;
+  let bestLag = -1;
+
+  for (let lag = minLag; lag <= maxLag; lag += 1) {
+    let correlation = 0;
+    let energyA = 0;
+    let energyB = 0;
+    const limit = trimmedSize - lag;
+
+    for (let i = 0; i < limit; i += 1) {
+      const a = trimmed[i];
+      const b = trimmed[i + lag];
+      correlation += a * b;
+      energyA += a * a;
+      energyB += b * b;
+    }
+
+    const normalized = correlation / Math.sqrt(energyA * energyB || 1);
+    if (normalized > bestCorrelation) {
+      bestCorrelation = normalized;
+      bestLag = lag;
     }
   }
 
-  let d = 0;
-  while (d < trimmedSize - 1 && correlations[d] > correlations[d + 1]) d += 1;
+  if (bestLag <= 0 || bestCorrelation < 0.38) return null;
 
-  let maxValue = -1;
-  let maxPosition = -1;
-  for (let i = d; i < trimmedSize; i += 1) {
-    if (correlations[i] > maxValue) {
-      maxValue = correlations[i];
-      maxPosition = i;
-    }
+  let refinedLag = bestLag;
+  if (bestLag > minLag && bestLag < maxLag) {
+    const scoreAt = (lag: number) => {
+      let correlation = 0;
+      let energyA = 0;
+      let energyB = 0;
+      const limit = trimmedSize - lag;
+      for (let i = 0; i < limit; i += 1) {
+        const a = trimmed[i];
+        const b = trimmed[i + lag];
+        correlation += a * b;
+        energyA += a * a;
+        energyB += b * b;
+      }
+      return correlation / Math.sqrt(energyA * energyB || 1);
+    };
+    const x1 = scoreAt(bestLag - 1);
+    const x2 = scoreAt(bestLag);
+    const x3 = scoreAt(bestLag + 1);
+    const divisor = 2 * (x1 - 2 * x2 + x3);
+    const adjustment = divisor ? (x1 - x3) / divisor : 0;
+    if (Number.isFinite(adjustment) && Math.abs(adjustment) <= 1) refinedLag = bestLag + adjustment;
   }
-  if (maxPosition <= 0) return null;
 
-  const x1 = correlations[maxPosition - 1] || 0;
-  const x2 = correlations[maxPosition] || 0;
-  const x3 = correlations[maxPosition + 1] || 0;
-  const adjustment = (x1 - x3) / (2 * (x1 - 2 * x2 + x3));
-  const frequency = sampleRate / (maxPosition + (Number.isFinite(adjustment) ? adjustment : 0));
-  return frequency >= 40 && frequency <= 2000 ? frequency : null;
+  const frequency = sampleRate / refinedLag;
+  return frequency >= minFrequency && frequency <= maxFrequency ? frequency : null;
 }
 
 export function frequencyToMidi(freq: number): number {
