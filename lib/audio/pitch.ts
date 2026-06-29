@@ -16,8 +16,6 @@ export type PitchFrame = {
   rms: number;
 };
 
-// Faixa prática para voz cantada no app. Acima disso o detector costuma pegar harmônicos
-// como se fossem a fundamental, causando saltos falsos tipo Si5 no mapa vocal.
 const MIN_VOICE_FREQUENCY = 55;
 const MAX_VOICE_FREQUENCY = 1100;
 
@@ -34,6 +32,12 @@ function rmsFromBuffer(buffer: Float32Array) {
   let sum = 0;
   for (let i = 0; i < buffer.length; i += 1) sum += buffer[i] * buffer[i];
   return Math.sqrt(sum / Math.max(1, buffer.length));
+}
+
+function peakFromBuffer(buffer: Float32Array) {
+  let peak = 0;
+  for (let i = 0; i < buffer.length; i += 1) peak = Math.max(peak, Math.abs(buffer[i]));
+  return peak;
 }
 
 function parabolicMinimum(values: Float32Array, tau: number) {
@@ -100,11 +104,8 @@ function mpmPitch(buffer: Float32Array, sampleRate: number) {
 
   if (!peaks.length) return null;
   const highest = Math.max(...peaks.map((peak) => peak.value));
-
-  // Preferimos o primeiro pico forte o suficiente. Isso evita escolher harmônicos agudos
-  // quando a fundamental grave está presente, mas um harmônico tem pico levemente maior.
-  const selected = peaks.find((peak) => peak.value >= highest * 0.74 && peak.value > 0.42)
-    || peaks.find((peak) => peak.value > 0.5)
+  const selected = peaks.find((peak) => peak.value >= highest * 0.74 && peak.value > 0.48)
+    || peaks.find((peak) => peak.value > 0.56)
     || null;
   if (!selected) return null;
 
@@ -145,14 +146,14 @@ function yinPitch(buffer: Float32Array, sampleRate: number) {
   }
 
   for (let tau = minTau; tau <= maxTau; tau += 1) {
-    if (cmnd[tau] < 0.16) {
+    if (cmnd[tau] < 0.13) {
       while (tau + 1 <= maxTau && cmnd[tau + 1] < cmnd[tau]) tau += 1;
       const frequency = normalizeFrequency(sampleRate / parabolicMinimum(cmnd, tau));
       return frequency >= MIN_VOICE_FREQUENCY && frequency <= MAX_VOICE_FREQUENCY ? { frequency, confidence: 1 - cmnd[tau] } : null;
     }
   }
 
-  if (bestTau > 0 && bestValue < 0.34) {
+  if (bestTau > 0 && bestValue < 0.28) {
     const frequency = normalizeFrequency(sampleRate / parabolicMinimum(cmnd, bestTau));
     return frequency >= MIN_VOICE_FREQUENCY && frequency <= MAX_VOICE_FREQUENCY ? { frequency, confidence: 1 - bestValue } : null;
   }
@@ -182,19 +183,25 @@ function normalizedCorrelationPitch(buffer: Float32Array, sampleRate: number) {
     if (normalized > bestCorrelation) { bestCorrelation = normalized; bestLag = lag; }
   }
 
-  if (bestLag <= 0 || bestCorrelation < 0.42) return null;
+  if (bestLag <= 0 || bestCorrelation < 0.48) return null;
   const frequency = normalizeFrequency(sampleRate / bestLag);
   return frequency >= MIN_VOICE_FREQUENCY && frequency <= MAX_VOICE_FREQUENCY ? { frequency, confidence: bestCorrelation } : null;
 }
 
 export function detectPitch(buffer: Float32Array, sampleRate: number): PitchFrame | null {
   const rms = rmsFromBuffer(buffer);
-  // Pequeno o bastante para não apagar graves, mas não tão baixo a ponto de aceitar ruído ambiente.
-  if (rms < 0.0012) return null;
+  const peak = peakFromBuffer(buffer);
+
+  // Gate de proximidade: evita que música distante, fala do ambiente ou ruído estável virem nota.
+  // Uma voz perto do microfone geralmente tem RMS e pico bem mais presentes que o fundo.
+  if (rms < 0.0028 || peak < 0.018) return null;
 
   const clean = removeDc(buffer);
   const result = mpmPitch(clean, sampleRate) || yinPitch(clean, sampleRate) || normalizedCorrelationPitch(clean, sampleRate);
-  if (!result || result.confidence < 0.38) return null;
+  if (!result) return null;
+
+  const requiredConfidence = rms < 0.006 ? 0.62 : rms < 0.012 ? 0.52 : 0.44;
+  if (result.confidence < requiredConfidence) return null;
 
   const midiFloat = frequencyToMidiFloat(result.frequency);
   const midiRounded = Math.round(midiFloat);
@@ -202,27 +209,12 @@ export function detectPitch(buffer: Float32Array, sampleRate: number): PitchFram
   return { frequencyHz: result.frequency, midiFloat, midiRounded, noteName: midiToBrazilianNoteName(midiRounded), cents, confidence: result.confidence, volume: rms, rms };
 }
 
-export function autoCorrelate(buffer: Float32Array, sampleRate: number): number | null {
-  return detectPitch(buffer, sampleRate)?.frequencyHz ?? null;
-}
-
+export function autoCorrelate(buffer: Float32Array, sampleRate: number): number | null { return detectPitch(buffer, sampleRate)?.frequencyHz ?? null; }
 export function frequencyToMidiFloat(freq: number): number { return 69 + 12 * Math.log2(freq / 440); }
 export function frequencyToMidi(freq: number): number { return Math.round(69 + 12 * Math.log2(freq / 440)); }
 export function midiToFrequency(midi: number): number { return 440 * 2 ** ((midi - 69) / 12); }
-
-export function midiToScientificNoteName(midi: number): string {
-  const rounded = Math.round(midi);
-  const note = NOTE_NAMES[((rounded % 12) + 12) % 12];
-  const octave = Math.floor(rounded / 12) - 1;
-  return `${note}${octave}`;
-}
-
-export function midiToBrazilianNoteName(midi: number): string {
-  const rounded = Math.round(midi);
-  const note = BRAZILIAN_NOTE_NAMES[((rounded % 12) + 12) % 12];
-  const scientificOctave = Math.floor(rounded / 12) - 1;
-  return `${note}${scientificOctave - 1}`;
-}
+export function midiToScientificNoteName(midi: number): string { const rounded = Math.round(midi); const note = NOTE_NAMES[((rounded % 12) + 12) % 12]; const octave = Math.floor(rounded / 12) - 1; return `${note}${octave}`; }
+export function midiToBrazilianNoteName(midi: number): string { const rounded = Math.round(midi); const note = BRAZILIAN_NOTE_NAMES[((rounded % 12) + 12) % 12]; const scientificOctave = Math.floor(rounded / 12) - 1; return `${note}${scientificOctave - 1}`; }
 
 export function formatBrazilianNote(noteOrMidi: string | number | null | undefined): string {
   if (noteOrMidi == null || noteOrMidi === '') return '—';
@@ -241,18 +233,7 @@ export function formatBrazilianNote(noteOrMidi: string | number | null | undefin
 }
 
 export const midiToNoteName = midiToScientificNoteName;
-
-export function noteNameToMidi(note: string): number | null {
-  const match = note.trim().toUpperCase().match(/^([A-G])(#|B)?(-?\d+)$/);
-  if (!match) return null;
-  const [, letter, accidental = '', octaveText] = match;
-  const normalized = `${letter}${accidental === 'B' ? 'b' : accidental}`;
-  const flats: Record<string, string> = { Db: 'C#', Eb: 'D#', Gb: 'F#', Ab: 'G#', Bb: 'A#' };
-  const noteName = flats[normalized] || normalized;
-  const index = NOTE_NAMES.indexOf(noteName);
-  if (index < 0) return null;
-  return (Number(octaveText) + 1) * 12 + index;
-}
+export function noteNameToMidi(note: string): number | null { const match = note.trim().toUpperCase().match(/^([A-G])(#|B)?(-?\d+)$/); if (!match) return null; const [, letter, accidental = '', octaveText] = match; const normalized = `${letter}${accidental === 'B' ? 'b' : accidental}`; const flats: Record<string, string> = { Db: 'C#', Eb: 'D#', Gb: 'F#', Ab: 'G#', Bb: 'A#' }; const noteName = flats[normalized] || normalized; const index = NOTE_NAMES.indexOf(noteName); if (index < 0) return null; return (Number(octaveText) + 1) * 12 + index; }
 
 export function getVocalRegister(midi?: number | null, gender?: VoiceGender): VocalRegister | null {
   if (midi == null) return null;
@@ -263,12 +244,7 @@ export function getVocalRegister(midi?: number | null, gender?: VoiceGender): Vo
   return 'head';
 }
 
-export function getVocalRegisterLabel(register?: VocalRegister | null): string {
-  if (register === 'chest') return 'Peito';
-  if (register === 'mix') return 'Voz mista';
-  if (register === 'head') return 'Cabeça';
-  return '—';
-}
+export function getVocalRegisterLabel(register?: VocalRegister | null): string { if (register === 'chest') return 'Peito'; if (register === 'mix') return 'Voz mista'; if (register === 'head') return 'Cabeça'; return '—'; }
 
 export function classifyVoice(params: { tessituraLowMidi?: number | null; tessituraHighMidi?: number | null; lowestMidi?: number | null; highestMidi?: number | null; gender?: VoiceGender; }): { classification: string; confidence: number } {
   const low = params.tessituraLowMidi;
@@ -277,16 +253,8 @@ export function classifyVoice(params: { tessituraLowMidi?: number | null; tessit
   const span = high - low;
   const coherent = params.lowestMidi == null || params.highestMidi == null || (low >= params.lowestMidi && high <= params.highestMidi);
   const confidence = Math.min(0.85, Math.max(0.55, 0.62 + Math.min(span, 18) / 100 + (coherent ? 0.05 : -0.04)));
-  if (params.gender === 'masculino') {
-    if (high >= 67 && low >= 48) return { classification: 'Tenor', confidence };
-    if (low <= 45 && high <= 64) return { classification: (low + high) / 2 < 54 ? 'Baixo' : 'Barítono', confidence };
-    return { classification: 'Barítono', confidence };
-  }
-  if (params.gender === 'feminino') {
-    if (high >= 72) return { classification: 'Soprano', confidence };
-    if (low <= 53 && high <= 69) return { classification: 'Contralto', confidence };
-    return { classification: 'Mezzo', confidence };
-  }
+  if (params.gender === 'masculino') { if (high >= 67 && low >= 48) return { classification: 'Tenor', confidence }; if (low <= 45 && high <= 64) return { classification: (low + high) / 2 < 54 ? 'Baixo' : 'Barítono', confidence }; return { classification: 'Barítono', confidence }; }
+  if (params.gender === 'feminino') { if (high >= 72) return { classification: 'Soprano', confidence }; if (low <= 53 && high <= 69) return { classification: 'Contralto', confidence }; return { classification: 'Mezzo', confidence }; }
   if (high >= 72) return { classification: 'Voz aguda', confidence: Math.min(confidence, 0.72) };
   if (high <= 64 || low <= 45) return { classification: 'Voz grave', confidence: Math.min(confidence, 0.72) };
   return { classification: 'Voz média', confidence: Math.min(confidence, 0.72) };
