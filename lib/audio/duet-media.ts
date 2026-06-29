@@ -25,8 +25,8 @@ export function duetRecorderOptions(type?: string, audioOnly = false): MediaReco
   const options: MediaRecorderOptions = {};
   if (type) options.mimeType = type;
   const lowData = shouldUseLowDataRecording();
-  if (!audioOnly) options.videoBitsPerSecond = lowData ? 1600000 : isSafariLike() ? 2500000 : 5200000;
-  options.audioBitsPerSecond = audioOnly ? (lowData ? 96000 : 160000) : (lowData ? 128000 : 192000);
+  if (!audioOnly) options.videoBitsPerSecond = lowData ? 1800000 : isSafariLike() ? 3000000 : 6200000;
+  options.audioBitsPerSecond = audioOnly ? (lowData ? 128000 : 256000) : (lowData ? 160000 : 256000);
   return options;
 }
 
