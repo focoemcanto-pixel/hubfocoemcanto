@@ -62,11 +62,7 @@ export default async function ActivityPage({ params }: { params: Promise<{ slug:
   const referenceUrl = lesson?.media_url || lesson?.drive_url || lesson?.audio_url || '';
 
   return (
-    <main className="activity-page">
-      <header className="activity-topbar">
-        <a href={`/aluno/aula/${lesson?.slug || slug}`}>← Voltar para aula</a>
-        <strong>{module?.title || 'Atividade VIP'}</strong>
-      </header>
+    <main className="activity-page duet-activity-page">
       <DuetRecorderWithAccess
         lessonTitle={lesson?.title || 'Atividade'}
         lessonSlug={lesson?.slug || slug}
