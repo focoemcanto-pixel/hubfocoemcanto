@@ -15,18 +15,18 @@ function redirectLogin(request: Request, params: Record<string, string>) {
 async function getOrCreateProfile(email: string) {
   const supabase = createAdminClient();
   const { data: profile, error } = await supabase.from('profiles').select('*').eq('email', email).maybeSingle();
-  if (error) return { profile: null, error };
-  if (profile) return { profile, error: null };
-  const { data: created, error: createError } = await supabase
+  if (error) return { profile: null, error, created: false };
+  if (profile) return { profile, error: null, created: false };
+  const { data: createdProfile, error: createError } = await supabase
     .from('profiles')
     .insert({ email, name: email.split('@')[0], role: 'student' })
     .select('*')
     .maybeSingle();
-  return { profile: created || null, error: createError };
+  return { profile: createdProfile || null, error: createError, created: Boolean(createdProfile) };
 }
 
-function setSession(request: Request, email: string) {
-  const response = NextResponse.redirect(new URL('/aluno', request.url), { status: 303 });
+function setSession(request: Request, email: string, redirectTo = '/aluno') {
+  const response = NextResponse.redirect(new URL(redirectTo, request.url), { status: 303 });
   response.cookies.set('hub_access_email', email, {
     httpOnly: true,
     sameSite: 'lax',
@@ -56,7 +56,7 @@ export async function POST(request: Request) {
 
     if (!email || !email.includes('@')) return redirectLogin(request, { erro: 'email' });
 
-    const { profile, error } = await getOrCreateProfile(email);
+    const { profile, error, created } = await getOrCreateProfile(email);
     if (error || !profile?.id) return redirectLogin(request, { erro: 'perfil', email });
 
     const storedHash = String((profile as any).hub_password_hash || '');
@@ -71,7 +71,7 @@ export async function POST(request: Request) {
         if (missingPasswordColumn(updateError.message)) return redirectLogin(request, { setup: '1', email, erro: 'schema_senha' });
         return redirectLogin(request, { setup: '1', email, erro: 'senha' });
       }
-      return setSession(request, email);
+      return setSession(request, email, created ? '/aluno/onboarding' : '/aluno');
     }
 
     if (!storedHash) return redirectLogin(request, { setup: '1', email });
