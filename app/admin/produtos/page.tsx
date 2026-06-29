@@ -21,11 +21,10 @@ function orderOf(product: ProductRow) { return Number(product.courses?.[0]?.sort
 
 async function ensureDefaultProducts() {
   const supabase = createAdminClient();
-  const { data: existing } = await supabase.from('products').select('id,slug');
-  const existingSlugs = new Set((existing || []).map((p: any) => p.slug));
+  const { data: existing } = await supabase.from('products').select('id,slug').limit(1);
+  if ((existing || []).length > 0) return;
   let order = 1;
   for (const item of defaultProducts) {
-    if (existingSlugs.has(item.slug)) { order += 1; continue; }
     const { data: product } = await supabase.from('products').insert({ ...item, price_cents: 0, cta_label: 'Acessar' }).select('id').single();
     if (product?.id) await supabase.from('courses').insert({ product_id: product.id, title: item.name, slug: item.slug, subtitle: item.description.slice(0, 140), description: item.description, status: item.status, sort_order: order });
     order += 1;
