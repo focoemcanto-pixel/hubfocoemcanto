@@ -18,33 +18,92 @@ const BRAZILIAN_NOTE_BY_SCIENTIFIC: Record<string, string> = {
   B: 'Si'
 };
 
-export function autoCorrelate(buffer: Float32Array, sampleRate: number): number | null {
+function rms(buffer: Float32Array) {
+  let sum = 0;
+  for (let i = 0; i < buffer.length; i += 1) sum += buffer[i] * buffer[i];
+  return Math.sqrt(sum / Math.max(1, buffer.length));
+}
+
+function removeDc(buffer: Float32Array) {
+  let mean = 0;
+  for (let i = 0; i < buffer.length; i += 1) mean += buffer[i];
+  mean /= Math.max(1, buffer.length);
+  const out = new Float32Array(buffer.length);
+  for (let i = 0; i < buffer.length; i += 1) out[i] = buffer[i] - mean;
+  return out;
+}
+
+function parabolic(values: Float32Array, tau: number) {
+  if (tau <= 0 || tau >= values.length - 1) return tau;
+  const left = values[tau - 1];
+  const center = values[tau];
+  const right = values[tau + 1];
+  const divisor = left + right - 2 * center;
+  if (!divisor) return tau;
+  const adjustment = (left - right) / (2 * divisor);
+  return Number.isFinite(adjustment) && Math.abs(adjustment) <= 1 ? tau + adjustment : tau;
+}
+
+function yinPitch(buffer: Float32Array, sampleRate: number) {
   const size = buffer.length;
-  let rms = 0;
-  for (let i = 0; i < size; i += 1) rms += buffer[i] * buffer[i];
-  rms = Math.sqrt(rms / size);
-  if (rms < 0.0035) return null;
-
-  let start = 0;
-  let end = size - 1;
-  const threshold = Math.max(0.035, Math.min(0.18, rms * 2.4));
-
-  for (let i = 0; i < size / 2; i += 1) {
-    if (Math.abs(buffer[i]) < threshold) { start = i; break; }
-  }
-  for (let i = 1; i < size / 2; i += 1) {
-    if (Math.abs(buffer[size - i]) < threshold) { end = size - i; break; }
-  }
-
-  const trimmed = buffer.slice(start, end);
-  const trimmedSize = trimmed.length;
-  if (trimmedSize < 32) return null;
-
   const minFrequency = 35;
-  const maxFrequency = 2000;
-  const minLag = Math.max(2, Math.floor(sampleRate / maxFrequency));
-  const maxLag = Math.min(trimmedSize - 2, Math.ceil(sampleRate / minFrequency));
+  const maxFrequency = 1800;
+  const minTau = Math.max(2, Math.floor(sampleRate / maxFrequency));
+  const maxTau = Math.min(size - 2, Math.ceil(sampleRate / minFrequency));
+  const half = Math.min(maxTau + 1, Math.floor(size / 2));
+  if (half <= minTau + 2) return null;
 
+  const difference = new Float32Array(half + 1);
+  for (let tau = 1; tau <= half; tau += 1) {
+    let sum = 0;
+    const limit = size - tau;
+    for (let i = 0; i < limit; i += 1) {
+      const delta = buffer[i] - buffer[i + tau];
+      sum += delta * delta;
+    }
+    difference[tau] = sum;
+  }
+
+  const cmnd = new Float32Array(half + 1);
+  cmnd[0] = 1;
+  let runningSum = 0;
+  let bestTau = -1;
+  let bestValue = Number.POSITIVE_INFINITY;
+
+  for (let tau = 1; tau <= half; tau += 1) {
+    runningSum += difference[tau];
+    cmnd[tau] = difference[tau] * tau / Math.max(runningSum, 1e-12);
+    if (tau >= minTau && tau <= maxTau && cmnd[tau] < bestValue) {
+      bestValue = cmnd[tau];
+      bestTau = tau;
+    }
+  }
+
+  const threshold = 0.18;
+  for (let tau = minTau; tau <= maxTau; tau += 1) {
+    if (cmnd[tau] < threshold) {
+      while (tau + 1 <= maxTau && cmnd[tau + 1] < cmnd[tau]) tau += 1;
+      const refined = parabolic(cmnd, tau);
+      const frequency = sampleRate / refined;
+      return frequency >= minFrequency && frequency <= maxFrequency ? frequency : null;
+    }
+  }
+
+  if (bestTau > 0 && bestValue < 0.32) {
+    const refined = parabolic(cmnd, bestTau);
+    const frequency = sampleRate / refined;
+    return frequency >= minFrequency && frequency <= maxFrequency ? frequency : null;
+  }
+
+  return null;
+}
+
+function normalizedCorrelationPitch(buffer: Float32Array, sampleRate: number) {
+  const size = buffer.length;
+  const minFrequency = 35;
+  const maxFrequency = 1800;
+  const minLag = Math.max(2, Math.floor(sampleRate / maxFrequency));
+  const maxLag = Math.min(size - 2, Math.ceil(sampleRate / minFrequency));
   let bestCorrelation = 0;
   let bestLag = -1;
 
@@ -52,16 +111,14 @@ export function autoCorrelate(buffer: Float32Array, sampleRate: number): number 
     let correlation = 0;
     let energyA = 0;
     let energyB = 0;
-    const limit = trimmedSize - lag;
-
+    const limit = size - lag;
     for (let i = 0; i < limit; i += 1) {
-      const a = trimmed[i];
-      const b = trimmed[i + lag];
+      const a = buffer[i];
+      const b = buffer[i + lag];
       correlation += a * b;
       energyA += a * a;
       energyB += b * b;
     }
-
     const normalized = correlation / Math.sqrt(energyA * energyB || 1);
     if (normalized > bestCorrelation) {
       bestCorrelation = normalized;
@@ -69,34 +126,18 @@ export function autoCorrelate(buffer: Float32Array, sampleRate: number): number 
     }
   }
 
-  if (bestLag <= 0 || bestCorrelation < 0.38) return null;
-
-  let refinedLag = bestLag;
-  if (bestLag > minLag && bestLag < maxLag) {
-    const scoreAt = (lag: number) => {
-      let correlation = 0;
-      let energyA = 0;
-      let energyB = 0;
-      const limit = trimmedSize - lag;
-      for (let i = 0; i < limit; i += 1) {
-        const a = trimmed[i];
-        const b = trimmed[i + lag];
-        correlation += a * b;
-        energyA += a * a;
-        energyB += b * b;
-      }
-      return correlation / Math.sqrt(energyA * energyB || 1);
-    };
-    const x1 = scoreAt(bestLag - 1);
-    const x2 = scoreAt(bestLag);
-    const x3 = scoreAt(bestLag + 1);
-    const divisor = 2 * (x1 - 2 * x2 + x3);
-    const adjustment = divisor ? (x1 - x3) / divisor : 0;
-    if (Number.isFinite(adjustment) && Math.abs(adjustment) <= 1) refinedLag = bestLag + adjustment;
-  }
-
-  const frequency = sampleRate / refinedLag;
+  if (bestLag <= 0 || bestCorrelation < 0.24) return null;
+  const frequency = sampleRate / bestLag;
   return frequency >= minFrequency && frequency <= maxFrequency ? frequency : null;
+}
+
+export function autoCorrelate(buffer: Float32Array, sampleRate: number): number | null {
+  const level = rms(buffer);
+  // Gate mais baixo para não perder graves suaves. O filtro de ambiente fica no próprio algoritmo.
+  if (level < 0.0011) return null;
+
+  const clean = removeDc(buffer);
+  return yinPitch(clean, sampleRate) || normalizedCorrelationPitch(clean, sampleRate);
 }
 
 export function frequencyToMidi(freq: number): number {
