@@ -2,10 +2,25 @@ import { NextResponse } from 'next/server';
 
 function doneResponse(request: Request) {
   const response = NextResponse.json({ ok: true });
+  const secure = request.url.startsWith('https://');
   response.cookies.set('hub_onboarding_done', '1', {
     httpOnly: true,
     sameSite: 'lax',
-    secure: request.url.startsWith('https://'),
+    secure,
+    path: '/',
+    maxAge: 60 * 60 * 24 * 365,
+  });
+  response.cookies.set('hub_onboarding_status', 'done', {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure,
+    path: '/',
+    maxAge: 60 * 60 * 24 * 365,
+  });
+  response.cookies.set('hub_onboarding_step', 'done', {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure,
     path: '/',
     maxAge: 60 * 60 * 24 * 365,
   });
