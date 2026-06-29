@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { StudentRoutePrefetcher } from '@/components/student-route-prefetcher';
 import { FeedVideoFrameNudge } from '@/components/feed-video-frame-nudge';
+import { OnboardingProfileShortcut } from '@/components/onboarding-profile-shortcut';
 
 const navItems = [
   { href: '/aluno', label: 'Feed' },
@@ -16,6 +17,7 @@ export function AppShell({ children, hideNav = false }: { children: React.ReactN
       <StudentRoutePrefetcher />
       <FeedVideoFrameNudge />
       <main className="app-content route-surface">{children}</main>
+      {!hideNav ? <OnboardingProfileShortcut /> : null}
       {!hideNav ? (
         <nav className="bottom-nav app-bottom-nav" aria-label="Navegação do aluno">
           {navItems.map((item) => (
