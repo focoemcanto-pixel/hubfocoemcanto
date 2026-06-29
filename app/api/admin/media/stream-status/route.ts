@@ -33,14 +33,18 @@ export async function GET(request: Request) {
 
     const video = json?.result || {};
     const state = String(video?.status?.state || 'unknown');
+    const duration = Number(video?.duration || 0) || null;
+    const ready = state === 'ready' && Boolean(duration && duration > 0);
+
     return NextResponse.json({
       uid,
       state,
-      ready: state === 'ready',
-      received: state !== 'pendingupload' && state !== 'unknown',
-      duration: Number(video?.duration || 0) || null,
+      ready,
+      received: ready,
+      duration,
       thumbnail: String(video?.thumbnail || ''),
       meta: video?.meta || {},
+      status: video?.status || {},
     });
   } catch (error) {
     return NextResponse.json({ error: 'stream_status_error', message: error instanceof Error ? error.message : 'Erro ao consultar status do Stream.' }, { status: 500 });
