@@ -12,6 +12,7 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url);
     const uid = String(searchParams.get('uid') || '').trim();
+    const expectedDuration = Number(searchParams.get('expectedDuration') || 0) || 0;
     if (!uid) return NextResponse.json({ error: 'missing_uid', message: 'UID obrigatório.' }, { status: 400 });
 
     const accountId = process.env.CLOUDFLARE_ACCOUNT_ID || '';
@@ -34,18 +35,11 @@ export async function GET(request: Request) {
     const video = json?.result || {};
     const state = String(video?.status?.state || 'unknown');
     const duration = Number(video?.duration || 0) || null;
-    const ready = state === 'ready' && Boolean(duration && duration > 0);
+    const ratio = expectedDuration && duration ? duration / expectedDuration : null;
+    const isComplete = !expectedDuration || Boolean(duration && duration >= expectedDuration * 0.95);
+    const ready = state === 'ready' && Boolean(duration && duration > 0) && isComplete;
 
-    return NextResponse.json({
-      uid,
-      state,
-      ready,
-      received: ready,
-      duration,
-      thumbnail: String(video?.thumbnail || ''),
-      meta: video?.meta || {},
-      status: video?.status || {},
-    });
+    return NextResponse.json({ uid, state, ready, received: ready, duration, expectedDuration: expectedDuration || null, ratio, isComplete, thumbnail: String(video?.thumbnail || ''), meta: video?.meta || {}, status: video?.status || {} });
   } catch (error) {
     return NextResponse.json({ error: 'stream_status_error', message: error instanceof Error ? error.message : 'Erro ao consultar status do Stream.' }, { status: 500 });
   }
