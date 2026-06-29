@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers';
 import Link from 'next/link';
 import { AppShell } from '@/components/app-shell';
-import { VocalRangeTestV3 } from '@/components/vocal/vocal-range-test-v3';
+import { VocalRangeTest } from '@/components/vocal/vocal-range-test-v4';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 
@@ -27,7 +27,7 @@ export default async function VocalProfilePage() {
             <Link href="/login" style={{ color: '#f5c76b', fontWeight: 900 }}>Voltar para login</Link>
           </section>
         </main>
-      ) : <VocalRangeTestV3 profileId={profileId} authUserId={user?.id || (profile as any)?.auth_user_id || null} initialProfile={vocalProfile} />}
+      ) : <VocalRangeTest profileId={profileId} authUserId={user?.id || (profile as any)?.auth_user_id || null} initialProfile={vocalProfile} />}
     </AppShell>
   );
 }
