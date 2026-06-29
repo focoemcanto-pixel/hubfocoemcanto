@@ -3,18 +3,49 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, Check, Mic2, Play, RefreshCw, Save, Sparkles } from 'lucide-react';
-import { autoCorrelate, classifyVoice, frequencyToMidi, midiToFrequency, midiToBrazilianNoteName, formatBrazilianNote } from '@/lib/audio/pitch';
+import { classifyVoice, detectPitch, midiToFrequency, midiToBrazilianNoteName, formatBrazilianNote } from '@/lib/audio/pitch';
 import { VocalNoteMeter } from './vocal-note-meter';
 
 type Captured = { note: string; midi: number; frequency: number };
 type Gender = 'masculino' | 'feminino' | 'nao_informar';
 type Step = 'intro' | 'lowest' | 'tess-high' | 'tess-low' | 'gender' | 'result';
 type Props = { profileId: string; authUserId?: string | null; initialProfile?: any };
-type AudioHandle = { ctx: AudioContext; analyser: AnalyserNode; stream: MediaStream; raf: number; data: Float32Array; lastAcceptedAt: number; recent: number[] };
+type AudioHandle = { ctx: AudioContext; analyser: AnalyserNode; stream: MediaStream; raf: number; data: Float32Array; filter: OneEuroFilter; lastFrame: { frequencyHz: number; midiFloat: number; midiRounded: number; confidence: number } | null; lastAcceptedAt: number };
 
-function rmsFromBuffer(data: Float32Array) { let sum = 0; for (let i = 0; i < data.length; i += 1) sum += data[i] * data[i]; return Math.sqrt(sum / data.length); }
-function median(values: number[]) { const sorted = [...values].sort((a, b) => a - b); return sorted[Math.floor(sorted.length / 2)] ?? null; }
-function capturedFromMidi(midi: number, frequency?: number): Captured { return { midi, note: midiToBrazilianNoteName(midi), frequency: frequency || midiToFrequency(midi) }; }
+class LowPassFilter {
+  private initialized = false;
+  private previous = 0;
+  filter(value: number, alpha: number) {
+    if (!this.initialized) { this.initialized = true; this.previous = value; return value; }
+    const filtered = alpha * value + (1 - alpha) * this.previous;
+    this.previous = filtered;
+    return filtered;
+  }
+}
+
+class OneEuroFilter {
+  private valueFilter = new LowPassFilter();
+  private derivativeFilter = new LowPassFilter();
+  private lastValue: number | null = null;
+  private lastTime: number | null = null;
+  constructor(private minCutoff = 1.45, private beta = 0.075, private derivativeCutoff = 1) {}
+  private alpha(cutoff: number, deltaSeconds: number) {
+    const tau = 1 / (2 * Math.PI * cutoff);
+    return 1 / (1 + tau / Math.max(deltaSeconds, 1 / 120));
+  }
+  filter(value: number, timestamp: number) {
+    const deltaSeconds = this.lastTime == null ? 1 / 60 : (timestamp - this.lastTime) / 1000;
+    const derivative = this.lastValue == null ? 0 : (value - this.lastValue) / Math.max(deltaSeconds, 1 / 120);
+    const filteredDerivative = this.derivativeFilter.filter(derivative, this.alpha(this.derivativeCutoff, deltaSeconds));
+    const cutoff = this.minCutoff + this.beta * Math.abs(filteredDerivative);
+    const filtered = this.valueFilter.filter(value, this.alpha(cutoff, deltaSeconds));
+    this.lastValue = filtered;
+    this.lastTime = timestamp;
+    return filtered;
+  }
+}
+
+function capturedFromMidi(midiFloat: number, frequency?: number): Captured { const midi = Math.round(midiFloat); return { midi, note: midiToBrazilianNoteName(midi), frequency: frequency || midiToFrequency(midiFloat) }; }
 
 export function VocalRangeTestV4({ profileId, authUserId, initialProfile }: Props) {
   const [step, setStep] = useState<Step>('intro');
@@ -54,25 +85,32 @@ export function VocalRangeTestV4({ profileId, authUserId, initialProfile }: Prop
     const analyser = ctx.createAnalyser(); analyser.fftSize = 8192; analyser.smoothingTimeConstant = 0;
     ctx.createMediaStreamSource(stream).connect(analyser);
     const data = new Float32Array(analyser.fftSize);
-    const handle: AudioHandle = { ctx, analyser, stream, raf: 0, data, lastAcceptedAt: 0, recent: [] };
+    const handle: AudioHandle = { ctx, analyser, stream, raf: 0, data, filter: new OneEuroFilter(), lastFrame: null, lastAcceptedAt: 0 };
     const tick = () => {
       analyser.getFloatTimeDomainData(data);
-      const volume = rmsFromBuffer(data);
-      const isTessitura = stepRef.current === 'tess-high' || stepRef.current === 'tess-low';
-      const minVolume = isTessitura ? 0.0028 : 0.0022;
-      if (volume < minVolume) { if (performance.now() - handle.lastAcceptedAt > 220) { setCurrentFrequency(null); setCurrentMidi(null); handle.recent = []; } handle.raf = requestAnimationFrame(tick); return; }
-      const freq = autoCorrelate(data, ctx.sampleRate);
-      if (freq && freq > 35 && freq < 1800) {
-        const rawMidi = frequencyToMidi(freq);
-        handle.recent = [...handle.recent.slice(-1), rawMidi];
-        const smoothedMidi = median(handle.recent) ?? rawMidi;
-        handle.lastAcceptedAt = performance.now();
-        setCurrentFrequency(midiToFrequency(smoothedMidi)); setCurrentMidi(smoothedMidi); setStableMidi(smoothedMidi);
-        const item = capturedFromMidi(smoothedMidi, freq);
-        if (stepRef.current === 'lowest' && rangeListeningRef.current && !captureReviewRef.current) {
+      const now = performance.now();
+      const pitch = detectPitch(data, ctx.sampleRate);
+      const frame = pitch ? { frequencyHz: pitch.frequencyHz, midiFloat: pitch.midiFloat, midiRounded: pitch.midiRounded, confidence: pitch.confidence } : null;
+      const isHolding = !frame && handle.lastFrame && now - handle.lastAcceptedAt <= 260;
+      const activeFrame = frame || (isHolding ? handle.lastFrame : null);
+      if (frame) { handle.lastFrame = frame; handle.lastAcceptedAt = now; }
+
+      if (activeFrame) {
+        const smoothedMidi = handle.filter.filter(activeFrame.midiFloat, now);
+        const roundedMidi = Math.round(smoothedMidi);
+        const displayFrequency = midiToFrequency(smoothedMidi);
+        setCurrentFrequency(displayFrequency);
+        setCurrentMidi(smoothedMidi);
+        setStableMidi(roundedMidi);
+        if (frame && stepRef.current === 'lowest' && rangeListeningRef.current && !captureReviewRef.current) {
+          const item = capturedFromMidi(frame.midiFloat, frame.frequencyHz);
           setLowest((old) => !old || item.midi < old.midi ? item : old);
           setHighest((old) => !old || item.midi > old.midi ? item : old);
         }
+      } else {
+        setCurrentFrequency(null);
+        setCurrentMidi(null);
+        setStableMidi(null);
       }
       handle.raf = requestAnimationFrame(tick);
     };
@@ -99,3 +137,5 @@ function mobileGlowFromMidi(midi?: number | null) { if (midi == null) return { r
 function MobileRangeCapture({ currentMidi, lowestMidi, highestMidi, liveNote, captureReady, captureReview, captureRange, showGuide, onStart, onBack, onRetry, onPrimary }: any) { const minMidi = 24; const maxMidi = 96; const clamp = (midi: number) => Math.max(minMidi, Math.min(maxMidi, midi)); const percent = (midi: number) => 100 - ((clamp(midi) - minMidi) / (maxMidi - minMidi)) * 100; const labels = Array.from({ length: Math.floor((maxMidi - minMidi) / 4) + 1 }, (_, index) => maxMidi - index * 4); const glow = mobileGlowFromMidi(currentMidi); return <div className="mvr-shell"><div className="mvr-ruler"><div className="mvr-line" />{labels.map((midi) => <span key={midi} className={midi % 12 === 0 ? 'octave' : ''} style={{ top: `${percent(midi)}%` }}>{midiToBrazilianNoteName(midi)}</span>)}{highestMidi != null && <b className="mvr-limit mvr-limit-high" style={{ top: `${percent(highestMidi)}%` }}><em>{midiToBrazilianNoteName(highestMidi)}</em></b>}{lowestMidi != null && <b className="mvr-limit mvr-limit-low" style={{ top: `${percent(lowestMidi)}%` }}><em>{midiToBrazilianNoteName(lowestMidi)}</em></b>}{currentMidi != null && <i className="mvr-dot" style={{ top: `${percent(currentMidi)}%` }} />}</div><div className="mvr-visual"><div className="mvr-aura" /><img src="/vocal/vocal-body-base.png" alt="Silhueta vocal" draggable={false} /><b className={`mvr-glow ${glow.region}`} style={{ top: `${glow.top}%`, left: `${glow.left}%`, width: `${glow.width}%`, height: `${glow.height}%` }} /><span className="head">CABEÇA</span><span className="mix">VOZ MISTA</span><span className="chest">PEITO</span></div><header><small>ETAPA 1/3</small><h1>Mapeie sua extensão vocal</h1><p>Cante do grave ao agudo. A régua marca os extremos.</p></header><div className="mvr-note"><small>NOTA ATUAL</small><strong>{liveNote}</strong></div>{captureReview && <div className="mvr-result"><span>Extensão captada</span><strong>{captureRange}</strong></div>}{showGuide && <div className="mvr-guide"><div><small>ANTES DE COMEÇAR</small><h2>Mapeie sua extensão vocal</h2><p>Cante a sua nota mais grave e depois cante a sua nota mais aguda. Não force: queremos apenas registrar seus extremos com segurança.</p><button onClick={onStart}><Mic2 size={18} /> Iniciar</button></div></div>}<button className="mvr-back" onClick={onBack} aria-label="Sair">←</button><button className="mvr-main" disabled={!captureReady} onClick={onPrimary}>{captureReview ? 'Confirmar extensão' : 'Pressione quando terminar'}</button><button className="mvr-retry" onClick={onRetry} aria-label="Tentar de novo"><RefreshCw /></button></div>; }
 function Tessitura({ title, text, midi, phrase, instruction, downLabel, icon, tuner, onPlay, onMove, onConfirm, onExit }: any) { const note = midiToBrazilianNoteName(midi); return <section className="vocal-stage tessitura-stage"><button type="button" className="tessitura-exit" onClick={onExit} aria-label="Voltar">‹</button><div className="tessitura-figure" aria-hidden="true"><img src="/vocal/vocal-body-base.png" alt="" draggable={false} /><span /></div><div className="tessitura-copy"><p className="tessitura-step">ETAPA 2/3</p><h1>{title}</h1><p className="tessitura-lead">{text}</p><div className="tessitura-note-card"><div><span>NOTA SUGERIDA</span><strong>{note}</strong></div><button type="button" onClick={() => onPlay(midi)}><Play /><b>{note}</b><small>Tocar nota</small></button></div><div className="tessitura-sing-card"><i><Mic2 size={28} /></i><div><strong>{instruction || 'Cante a palavra na nota sugerida'}</strong><p>Diga “{phrase || 'eu consigo'}” com qualidade e conforto.</p></div></div><div className={`tessitura-tuner ${tuner?.status || 'waiting'}`} style={{ '--tuner-x': `${tuner?.x ?? 50}%` } as any}><span>MONITORAMENTO DE AFINAÇÃO</span><div className="tessitura-scale"><b /><i /></div><div className="tessitura-scale-labels"><small>Abaixo</small><small>Na nota</small><small>Acima</small></div><p><Check size={18} /> {tuner?.label || 'Cante para validar a nota'}</p></div><div className="actions tessitura-actions"><button onClick={onConfirm}><Check /> Consegui com conforto</button><button onClick={onMove}>{icon === 'up' ? <ArrowUp /> : <ArrowDown />} Difícil / sem qualidade</button><button onClick={onMove}>{icon === 'up' ? <ArrowUp /> : <ArrowDown />} {downLabel}</button></div><div className="tessitura-tip"><Sparkles size={20} /><p>Dica: mantenha o volume moderado e foque na qualidade do som.</p></div></div></section>; }
 const css = `.vocal-test-shell{min-height:100dvh;padding:18px 14px 110px;color:#fff;background:#050507}.vocal-stage{max-width:1120px;margin:0 auto;border:1px solid rgba(255,255,255,.12);border-radius:30px;background:linear-gradient(145deg,rgba(255,255,255,.08),rgba(255,255,255,.025));box-shadow:0 28px 90px rgba(0,0,0,.45);padding:24px}.vocal-stage.hero{text-align:center;display:grid;gap:18px;place-items:center}.range-desktop-ui{display:grid;grid-template-columns:minmax(360px,1.12fr) minmax(0,.88fr);gap:22px;align-items:stretch}.range-copy{align-self:center}.vocal-stage h1{margin:0;font-size:clamp(34px,7vw,58px);letter-spacing:-.06em}.vocal-stage p{margin:0;color:rgba(255,255,255,.72);font-size:18px;line-height:1.45}.eyebrow{color:#67e8f9!important;font-size:12px!important;text-transform:uppercase;letter-spacing:.18em;font-weight:1000}.tip,.vocal-stage small{color:#f5c76b!important}.vocal-stage button,.vocal-stage a{border:0;border-radius:18px;padding:15px 18px;background:linear-gradient(180deg,#ffe29a,#e8ad34);color:#120d05;font-weight:950;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:54px}.actions{display:flex;flex-wrap:wrap;gap:10px;justify-content:center}.actions button:nth-child(n+2){background:rgba(255,255,255,.09);color:#fff;border:1px solid rgba(255,255,255,.12)}.range-big{font-size:54px;font-weight:1000;letter-spacing:-.05em;color:#67e8f9}.choice-grid,.result-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;width:100%;max-width:760px}.result-grid{grid-template-columns:repeat(2,1fr)}.result-grid article{border:1px solid rgba(255,255,255,.1);border-radius:20px;padding:18px;background:rgba(0,0,0,.25)}.result-grid span{display:block;color:rgba(255,255,255,.62);margin-bottom:7px}.result-grid strong{font-size:24px}.mvr-shell{display:none}body.vocal-capture-active{overflow:hidden!important}body.vocal-capture-active nav,body.vocal-capture-active footer,body.vocal-capture-active [class*="bottom"],body.vocal-capture-active [class*="Bottom"],body.vocal-capture-active [class*="tab-bar"],body.vocal-capture-active [class*="TabBar"],body.vocal-capture-active [class*="mobile-nav"],body.vocal-capture-active [class*="MobileNav"]{display:none!important}@media(max-width:760px){.vocal-test-shell{padding:0;background:#020304;min-height:100dvh;overflow:hidden}.range-capture{position:fixed!important;inset:0!important;width:100vw!important;height:100dvh!important;max-width:none!important;margin:0!important;padding:0!important;border:0!important;border-radius:0!important;background:#020304!important;box-shadow:none!important;overflow:hidden!important;z-index:2147483647!important}.range-desktop-ui{display:none!important}.mvr-shell{display:block;position:absolute;inset:0;background:#020304;color:#fff;overflow:hidden}.choice-grid,.result-grid{grid-template-columns:1fr}.mvr-ruler{position:absolute;left:6.1%;top:21.5%;bottom:14.5%;width:30%;z-index:4}.mvr-line{position:absolute;left:61%;top:0;bottom:0;width:6px;border-radius:999px;background:linear-gradient(#67e8f9 0 43%,#f5c76b 43%)}.mvr-ruler span{position:absolute;left:0;transform:translateY(-50%);font-size:12px;font-weight:900;color:rgba(255,255,255,.58);line-height:1}.mvr-ruler span:after{content:"";position:absolute;left:64px;top:50%;width:42px;height:1px;background:rgba(255,255,255,.22)}.mvr-dot{position:absolute;left:47%;width:70px;height:70px;border-radius:50%;transform:translate(-50%,-50%);background:#67e8f9;box-shadow:0 0 32px rgba(103,232,249,.7);z-index:5;transition:top 45ms linear}.mvr-limit{position:absolute;left:62%;width:120px;height:4px;border-radius:999px;transform:translateY(-50%);z-index:6}.mvr-limit em{position:absolute;left:126px;top:50%;transform:translateY(-50%);font-style:normal;font-weight:1000;color:#fff;white-space:nowrap}.mvr-limit-high{background:#67e8f9}.mvr-limit-low{background:#f5c76b}.mvr-visual{position:absolute;left:24%;right:-3%;top:23%;bottom:20%;z-index:1}.mvr-visual img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:.78}.mvr-aura{position:absolute;inset:8% 8%;border-radius:50%;background:radial-gradient(circle,rgba(103,232,249,.12),transparent 62%);filter:blur(14px)}.mvr-glow{position:absolute;border-radius:50%;background:rgba(103,232,249,.32);filter:blur(20px);opacity:.72}.mvr-visual span{position:absolute;right:0;font-size:18px;font-weight:1000;letter-spacing:.04em;color:rgba(255,255,255,.66)}.mvr-visual .head{top:20%}.mvr-visual .mix{top:36%}.mvr-visual .chest{top:52%;color:#f5c76b} .mvr-shell header{position:absolute;left:10%;right:10%;top:10%;text-align:center;z-index:8}.mvr-shell header small{display:block;font-size:14px;letter-spacing:.18em;color:rgba(255,255,255,.55)!important;font-weight:1000}.mvr-shell header h1{font-size:34px;line-height:.95;margin:14px 0 10px;letter-spacing:-.06em}.mvr-shell header p{font-size:18px;color:rgba(255,255,255,.64)}.mvr-note{position:absolute;left:33%;right:33%;bottom:23%;border:1px solid rgba(255,255,255,.18);background:rgba(0,0,0,.58);border-radius:28px;padding:13px 10px;text-align:center;z-index:7}.mvr-note small{display:block;color:rgba(255,255,255,.64)!important;letter-spacing:.18em;font-weight:1000}.mvr-note strong{font-size:54px;line-height:1;color:#67e8f9}.mvr-main{position:absolute;left:25%;right:25%;bottom:14%;z-index:8;border-radius:999px!important}.mvr-back,.mvr-retry{position:absolute;bottom:14%;width:64px;height:64px;border-radius:50%!important;background:rgba(255,255,255,.08)!important;color:#fff!important;border:1px solid rgba(255,255,255,.14)!important;z-index:8}.mvr-back{left:8%}.mvr-retry{right:8%}.mvr-result{position:absolute;left:20%;right:20%;bottom:31%;padding:14px;border-radius:22px;background:rgba(0,0,0,.72);border:1px solid rgba(245,199,107,.35);text-align:center;z-index:8}.mvr-result span{display:block;color:#f5c76b;font-weight:1000;text-transform:uppercase;letter-spacing:.12em;font-size:12px}.mvr-result strong{font-size:24px}.mvr-guide{position:absolute;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.56);backdrop-filter:blur(8px);z-index:20;padding:24px}.mvr-guide>div{max-width:330px;border:1px solid rgba(255,255,255,.16);border-radius:26px;background:linear-gradient(145deg,rgba(255,255,255,.12),rgba(255,255,255,.06));padding:22px;text-align:center;box-shadow:0 28px 90px rgba(0,0,0,.55)}.mvr-guide small{display:block;color:#f5c76b!important;font-weight:1000;letter-spacing:.16em}.mvr-guide h2{margin:8px 0;font-size:25px;letter-spacing:-.04em}.mvr-guide p{font-size:15px;color:rgba(255,255,255,.76);line-height:1.45;margin:0 0 16px}.mvr-guide button{width:100%;border-radius:999px!important}.tessitura-stage{min-height:100dvh;display:grid;grid-template-columns:.9fr 1.1fr;gap:22px;align-items:center}.tessitura-figure{position:relative;min-height:560px}.tessitura-figure img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:.72}.tessitura-copy{display:grid;gap:16px}.tessitura-step{color:#f5c76b!important;letter-spacing:.16em;font-weight:1000;text-transform:uppercase}.tessitura-note-card,.tessitura-sing-card,.tessitura-tuner,.tessitura-tip{border:1px solid rgba(255,255,255,.12);border-radius:22px;background:rgba(0,0,0,.25);padding:16px}.tessitura-note-card{display:flex;justify-content:space-between;gap:14px;align-items:center}.tessitura-note-card span{color:rgba(255,255,255,.56);font-size:12px;font-weight:1000;letter-spacing:.13em}.tessitura-note-card strong{font-size:44px;color:#67e8f9}.tessitura-sing-card{display:flex;gap:14px;align-items:center}.tessitura-tuner .tessitura-scale{height:10px;border-radius:999px;background:linear-gradient(90deg,#f87171,#f5c76b,#67e8f9,#f5c76b,#f87171);position:relative}.tessitura-tuner .tessitura-scale i{position:absolute;left:var(--tuner-x);top:50%;width:22px;height:22px;border-radius:50%;background:#fff;transform:translate(-50%,-50%);box-shadow:0 0 18px rgba(255,255,255,.5)}.tessitura-scale-labels{display:flex;justify-content:space-between}.tessitura-exit{position:absolute;left:18px;top:18px;border-radius:999px!important;background:rgba(255,255,255,.08)!important;color:#fff!important;z-index:5}@media(max-width:760px){.tessitura-stage{grid-template-columns:1fr;padding:72px 18px 24px}.tessitura-figure{display:none}.tessitura-note-card strong{font-size:38px}.mvr-note{left:32%;right:32%;bottom:24%}.mvr-note strong{font-size:48px}.mvr-main{left:25%;right:25%;bottom:14%}}}`;
+
+export { VocalRangeTestV4 as VocalRangeTest };
