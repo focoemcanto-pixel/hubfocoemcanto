@@ -14,6 +14,7 @@ export class DuetBufferEngine {
   private voicePreGain = 1;
   private referencePreGain = 1;
   private mediaReference: HTMLVideoElement | null = null;
+  private mediaReferenceSource: MediaElementAudioSourceNode | null = null;
   voiceBuffer: AudioBuffer | null = null;
   cleanVoiceBuffer: AudioBuffer | null = null;
   referenceBuffer: AudioBuffer | null = null;
@@ -56,8 +57,7 @@ export class DuetBufferEngine {
   }
 
   private async finishLoad(ctx: AudioContext, voiceBuffer: AudioBuffer, referenceBuffer: AudioBuffer) {
-    this.mediaReference?.pause();
-    this.mediaReference = null;
+    this.detachMediaReference();
     this.voiceBuffer = voiceBuffer;
     this.cleanVoiceBuffer = reduceVoiceNoise(ctx, voiceBuffer);
     this.referenceBuffer = referenceBuffer;
@@ -69,21 +69,40 @@ export class DuetBufferEngine {
   }
 
   private async finishLoadWithMediaReference(ctx: AudioContext, voiceBuffer: AudioBuffer, referenceUrl: string) {
+    this.detachMediaReference();
     this.voiceBuffer = voiceBuffer;
     this.cleanVoiceBuffer = reduceVoiceNoise(ctx, voiceBuffer);
     this.referenceBuffer = null;
     this.voicePreGain = this.trackPreGain(voiceBuffer, 0.045, 0.04, 1.6);
     this.referencePreGain = 1;
+    await this.bus?.ctx.close().catch(() => undefined);
+    this.bus = this.makeBus(ctx, ctx.destination);
+
     const ref = document.createElement('video');
     ref.src = referenceUrl;
     ref.crossOrigin = 'anonymous';
     ref.playsInline = true;
     ref.preload = 'auto';
     ref.muted = false;
-    ref.volume = this.getSettings().referenceVolume / 100;
+    ref.defaultMuted = false;
+    ref.volume = 1;
+    ref.style.position = 'fixed';
+    ref.style.left = '-9999px';
+    ref.style.top = '0';
+    ref.style.width = '1px';
+    ref.style.height = '1px';
+    ref.style.opacity = '0';
+    ref.style.pointerEvents = 'none';
+    document.body.appendChild(ref);
     this.mediaReference = ref;
-    await this.bus?.ctx.close().catch(() => undefined);
-    this.bus = this.makeBus(ctx, ctx.destination);
+
+    try {
+      this.mediaReferenceSource = ctx.createMediaElementSource(ref);
+      this.mediaReferenceSource.connect(this.bus.referenceInput);
+    } catch {
+      this.mediaReferenceSource = null;
+    }
+
     this.applySettings();
   }
 
@@ -98,7 +117,7 @@ export class DuetBufferEngine {
     bus.referenceGain.gain.cancelScheduledValues(now);
     bus.voiceGain.gain.setTargetAtTime((voiceVolume / 100) * this.voicePreGain, now, 0.003);
     bus.referenceGain.gain.setTargetAtTime((referenceVolume / 100) * this.referencePreGain, now, 0.003);
-    if (this.mediaReference) this.mediaReference.volume = Math.max(0, Math.min(1, referenceVolume / 100));
+    if (this.mediaReference) this.mediaReference.volume = 1;
     this.applyPreset(bus, preset);
   }
 
@@ -140,9 +159,10 @@ export class DuetBufferEngine {
       reference.start(startAt, offset);
     } else if (this.mediaReference) {
       this.mediaReference.pause();
+      this.mediaReference.muted = false;
       this.mediaReference.currentTime = offset;
       this.mediaReference.playbackRate = 1;
-      this.mediaReference.volume = Math.max(0, Math.min(1, this.getSettings().referenceVolume / 100));
+      this.mediaReference.volume = 1;
       await this.mediaReference.play().catch(() => undefined);
       this.mediaReference.onended = () => { if (this.isPlaying) this.pause(false, true); };
     }
@@ -177,7 +197,7 @@ export class DuetBufferEngine {
     this.voiceBuffer = null;
     this.cleanVoiceBuffer = null;
     this.referenceBuffer = null;
-    this.mediaReference = null;
+    this.detachMediaReference();
   }
 
   currentTime() {
@@ -193,6 +213,15 @@ export class DuetBufferEngine {
     return Math.max(0, Math.min(...[videoDuration, voiceDuration, referenceDuration].filter(Boolean)) || videoDuration || voiceDuration || referenceDuration);
   }
 
+  private detachMediaReference() {
+    try { this.mediaReferenceSource?.disconnect(); } catch {}
+    this.mediaReferenceSource = null;
+    try { this.mediaReference?.pause(); } catch {}
+    try { this.mediaReference?.removeAttribute('src'); this.mediaReference?.load(); } catch {}
+    try { this.mediaReference?.remove(); } catch {}
+    this.mediaReference = null;
+  }
+
   private voiceLatencySeconds() { const latencyMs = this.getSettings().latencyMs || 0; return Math.max(0, Math.min(0.28, latencyMs / 1000)); }
 
   private startSyncLoop() {
@@ -201,10 +230,7 @@ export class DuetBufferEngine {
       if (!this.video || !this.isPlaying) return;
       const audioTime = this.currentTime();
       const duration = this.duration();
-      if (duration && audioTime >= duration - 0.02) {
-        this.pause(false, true);
-        return;
-      }
+      if (duration && audioTime >= duration - 0.02) { this.pause(false, true); return; }
       const drift = this.video.currentTime - audioTime;
       if (Math.abs(drift) > 0.22) this.video.currentTime = audioTime;
       else this.video.playbackRate = Math.max(0.97, Math.min(1.03, 1 - drift * 0.12));
@@ -241,9 +267,7 @@ export class DuetBufferEngine {
     return Math.sqrt(activeSum / Math.max(1, activeCount)) || rms;
   }
 
-  private isSilent(buffer: AudioBuffer) {
-    return this.activeRms(buffer) < 0.0012;
-  }
+  private isSilent(buffer: AudioBuffer) { return this.activeRms(buffer) < 0.0012; }
 
   private bufferSamples(buffer: AudioBuffer) {
     const samples: number[] = [];
