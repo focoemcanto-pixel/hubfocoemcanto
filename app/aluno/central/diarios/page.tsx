@@ -1,3 +1,4 @@
+import type React from 'react';
 import Link from 'next/link';
 import { AppShell } from '@/components/app-shell';
 import { DailyTrainingScrollRestorer } from '@/components/daily-training-scroll-restorer';
