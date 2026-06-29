@@ -8,7 +8,7 @@ export const runtime = 'nodejs';
 
 const MAX_NAME_LENGTH = 180;
 
-type Body = { fileName?: string; relativePath?: string; productId?: string; moduleId?: string; size?: number; contentType?: string; fileHash?: string; originalSize?: number; compressionProfile?: string };
+type Body = { fileName?: string; relativePath?: string; productId?: string; moduleId?: string; size?: number; contentType?: string; fileHash?: string; originalSize?: number; compressionProfile?: string; forceNewUpload?: boolean };
 
 function cfg() {
   return { accountId: process.env.CLOUDFLARE_ACCOUNT_ID || '', streamKey: process.env['CLOUDFLARE_' + 'STREAM_' + 'TOKEN'] || '' };
@@ -44,7 +44,10 @@ async function streamUidExists(uid: string, accountId: string, streamKey: string
     cache: 'no-store',
   });
   const json = await response.json().catch(() => ({}));
-  return response.ok && json?.success !== false && Boolean(json?.result?.uid || json?.result?.created);
+  const video = json?.result || {};
+  const state = String(video?.status?.state || 'unknown');
+  const duration = Number(video?.duration || 0) || 0;
+  return response.ok && json?.success !== false && Boolean(video?.uid || video?.created) && state === 'ready' && duration > 0;
 }
 
 export async function POST(request: Request) {
@@ -63,6 +66,7 @@ export async function POST(request: Request) {
     const fileHash = String(body.fileHash || '').trim();
     const originalSize = Number(body.originalSize || 0) || 0;
     const compressionProfile = String(body.compressionProfile || '').trim();
+    const forceNewUpload = Boolean(body.forceNewUpload);
     const { accountId, streamKey } = cfg();
 
     if (!fileName || fileName.length > MAX_NAME_LENGTH) return NextResponse.json({ error: 'invalid_file_name', message: 'Nome de arquivo inválido.' }, { status: 400 });
@@ -104,27 +108,29 @@ export async function POST(request: Request) {
     const [{ data: existingByTitle }, { data: existingByHash }] = await Promise.all([titleQuery, hashQuery as any]);
     const candidates = [existingByHash, existingByTitle].filter(Boolean) as Array<{ id: string; stream_uid?: string | null; title?: string | null; status?: string | null }>;
 
-    for (const existingAsset of candidates) {
-      if (!existingAsset?.stream_uid) continue;
-      const existsOnCloudflare = await streamUidExists(existingAsset.stream_uid, accountId, streamKey);
-      if (existsOnCloudflare) {
-        return NextResponse.json({
-          uid: existingAsset.stream_uid,
-          existing: true,
-          skippedUpload: true,
-          reason: existingAsset.id === existingByHash?.id ? 'already_exists_for_file_hash' : 'already_exists_for_module_title',
-          message: 'Vídeo já existe no Cloudflare Stream. O Hub vai reutilizar o UID.',
-        });
-      }
+    if (!forceNewUpload) {
+      for (const existingAsset of candidates) {
+        if (!existingAsset?.stream_uid) continue;
+        const existsOnCloudflare = await streamUidExists(existingAsset.stream_uid, accountId, streamKey);
+        if (existsOnCloudflare) {
+          return NextResponse.json({
+            uid: existingAsset.stream_uid,
+            existing: true,
+            skippedUpload: true,
+            reason: existingAsset.id === existingByHash?.id ? 'already_exists_for_file_hash' : 'already_exists_for_module_title',
+            message: 'Vídeo já existe no Cloudflare Stream. O Hub vai reutilizar o UID.',
+          });
+        }
 
-      await supabase
-        .from('media_assets')
-        .update({
-          status: 'missing_on_stream',
-          raw: { staleStreamUid: existingAsset.stream_uid, staleDetectedAt: new Date().toISOString(), reason: 'stream_uid_not_found_on_cloudflare' },
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', existingAsset.id);
+        await supabase
+          .from('media_assets')
+          .update({
+            status: 'missing_on_stream',
+            raw: { staleStreamUid: existingAsset.stream_uid, staleDetectedAt: new Date().toISOString(), reason: 'stream_uid_not_ready_or_not_found_on_cloudflare' },
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', existingAsset.id);
+      }
     }
 
     const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/stream/direct_upload`, {
@@ -151,6 +157,7 @@ export async function POST(request: Request) {
           originalSize: metaValue(originalSize),
           uploadedSize: metaValue(size),
           compressionProfile: metaValue(compressionProfile),
+          forceNewUpload: metaValue(forceNewUpload),
           uploadedFrom: 'hubfocoemcanto',
         },
       }),
@@ -181,6 +188,7 @@ export async function POST(request: Request) {
       formField: 'file',
       expiresIn: 21600,
       staleDuplicateIgnored: candidates.length > 0,
+      forceNewUpload,
     });
   } catch (error) {
     return NextResponse.json({ error: 'stream_upload_url_error', message: error instanceof Error ? error.message : 'Erro ao criar upload no Stream.' }, { status: 500 });
