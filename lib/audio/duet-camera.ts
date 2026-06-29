@@ -36,6 +36,7 @@ function centerMicAudio(stream: MediaStream) {
 export async function prepareDuetCamera(camera: HTMLVideoElement | null, options: PrepareDuetCameraOptions = {}) {
   const isCleanMode = options.micMode === 'clean';
   const ios = isIOSLike();
+  const facingMode = options.facingMode || 'user';
   const audio: MediaTrackConstraints = {
     echoCancellation: isCleanMode,
     noiseSuppression: isCleanMode,
@@ -48,7 +49,7 @@ export async function prepareDuetCamera(camera: HTMLVideoElement | null, options
 
   const rawStream = await navigator.mediaDevices.getUserMedia({
     video: {
-      facingMode: 'user',
+      facingMode,
       width: ios ? { ideal: 540, max: 720 } : { ideal: 720, max: 1280 },
       height: ios ? { ideal: 540, max: 720 } : { ideal: 720, max: 1280 },
       frameRate: ios ? { ideal: 24, max: 24 } : { ideal: 24, max: 30 },
