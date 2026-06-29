@@ -3,20 +3,7 @@ export type VocalRegister = 'chest' | 'mix' | 'head';
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const BRAZILIAN_NOTE_NAMES = ['Dó', 'Dó#', 'Ré', 'Ré#', 'Mi', 'Fá', 'Fá#', 'Sol', 'Sol#', 'Lá', 'Lá#', 'Si'];
-const BRAZILIAN_NOTE_BY_SCIENTIFIC: Record<string, string> = {
-  C: 'Dó',
-  'C#': 'Dó#',
-  D: 'Ré',
-  'D#': 'Ré#',
-  E: 'Mi',
-  F: 'Fá',
-  'F#': 'Fá#',
-  G: 'Sol',
-  'G#': 'Sol#',
-  A: 'Lá',
-  'A#': 'Lá#',
-  B: 'Si'
-};
+const BRAZILIAN_NOTE_BY_SCIENTIFIC: Record<string, string> = { C: 'Dó', 'C#': 'Dó#', D: 'Ré', 'D#': 'Ré#', E: 'Mi', F: 'Fá', 'F#': 'Fá#', G: 'Sol', 'G#': 'Sol#', A: 'Lá', 'A#': 'Lá#', B: 'Si' };
 
 export type PitchFrame = {
   frequencyHz: number;
@@ -29,8 +16,10 @@ export type PitchFrame = {
   rms: number;
 };
 
-const MIN_VOICE_FREQUENCY = 35;
-const MAX_VOICE_FREQUENCY = 2000;
+// Faixa prática para voz cantada no app. Acima disso o detector costuma pegar harmônicos
+// como se fossem a fundamental, causando saltos falsos tipo Si5 no mapa vocal.
+const MIN_VOICE_FREQUENCY = 55;
+const MAX_VOICE_FREQUENCY = 1100;
 
 function removeDc(buffer: Float32Array) {
   let mean = 0;
@@ -47,7 +36,7 @@ function rmsFromBuffer(buffer: Float32Array) {
   return Math.sqrt(sum / Math.max(1, buffer.length));
 }
 
-function parabolic(values: Float32Array, tau: number) {
+function parabolicMinimum(values: Float32Array, tau: number) {
   if (tau <= 0 || tau >= values.length - 1) return tau;
   const left = values[tau - 1];
   const center = values[tau];
@@ -67,6 +56,12 @@ function parabolicPeak(values: Float32Array, tau: number) {
   if (!divisor) return tau;
   const adjustment = (right - left) / divisor;
   return Number.isFinite(adjustment) && Math.abs(adjustment) <= 1 ? tau + adjustment : tau;
+}
+
+function normalizeFrequency(frequency: number) {
+  let normalized = frequency;
+  while (normalized > MAX_VOICE_FREQUENCY && normalized / 2 >= MIN_VOICE_FREQUENCY) normalized /= 2;
+  return normalized;
 }
 
 function mpmPitch(buffer: Float32Array, sampleRate: number) {
@@ -89,26 +84,32 @@ function mpmPitch(buffer: Float32Array, sampleRate: number) {
   }
 
   const peaks: Array<{ tau: number; value: number }> = [];
-  let pos = 0;
-  while (pos <= maxLag && nsdf[pos] > 0) pos += 1;
-  while (pos <= maxLag) {
-    while (pos <= maxLag && nsdf[pos] <= 0) pos += 1;
-    if (pos > maxLag) break;
-    let maxTau = pos;
-    let maxValue = nsdf[pos];
-    while (pos <= maxLag && nsdf[pos] > 0) {
-      if (nsdf[pos] > maxValue) { maxValue = nsdf[pos]; maxTau = pos; }
-      pos += 1;
+  let position = 0;
+  while (position <= maxLag && nsdf[position] > 0) position += 1;
+  while (position <= maxLag) {
+    while (position <= maxLag && nsdf[position] <= 0) position += 1;
+    if (position > maxLag) break;
+    let maxTau = position;
+    let maxValue = nsdf[position];
+    while (position <= maxLag && nsdf[position] > 0) {
+      if (nsdf[position] > maxValue) { maxValue = nsdf[position]; maxTau = position; }
+      position += 1;
     }
     if (maxTau >= minLag) peaks.push({ tau: maxTau, value: maxValue });
   }
 
   if (!peaks.length) return null;
   const highest = Math.max(...peaks.map((peak) => peak.value));
-  const selected = peaks.find((peak) => peak.value >= highest * 0.86 && peak.value > 0.36) || peaks.find((peak) => peak.value > 0.28);
+
+  // Preferimos o primeiro pico forte o suficiente. Isso evita escolher harmônicos agudos
+  // quando a fundamental grave está presente, mas um harmônico tem pico levemente maior.
+  const selected = peaks.find((peak) => peak.value >= highest * 0.74 && peak.value > 0.42)
+    || peaks.find((peak) => peak.value > 0.5)
+    || null;
   if (!selected) return null;
+
   const refinedTau = parabolicPeak(nsdf, selected.tau);
-  const frequency = sampleRate / refinedTau;
+  const frequency = normalizeFrequency(sampleRate / refinedTau);
   if (frequency < MIN_VOICE_FREQUENCY || frequency > MAX_VOICE_FREQUENCY) return null;
   return { frequency, confidence: Math.max(0, Math.min(1, selected.value)) };
 }
@@ -144,14 +145,15 @@ function yinPitch(buffer: Float32Array, sampleRate: number) {
   }
 
   for (let tau = minTau; tau <= maxTau; tau += 1) {
-    if (cmnd[tau] < 0.22) {
+    if (cmnd[tau] < 0.16) {
       while (tau + 1 <= maxTau && cmnd[tau + 1] < cmnd[tau]) tau += 1;
-      const frequency = sampleRate / parabolic(cmnd, tau);
+      const frequency = normalizeFrequency(sampleRate / parabolicMinimum(cmnd, tau));
       return frequency >= MIN_VOICE_FREQUENCY && frequency <= MAX_VOICE_FREQUENCY ? { frequency, confidence: 1 - cmnd[tau] } : null;
     }
   }
-  if (bestTau > 0 && bestValue < 0.5) {
-    const frequency = sampleRate / parabolic(cmnd, bestTau);
+
+  if (bestTau > 0 && bestValue < 0.34) {
+    const frequency = normalizeFrequency(sampleRate / parabolicMinimum(cmnd, bestTau));
     return frequency >= MIN_VOICE_FREQUENCY && frequency <= MAX_VOICE_FREQUENCY ? { frequency, confidence: 1 - bestValue } : null;
   }
   return null;
@@ -180,17 +182,20 @@ function normalizedCorrelationPitch(buffer: Float32Array, sampleRate: number) {
     if (normalized > bestCorrelation) { bestCorrelation = normalized; bestLag = lag; }
   }
 
-  if (bestLag <= 0 || bestCorrelation < 0.18) return null;
-  const frequency = sampleRate / bestLag;
+  if (bestLag <= 0 || bestCorrelation < 0.42) return null;
+  const frequency = normalizeFrequency(sampleRate / bestLag);
   return frequency >= MIN_VOICE_FREQUENCY && frequency <= MAX_VOICE_FREQUENCY ? { frequency, confidence: bestCorrelation } : null;
 }
 
 export function detectPitch(buffer: Float32Array, sampleRate: number): PitchFrame | null {
   const rms = rmsFromBuffer(buffer);
-  if (rms < 0.0006) return null;
+  // Pequeno o bastante para não apagar graves, mas não tão baixo a ponto de aceitar ruído ambiente.
+  if (rms < 0.0012) return null;
+
   const clean = removeDc(buffer);
   const result = mpmPitch(clean, sampleRate) || yinPitch(clean, sampleRate) || normalizedCorrelationPitch(clean, sampleRate);
-  if (!result) return null;
+  if (!result || result.confidence < 0.38) return null;
+
   const midiFloat = frequencyToMidiFloat(result.frequency);
   const midiRounded = Math.round(midiFloat);
   const cents = (midiFloat - midiRounded) * 100;
@@ -201,17 +206,9 @@ export function autoCorrelate(buffer: Float32Array, sampleRate: number): number 
   return detectPitch(buffer, sampleRate)?.frequencyHz ?? null;
 }
 
-export function frequencyToMidiFloat(freq: number): number {
-  return 69 + 12 * Math.log2(freq / 440);
-}
-
-export function frequencyToMidi(freq: number): number {
-  return Math.round(69 + 12 * Math.log2(freq / 440));
-}
-
-export function midiToFrequency(midi: number): number {
-  return 440 * 2 ** ((midi - 69) / 12);
-}
+export function frequencyToMidiFloat(freq: number): number { return 69 + 12 * Math.log2(freq / 440); }
+export function frequencyToMidi(freq: number): number { return Math.round(69 + 12 * Math.log2(freq / 440)); }
+export function midiToFrequency(midi: number): number { return 440 * 2 ** ((midi - 69) / 12); }
 
 export function midiToScientificNoteName(midi: number): string {
   const rounded = Math.round(midi);
@@ -230,14 +227,11 @@ export function midiToBrazilianNoteName(midi: number): string {
 export function formatBrazilianNote(noteOrMidi: string | number | null | undefined): string {
   if (noteOrMidi == null || noteOrMidi === '') return '—';
   if (typeof noteOrMidi === 'number') return midiToBrazilianNoteName(noteOrMidi);
-
   const note = noteOrMidi.trim();
   const midi = noteNameToMidi(note);
   if (midi != null) return midiToBrazilianNoteName(midi);
-
   const match = note.toUpperCase().match(/^([A-G])(#|B)?(-?\d+)$/);
   if (!match) return noteOrMidi;
-
   const [, letter, accidental = '', octaveText] = match;
   const normalized = `${letter}${accidental === 'B' ? 'b' : accidental}`;
   const flats: Record<string, string> = { Db: 'C#', Eb: 'D#', Gb: 'F#', Ab: 'G#', Bb: 'A#' };
@@ -262,19 +256,8 @@ export function noteNameToMidi(note: string): number | null {
 
 export function getVocalRegister(midi?: number | null, gender?: VoiceGender): VocalRegister | null {
   if (midi == null) return null;
-
-  if (gender === 'masculino') {
-    if (midi <= 64) return 'chest';
-    if (midi <= 71) return 'mix';
-    return 'head';
-  }
-
-  if (gender === 'feminino') {
-    if (midi <= 65) return 'chest';
-    if (midi <= 74) return 'mix';
-    return 'head';
-  }
-
+  if (gender === 'masculino') { if (midi <= 64) return 'chest'; if (midi <= 71) return 'mix'; return 'head'; }
+  if (gender === 'feminino') { if (midi <= 65) return 'chest'; if (midi <= 74) return 'mix'; return 'head'; }
   if (midi <= 64) return 'chest';
   if (midi <= 72) return 'mix';
   return 'head';
@@ -294,7 +277,6 @@ export function classifyVoice(params: { tessituraLowMidi?: number | null; tessit
   const span = high - low;
   const coherent = params.lowestMidi == null || params.highestMidi == null || (low >= params.lowestMidi && high <= params.highestMidi);
   const confidence = Math.min(0.85, Math.max(0.55, 0.62 + Math.min(span, 18) / 100 + (coherent ? 0.05 : -0.04)));
-
   if (params.gender === 'masculino') {
     if (high >= 67 && low >= 48) return { classification: 'Tenor', confidence };
     if (low <= 45 && high <= 64) return { classification: (low + high) / 2 < 54 ? 'Baixo' : 'Barítono', confidence };
