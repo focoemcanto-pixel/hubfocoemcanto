@@ -1,11 +1,11 @@
 import { cookies } from 'next/headers';
 import { createAdminClient } from '@/lib/supabase/admin';
 
-export type CentralAccessLevel = 'open' | 'subscriber' | 'vip' | 'locked';
+export type CentralAccessLevel = 'open' | 'subscriber' | 'vip' | 'locked' | 'coming_soon';
 export type CentralAccessRule = { key: string; level: CentralAccessLevel; note?: string | null; updated_at?: string | null };
 export type StudentAccessContext = { email: string; profile: Record<string, any> | null; isSubscriber: boolean; isVip: boolean; isAdmin: boolean };
 
-const allowedLevels: CentralAccessLevel[] = ['open', 'subscriber', 'vip', 'locked'];
+const allowedLevels: CentralAccessLevel[] = ['open', 'subscriber', 'vip', 'locked', 'coming_soon'];
 const defaultRules: CentralAccessRule[] = [
   { key: 'central', level: 'open', note: 'Acesso geral à Central de Treinamento.' },
   { key: 'daily', level: 'open', note: 'Exercícios diários.' },
@@ -17,6 +17,7 @@ export function accessLabel(level?: CentralAccessLevel | string | null) {
   if (level === 'subscriber') return 'Assinantes';
   if (level === 'vip') return 'VIP';
   if (level === 'locked') return 'Bloqueado';
+  if (level === 'coming_soon') return 'Em breve';
   return 'Aberto';
 }
 
@@ -45,7 +46,7 @@ export function levelFor(rules: Record<string, CentralAccessLevel> | CentralAcce
 }
 
 export function getEffectiveLevel(rules: Record<string, CentralAccessLevel> | CentralAccessRule[], keys: Array<string | null | undefined>): CentralAccessLevel {
-  const priority: Record<CentralAccessLevel, number> = { open: 0, subscriber: 1, vip: 2, locked: 3 };
+  const priority: Record<CentralAccessLevel, number> = { open: 0, subscriber: 1, vip: 2, coming_soon: 3, locked: 4 };
   return keys.filter(Boolean).reduce<CentralAccessLevel>((current, key) => {
     const next = levelFor(rules, String(key));
     return priority[next] > priority[current] ? next : current;
