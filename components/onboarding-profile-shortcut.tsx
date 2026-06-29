@@ -15,6 +15,7 @@ const STEP_LABELS: Record<string, string> = {
 };
 
 const STEP_ORDER = ['welcome', 'vocal', 'profile', 'tour', 'duet', 'record', 'done'];
+const css = `.profile-onboarding-shortcut{position:fixed;left:14px;right:14px;bottom:96px;z-index:75;display:grid;grid-template-columns:auto 1fr auto auto;gap:12px;align-items:center;border:1px solid rgba(245,199,107,.28);border-radius:24px;background:linear-gradient(135deg,rgba(14,15,20,.94),rgba(5,6,10,.9));box-shadow:0 24px 90px rgba(0,0,0,.42),inset 0 1px 0 rgba(255,255,255,.08);backdrop-filter:blur(18px);padding:12px}.profile-onboarding-orb{width:48px;height:48px;border-radius:17px;display:grid;place-items:center;color:#f5c76b;background:rgba(245,199,107,.12)}.profile-onboarding-copy{display:grid;gap:4px;min-width:0}.profile-onboarding-copy span{color:rgba(255,255,255,.62);font-size:12px;text-transform:uppercase;letter-spacing:.14em;font-weight:950}.profile-onboarding-copy strong{color:#fff;font-size:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.profile-onboarding-copy i{display:block;width:100%;height:6px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden}.profile-onboarding-copy b{display:block;height:100%;border-radius:999px;background:#f5c76b}.profile-onboarding-shortcut a{display:inline-flex;align-items:center;justify-content:center;gap:7px;border-radius:15px;text-decoration:none;font-weight:950;padding:12px 14px;color:#130d04;background:#f5c76b}.profile-onboarding-shortcut a.ghost{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);color:#fff}@media(max-width:720px){.profile-onboarding-shortcut{grid-template-columns:auto 1fr;bottom:86px}.profile-onboarding-shortcut a.ghost{display:none}}`;
 
 export function OnboardingProfileShortcut() {
   const [visible, setVisible] = useState(false);
@@ -43,15 +44,18 @@ export function OnboardingProfileShortcut() {
   const href = status === 'done' ? '/aluno/onboarding?reset=1' : `/aluno/onboarding?step=${safeStep}`;
 
   return (
-    <aside className="profile-onboarding-shortcut" aria-label="Guia Inicial">
-      <div className="profile-onboarding-orb"><Sparkles size={18} /></div>
-      <div className="profile-onboarding-copy">
-        <span>{title}</span>
-        <strong>{STEP_LABELS[safeStep] || 'Boas-vindas'} · {progress}%</strong>
-        <i><b style={{ width: `${progress}%` }} /></i>
-      </div>
-      <Link href={href}>{status === 'done' ? <RotateCcw size={16} /> : <Compass size={16} />}{status === 'done' ? 'Refazer' : 'Continuar'}</Link>
-      <Link className="ghost" href="/aluno/onboarding?reset=1"><CheckCircle2 size={16} /> Reiniciar</Link>
-    </aside>
+    <>
+      <style dangerouslySetInnerHTML={{ __html: css }} />
+      <aside className="profile-onboarding-shortcut" aria-label="Guia Inicial">
+        <div className="profile-onboarding-orb"><Sparkles size={18} /></div>
+        <div className="profile-onboarding-copy">
+          <span>{title}</span>
+          <strong>{STEP_LABELS[safeStep] || 'Boas-vindas'} · {progress}%</strong>
+          <i><b style={{ width: `${progress}%` }} /></i>
+        </div>
+        <Link href={href}>{status === 'done' ? <RotateCcw size={16} /> : <Compass size={16} />}{status === 'done' ? 'Refazer' : 'Continuar'}</Link>
+        <Link className="ghost" href="/aluno/onboarding?reset=1"><CheckCircle2 size={16} /> Reiniciar</Link>
+      </aside>
+    </>
   );
 }
