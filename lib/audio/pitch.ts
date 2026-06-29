@@ -18,191 +18,53 @@ const BRAZILIAN_NOTE_BY_SCIENTIFIC: Record<string, string> = {
   B: 'Si'
 };
 
-export type PitchFrame = {
-  frequencyHz: number;
-  midiFloat: number;
-  midiRounded: number;
-  noteName: string;
-  cents: number;
-  confidence: number;
-  volume: number;
-  rms: number;
-};
-
-const MIN_VOICE_FREQUENCY = 35;
-const MAX_VOICE_FREQUENCY = 2000;
-
-function removeDc(buffer: Float32Array) {
-  let mean = 0;
-  for (let i = 0; i < buffer.length; i += 1) mean += buffer[i];
-  mean /= Math.max(1, buffer.length);
-  const out = new Float32Array(buffer.length);
-  for (let i = 0; i < buffer.length; i += 1) out[i] = buffer[i] - mean;
-  return out;
-}
-
-function rmsFromBuffer(buffer: Float32Array) {
-  let sum = 0;
-  for (let i = 0; i < buffer.length; i += 1) sum += buffer[i] * buffer[i];
-  return Math.sqrt(sum / Math.max(1, buffer.length));
-}
-
-function parabolic(values: Float32Array, tau: number) {
-  if (tau <= 0 || tau >= values.length - 1) return tau;
-  const left = values[tau - 1];
-  const center = values[tau];
-  const right = values[tau + 1];
-  const divisor = left + right - 2 * center;
-  if (!divisor) return tau;
-  const adjustment = (left - right) / (2 * divisor);
-  return Number.isFinite(adjustment) && Math.abs(adjustment) <= 1 ? tau + adjustment : tau;
-}
-
-function parabolicPeak(values: Float32Array, tau: number) {
-  if (tau <= 0 || tau >= values.length - 1) return tau;
-  const left = values[tau - 1];
-  const center = values[tau];
-  const right = values[tau + 1];
-  const divisor = 2 * (2 * center - left - right);
-  if (!divisor) return tau;
-  const adjustment = (right - left) / divisor;
-  return Number.isFinite(adjustment) && Math.abs(adjustment) <= 1 ? tau + adjustment : tau;
-}
-
-function mpmPitch(buffer: Float32Array, sampleRate: number) {
-  const size = buffer.length;
-  const minLag = Math.max(2, Math.floor(sampleRate / MAX_VOICE_FREQUENCY));
-  const maxLag = Math.min(size - 2, Math.ceil(sampleRate / MIN_VOICE_FREQUENCY));
-  const nsdf = new Float32Array(maxLag + 1);
-
-  for (let tau = 0; tau <= maxLag; tau += 1) {
-    let acf = 0;
-    let divisor = 0;
-    const limit = size - tau;
-    for (let i = 0; i < limit; i += 1) {
-      const a = buffer[i];
-      const b = buffer[i + tau];
-      acf += a * b;
-      divisor += a * a + b * b;
-    }
-    nsdf[tau] = divisor > 1e-12 ? (2 * acf) / divisor : 0;
-  }
-
-  const peaks: Array<{ tau: number; value: number }> = [];
-  let pos = 0;
-  while (pos <= maxLag && nsdf[pos] > 0) pos += 1;
-  while (pos <= maxLag) {
-    while (pos <= maxLag && nsdf[pos] <= 0) pos += 1;
-    if (pos > maxLag) break;
-    let maxTau = pos;
-    let maxValue = nsdf[pos];
-    while (pos <= maxLag && nsdf[pos] > 0) {
-      if (nsdf[pos] > maxValue) { maxValue = nsdf[pos]; maxTau = pos; }
-      pos += 1;
-    }
-    if (maxTau >= minLag) peaks.push({ tau: maxTau, value: maxValue });
-  }
-
-  if (!peaks.length) return null;
-  const highest = Math.max(...peaks.map((peak) => peak.value));
-  const selected = peaks.find((peak) => peak.value >= highest * 0.86 && peak.value > 0.36) || peaks.find((peak) => peak.value > 0.28);
-  if (!selected) return null;
-  const refinedTau = parabolicPeak(nsdf, selected.tau);
-  const frequency = sampleRate / refinedTau;
-  if (frequency < MIN_VOICE_FREQUENCY || frequency > MAX_VOICE_FREQUENCY) return null;
-  return { frequency, confidence: Math.max(0, Math.min(1, selected.value)) };
-}
-
-function yinPitch(buffer: Float32Array, sampleRate: number) {
-  const size = buffer.length;
-  const minTau = Math.max(2, Math.floor(sampleRate / MAX_VOICE_FREQUENCY));
-  const maxTau = Math.min(size - 2, Math.ceil(sampleRate / MIN_VOICE_FREQUENCY));
-  const half = Math.min(maxTau + 1, Math.floor(size / 2));
-  if (half <= minTau + 2) return null;
-
-  const difference = new Float32Array(half + 1);
-  for (let tau = 1; tau <= half; tau += 1) {
-    let sum = 0;
-    const limit = size - tau;
-    for (let i = 0; i < limit; i += 1) {
-      const delta = buffer[i] - buffer[i + tau];
-      sum += delta * delta;
-    }
-    difference[tau] = sum;
-  }
-
-  const cmnd = new Float32Array(half + 1);
-  cmnd[0] = 1;
-  let runningSum = 0;
-  let bestTau = -1;
-  let bestValue = Number.POSITIVE_INFINITY;
-
-  for (let tau = 1; tau <= half; tau += 1) {
-    runningSum += difference[tau];
-    cmnd[tau] = difference[tau] * tau / Math.max(runningSum, 1e-12);
-    if (tau >= minTau && tau <= maxTau && cmnd[tau] < bestValue) { bestValue = cmnd[tau]; bestTau = tau; }
-  }
-
-  for (let tau = minTau; tau <= maxTau; tau += 1) {
-    if (cmnd[tau] < 0.22) {
-      while (tau + 1 <= maxTau && cmnd[tau + 1] < cmnd[tau]) tau += 1;
-      const frequency = sampleRate / parabolic(cmnd, tau);
-      return frequency >= MIN_VOICE_FREQUENCY && frequency <= MAX_VOICE_FREQUENCY ? { frequency, confidence: 1 - cmnd[tau] } : null;
-    }
-  }
-  if (bestTau > 0 && bestValue < 0.5) {
-    const frequency = sampleRate / parabolic(cmnd, bestTau);
-    return frequency >= MIN_VOICE_FREQUENCY && frequency <= MAX_VOICE_FREQUENCY ? { frequency, confidence: 1 - bestValue } : null;
-  }
-  return null;
-}
-
-function normalizedCorrelationPitch(buffer: Float32Array, sampleRate: number) {
-  const size = buffer.length;
-  const minLag = Math.max(2, Math.floor(sampleRate / MAX_VOICE_FREQUENCY));
-  const maxLag = Math.min(size - 2, Math.ceil(sampleRate / MIN_VOICE_FREQUENCY));
-  let bestCorrelation = 0;
-  let bestLag = -1;
-
-  for (let lag = minLag; lag <= maxLag; lag += 1) {
-    let correlation = 0;
-    let energyA = 0;
-    let energyB = 0;
-    const limit = size - lag;
-    for (let i = 0; i < limit; i += 1) {
-      const a = buffer[i];
-      const b = buffer[i + lag];
-      correlation += a * b;
-      energyA += a * a;
-      energyB += b * b;
-    }
-    const normalized = correlation / Math.sqrt(energyA * energyB || 1);
-    if (normalized > bestCorrelation) { bestCorrelation = normalized; bestLag = lag; }
-  }
-
-  if (bestLag <= 0 || bestCorrelation < 0.18) return null;
-  const frequency = sampleRate / bestLag;
-  return frequency >= MIN_VOICE_FREQUENCY && frequency <= MAX_VOICE_FREQUENCY ? { frequency, confidence: bestCorrelation } : null;
-}
-
-export function detectPitch(buffer: Float32Array, sampleRate: number): PitchFrame | null {
-  const rms = rmsFromBuffer(buffer);
-  if (rms < 0.0006) return null;
-  const clean = removeDc(buffer);
-  const result = mpmPitch(clean, sampleRate) || yinPitch(clean, sampleRate) || normalizedCorrelationPitch(clean, sampleRate);
-  if (!result) return null;
-  const midiFloat = frequencyToMidiFloat(result.frequency);
-  const midiRounded = Math.round(midiFloat);
-  const cents = (midiFloat - midiRounded) * 100;
-  return { frequencyHz: result.frequency, midiFloat, midiRounded, noteName: midiToBrazilianNoteName(midiRounded), cents, confidence: result.confidence, volume: rms, rms };
-}
-
 export function autoCorrelate(buffer: Float32Array, sampleRate: number): number | null {
-  return detectPitch(buffer, sampleRate)?.frequencyHz ?? null;
-}
+  const size = buffer.length;
+  let rms = 0;
+  for (let i = 0; i < size; i += 1) rms += buffer[i] * buffer[i];
+  rms = Math.sqrt(rms / size);
+  if (rms < 0.012) return null;
 
-export function frequencyToMidiFloat(freq: number): number {
-  return 69 + 12 * Math.log2(freq / 440);
+  let start = 0;
+  let end = size - 1;
+  const threshold = 0.2;
+  for (let i = 0; i < size / 2; i += 1) {
+    if (Math.abs(buffer[i]) < threshold) { start = i; break; }
+  }
+  for (let i = 1; i < size / 2; i += 1) {
+    if (Math.abs(buffer[size - i]) < threshold) { end = size - i; break; }
+  }
+
+  const trimmed = buffer.slice(start, end);
+  const trimmedSize = trimmed.length;
+  if (trimmedSize < 32) return null;
+
+  const correlations = new Array<number>(trimmedSize).fill(0);
+  for (let lag = 0; lag < trimmedSize; lag += 1) {
+    for (let i = 0; i < trimmedSize - lag; i += 1) {
+      correlations[lag] += trimmed[i] * trimmed[i + lag];
+    }
+  }
+
+  let d = 0;
+  while (d < trimmedSize - 1 && correlations[d] > correlations[d + 1]) d += 1;
+
+  let maxValue = -1;
+  let maxPosition = -1;
+  for (let i = d; i < trimmedSize; i += 1) {
+    if (correlations[i] > maxValue) {
+      maxValue = correlations[i];
+      maxPosition = i;
+    }
+  }
+  if (maxPosition <= 0) return null;
+
+  const x1 = correlations[maxPosition - 1] || 0;
+  const x2 = correlations[maxPosition] || 0;
+  const x3 = correlations[maxPosition + 1] || 0;
+  const adjustment = (x1 - x3) / (2 * (x1 - 2 * x2 + x3));
+  const frequency = sampleRate / (maxPosition + (Number.isFinite(adjustment) ? adjustment : 0));
+  return frequency >= 40 && frequency <= 2000 ? frequency : null;
 }
 
 export function frequencyToMidi(freq: number): number {
