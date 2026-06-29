@@ -1,6 +1,5 @@
-/* Correção estrutural da tela de gravação de dueto.
-   O CSS premium continua sendo a base visual; este arquivo só garante a ordem,
-   proporção e alinhamento esperados pelo template aprovado. */
+/* Estrutura final da tela de dueto.
+   Mantém o visual premium existente e corrige apenas hierarquia, estados e responsividade. */
 .activity-page:has(.duet-recording-premium) > .activity-topbar {
   display: none !important;
 }
@@ -11,7 +10,11 @@
   display: flex !important;
   flex-direction: column !important;
   min-height: 100svh !important;
-  padding-bottom: calc(26px + env(safe-area-inset-bottom)) !important;
+  padding-bottom: calc(28px + env(safe-area-inset-bottom)) !important;
+}
+
+.duet-recording-premium > * {
+  flex: none !important;
 }
 
 .duet-recording-premium > .duet-premium-top {
@@ -20,6 +23,8 @@
   align-items: center !important;
   justify-content: space-between !important;
   gap: 12px !important;
+  width: 100% !important;
+  margin-bottom: 16px !important;
 }
 
 .duet-recording-premium > .duet-premium-top a,
@@ -31,28 +36,60 @@
   border: 0 !important;
 }
 
-.duet-recording-premium > .duet-hero-card { order: 2 !important; }
+.duet-recording-premium > .duet-hero-card {
+  order: 2 !important;
+  width: 100% !important;
+}
+
 .duet-recording-premium > .duet-premium-error { order: 3 !important; }
 .duet-recording-premium > .duet-section-label:has(+ .duet-video-stage) { order: 4 !important; }
 .duet-recording-premium > .duet-video-stage { order: 5 !important; }
 .duet-recording-premium > .duet-section-label:has(+ .duet-control-grid) { order: 6 !important; }
 .duet-recording-premium > .duet-control-grid { order: 7 !important; }
-.duet-recording-premium > .duet-tips-panel { order: 8 !important; }
-.duet-recording-premium > .duet-action-console { order: 9 !important; }
-.duet-recording-premium > .duet-duration-line { order: 10 !important; }
+.duet-recording-premium > .duet-action-console { order: 8 !important; }
+.duet-recording-premium > .duet-duration-line { order: 9 !important; }
+.duet-recording-premium > .duet-tips-panel { order: 10 !important; }
 .duet-recording-premium > .duet-publish-progress { order: 20 !important; }
 .duet-recording-premium > .duet-after-record-actions { order: 21 !important; }
 .duet-recording-premium > .duet-publish-card { order: 22 !important; }
 .duet-recording-premium > .duet-caption-sheet { order: 23 !important; }
 .duet-recording-premium > .duet-posted-card { order: 24 !important; }
 
+.duet-recording-premium:has(.duet-stage-overlay.recording) > .duet-action-console,
+.duet-recording-premium:has(.duet-video-chip) > .duet-action-console {
+  order: 6 !important;
+}
+
+.duet-recording-premium:has(.duet-stage-overlay.recording) > .duet-duration-line,
+.duet-recording-premium:has(.duet-video-chip) > .duet-duration-line {
+  order: 7 !important;
+}
+
+.duet-recording-premium:has(.duet-stage-overlay.recording) > .duet-section-label:has(+ .duet-control-grid),
+.duet-recording-premium:has(.duet-video-chip) > .duet-section-label:has(+ .duet-control-grid) {
+  order: 8 !important;
+}
+
+.duet-recording-premium:has(.duet-stage-overlay.recording) > .duet-control-grid,
+.duet-recording-premium:has(.duet-video-chip) > .duet-control-grid {
+  order: 9 !important;
+}
+
+.duet-recording-premium:has(.duet-stage-overlay.recording) > .duet-tips-panel,
+.duet-recording-premium:has(.duet-video-chip) > .duet-tips-panel {
+  order: 10 !important;
+}
+
 .duet-video-stage {
   position: relative !important;
   overflow: hidden !important;
   flex: none !important;
   width: 100% !important;
+  min-height: 300px !important;
+  aspect-ratio: 16 / 11.2 !important;
   margin-top: 0 !important;
   margin-bottom: 22px !important;
+  background: #020304 !important;
 }
 
 .duet-video-stage canvas,
@@ -63,16 +100,51 @@
   object-fit: cover !important;
 }
 
-.duet-empty-stage,
-.duet-empty-stage > img {
+.duet-video-stage:has(.duet-empty-stage) .duet-canvas {
+  display: none !important;
+}
+
+.duet-empty-stage {
+  position: absolute !important;
   inset: 0 !important;
-  width: 100% !important;
-  height: 100% !important;
+  display: grid !important;
+  place-items: center !important;
+  background: radial-gradient(circle at center, rgba(255,255,255,.025), transparent 36%), #020304 !important;
+  z-index: 3 !important;
+}
+
+.duet-empty-stage > img {
+  display: none !important;
+}
+
+.duet-empty-stage > div {
+  display: grid !important;
+  justify-items: center !important;
+  gap: 12px !important;
+  color: rgba(255,255,255,.55) !important;
+  text-align: center !important;
+}
+
+.duet-empty-stage svg {
+  color: rgba(255,255,255,.45) !important;
+}
+
+.duet-hidden-source {
+  display: none !important;
+}
+
+.duet-stage-overlay.recording span {
+  border: 1px solid rgba(255,92,92,.35) !important;
+  background: rgba(120,20,20,.36) !important;
+  color: #ff6969 !important;
+  box-shadow: 0 0 28px rgba(255,80,80,.22) !important;
 }
 
 .duet-control-grid {
   width: 100% !important;
   flex: none !important;
+  margin-top: 0 !important;
+  margin-bottom: 18px !important;
 }
 
 .duet-control-grid button {
@@ -122,21 +194,90 @@
   z-index: 2 !important;
 }
 
+.duet-action-console > button {
+  min-width: 0 !important;
+}
+
 .duet-action-console .record-main::before {
   grid-area: 1 / 1 !important;
 }
 
 .duet-action-console .record-main svg {
   grid-area: 1 / 1 !important;
+  margin-top: 0 !important;
+}
+
+.duet-action-console .record-main {
+  gap: 8px !important;
 }
 
 .duet-duration-line {
   flex: none !important;
   width: 100% !important;
+  margin-top: 0 !important;
+  margin-bottom: 22px !important;
 }
 
 .duet-tips-panel {
   width: 100% !important;
+  margin-bottom: 18px !important;
+}
+
+.duet-after-record-actions {
+  display: flex !important;
+  justify-content: center !important;
+  margin: 8px 0 18px !important;
+}
+
+.duet-after-record-actions button {
+  border-radius: 999px !important;
+  padding: 12px 20px !important;
+  font-weight: 900 !important;
+}
+
+.duet-publish-card {
+  width: 100% !important;
+  border: 1px solid rgba(255,255,255,.11) !important;
+  border-radius: 28px !important;
+  background: linear-gradient(145deg, rgba(255,255,255,.055), rgba(255,255,255,.018)) !important;
+  padding: 24px !important;
+  margin-top: 12px !important;
+}
+
+.duet-publish-card h2 {
+  margin: 0 0 12px !important;
+  font-size: clamp(30px, 8vw, 44px) !important;
+  letter-spacing: -.05em !important;
+}
+
+.duet-publish-card p {
+  color: rgba(255,255,255,.74) !important;
+  line-height: 1.4 !important;
+}
+
+.duet-publish-card label {
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  min-height: 54px !important;
+  color: #fff !important;
+}
+
+.duet-publish-card input[type='checkbox'] {
+  width: 28px !important;
+  height: 28px !important;
+  accent-color: #f5c76b !important;
+}
+
+.duet-publish-card .locked {
+  opacity: .86 !important;
+}
+
+.duet-publish-card label button,
+.duet-submit-main {
+  border-radius: 999px !important;
+  padding: 11px 18px !important;
+  font-weight: 900 !important;
 }
 
 .duet-countdown {
@@ -168,6 +309,11 @@
     margin-top: 0 !important;
   }
 
+  .duet-video-stage {
+    min-height: 280px !important;
+    margin-bottom: 20px !important;
+  }
+
   .duet-control-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
     gap: 8px !important;
@@ -181,4 +327,16 @@
   .duet-action-console {
     margin-bottom: 14px !important;
   }
+
+  .duet-action-console .record-main svg {
+    width: 54px !important;
+    height: 54px !important;
+    padding: 13px;
+    border: 2px solid rgba(245,199,107,.92);
+    border-radius: 999px;
+    background: radial-gradient(circle, rgba(245,199,107,.28), rgba(245,199,107,.08));
+    box-shadow: 0 0 28px rgba(245,199,107,.16);
+  }
+
+  .duet-countdown { font-size: 84px !important; }
 }
