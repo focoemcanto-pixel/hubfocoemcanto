@@ -29,6 +29,7 @@ import './notifications-premium.css';
 import './community-publish-menu.css';
 import './duet-publish-progress.css';
 import './duet-refined-flow.css';
+import './duet-video-recording-premium.css';
 import './profile-icon-alignment.css';
 import './vocal-capture-mobile-fix.css';
 import './vocal-capture-reference-ruler.css';
