@@ -42,7 +42,7 @@ export function PersonalizedExerciseShell({ exercise, category }: { exercise: Tr
   const duration = totalSeconds(exercise);
   const label = executionLabel(exercise);
 
-  if (started) return <GuidedTrainingPlayer exercise={exercise} />;
+  if (started) return <GuidedTrainingPlayer exercise={exercise} autoStart />;
 
   return (
     <main className="personalized-intro">
