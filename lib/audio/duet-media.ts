@@ -4,13 +4,6 @@ export function isSafariLike() {
   return /iPad|iPhone|iPod/.test(ua) || (/Safari/.test(ua) && !/Chrome|Chromium|Android/.test(ua));
 }
 
-function shouldUseLowDataRecording() {
-  if (typeof navigator === 'undefined') return false;
-  const connection = (navigator as unknown as { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
-  const effectiveType = String(connection?.effectiveType || '').toLowerCase();
-  return Boolean(connection?.saveData) || ['slow-2g', '2g', '3g'].includes(effectiveType);
-}
-
 export function duetMimeType(videoOnly = false, audioOnly = false) {
   if (typeof MediaRecorder === 'undefined') return undefined;
   const options = audioOnly
@@ -24,9 +17,8 @@ export function duetMimeType(videoOnly = false, audioOnly = false) {
 export function duetRecorderOptions(type?: string, audioOnly = false): MediaRecorderOptions {
   const options: MediaRecorderOptions = {};
   if (type) options.mimeType = type;
-  const lowData = shouldUseLowDataRecording();
-  if (!audioOnly) options.videoBitsPerSecond = lowData ? 1800000 : isSafariLike() ? 3000000 : 6200000;
-  options.audioBitsPerSecond = audioOnly ? (lowData ? 128000 : 256000) : (lowData ? 160000 : 256000);
+  if (!audioOnly) options.videoBitsPerSecond = isSafariLike() ? 2500000 : 5200000;
+  options.audioBitsPerSecond = audioOnly ? 160000 : 192000;
   return options;
 }
 
