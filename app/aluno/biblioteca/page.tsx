@@ -21,6 +21,9 @@ function hasCourse(subscriptions: any[], courseKey: string) { return subscriptio
 function styleForCover(cover: string) { return cover.startsWith('radial-gradient') ? { background: cover } : { backgroundImage: `url(${cover})` }; }
 function productLink(product: any, fallback: string) { return product?.member_url || product?.checkout_url || product?.sales_url || product?.external_url || product?.kiwify_url || fallback; }
 function productCover(product: any, fallback: string) { return product?.cover_url || product?.image_url || product?.thumbnail_url || product?.cover_image_url || product?.banner_url || product?.card_cover_url || fallback; }
+function productOrder(product: any, index: number) { return Number(product?.courses?.[0]?.sort_order ?? index + 100); }
+function productKey(product: any) { const slug = String(product?.slug || '').toLowerCase(); return slug.includes('ebook') ? 'ebooks' : slug; }
+function isVip(product: any) { return `${product?.name || ''} ${product?.slug || ''}`.toLowerCase().includes('vip'); }
 
 function ModuleCard({ module, index, hasVip }: { module: any; index: number; hasVip: boolean }) {
   const progress = progressFor(index);
@@ -45,29 +48,26 @@ export default async function StudentLibraryPage() {
   const { data: profile } = email ? await supabase.from('profiles').select('id').eq('email', email).maybeSingle() : { data: null as any };
   const [{ data }, { data: products }, { data: subscriptions }] = await Promise.all([
     supabase.from('modules').select('id,title,slug,description,cover_url,sort_order,exercises(id)').eq('is_active', true).order('sort_order'),
-    supabase.from('products').select('*').order('created_at', { ascending: true }),
+    supabase.from('products').select('*,courses(id,sort_order)').neq('status', 'archived').order('created_at', { ascending: true }),
     profile?.id ? supabase.from('subscriptions').select('course_key,status').eq('profile_id', profile.id) : Promise.resolve({ data: [] }),
   ]);
   const modules = (data || []).filter(isRealModule);
   const activeSubs = (subscriptions || []).filter((sub: any) => isAccessActive(sub.status));
-  const findProduct = (terms: string[]) => (products || []).find((product: any) => terms.some((term) => `${product.name || ''} ${product.slug || ''}`.toLowerCase().includes(term)));
-  const vipProduct = findProduct(['grupo vip', 'vip']);
-  const harmoniaProduct = findProduct(['harmonia']);
-  const cantoProduct = findProduct(['canto']);
-  const melismasProduct = findProduct(['melisma']);
-  const ebookProduct = findProduct(['ebook', 'guia']);
+  const productList = ((products || []) as any[]).sort((a, b) => productOrder(a, 0) - productOrder(b, 0));
+  const vipProduct = productList.find(isVip);
+  const vipHref = productLink(vipProduct, '#sala-vip');
   const hasVip = hasCourse(activeSubs, 'grupo-vip');
-  const hasHarmonia = hasVip || hasCourse(activeSubs, 'foco-em-harmonia');
-  const hasCanto = hasCourse(activeSubs, 'foco-em-canto');
-  const hasMelismas = hasCourse(activeSubs, 'foco-em-melismas');
-  const hasEbooks = hasCourse(activeSubs, 'ebooks');
-  const courseCards = [
-    { title: 'Sala de Atividades VIP', description: hasVip ? 'Atividades, duetos e comunidade.' : 'Experimente Firmando a Afinacao gratis. Assine para liberar tudo.', unlocked: true, href: '#sala-vip', cover: productCover(vipProduct, covers[0]), action: hasVip ? 'Abrir modulos' : 'Explorar gratis' },
-    { title: 'Foco em Harmonia', description: 'Curso completo. Ate migrar, o acesso segue pela Kiwify.', unlocked: hasHarmonia, href: productLink(harmoniaProduct, 'https://dashboard.kiwify.com.br'), cover: productCover(harmoniaProduct, covers[1]), action: hasHarmonia ? 'Acessar na Kiwify' : 'Comprar curso' },
-    { title: 'Foco em Canto', description: 'Tecnica, extensao e performance.', unlocked: hasCanto, href: productLink(cantoProduct, 'https://dashboard.kiwify.com.br'), cover: productCover(cantoProduct, covers[2]), action: hasCanto ? 'Acessar curso' : 'Comprar curso' },
-    { title: 'Foco em Melismas', description: 'Agilidade, riffs, runs e ornamentacoes.', unlocked: hasMelismas, href: productLink(melismasProduct, 'https://dashboard.kiwify.com.br'), cover: productCover(melismasProduct, covers[3]), action: hasMelismas ? 'Acessar curso' : 'Comprar curso' },
-    { title: 'Ebooks e Guias', description: 'Materiais premium complementares.', unlocked: hasEbooks, href: productLink(ebookProduct, 'https://dashboard.kiwify.com.br'), cover: productCover(ebookProduct, covers[0]), action: hasEbooks ? 'Acessar materiais' : 'Comprar acesso' },
-  ];
+  const courseCards = productList.map((product, index) => {
+    const vip = isVip(product);
+    const published = product.status === 'published';
+    const subscribed = hasCourse(activeSubs, productKey(product));
+    const unlocked = vip ? true : published || subscribed || hasVip;
+    const title = vip ? 'Sala de Atividades VIP' : product.name;
+    const description = vip ? (hasVip ? 'Atividades, duetos e comunidade.' : 'Modulo gratis disponivel. O VIP libera tudo.') : (unlocked ? (product.description || 'Acesso liberado.') : 'Bloqueado. Entre no Grupo VIP para liberar.');
+    const href = unlocked ? (vip ? '#sala-vip' : productLink(product, `/aluno/biblioteca/${product.slug}`)) : vipHref;
+    const action = unlocked ? (vip ? hasVip ? 'Abrir modulos' : 'Explorar gratis' : 'Acessar curso') : 'Liberar no VIP';
+    return { title, description, unlocked, href, cover: productCover(product, covers[index % covers.length]), action };
+  });
 
   return (
     <AppShell>
