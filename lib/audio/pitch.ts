@@ -124,11 +124,12 @@ function mpmPitch(buffer: Float32Array, sampleRate: number) {
   if (!peaks.length) return null;
   const highest = Math.max(...peaks.map((peak) => peak.value));
 
-  // Para extensão vocal, a prioridade é a fundamental mais estável, não o último pico.
-  // Isso evita engasgos e leituras de oitava/harmônico quando o cantor sobe ou desce rápido.
-  const selected = peaks.find((peak) => peak.value >= highest * 0.74 && peak.value > 0.42)
-    || peaks.find((peak) => peak.value > 0.5)
-    || null;
+  // Em MPM os picos vêm em ordem de lag crescente: primeiro pico = frequência mais aguda.
+  // Para voz cantada, a fundamental grave costuma aparecer nos lags maiores. Por isso,
+  // escolhemos o último pico forte o suficiente, evitando registrar harmônicos agudos
+  // como se fossem notas reais quando o aluno cantou apenas uma nota grave.
+  const strong = peaks.filter((peak) => peak.value >= highest * 0.72 && peak.value > 0.48);
+  const selected = strong[strong.length - 1] || [...peaks].reverse().find((peak) => peak.value > 0.56) || null;
 
   if (!selected) return null;
 
