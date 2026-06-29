@@ -1,8 +1,10 @@
 export type DuetMicMode = 'studio' | 'clean';
+export type DuetFacingMode = 'user' | 'environment';
 
 type PrepareDuetCameraOptions = {
   audioDeviceId?: string | null;
   micMode?: DuetMicMode;
+  facingMode?: DuetFacingMode;
 };
 
 function isIOSLike() {
