@@ -1,1 +1,174 @@
-.activity-page:has(.duet-recording-premium)>.activity-topbar{display:none!important}.duet-recording-premium{display:block!important}.duet-premium-top{padding-top:0!important}.duet-hero-card{min-height:330px!important;background:linear-gradient(90deg,rgba(2,3,4,.97) 0%,rgba(4,5,7,.94) 42%,rgba(8,8,8,.42) 67%,rgba(5,4,3,.12) 100%),url('/images/duet-video-placeholder-mic.png') right 10px top 6px/330px auto no-repeat!important}.duet-hero-card:before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(0,0,0,.02) 0%,rgba(0,0,0,.18) 50%,rgba(0,0,0,.06) 100%),radial-gradient(circle at 78% 36%,rgba(245,199,107,.13),transparent 26%);pointer-events:none}.duet-hero-card:after{right:155px!important;top:112px!important;width:245px!important;opacity:.55!important}.duet-video-stage{display:block!important;position:relative!important;min-height:300px!important;aspect-ratio:16/11.2!important;margin-top:0!important;margin-bottom:22px!important;visibility:visible!important;opacity:1!important}.duet-video-stage canvas,.duet-video-stage video.duet-final-video{display:block!important;width:100%!important;height:100%!important;object-fit:cover!important}.duet-video-stage .duet-empty-stage>img{display:none!important;visibility:hidden!important;opacity:0!important}.duet-action-console{margin-top:22px!important;margin-bottom:16px!important}.duet-duration-line{margin-top:16px!important}.duet-action-console .record-main:before{display:none!important;content:none!important}.duet-action-console .record-main svg{margin-top:0!important}.duet-action-console .record-main{gap:8px!important}.duet-control-grid button svg:first-child{margin-bottom:8px}.duet-countdown{position:absolute!important;inset:0!important;z-index:9!important;display:grid!important;place-items:center!important;background:rgba(0,0,0,.48)!important;color:#ffd77b!important;font-size:96px!important;font-weight:950!important;text-shadow:0 0 34px rgba(245,199,107,.42)!important;backdrop-filter:blur(4px)!important}.duet-stage-overlay{z-index:8!important}.duet-stage-overlay span{border-radius:999px!important}@media(max-width:680px){.duet-recording-premium{margin-top:0!important;padding-top:calc(12px + env(safe-area-inset-top))!important}.duet-premium-top{margin-bottom:12px!important}.duet-hero-card{min-height:338px!important;background:linear-gradient(90deg,rgba(2,3,4,.98) 0%,rgba(4,5,7,.94) 47%,rgba(8,8,8,.58) 68%,rgba(5,4,3,.18) 100%),url('/images/duet-video-placeholder-mic.png') right -18px top 12px/245px auto no-repeat!important}.duet-hero-card:after{right:75px!important;top:119px!important;width:235px!important}.duet-hero-copy{max-width:74%!important}.duet-hero-tips{margin-top:44px!important}.duet-video-stage{min-height:280px!important;margin-bottom:22px!important}.duet-action-console{margin-top:22px!important;margin-bottom:16px!important}.duet-action-console .record-main svg{width:54px!important;height:54px!important;padding:13px;border:2px solid rgba(245,199,107,.92);border-radius:999px;background:radial-gradient(circle,rgba(245,199,107,.28),rgba(245,199,107,.08));box-shadow:0 0 28px rgba(245,199,107,.16)}.duet-action-console .record-main strong{margin-top:0!important}.duet-countdown{font-size:84px!important}}
+/* Duet recorder layout normalization: CSS only, no runtime DOM guard. */
+.activity-page:has(.duet-recording-premium) > .activity-topbar {
+  display: none !important;
+}
+
+.duet-recording-premium {
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.duet-recording-premium > .duet-premium-top {
+  order: 1 !important;
+  padding-top: 0 !important;
+}
+
+.duet-recording-premium > .duet-hero-card {
+  order: 2 !important;
+  min-height: 330px !important;
+  background:
+    linear-gradient(90deg, rgba(2,3,4,.97) 0%, rgba(4,5,7,.94) 42%, rgba(8,8,8,.42) 67%, rgba(5,4,3,.12) 100%),
+    url('/images/duet-video-placeholder-mic.png') right 10px top 6px / 330px auto no-repeat !important;
+}
+
+.duet-recording-premium > .duet-hero-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, rgba(0,0,0,.02) 0%, rgba(0,0,0,.18) 50%, rgba(0,0,0,.06) 100%),
+    radial-gradient(circle at 78% 36%, rgba(245,199,107,.13), transparent 26%);
+  pointer-events: none;
+}
+
+.duet-recording-premium > .duet-hero-card::after {
+  right: 155px !important;
+  top: 112px !important;
+  width: 245px !important;
+  opacity: .55 !important;
+}
+
+.duet-recording-premium > .duet-premium-error { order: 3 !important; }
+.duet-recording-premium > .duet-section-label:first-of-type { order: 4 !important; }
+
+.duet-recording-premium > .duet-video-stage {
+  order: 5 !important;
+  display: block !important;
+  position: relative !important;
+  min-height: 300px !important;
+  aspect-ratio: 16 / 11.2 !important;
+  margin-top: 0 !important;
+  margin-bottom: 14px !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  overflow: hidden !important;
+}
+
+.duet-recording-premium > .duet-video-stage canvas,
+.duet-recording-premium > .duet-video-stage video.duet-final-video {
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+}
+
+.duet-recording-premium > .duet-action-console {
+  order: 6 !important;
+  position: relative !important;
+  inset: auto !important;
+  transform: none !important;
+  margin-top: 0 !important;
+  margin-bottom: 16px !important;
+  z-index: 2 !important;
+}
+
+.duet-recording-premium > .duet-duration-line { order: 7 !important; }
+.duet-recording-premium > .duet-video-stage + .duet-section-label { order: 8 !important; }
+.duet-recording-premium > .duet-control-grid { order: 9 !important; margin-top: 0 !important; }
+.duet-recording-premium > .duet-tips-panel { order: 10 !important; }
+.duet-recording-premium > .duet-publish-progress { order: 20 !important; }
+.duet-recording-premium > .duet-after-record-actions { order: 21 !important; }
+.duet-recording-premium > .duet-publish-card { order: 22 !important; }
+.duet-recording-premium > .duet-caption-sheet { order: 23 !important; }
+.duet-recording-premium > .duet-posted-card { order: 24 !important; }
+
+.duet-video-stage .duet-empty-stage > img {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+}
+
+.duet-action-console .record-main::before {
+  display: none !important;
+  content: none !important;
+}
+
+.duet-action-console .record-main svg {
+  margin-top: 0 !important;
+}
+
+.duet-action-console .record-main {
+  gap: 8px !important;
+}
+
+.duet-control-grid button svg:first-child {
+  margin-bottom: 8px;
+}
+
+.duet-countdown {
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 9 !important;
+  display: grid !important;
+  place-items: center !important;
+  background: rgba(0,0,0,.48) !important;
+  color: #ffd77b !important;
+  font-size: 96px !important;
+  font-weight: 950 !important;
+  text-shadow: 0 0 34px rgba(245,199,107,.42) !important;
+  backdrop-filter: blur(4px) !important;
+}
+
+.duet-stage-overlay { z-index: 8 !important; }
+.duet-stage-overlay span { border-radius: 999px !important; }
+
+@media (max-width: 680px) {
+  .duet-recording-premium {
+    margin-top: 0 !important;
+    padding-top: calc(12px + env(safe-area-inset-top)) !important;
+  }
+
+  .duet-premium-top { margin-bottom: 12px !important; }
+
+  .duet-hero-card {
+    min-height: 338px !important;
+    background:
+      linear-gradient(90deg, rgba(2,3,4,.98) 0%, rgba(4,5,7,.94) 47%, rgba(8,8,8,.58) 68%, rgba(5,4,3,.18) 100%),
+      url('/images/duet-video-placeholder-mic.png') right -18px top 12px / 245px auto no-repeat !important;
+  }
+
+  .duet-hero-card::after {
+    right: 75px !important;
+    top: 119px !important;
+    width: 235px !important;
+  }
+
+  .duet-hero-copy { max-width: 74% !important; }
+  .duet-hero-tips { margin-top: 44px !important; }
+
+  .duet-recording-premium > .duet-video-stage {
+    min-height: 280px !important;
+    margin-bottom: 12px !important;
+  }
+
+  .duet-recording-premium > .duet-action-console {
+    margin-top: 0 !important;
+    margin-bottom: 16px !important;
+  }
+
+  .duet-action-console .record-main svg {
+    width: 54px !important;
+    height: 54px !important;
+    padding: 13px;
+    border: 2px solid rgba(245,199,107,.92);
+    border-radius: 999px;
+    background: radial-gradient(circle, rgba(245,199,107,.28), rgba(245,199,107,.08));
+    box-shadow: 0 0 28px rgba(245,199,107,.16);
+  }
+
+  .duet-action-console .record-main strong {
+    margin-top: 0 !important;
+  }
+
+  .duet-countdown { font-size: 84px !important; }
+}
