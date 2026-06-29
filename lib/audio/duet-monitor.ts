@@ -15,6 +15,20 @@ function makeAudioContext() {
   return new AudioCtx({ latencyHint: 'playback', sampleRate: 48000 });
 }
 
+function delayContextClose(context: AudioContext) {
+  const close = context.close.bind(context);
+  let requested = false;
+  context.close = (() => {
+    if (requested) return Promise.resolve();
+    requested = true;
+    return new Promise<void>((resolve) => {
+      window.setTimeout(() => {
+        close().then(() => resolve()).catch(() => resolve());
+      }, 2500);
+    });
+  }) as AudioContext['close'];
+}
+
 function capturedReferenceStream(reference: HTMLVideoElement) {
   const video = reference as CapturableVideo;
   const capture = video.captureStream || video.mozCaptureStream;
@@ -53,6 +67,7 @@ export function buildDuetMonitorAudio(reference: HTMLVideoElement, stream: Media
   const context = makeAudioContext();
   if (!context) return stream.getAudioTracks();
 
+  delayContextClose(context);
   context.resume().catch(() => undefined);
   const destination = context.createMediaStreamDestination();
   const referenceDestination = context.createMediaStreamDestination();
@@ -69,9 +84,6 @@ export function buildDuetMonitorAudio(reference: HTMLVideoElement, stream: Media
 
   reference.muted = false;
 
-  // Preferimos captureStream para criar a faixa separada da referência.
-  // Essa track NÃO depende do MediaStreamDestination do AudioContext, então continua
-  // entregando chunks mesmo quando o contexto usado para monitorar/mixar é fechado.
   const captured = capturedReferenceStream(reference);
   if (captured) {
     try { connectReferenceCapture(captured, context, master); } catch {}
