@@ -27,41 +27,6 @@ function capturedReferenceStream(reference: HTMLVideoElement) {
   }
 }
 
-function connectReferenceFromElement(reference: HTMLVideoElement, context: AudioContext, master: GainNode, referenceDestination: MediaStreamAudioDestinationNode) {
-  const source = context.createMediaElementSource(reference);
-  const monitorGain = context.createGain();
-  const recordGain = context.createGain();
-  const isolatedGain = context.createGain();
-
-  // A referência é monitorada limpa, sem compressor, sem AGC e sem noise suppression.
-  // O ganho de gravação fica levemente abaixo de 0dB para preservar headroom e evitar clipping ao somar com a voz.
-  monitorGain.gain.value = 0.92;
-  recordGain.gain.value = 0.82;
-  isolatedGain.gain.value = 1;
-
-  source.connect(monitorGain).connect(context.destination);
-  source.connect(recordGain).connect(master);
-  source.connect(isolatedGain).connect(referenceDestination);
-
-  // Evita áudio dobrado: o usuário passa a ouvir a referência pelo AudioContext, não pelo elemento nativo.
-  reference.muted = true;
-}
-
-function connectReferenceFromCapturedStream(reference: HTMLVideoElement, context: AudioContext, master: GainNode, referenceDestination: MediaStreamAudioDestinationNode) {
-  const referenceStream = capturedReferenceStream(reference);
-  if (!referenceStream) return false;
-
-  const source = context.createMediaStreamSource(referenceStream);
-  const recordGain = context.createGain();
-  const isolatedGain = context.createGain();
-
-  recordGain.gain.value = 0.82;
-  isolatedGain.gain.value = 1;
-  source.connect(recordGain).connect(master);
-  source.connect(isolatedGain).connect(referenceDestination);
-  return true;
-}
-
 export function buildDuetMonitorAudio(reference: HTMLVideoElement, stream: MediaStream): MediaStreamTrack[] | DuetMonitorResult {
   const context = makeAudioContext();
   if (!context) return stream.getAudioTracks();
@@ -80,22 +45,32 @@ export function buildDuetMonitorAudio(reference: HTMLVideoElement, stream: Media
     microphone.connect(micGain).connect(master);
   } catch {}
 
-  let referenceConnected = false;
+  // Mantém a referência audível pelo player nativo durante a gravação.
+  // Isso evita o bug de alguns navegadores em que o monitor via AudioContext fica mudo.
+  reference.muted = false;
 
-  try {
-    connectReferenceFromElement(reference, context, master, referenceDestination);
-    referenceConnected = true;
-  } catch {
+  const referenceStream = capturedReferenceStream(reference);
+  if (referenceStream) {
     try {
-      referenceConnected = connectReferenceFromCapturedStream(reference, context, master, referenceDestination);
-    } catch {
-      referenceConnected = false;
-    }
+      const referenceSource = context.createMediaStreamSource(referenceStream);
+      const recordGain = context.createGain();
+      const isolatedGain = context.createGain();
+      recordGain.gain.value = 0.82;
+      isolatedGain.gain.value = 1;
+      referenceSource.connect(recordGain).connect(master);
+      referenceSource.connect(isolatedGain).connect(referenceDestination);
+    } catch {}
+  } else {
+    try {
+      const source = context.createMediaElementSource(reference);
+      const recordGain = context.createGain();
+      const isolatedGain = context.createGain();
+      recordGain.gain.value = 0.82;
+      isolatedGain.gain.value = 1;
+      source.connect(recordGain).connect(master);
+      source.connect(isolatedGain).connect(referenceDestination);
+    } catch {}
   }
-
-  // Se nenhum método de captura da referência estiver disponível, mantemos a gravação da voz funcionando
-  // e deixamos o render final usar o áudio original da referência por URL.
-  if (!referenceConnected) reference.muted = false;
 
   return {
     tracks: destination.stream.getAudioTracks(),
