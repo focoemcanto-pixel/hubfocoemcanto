@@ -43,6 +43,13 @@ function videoName(video: StreamVideo) {
   return String(video.meta?.name || video.name || video.uid || 'Vídeo sem nome');
 }
 
+function isValidStreamVideo(video?: StreamVideo) {
+  if (!video?.uid) return false;
+  const state = String(video.status?.state || 'unknown');
+  const duration = Number(video.duration || 0) || 0;
+  return state === 'ready' && duration > 0;
+}
+
 export async function POST(request: Request) {
   try {
     const cookieStore = await cookies();
@@ -56,6 +63,8 @@ export async function POST(request: Request) {
     if (!productId || !moduleId) return NextResponse.json({ error: 'missing_destination', message: 'Informe produto e módulo.' }, { status: 400 });
 
     const supabase = createAdminClient();
+    const videos = await listStreamVideos();
+    const streamByUid = new Map(videos.map((video) => [String(video.uid || '').trim(), video]).filter(([uid]) => Boolean(uid)) as Array<[string, StreamVideo]>);
 
     if (deleteLessonIds.length) {
       const { data: safeLessons, error: safeError } = await supabase
@@ -64,7 +73,9 @@ export async function POST(request: Request) {
         .eq('module_id', moduleId)
         .in('id', deleteLessonIds);
       if (safeError) throw safeError;
-      const ids = (safeLessons || []).filter((lesson: any) => !lesson.stream_uid).map((lesson: any) => lesson.id);
+      const ids = (safeLessons || [])
+        .filter((lesson: any) => !isValidStreamVideo(streamByUid.get(String(lesson.stream_uid || '').trim())))
+        .map((lesson: any) => lesson.id);
       if (ids.length) {
         await supabase.from('community_posts').delete().in('exercise_id', ids);
         await supabase.from('submissions').delete().in('exercise_id', ids);
@@ -74,27 +85,36 @@ export async function POST(request: Request) {
       return NextResponse.json({ deleted: ids.length, skipped: deleteLessonIds.length - ids.length });
     }
 
-    const [{ data: exercises, error: exercisesError }, videos] = await Promise.all([
-      supabase.from('exercises').select('id,title,slug,module_id,stream_uid,media_url').eq('module_id', moduleId).order('sort_order', { ascending: true }),
-      listStreamVideos(),
-    ]);
+    const { data: exercises, error: exercisesError } = await supabase
+      .from('exercises')
+      .select('id,title,slug,module_id,stream_uid,media_url')
+      .eq('module_id', moduleId)
+      .order('sort_order', { ascending: true });
     if (exercisesError) throw exercisesError;
 
     const lessonRows = (exercises || []) as ExerciseRow[];
-    const usedUids = new Set(lessonRows.map((lesson) => String(lesson.stream_uid || '').trim()).filter(Boolean));
-    const missingLessons = lessonRows.filter((lesson) => !String(lesson.stream_uid || '').trim()).map((lesson) => ({ id: lesson.id, title: lesson.title || lesson.slug || lesson.id, slug: lesson.slug || null }));
-    const linkedLessons = lessonRows.filter((lesson) => String(lesson.stream_uid || '').trim()).length;
+    const validLinkedLessons = lessonRows.filter((lesson) => isValidStreamVideo(streamByUid.get(String(lesson.stream_uid || '').trim())));
+    const brokenLessons = lessonRows
+      .filter((lesson) => String(lesson.stream_uid || '').trim() && !isValidStreamVideo(streamByUid.get(String(lesson.stream_uid || '').trim())))
+      .map((lesson) => ({ id: lesson.id, title: lesson.title || lesson.slug || lesson.id, slug: lesson.slug || null, streamUid: lesson.stream_uid || null, reason: streamByUid.has(String(lesson.stream_uid || '').trim()) ? 'UID existe, mas não está pronto/sem duração válida.' : 'UID apagado ou inexistente no Cloudflare Stream.' }));
+    const missingLessons = lessonRows
+      .filter((lesson) => !String(lesson.stream_uid || '').trim())
+      .map((lesson) => ({ id: lesson.id, title: lesson.title || lesson.slug || lesson.id, slug: lesson.slug || null, reason: 'Aula sem UID Stream.' }));
+    const actionableLessons = [...brokenLessons, ...missingLessons];
+    const validUsedUids = new Set(validLinkedLessons.map((lesson) => String(lesson.stream_uid || '').trim()).filter(Boolean));
     const availableVideos = videos
-      .filter((video) => video.uid && !usedUids.has(String(video.uid)))
+      .filter((video) => isValidStreamVideo(video) && video.uid && !validUsedUids.has(String(video.uid)))
       .map((video) => ({ uid: String(video.uid), name: videoName(video), status: String(video.status?.state || 'unknown'), duration: Number(video.duration || 0) || null, thumbnail: String(video.thumbnail || '') }))
       .sort((a, b) => a.name.localeCompare(b.name));
 
     return NextResponse.json({
       totalLessons: lessonRows.length,
-      linkedLessons,
-      missingCount: missingLessons.length,
+      linkedLessons: validLinkedLessons.length,
+      missingCount: actionableLessons.length,
+      brokenCount: brokenLessons.length,
+      emptyCount: missingLessons.length,
       availableCount: availableVideos.length,
-      missingLessons,
+      missingLessons: actionableLessons,
       availableVideos,
       mappedAt: new Date().toISOString(),
     });
