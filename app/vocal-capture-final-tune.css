@@ -68,6 +68,21 @@
     left: 51px !important;
     width: 47px !important;
     height: 47px !important;
+    transition: none !important;
+    animation: none !important;
+    will-change: top, transform !important;
+    transform: translate3d(0, -50%, 0) !important;
+    backface-visibility: hidden !important;
+    contain: layout paint style !important;
+  }
+
+  body.vocal-capture-active .premium-vocal-meter .active-note {
+    transition: none !important;
+    animation: none !important;
+    will-change: top, transform !important;
+    transform: translate3d(0, -50%, 0) !important;
+    backface-visibility: hidden !important;
+    contain: layout paint style !important;
   }
 
   body.vocal-capture-active .mvr-visual {
