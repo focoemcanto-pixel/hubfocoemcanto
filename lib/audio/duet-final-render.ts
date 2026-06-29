@@ -146,7 +146,7 @@ export async function renderFinalDuetVideo({ visualBlob, voiceBlob, referenceBlo
   ]);
   const voiceBuffer = settings.noiseReduction ? reduceVoiceNoise(audioCtx, rawVoiceBuffer) : rawVoiceBuffer;
   const voicePreGain = trackPreGain(voiceBuffer, 0.078, 0.12, 2.8);
-  const referencePreGain = trackPreGain(referenceBuffer, 0.082, 0.25, 4.2);
+  const referencePreGain = 1;
 
   const destination = audioCtx.createMediaStreamDestination();
   const voiceSource = audioCtx.createBufferSource();
@@ -165,7 +165,7 @@ export async function renderFinalDuetVideo({ visualBlob, voiceBlob, referenceBlo
   const videoCapture = makeDirectVideoStream(visual) || makeCanvasVideoStream(visual);
   const outputStream = new MediaStream([...videoCapture.stream.getVideoTracks(), ...destination.stream.getAudioTracks()]);
   const mimeType = recorderMimeType();
-  const recorder = new MediaRecorder(outputStream, { ...(mimeType ? { mimeType } : {}), videoBitsPerSecond: isSafariLike() ? 2500000 : 5200000, audioBitsPerSecond: 192000 });
+  const recorder = new MediaRecorder(outputStream, { ...(mimeType ? { mimeType } : {}), videoBitsPerSecond: isSafariLike() ? 2500000 : 5200000, audioBitsPerSecond: 256000 });
   const chunks: Blob[] = [];
   recorder.ondataavailable = (event) => { if (event.data.size > 0) chunks.push(event.data); };
   const done = new Promise<Blob>((resolve) => { recorder.onstop = () => resolve(new Blob(chunks, { type: recorder.mimeType || mimeType || 'video/webm' })); });
