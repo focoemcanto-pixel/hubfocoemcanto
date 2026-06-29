@@ -18,13 +18,9 @@ export async function loadDuetBufferEngine(args: {
   const engine = new DuetBufferEngine(args.settings);
   args.previous?.destroy();
 
-  // O mixer precisa de DUAS faixas reais: voz gravada + referência gravada.
-  // Quando a referência foi capturada durante a gravação, ela deve ser a fonte principal
-  // do editor ao vivo. O URL fica apenas como fallback para casos em que o navegador
-  // não conseguiu capturar a track separada.
   if (args.referenceBlob && args.referenceBlob.size > 800) {
     try {
-      await engine.loadBlobs(args.voiceBlob, args.referenceBlob);
+      await engine.loadBlobs(args.voiceBlob, args.referenceBlob, args.referenceSource);
     } catch {
       await engine.load(args.voiceBlob, args.referenceSource);
     }
