@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowRight, BookOpen, CheckCircle2, ChevronLeft, Compass, Home, Mic2, Music2, PlayCircle, Sparkles, UserRound, Users, Volume2, X } from 'lucide-react';
+import { ArrowRight, BookOpen, CheckCircle2, ChevronLeft, Clock3, Compass, Home, Mic2, Music2, PlayCircle, Sparkles, UserRound, Users, Volume2 } from 'lucide-react';
 
 type StepKey = 'welcome' | 'vocal' | 'profile' | 'tour' | 'duet' | 'record' | 'done';
 
@@ -15,6 +15,7 @@ type Step = {
 
 const STORAGE_KEY = 'hub_onboarding_step_v1';
 const DONE_KEY = 'hub_onboarding_done_v1';
+const LATER_KEY = 'hub_onboarding_later_v1';
 
 const steps: Step[] = [
   { key: 'welcome', eyebrow: 'Primeira configuração', title: 'Vamos preparar o Hub para a sua voz.', text: 'Em poucos passos você descobre sua extensão, configura seu perfil e grava sua primeira atividade guiada.' },
@@ -42,6 +43,7 @@ const duetPath = [
 ];
 
 function stepIndex(key: StepKey) { return Math.max(0, steps.findIndex((item) => item.key === key)); }
+function isStepKey(value: string | null): value is StepKey { return !!value && steps.some((item) => item.key === value); }
 
 async function markOnboardingDone() {
   try { await fetch('/api/onboarding/done', { method: 'POST' }); } catch {}
@@ -55,6 +57,13 @@ export function StudentOnboarding() {
   const step = steps[index];
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const requestedStep = params.get('step');
+    if (isStepKey(requestedStep)) {
+      setCurrent(requestedStep);
+      window.localStorage.setItem(STORAGE_KEY, requestedStep);
+      return;
+    }
     const saved = window.localStorage.getItem(STORAGE_KEY) as StepKey | null;
     if (saved && steps.some((item) => item.key === saved)) setCurrent(saved);
   }, []);
@@ -66,20 +75,22 @@ export function StudentOnboarding() {
   const finish = async () => {
     window.localStorage.setItem(DONE_KEY, '1');
     window.localStorage.setItem(STORAGE_KEY, 'done');
+    window.localStorage.removeItem(LATER_KEY);
     await markOnboardingDone();
     window.location.href = '/aluno';
   };
-  const skip = async () => {
-    window.localStorage.setItem(DONE_KEY, '1');
+  const doLater = async () => {
+    window.localStorage.setItem(LATER_KEY, '1');
+    window.localStorage.setItem(STORAGE_KEY, current);
     await markOnboardingDone();
     window.location.href = '/aluno';
   };
 
   const statusItems = useMemo(() => [
-    { label: 'Perfil vocal', done: index >= 1 },
-    { label: 'Perfil completo', done: index >= 2 },
-    { label: 'Tour da plataforma', done: index >= 3 },
-    { label: 'Primeiro dueto', done: index >= 4 },
+    { label: 'Perfil vocal', done: index >= 2 },
+    { label: 'Perfil completo', done: index >= 3 },
+    { label: 'Tour da plataforma', done: index >= 4 },
+    { label: 'Primeiro dueto', done: index >= 5 },
   ], [index]);
 
   return (
@@ -88,7 +99,7 @@ export function StudentOnboarding() {
         <header className="onboarding-topbar">
           <button type="button" onClick={prev} disabled={index === 0}><ChevronLeft size={18} /> Voltar</button>
           <div className="onboarding-progress" aria-label={`Progresso ${progress}%`}><span style={{ width: `${progress}%` }} /></div>
-          <button type="button" onClick={skip}><X size={17} /> Pular</button>
+          <button type="button" onClick={doLater}><Clock3 size={17} /> Realizar depois</button>
         </header>
 
         <section className="onboarding-hero-card">
@@ -105,7 +116,7 @@ export function StudentOnboarding() {
           </div>
         </section>
 
-        {current === 'welcome' ? <WelcomePanel onNext={next} /> : null}
+        {current === 'welcome' ? <WelcomePanel onNext={next} onLater={doLater} /> : null}
         {current === 'vocal' ? <VocalPanel onNext={next} /> : null}
         {current === 'profile' ? <ProfilePanel onNext={next} /> : null}
         {current === 'tour' ? <TourPanel tourIndex={tourIndex} setTourIndex={setTourIndex} onNext={next} /> : null}
@@ -117,16 +128,16 @@ export function StudentOnboarding() {
   );
 }
 
-function WelcomePanel({ onNext }: { onNext: () => void }) {
-  return <section className="onboarding-panel two-cols"><div className="mission-card featured"><Mic2 size={34} /><h2>O Hub vai conhecer sua voz.</h2><p>Primeiro configuramos extensão e tessitura. Depois mostramos o caminho para sua primeira prática real.</p></div><div className="mission-list"><p><CheckCircle2 /> Avaliação vocal guiada</p><p><CheckCircle2 /> Perfil completo</p><p><CheckCircle2 /> Tour pelas abas</p><p><CheckCircle2 /> Primeiro dueto orientado</p><button onClick={onNext}>Começar configuração <ArrowRight size={18} /></button></div></section>;
+function WelcomePanel({ onNext, onLater }: { onNext: () => void; onLater: () => void }) {
+  return <section className="onboarding-panel two-cols"><div className="mission-card featured"><Mic2 size={34} /><h2>O Hub vai conhecer sua voz.</h2><p>Primeiro configuramos extensão e tessitura. Depois mostramos o caminho para sua primeira prática real.</p></div><div className="mission-list"><p><CheckCircle2 /> Avaliação vocal guiada</p><p><CheckCircle2 /> Perfil completo</p><p><CheckCircle2 /> Tour pelas abas</p><p><CheckCircle2 /> Primeiro dueto orientado</p><button onClick={onNext}>Começar configuração <ArrowRight size={18} /></button><button className="secondary-onboarding-action" onClick={onLater}><Clock3 size={18} /> Fazer isso depois</button></div></section>;
 }
 
 function VocalPanel({ onNext }: { onNext: () => void }) {
-  return <section className="onboarding-panel two-cols"><div className="mission-card"><Volume2 size={34} /><h2>Faça sua avaliação vocal.</h2><p>Você será levado para o teste de extensão e tessitura. Ao terminar, volte para continuar o onboarding.</p><Link className="premium-link" href="/aluno/perfil-vocal?from=onboarding">Iniciar avaliação vocal</Link></div><div className="mission-card dark"><h3>O que será usado no app?</h3><p>Faixa confortável, extremos da extensão, tessitura prática e recomendações para exercícios personalizados.</p><button onClick={onNext}>Já fiz / continuar <ArrowRight size={18} /></button></div></section>;
+  return <section className="onboarding-panel two-cols"><div className="mission-card"><Volume2 size={34} /><h2>Faça sua avaliação vocal.</h2><p>Você será levado para o teste de extensão e tessitura. Ao salvar o Mapa Vocal, o onboarding continua automaticamente daqui.</p><Link className="premium-link" href="/aluno/perfil-vocal?from=onboarding&next=profile">Iniciar avaliação vocal</Link></div><div className="mission-card dark"><h3>O que será usado no app?</h3><p>Faixa confortável, extremos da extensão, tessitura prática e recomendações para exercícios personalizados.</p><button onClick={onNext}>Já fiz / continuar <ArrowRight size={18} /></button></div></section>;
 }
 
 function ProfilePanel({ onNext }: { onNext: () => void }) {
-  return <section className="onboarding-panel two-cols"><div className="mission-card"><UserRound size={34} /><h2>Complete seu perfil.</h2><p>Nome, foto e dados básicos deixam sua presença pronta para atividades, publicações e avaliações.</p><Link className="premium-link" href="/aluno/perfil/editar?from=onboarding">Concluir perfil</Link></div><div className="mission-card dark"><h3>Depois disso...</h3><p>Você será apresentado às abas principais para não se perder no Hub.</p><button onClick={onNext}>Continuar tour <ArrowRight size={18} /></button></div></section>;
+  return <section className="onboarding-panel two-cols"><div className="mission-card"><UserRound size={34} /><h2>Complete seu perfil.</h2><p>Nome, foto e dados básicos deixam sua presença pronta para atividades, publicações e avaliações.</p><Link className="premium-link" href="/aluno/perfil/editar?from=onboarding&next=tour">Concluir perfil</Link></div><div className="mission-card dark"><h3>Depois disso...</h3><p>Você será apresentado às abas principais para não se perder no Hub.</p><button onClick={onNext}>Continuar tour <ArrowRight size={18} /></button></div></section>;
 }
 
 function TourPanel({ tourIndex, setTourIndex, onNext }: { tourIndex: number; setTourIndex: (value: number) => void; onNext: () => void }) {
