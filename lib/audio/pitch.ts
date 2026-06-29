@@ -29,146 +29,59 @@ const BRAZILIAN_NOTE_BY_SCIENTIFIC: Record<string, string> = {
   B: 'Si'
 };
 
-type Candidate = { lag: number; score: number };
-
-type DetectionCore = {
-  frequencyHz: number;
-  confidence: number;
-  rms: number;
-  peak: number;
-};
-
-function analyzeLevel(buffer: Float32Array) {
+function rmsFromBuffer(buffer: Float32Array) {
   let sum = 0;
-  let peak = 0;
-  let mean = 0;
-  for (let i = 0; i < buffer.length; i += 1) mean += buffer[i];
-  mean /= Math.max(1, buffer.length);
-  for (let i = 0; i < buffer.length; i += 1) {
-    const value = buffer[i] - mean;
-    sum += value * value;
-    const abs = Math.abs(value);
-    if (abs > peak) peak = abs;
-  }
-  return { rms: Math.sqrt(sum / Math.max(1, buffer.length)), peak, mean };
-}
-
-function prepareBuffer(buffer: Float32Array, mean: number, peak: number) {
-  const prepared = new Float32Array(buffer.length);
-  const clip = Math.max(0.0025, peak * 0.11);
-  for (let i = 0; i < buffer.length; i += 1) {
-    const value = buffer[i] - mean;
-    if (value > clip) prepared[i] = value - clip;
-    else if (value < -clip) prepared[i] = value + clip;
-    else prepared[i] = 0;
-  }
-  return prepared;
-}
-
-function normalizedCorrelation(buffer: Float32Array, lag: number) {
-  let correlation = 0;
-  let energyA = 0;
-  let energyB = 0;
-  const limit = buffer.length - lag;
-  if (limit <= 16) return 0;
-  for (let i = 0; i < limit; i += 1) {
-    const a = buffer[i];
-    const b = buffer[i + lag];
-    correlation += a * b;
-    energyA += a * a;
-    energyB += b * b;
-  }
-  const denom = Math.sqrt(energyA * energyB);
-  return denom > 1e-9 ? correlation / denom : 0;
-}
-
-function refineLag(buffer: Float32Array, lag: number, minLag: number, maxLag: number) {
-  if (lag <= minLag || lag >= maxLag) return lag;
-  const left = normalizedCorrelation(buffer, lag - 1);
-  const center = normalizedCorrelation(buffer, lag);
-  const right = normalizedCorrelation(buffer, lag + 1);
-  const divisor = 2 * (left - 2 * center + right);
-  if (!divisor) return lag;
-  const adjustment = (left - right) / divisor;
-  return Number.isFinite(adjustment) && Math.abs(adjustment) <= 1 ? lag + adjustment : lag;
-}
-
-function findCandidates(buffer: Float32Array, sampleRate: number) {
-  const minFrequency = 28;
-  const maxFrequency = 1900;
-  const minLag = Math.max(2, Math.floor(sampleRate / maxFrequency));
-  const maxLag = Math.min(buffer.length - 8, Math.ceil(sampleRate / minFrequency));
-  const scores = new Float32Array(maxLag + 2);
-  let best: Candidate | null = null;
-
-  for (let lag = minLag; lag <= maxLag; lag += 1) {
-    const score = normalizedCorrelation(buffer, lag);
-    scores[lag] = score;
-    if (!best || score > best.score) best = { lag, score };
-  }
-
-  const candidates: Candidate[] = [];
-  for (let lag = minLag + 1; lag < maxLag - 1; lag += 1) {
-    const score = scores[lag];
-    if (score < 0.18) continue;
-    if (score >= scores[lag - 1] && score >= scores[lag + 1]) candidates.push({ lag, score });
-  }
-
-  candidates.sort((a, b) => b.score - a.score);
-  return { candidates, best, minLag, maxLag, scores };
-}
-
-function chooseVocalCandidate(candidates: Candidate[], best: Candidate | null, sampleRate: number) {
-  if (!best) return null;
-  const bestFrequency = sampleRate / best.lag;
-  const lowFriendly = bestFrequency < 95;
-  const absoluteFloor = lowFriendly ? 0.2 : 0.28;
-  if (best.score < absoluteFloor) return null;
-
-  let chosen = best;
-  const sortedByLagDesc = [...candidates].sort((a, b) => b.lag - a.lag);
-
-  for (const candidate of sortedByLagDesc) {
-    const frequency = sampleRate / candidate.lag;
-    if (frequency < 28 || frequency > 1900) continue;
-    if (candidate.lag <= chosen.lag) continue;
-
-    const octaveRelated = Math.abs(candidate.lag / chosen.lag - 2) < 0.2 || Math.abs(candidate.lag / chosen.lag - 3) < 0.24 || Math.abs(candidate.lag / chosen.lag - 4) < 0.28;
-    const veryLowVocal = frequency < 90;
-    const closeEnough = candidate.score >= chosen.score * (veryLowVocal ? 0.54 : 0.72);
-    const reliableEnough = candidate.score >= (veryLowVocal ? 0.2 : 0.32);
-
-    if ((octaveRelated || veryLowVocal) && closeEnough && reliableEnough) {
-      chosen = candidate;
-    }
-  }
-
-  return chosen;
-}
-
-function detectPitchCore(buffer: Float32Array, sampleRate: number): DetectionCore | null {
-  const { rms, peak, mean } = analyzeLevel(buffer);
-  if (rms < 0.0017 || peak < 0.006) return null;
-
-  const prepared = prepareBuffer(buffer, mean, peak);
-  const { candidates, best, minLag, maxLag } = findCandidates(prepared, sampleRate);
-  const chosen = chooseVocalCandidate(candidates, best, sampleRate);
-  if (!chosen) return null;
-
-  const refinedLag = refineLag(prepared, chosen.lag, minLag, maxLag);
-  const frequencyHz = sampleRate / refinedLag;
-  if (!Number.isFinite(frequencyHz) || frequencyHz < 28 || frequencyHz > 1900) return null;
-
-  const lowBonus = frequencyHz < 90 ? 0.07 : 0;
-  const volumeBonus = Math.min(0.08, rms * 2.2);
-  const confidence = Math.max(0, Math.min(1, chosen.score + lowBonus + volumeBonus));
-  if (confidence < (frequencyHz < 90 ? 0.23 : 0.3)) return null;
-
-  return { frequencyHz, confidence, rms, peak };
+  for (let i = 0; i < buffer.length; i += 1) sum += buffer[i] * buffer[i];
+  return Math.sqrt(sum / Math.max(1, buffer.length));
 }
 
 export function autoCorrelate(buffer: Float32Array, sampleRate: number): number | null {
-  return detectPitchCore(buffer, sampleRate)?.frequencyHz ?? null;
+  const size = buffer.length;
+  let rms = 0;
+  for (let i = 0; i < size; i += 1) rms += buffer[i] * buffer[i];
+  rms = Math.sqrt(rms / size);
+  if (rms < 0.012) return null;
+
+  let start = 0;
+  let end = size - 1;
+  const threshold = 0.2;
+  for (let i = 0; i < size / 2; i += 1) {
+    if (Math.abs(buffer[i]) < threshold) { start = i; break; }
+  }
+  for (let i = 1; i < size / 2; i += 1) {
+    if (Math.abs(buffer[size - i]) < threshold) { end = size - i; break; }
+  }
+
+  const trimmed = buffer.slice(start, end);
+  const trimmedSize = trimmed.length;
+  if (trimmedSize < 32) return null;
+
+  const correlations = new Array<number>(trimmedSize).fill(0);
+  for (let lag = 0; lag < trimmedSize; lag += 1) {
+    for (let i = 0; i < trimmedSize - lag; i += 1) {
+      correlations[lag] += trimmed[i] * trimmed[i + lag];
+    }
+  }
+
+  let d = 0;
+  while (d < trimmedSize - 1 && correlations[d] > correlations[d + 1]) d += 1;
+
+  let maxValue = -1;
+  let maxPosition = -1;
+  for (let i = d; i < trimmedSize; i += 1) {
+    if (correlations[i] > maxValue) {
+      maxValue = correlations[i];
+      maxPosition = i;
+    }
+  }
+  if (maxPosition <= 0) return null;
+
+  const x1 = correlations[maxPosition - 1] || 0;
+  const x2 = correlations[maxPosition] || 0;
+  const x3 = correlations[maxPosition + 1] || 0;
+  const adjustment = (x1 - x3) / (2 * (x1 - 2 * x2 + x3));
+  const frequency = sampleRate / (maxPosition + (Number.isFinite(adjustment) ? adjustment : 0));
+  return frequency >= 40 && frequency <= 2000 ? frequency : null;
 }
 
 export function frequencyToMidiFloat(freq: number): number {
@@ -176,25 +89,26 @@ export function frequencyToMidiFloat(freq: number): number {
 }
 
 export function frequencyToMidi(freq: number): number {
-  return Math.round(frequencyToMidiFloat(freq));
+  return Math.round(69 + 12 * Math.log2(freq / 440));
 }
 
 export function detectPitch(buffer: Float32Array, sampleRate: number): PitchDetectionResult | null {
-  const detection = detectPitchCore(buffer, sampleRate);
-  if (!detection) return null;
-  const midiFloat = frequencyToMidiFloat(detection.frequencyHz);
+  const frequencyHz = autoCorrelate(buffer, sampleRate);
+  if (!frequencyHz) return null;
+  const rms = rmsFromBuffer(buffer);
+  const midiFloat = frequencyToMidiFloat(frequencyHz);
   const midiRounded = Math.round(midiFloat);
   const nearestFrequency = midiToFrequency(midiRounded);
-  const cents = 1200 * Math.log2(detection.frequencyHz / nearestFrequency);
+  const cents = 1200 * Math.log2(frequencyHz / nearestFrequency);
   return {
-    frequencyHz: detection.frequencyHz,
+    frequencyHz,
     midiFloat,
     midiRounded,
     noteName: midiToBrazilianNoteName(midiRounded),
     cents,
-    confidence: detection.confidence,
-    volume: detection.rms,
-    rms: detection.rms,
+    confidence: 1,
+    volume: rms,
+    rms,
   };
 }
 
