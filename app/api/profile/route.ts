@@ -56,6 +56,12 @@ async function deleteWhere(supabase: ReturnType<typeof createAdminClient>, table
   if (error) console.warn(`delete_${table}_${column}`, error.message);
 }
 
+async function deleteIn(supabase: ReturnType<typeof createAdminClient>, table: string, column: string, values: string[]) {
+  if (!values.length) return;
+  const { error } = await supabase.from(table).delete().in(column, values);
+  if (error) console.warn(`delete_${table}_${column}_in`, error.message);
+}
+
 async function deleteUserStorage(supabase: ReturnType<typeof createAdminClient>, profile: any) {
   const profileId = String(profile.id || '');
   const email = String(profile.email || '');
@@ -167,10 +173,10 @@ export async function DELETE(request: Request) {
   const postIds = (posts || []).map((post: any) => String(post.id)).filter(Boolean);
 
   if (postIds.length) {
-    await supabase.from('community_comments').delete().in('post_id', postIds).catch(() => null);
-    await supabase.from('community_likes').delete().in('post_id', postIds).catch(() => null);
-    await supabase.from('community_saves').delete().in('post_id', postIds).catch(() => null);
-    await supabase.from('community_reposts').delete().in('post_id', postIds).catch(() => null);
+    await deleteIn(supabase, 'community_comments', 'post_id', postIds);
+    await deleteIn(supabase, 'community_likes', 'post_id', postIds);
+    await deleteIn(supabase, 'community_saves', 'post_id', postIds);
+    await deleteIn(supabase, 'community_reposts', 'post_id', postIds);
   }
 
   await Promise.all([
@@ -187,7 +193,7 @@ export async function DELETE(request: Request) {
     deleteWhere(supabase, 'repertoire_studies', 'profile_id', profileId),
   ]);
 
-  if (postIds.length) await supabase.from('community_posts').delete().in('id', postIds).catch(() => null);
+  if (postIds.length) await deleteIn(supabase, 'community_posts', 'id', postIds);
   await deleteUserStorage(supabase, profile);
   await supabase.from('profiles').delete().eq('id', profileId);
   await deleteAuthUserIfPossible(supabase, profile).catch(() => null);
