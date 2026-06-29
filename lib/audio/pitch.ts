@@ -18,12 +18,6 @@ const BRAZILIAN_NOTE_BY_SCIENTIFIC: Record<string, string> = {
   B: 'Si'
 };
 
-function rms(buffer: Float32Array) {
-  let sum = 0;
-  for (let i = 0; i < buffer.length; i += 1) sum += buffer[i] * buffer[i];
-  return Math.sqrt(sum / Math.max(1, buffer.length));
-}
-
 function removeDc(buffer: Float32Array) {
   let mean = 0;
   for (let i = 0; i < buffer.length; i += 1) mean += buffer[i];
@@ -46,7 +40,7 @@ function parabolic(values: Float32Array, tau: number) {
 
 function yinPitch(buffer: Float32Array, sampleRate: number) {
   const size = buffer.length;
-  const minFrequency = 35;
+  const minFrequency = 30;
   const maxFrequency = 1800;
   const minTau = Math.max(2, Math.floor(sampleRate / maxFrequency));
   const maxTau = Math.min(size - 2, Math.ceil(sampleRate / minFrequency));
@@ -79,7 +73,8 @@ function yinPitch(buffer: Float32Array, sampleRate: number) {
     }
   }
 
-  const threshold = 0.18;
+  // Mais sensível: não bloqueia demais vozes graves, fracas ou com pouco volume.
+  const threshold = 0.24;
   for (let tau = minTau; tau <= maxTau; tau += 1) {
     if (cmnd[tau] < threshold) {
       while (tau + 1 <= maxTau && cmnd[tau + 1] < cmnd[tau]) tau += 1;
@@ -89,7 +84,7 @@ function yinPitch(buffer: Float32Array, sampleRate: number) {
     }
   }
 
-  if (bestTau > 0 && bestValue < 0.32) {
+  if (bestTau > 0 && bestValue < 0.46) {
     const refined = parabolic(cmnd, bestTau);
     const frequency = sampleRate / refined;
     return frequency >= minFrequency && frequency <= maxFrequency ? frequency : null;
@@ -100,7 +95,7 @@ function yinPitch(buffer: Float32Array, sampleRate: number) {
 
 function normalizedCorrelationPitch(buffer: Float32Array, sampleRate: number) {
   const size = buffer.length;
-  const minFrequency = 35;
+  const minFrequency = 30;
   const maxFrequency = 1800;
   const minLag = Math.max(2, Math.floor(sampleRate / maxFrequency));
   const maxLag = Math.min(size - 2, Math.ceil(sampleRate / minFrequency));
@@ -126,16 +121,14 @@ function normalizedCorrelationPitch(buffer: Float32Array, sampleRate: number) {
     }
   }
 
-  if (bestLag <= 0 || bestCorrelation < 0.24) return null;
+  if (bestLag <= 0 || bestCorrelation < 0.16) return null;
   const frequency = sampleRate / bestLag;
   return frequency >= minFrequency && frequency <= maxFrequency ? frequency : null;
 }
 
 export function autoCorrelate(buffer: Float32Array, sampleRate: number): number | null {
-  const level = rms(buffer);
-  // Gate mais baixo para não perder graves suaves. O filtro de ambiente fica no próprio algoritmo.
-  if (level < 0.0011) return null;
-
+  // Sem gate de volume aqui. O microfone fica livre; o algoritmo decide pela periodicidade da voz,
+  // não por um corte fixo de sensibilidade que apaga notas graves ou emissões suaves.
   const clean = removeDc(buffer);
   return yinPitch(clean, sampleRate) || normalizedCorrelationPitch(clean, sampleRate);
 }
