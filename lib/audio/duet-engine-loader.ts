@@ -17,11 +17,12 @@ export async function loadDuetBufferEngine(args: {
 }) {
   const engine = new DuetBufferEngine(args.settings);
   args.previous?.destroy();
-  if (args.referenceBlob) {
-    await engine.loadBlobs(args.voiceBlob, args.referenceBlob);
-  } else {
-    await engine.load(args.voiceBlob, args.referenceSource);
-  }
+
+  // A referência capturada do <video> pode vir vazia/silenciosa em vários navegadores.
+  // Para a mixagem premium, a fonte confiável é o arquivo original da referência.
+  // Assim o preview e os sliders sempre trabalham com voz + referência real.
+  await engine.load(args.voiceBlob, args.referenceSource);
+
   engine.setVideo(args.previewVideo);
   return engine;
 }
