@@ -1,11 +1,11 @@
 export type CompressionProfile = 'auto' | 'quality' | 'compact' | 'aggressive' | 'ultra';
 
-const MIN_SIZE_FOR_COMPRESSION = 120 * 1024 * 1024;
-const DIRECT_UPLOAD_SAFE_LIMIT = 190 * 1024 * 1024;
+const MIN_SIZE_FOR_COMPRESSION = 90 * 1024 * 1024;
+const DIRECT_UPLOAD_SAFE_LIMIT = 125 * 1024 * 1024;
 const VERY_LARGE_VIDEO = 600 * 1024 * 1024;
 const MIN_DURATION_RATIO = 0.985;
-const MIN_ACCEPTABLE_OUTPUT = 130 * 1024 * 1024;
-const IDEAL_MIN_OUTPUT = 150 * 1024 * 1024;
+const MIN_ACCEPTABLE_OUTPUT = 60 * 1024 * 1024;
+const IDEAL_MIN_OUTPUT = 80 * 1024 * 1024;
 const DEBUG = true;
 
 type CompressionTarget = { targetWidth: number; targetHeight: number; videoBitsPerSecond: number; audioBitsPerSecond: number };
@@ -27,15 +27,15 @@ function supportedFormat(): RecorderFormat | null {
   ];
   return candidates.find((format) => MediaRecorder.isTypeSupported(format.mimeType)) || null;
 }
-function supportedMimeType() { return supportedFormat()?.mimeType || ''; }
+function formatCompression(original: number, compressed: number) { return `${(compressed / 1024 / 1024).toFixed(1)} MB de ${(original / 1024 / 1024).toFixed(1)} MB`; }
 
 function compressionPlan(profile: CompressionProfile, originalSize: number): CompressionProfile[] {
+  if (profile !== 'auto') return [profile, 'compact', 'aggressive', 'ultra'].filter((item, index, arr) => arr.indexOf(item) === index) as CompressionProfile[];
   if (originalSize >= VERY_LARGE_VIDEO) return ['quality', 'compact', 'aggressive', 'ultra'];
-  if (originalSize >= DIRECT_UPLOAD_SAFE_LIMIT) return ['quality', 'compact', 'aggressive', 'ultra'];
-  if (originalSize >= MIN_SIZE_FOR_COMPRESSION) return ['quality', 'compact', 'aggressive'];
-  return [profile === 'auto' ? 'compact' : profile];
+  if (originalSize >= DIRECT_UPLOAD_SAFE_LIMIT) return ['quality', 'compact', 'aggressive'];
+  if (originalSize >= MIN_SIZE_FOR_COMPRESSION) return ['quality', 'compact'];
+  return ['quality'];
 }
-
 function profileLabel(profile: CompressionProfile) {
   if (profile === 'ultra') return 'Compressão 1080p forte';
   if (profile === 'aggressive') return 'Compressão 1080p equilibrada';
@@ -43,33 +43,26 @@ function profileLabel(profile: CompressionProfile) {
   if (profile === 'quality') return 'Compressão 1080p máxima';
   return 'Compressão automática';
 }
-
 function qualityFloorFor(profile: CompressionProfile, originalSize: number) { if (originalSize < DIRECT_UPLOAD_SAFE_LIMIT) return 0; return profile === 'ultra' ? MIN_ACCEPTABLE_OUTPUT : IDEAL_MIN_OUTPUT; }
-function scoreCandidate(file: File, candidate: File, profile: CompressionProfile) { const floor = qualityFloorFor(profile, file.size); if (candidate.size <= DIRECT_UPLOAD_SAFE_LIMIT && (!floor || candidate.size >= floor)) return 1000 - Math.abs(candidate.size - 175 * 1024 * 1024); if (candidate.size <= DIRECT_UPLOAD_SAFE_LIMIT) return 500 - Math.abs(candidate.size - floor); return 100 - candidate.size; }
-
+function scoreCandidate(file: File, candidate: File, profile: CompressionProfile) { const floor = qualityFloorFor(profile, file.size); if (candidate.size <= DIRECT_UPLOAD_SAFE_LIMIT && (!floor || candidate.size >= floor)) return 1000 - Math.abs(candidate.size - 105 * 1024 * 1024); if (candidate.size <= DIRECT_UPLOAD_SAFE_LIMIT) return 500 - Math.abs(candidate.size - floor); return 100 - candidate.size; }
 function computeDimensions(width: number, height: number) {
-  const safeWidth = width || 1920;
-  const safeHeight = height || 1080;
-  const isPortrait = safeHeight > safeWidth;
+  const safeWidth = width || 1920; const safeHeight = height || 1080; const isPortrait = safeHeight > safeWidth;
   if (isPortrait) return { targetWidth: 1080, targetHeight: 1920 };
-  const maxHeight = 1080;
-  const scale = safeHeight > maxHeight ? maxHeight / safeHeight : 1;
+  const maxHeight = 1080; const scale = safeHeight > maxHeight ? maxHeight / safeHeight : 1;
   return { targetWidth: Math.max(2, Math.round((safeWidth * scale) / 2) * 2), targetHeight: Math.max(2, Math.round((safeHeight * scale) / 2) * 2) };
 }
-
 function targetFor(profile: CompressionProfile, width: number, height: number, duration = 0): CompressionTarget {
   const { targetWidth, targetHeight } = computeDimensions(width, height);
   const isPortrait1080 = targetHeight >= 1920;
-  const targetBytes = profile === 'ultra' ? 145 * 1024 * 1024 : profile === 'aggressive' ? 165 * 1024 * 1024 : profile === 'compact' ? 180 * 1024 * 1024 : 185 * 1024 * 1024;
+  const targetBytes = profile === 'ultra' ? 72 * 1024 * 1024 : profile === 'aggressive' ? 88 * 1024 * 1024 : profile === 'compact' ? 105 * 1024 * 1024 : 118 * 1024 * 1024;
   const audioBitsPerSecond = profile === 'ultra' ? 160_000 : profile === 'aggressive' ? 192_000 : profile === 'compact' ? 224_000 : 256_000;
   const qualityBoost = isPortrait1080 ? 1.15 : 1;
-  const fixedVideoBitsPerSecond = Math.round((profile === 'quality' ? 18_000_000 : profile === 'compact' ? 14_000_000 : profile === 'ultra' ? 7_500_000 : profile === 'aggressive' ? 10_000_000 : 16_000_000) * qualityBoost);
+  const fixedVideoBitsPerSecond = Math.round((profile === 'quality' ? 14_000_000 : profile === 'compact' ? 11_000_000 : profile === 'ultra' ? 5_500_000 : 8_000_000) * qualityBoost);
   const budgetVideoBitsPerSecond = targetBytes && duration > 0 ? Math.floor((targetBytes * 8) / duration - audioBitsPerSecond) : fixedVideoBitsPerSecond;
-  const minimumVideoBitsPerSecond = Math.round((profile === 'ultra' ? 4_500_000 : profile === 'aggressive' ? 6_000_000 : profile === 'compact' ? 7_500_000 : 9_000_000) * qualityBoost);
+  const minimumVideoBitsPerSecond = Math.round((profile === 'ultra' ? 3_500_000 : profile === 'aggressive' ? 4_500_000 : profile === 'compact' ? 5_500_000 : 6_500_000) * qualityBoost);
   const videoBitsPerSecond = Math.max(minimumVideoBitsPerSecond, Math.min(fixedVideoBitsPerSecond, budgetVideoBitsPerSecond));
   return { targetWidth, targetHeight, videoBitsPerSecond, audioBitsPerSecond };
 }
-
 function withObjectUrl<T>(fileOrBlob: Blob, run: (url: string) => Promise<T>) { const url = URL.createObjectURL(fileOrBlob); return run(url).finally(() => URL.revokeObjectURL(url)); }
 async function readDuration(blob: Blob) { return withObjectUrl(blob, async (url) => { const video = document.createElement('video'); video.src = url; video.muted = true; video.preload = 'metadata'; await new Promise<void>((resolve, reject) => { video.onloadedmetadata = () => resolve(); video.onerror = () => reject(new Error('duration_read_failed')); }); return Number.isFinite(video.duration) ? video.duration : 0; }).catch(() => 0); }
 async function waitForLoadedFrame(video: HTMLVideoElement) { if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth && video.videoHeight) return; await new Promise<void>((resolve, reject) => { const done = () => resolve(); video.onloadeddata = done; video.oncanplay = done; video.onerror = () => reject(new Error('Não foi possível carregar o primeiro quadro do vídeo.')); }); }
@@ -80,12 +73,11 @@ async function compressOnce(file: File, profile: CompressionProfile, options: Co
   if (!format) throw new Error('Este navegador não suporta MediaRecorder para compressão local.');
   return withObjectUrl(file, async (url) => {
     const video = document.createElement('video') as CaptureVideoElement;
-    video.src = url; video.muted = false; video.volume = 0; video.playsInline = true; video.preload = 'auto'; video.crossOrigin = 'anonymous';
+    video.src = url; video.muted = false; video.volume = 0; video.playsInline = true; video.preload = 'auto';
     await new Promise<void>((resolve, reject) => { video.onloadedmetadata = () => resolve(); video.onerror = () => reject(new Error('Não foi possível ler o vídeo para compressão.')); });
     await waitForLoadedFrame(video);
     const originalDuration = Number.isFinite(video.duration) ? video.duration : 0;
-    const originalWidth = video.videoWidth || 1920;
-    const originalHeight = video.videoHeight || 1080;
+    const originalWidth = video.videoWidth || 1920; const originalHeight = video.videoHeight || 1080;
     const { targetWidth, targetHeight, videoBitsPerSecond, audioBitsPerSecond } = targetFor(profile, originalWidth, originalHeight, originalDuration);
     debug('metadata', { profile, format: format.label, mimeType: format.mimeType, originalWidth, originalHeight, targetWidth, targetHeight, videoBitsPerSecond, audioBitsPerSecond, originalDuration });
     const canvas = document.createElement('canvas'); canvas.width = targetWidth; canvas.height = targetHeight;
@@ -93,12 +85,8 @@ async function compressOnce(file: File, profile: CompressionProfile, options: Co
     if (!ctx || typeof canvas.captureStream !== 'function') throw new Error('Canvas captureStream não está disponível neste navegador.');
     let audioContext: AudioContext | null = null; let destination: MediaStreamAudioDestinationNode | null = null;
     try { audioContext = new AudioContext(); destination = audioContext.createMediaStreamDestination(); audioContext.createMediaElementSource(video).connect(destination); } catch { audioContext = null; destination = null; }
-    const stream = canvas.captureStream(30);
-    const chunks: Blob[] = [];
-    let recorder: MediaRecorder | null = null;
-    let raf = 0;
-    const baseProgress = Math.round((planIndex / planLength) * 100);
-    const maxProgressForStep = Math.round(((planIndex + 1) / planLength) * 100);
+    const stream = canvas.captureStream(30); const chunks: Blob[] = []; let recorder: MediaRecorder | null = null; let raf = 0;
+    const baseProgress = Math.round((planIndex / planLength) * 100); const maxProgressForStep = Math.round(((planIndex + 1) / planLength) * 100);
     const draw = () => { ctx.drawImage(video, 0, 0, targetWidth, targetHeight); if (originalDuration) options.onProgress?.(Math.min(99, baseProgress + Math.round((video.currentTime / originalDuration) * (maxProgressForStep - baseProgress))), `${profileLabel(profile)} (${planIndex + 1}/${planLength})`); raf = requestAnimationFrame(draw); };
     const done = new Promise<Blob>((resolve, reject) => {
       video.onended = () => { cancelAnimationFrame(raf); if (recorder && recorder.state !== 'inactive') recorder.stop(); };
@@ -150,8 +138,6 @@ export async function compressVideoForUpload(file: File, options: CompressOption
     } catch (error) { lastError = error; debug('profile failed', profile, error); options.onProgress?.(Math.min(99, Math.round(((index + 1) / plan.length) * 100)), `Compressão ${profile} falhou, tentando próximo perfil...`); }
   }
   if (best.size < file.size && best !== file) { options.onProgress?.(100, `Melhor compressão possível (${formatCompression(file.size, best.size)})`); return best; }
-  if (lastError) throw new Error(`Não foi possível comprimir este vídeo no navegador: ${lastError instanceof Error ? lastError.message : 'compressão local falhou'}`);
+  if (lastError instanceof Error) throw lastError;
   return file;
 }
-
-function formatCompression(original: number, compressed: number) { return `${Math.max(0, Math.round((1 - compressed / original) * 100))}% menor`; }
