@@ -53,6 +53,13 @@ function waitReady(media: HTMLMediaElement) {
 
 async function decodeBlob(ctx: AudioContext, blob: Blob) { const buffer = await blob.arrayBuffer(); return ctx.decodeAudioData(buffer.slice(0)); }
 async function decodeUrl(ctx: AudioContext, url: string) { const response = await fetch(url, { cache: 'force-cache' }); if (!response.ok) throw new Error('reference_fetch_failed'); const buffer = await response.arrayBuffer(); return ctx.decodeAudioData(buffer.slice(0)); }
+async function decodeReference(ctx: AudioContext, referenceSource?: string | null, referenceBlob?: Blob | null) {
+  // O áudio capturado do elemento de vídeo pode vir silencioso em Chrome/Safari dependendo da origem/codec.
+  // Para render profissional, priorizamos sempre o arquivo original da referência.
+  if (referenceSource) return decodeUrl(ctx, referenceSource);
+  if (referenceBlob) return decodeBlob(ctx, referenceBlob);
+  throw new Error('reference_missing');
+}
 
 function activeRms(buffer: AudioBuffer) {
   const data = buffer.getChannelData(0);
@@ -142,7 +149,7 @@ export async function renderFinalDuetVideo({ visualBlob, voiceBlob, referenceBlo
   const audioCtx = new AudioCtx({ latencyHint: 'playback', sampleRate: 48000 });
   const [rawVoiceBuffer, referenceBuffer] = await Promise.all([
     decodeBlob(audioCtx, voiceBlob),
-    referenceBlob ? decodeBlob(audioCtx, referenceBlob) : decodeUrl(audioCtx, referenceSource || ''),
+    decodeReference(audioCtx, referenceSource, referenceBlob),
   ]);
   const voiceBuffer = settings.noiseReduction ? reduceVoiceNoise(audioCtx, rawVoiceBuffer) : rawVoiceBuffer;
   const voicePreGain = trackPreGain(voiceBuffer, 0.078, 0.12, 2.8);
