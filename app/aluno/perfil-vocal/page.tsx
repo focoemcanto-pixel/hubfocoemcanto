@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers';
 import Link from 'next/link';
 import { AppShell } from '@/components/app-shell';
-import { VocalRangeTest } from '@/components/vocal/vocal-range-test-v5';
+import { VocalRangeTest } from '@/components/vocal/vocal-range-test-v4';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 
