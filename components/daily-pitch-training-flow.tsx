@@ -16,6 +16,7 @@ type Phase = 'ready' | 'playing' | 'recording' | 'result';
 type TargetNote = { name: string; display: string; midi: number; hz: number };
 type VoiceSample = { name: string; display: string; centsToTarget: number };
 type Result = { ok: boolean; sungName: string; sungDisplay: string; cents: number } | null;
+type TrailPoint = { id: number; x: number; ok: boolean };
 
 const PT: Record<string, string> = { C: 'Dó', 'C#': 'Dó#', D: 'Ré', 'D#': 'Ré#', E: 'Mi', F: 'Fá', 'F#': 'Fá#', G: 'Sol', 'G#': 'Sol#', A: 'Lá', 'A#': 'Lá#', B: 'Si' };
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -27,6 +28,7 @@ const clamp = (value: number, min: number, max: number) => Math.max(min, Math.mi
 const cents = (freq: number, target: number) => 1200 * Math.log2(freq / target);
 const midiHz = (midi: number) => 440 * 2 ** ((midi - 69) / 12);
 const midiName = (midi: number) => `${NOTE_NAMES[((midi % 12) + 12) % 12]}${Math.floor(midi / 12) - 1}`;
+const centsToX = (centValue: number | null) => `${50 + clamp(centValue ?? 0, -1200, 1200) / 24}%`;
 const displayName = (name: string) => {
   const match = name.match(/^([A-G]#?)(-?\d)$/);
   return match ? `${PT[match[1]] ?? match[1]}${match[2]}` : name;
@@ -109,6 +111,8 @@ export function DailyPitchTrainingFlow({ step, exercise }: { step: DailyTraining
   const [recordProgress, setRecordProgress] = useState(0);
   const [result, setResult] = useState<Result>(null);
   const [history, setHistory] = useState<Result[]>([]);
+  const [liveCents, setLiveCents] = useState<number | null>(null);
+  const [trail, setTrail] = useState<TrailPoint[]>([]);
   const sampleCtxRef = useRef<AudioContext | null>(null);
   const micCtxRef = useRef<AudioContext | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -121,6 +125,7 @@ export function DailyPitchTrainingFlow({ step, exercise }: { step: DailyTraining
   const overall = `${((index + (phase === 'result' ? 1 : recordProgress)) / targets.length) * 100}%`;
   const correctCount = history.filter((item) => item?.ok).length;
   const wrongCount = history.filter((item) => item && !item.ok).length;
+  const liveX = centsToX(liveCents);
 
   useEffect(() => {
     const ctx = getSampleContext();
@@ -153,6 +158,8 @@ export function DailyPitchTrainingFlow({ step, exercise }: { step: DailyTraining
     stopCapture();
     activeTargetRef.current = noteToPlay;
     setResult(null);
+    setLiveCents(null);
+    setTrail([]);
     setPhase('playing');
     setRecordProgress(0);
     paintRecordProgress(0);
@@ -181,6 +188,8 @@ export function DailyPitchTrainingFlow({ step, exercise }: { step: DailyTraining
     samplesRef.current = [];
     setPhase('recording');
     setRecordProgress(0);
+    setLiveCents(null);
+    setTrail([]);
     paintRecordProgress(0);
     try {
       const Ctor = getAudioCtor();
@@ -207,12 +216,18 @@ export function DailyPitchTrainingFlow({ step, exercise }: { step: DailyTraining
         if (pitch) {
           silentSeconds = 0;
           heardSeconds = Math.min(RECORD_SECONDS, heardSeconds + delta);
-          samplesRef.current.push(nearestTarget(pitch, noteToCapture));
+          const voice = nearestTarget(pitch, noteToCapture);
+          samplesRef.current.push(voice);
+          setLiveCents(voice.centsToTarget);
+          const x = 50 + clamp(voice.centsToTarget, -1200, 1200) / 24;
+          setTrail((current) => [...current.slice(-13), { id: now + Math.random(), x, ok: Math.abs(voice.centsToTarget) <= PASS_CENTS }]);
         } else {
           silentSeconds += delta;
+          setLiveCents(null);
           if (silentSeconds >= SILENCE_RESET_SECONDS) {
             heardSeconds = 0;
             samplesRef.current = [];
+            setTrail([]);
           } else {
             heardSeconds = Math.max(0, heardSeconds - delta * 5);
           }
@@ -234,6 +249,7 @@ export function DailyPitchTrainingFlow({ step, exercise }: { step: DailyTraining
 
   function finishAttempt(noteToFinish = activeTargetRef.current ?? target) {
     stopCapture();
+    setLiveCents(null);
     const finalResult = summarize(samplesRef.current, noteToFinish);
     setResult(finalResult);
     setHistory((current) => [...current.slice(0, index), finalResult]);
@@ -243,6 +259,8 @@ export function DailyPitchTrainingFlow({ step, exercise }: { step: DailyTraining
   function repeat() {
     samplesRef.current = [];
     setResult(null);
+    setLiveCents(null);
+    setTrail([]);
     void playCurrent(true, target);
   }
 
@@ -250,6 +268,8 @@ export function DailyPitchTrainingFlow({ step, exercise }: { step: DailyTraining
     stopCapture();
     samplesRef.current = [];
     setResult(null);
+    setLiveCents(null);
+    setTrail([]);
     setRecordProgress(0);
     paintRecordProgress(0);
     if (index >= targets.length - 1) {
@@ -307,6 +327,17 @@ export function DailyPitchTrainingFlow({ step, exercise }: { step: DailyTraining
         </div>
 
         {!currentResult && <p className="note-prompt">{phase === 'recording' ? 'Sustente a nota até completar o círculo.' : phase === 'playing' ? 'Ouça com atenção.' : 'Cante a nota que você ouviu.'}</p>}
+
+        {!currentResult && (
+          <div className="note-live-tuner" style={{ '--live-x': liveX, '--live-visible': liveCents == null ? 0 : 1 } as CSSProperties}>
+            <span>Muito grave</span><span>Centro</span><span>Muito agudo</span>
+            <div className="note-live-lane">
+              <i className="center" />
+              {trail.map((point, pointIndex) => <b key={point.id} className={point.ok ? 'ok' : ''} style={{ left: `${point.x}%`, opacity: 0.18 + pointIndex / Math.max(1, trail.length) * 0.62 } as CSSProperties} />)}
+              <em />
+            </div>
+          </div>
+        )}
 
         {!currentResult && (
           <div className="note-mic-wrap">
