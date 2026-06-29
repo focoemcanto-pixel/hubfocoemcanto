@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { TrainingExercise, TrainingNote } from '@/lib/training-center';
-import { midiToBrazilianNoteName, noteNameToMidi } from '@/lib/audio/pitch';
+import { autoCorrelate, midiToBrazilianNoteName, noteNameToMidi } from '@/lib/audio/pitch';
 import { playPianoSample, preloadPianoSamples, stopPianoSamples } from '@/lib/audio/piano-sample-engine';
 
 const MIN_MIDI = 36;
@@ -16,13 +16,14 @@ const SCALE = Array.from({ length: MAX_MIDI - MIN_MIDI + 1 }, (_, index) => MAX_
 type AudioCtor = typeof AudioContext;
 type WinAudio = Window & typeof globalThis & { webkitAudioContext?: AudioCtor };
 type BeatNote = TrainingNote & { startBeat: number; durationBeats: number; endBeat: number; midi: number | null };
-type Vars = CSSProperties & { '--progress': string };
+type Vars = CSSProperties & { '--progress': string; '--voice-y': string; '--voice-visible': string };
 
 function clamp(value: number, min: number, max: number) { return Math.max(min, Math.min(max, value)); }
 function yFromMidi(midi: number | null) { if (midi == null) return 50; const safe = clamp(midi, MIN_MIDI, MAX_MIDI); return 100 - ((safe - MIN_MIDI) / (MAX_MIDI - MIN_MIDI)) * 100; }
 function formatTime(seconds: number) { const safe = Math.max(0, Math.floor(seconds)); return `${Math.floor(safe / 60)}:${String(safe % 60).padStart(2, '0')}`; }
 function buildBeatNotes(exercise: TrainingExercise): BeatNote[] { const originalBeatSeconds = 60 / exercise.bpm; return exercise.notes.map((note) => ({ ...note, startBeat: note.start / originalBeatSeconds, durationBeats: note.duration / originalBeatSeconds, endBeat: (note.start + note.duration) / originalBeatSeconds, midi: noteNameToMidi(note.pitch) })); }
 function getAudioCtor() { if (typeof window === 'undefined') return null; return (window as WinAudio).AudioContext || (window as WinAudio).webkitAudioContext || null; }
+function midiFloatFromFrequency(frequency: number) { return 69 + 12 * Math.log2(frequency / 440); }
 
 export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise; compact?: boolean }) {
   const [currentBeat, setCurrentBeat] = useState(0);
@@ -30,12 +31,17 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise;
   const [playing, setPlaying] = useState(false);
   const [count, setCount] = useState<number | null>(null);
   const [loop, setLoop] = useState(false);
-  const [controls, setControls] = useState(true);
+  const [controls, setControls] = useState(false);
+  const [sungMidi, setSungMidi] = useState<number | null>(null);
 
   const audioCtxRef = useRef<AudioContext | null>(null);
+  const micCtxRef = useRef<AudioContext | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef<number | null>(null);
+  const micRafRef = useRef<number | null>(null);
   const lastFrameRef = useRef<number | null>(null);
   const timersRef = useRef<number[]>([]);
+  const hideTimerRef = useRef<number | null>(null);
   const oscillatorsRef = useRef<OscillatorNode[]>([]);
   const nextScheduledBeatRef = useRef(0);
   const audioAnchorRef = useRef<number | null>(null);
@@ -50,10 +56,10 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise;
   const activeMidi = activeNote?.midi ?? null;
   const executionLabel = activeNote?.label || beatNotes.find((note) => note.label && note.mode !== 'guide')?.label || 'Cante junto';
   const progress = totalBeats ? Math.min(100, (currentBeat / totalBeats) * 100) : 0;
-  const cssVars = { '--progress': `${progress}%` } as Vars;
+  const cssVars = { '--progress': `${progress}%`, '--voice-y': `${yFromMidi(sungMidi)}%`, '--voice-visible': sungMidi == null ? '0' : '1' } as Vars;
   currentBeatRef.current = currentBeat;
 
-  useEffect(() => () => stopAudio(), []);
+  useEffect(() => () => { stopAudio(); stopMic(); if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current); }, []);
 
   useEffect(() => {
     if (!playing) return;
@@ -67,7 +73,7 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise;
         scheduleTimeline(oldBeat, nextBeat + LOOKAHEAD);
         if (nextBeat >= totalBeats) {
           stopAudio(false);
-          if (!loop) { setPlaying(false); return totalBeats; }
+          if (!loop) { setPlaying(false); showControls(false); return totalBeats; }
           const context = getAudioContext();
           if (context) audioAnchorRef.current = context.currentTime + 0.04;
           nextScheduledBeatRef.current = 0;
@@ -91,6 +97,12 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise;
     nextScheduledBeatRef.current = currentBeatRef.current;
     scheduleTimeline(currentBeatRef.current, currentBeatRef.current + LOOKAHEAD);
   }, [bpm]);
+
+  function showControls(autoHide = true) {
+    setControls(true);
+    if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current);
+    if (autoHide) hideTimerRef.current = window.setTimeout(() => setControls(false), 2200);
+  }
 
   function getAudioContext() {
     if (audioCtxRef.current) return audioCtxRef.current;
@@ -131,11 +143,7 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise;
     const startBeat = Math.max(fromBeat, nextScheduledBeatRef.current);
     const endBeat = Math.min(toBeat, totalBeats);
 
-    const clickBeats = Array.from(new Set(beatNotes
-      .filter((note) => note.startBeat >= startBeat && note.startBeat < endBeat)
-      .map((note) => Number(note.startBeat.toFixed(4))))).sort((a, b) => a - b);
-
-    clickBeats.forEach((beatValue, index) => {
+    Array.from(new Set(beatNotes.filter((note) => note.startBeat >= startBeat && note.startBeat < endBeat).map((note) => Number(note.startBeat.toFixed(4))))).sort((a, b) => a - b).forEach((beatValue, index) => {
       const at = anchor + beatValue * beatSeconds;
       if (at > now + 0.015) playClick(context, at, index === 0 || Math.abs(beatValue % 4) < 0.02);
     });
@@ -151,11 +159,52 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise;
     nextScheduledBeatRef.current = endBeat;
   }
 
+  async function startMic() {
+    if (micCtxRef.current || typeof window === 'undefined' || !navigator.mediaDevices?.getUserMedia) return;
+    try {
+      const Ctor = getAudioCtor();
+      if (!Ctor) return;
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: true, autoGainControl: false } });
+      const context = new Ctor();
+      const source = context.createMediaStreamSource(stream);
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 2048;
+      analyser.smoothingTimeConstant = 0;
+      source.connect(analyser);
+      streamRef.current = stream;
+      micCtxRef.current = context;
+      listenToPitch(analyser, context);
+    } catch {
+      setSungMidi(null);
+    }
+  }
+
+  function stopMic() {
+    if (micRafRef.current) cancelAnimationFrame(micRafRef.current);
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    micCtxRef.current?.close().catch(() => null);
+    streamRef.current = null;
+    micCtxRef.current = null;
+    setSungMidi(null);
+  }
+
+  function listenToPitch(analyser: AnalyserNode, context: AudioContext) {
+    const buffer = new Float32Array(analyser.fftSize);
+    const loopPitch = () => {
+      analyser.getFloatTimeDomainData(buffer);
+      const frequency = autoCorrelate(buffer, context.sampleRate);
+      setSungMidi(frequency ? midiFloatFromFrequency(frequency) : null);
+      micRafRef.current = requestAnimationFrame(loopPitch);
+    };
+    loopPitch();
+  }
+
   async function startPlayback() {
-    if (playing || count) { stopAudio(); setPlaying(false); setControls(true); return; }
+    if (playing || count) { stopAudio(); setPlaying(false); showControls(false); return; }
     const context = getAudioContext();
     if (!context) return;
     await context.resume().catch(() => null);
+    void startMic();
     stopAudio();
     const startBeat = currentBeat >= totalBeats ? 0 : currentBeat;
     void preloadPianoSamples(context, beatNotes.filter((note) => note.midi != null).map((note) => note.midi as number));
@@ -168,25 +217,26 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise;
       nextScheduledBeatRef.current = startBeat;
       scheduleTimeline(startBeat, startBeat + LOOKAHEAD);
       setPlaying(true);
+      setControls(false);
     }, 4 * beatMs));
   }
 
-  function restart() { stopAudio(); setPlaying(false); setCurrentBeat(0); audioAnchorRef.current = null; nextScheduledBeatRef.current = 0; setControls(true); }
+  function restart() { stopAudio(); setPlaying(false); setCurrentBeat(0); audioAnchorRef.current = null; nextScheduledBeatRef.current = 0; showControls(false); }
   function targetStyle(note: BeatNote): CSSProperties | null { if (note.mode === 'guide' || note.midi == null) return null; const left = HIT_X + (note.startBeat - currentBeat) * PX_PER_BEAT; const width = Math.max(5, note.durationBeats * PX_PER_BEAT); if (left + width < -6 || left > HIT_X + LOOKAHEAD * PX_PER_BEAT) return null; return { left: `${left}%`, width: `${width}%`, top: `${yFromMidi(note.midi)}%` }; }
 
   return (
-    <section className={`synced-player ${controls ? 'controls-on' : ''}`} style={cssVars} onPointerDown={() => setControls(true)}>
+    <section className={`synced-player ${controls ? 'controls-on' : ''}`} style={cssVars} onPointerDown={() => showControls()}>
       <style>{css}</style>
       <div className="synced-bg" />
       <div className="synced-stage">
         <div className="synced-ruler">{SCALE.map((midi) => <span className={activeMidi === midi ? 'active' : ''} key={midi}>{midiToBrazilianNoteName(midi)}</span>)}</div>
-        <div className="synced-lane"><div className="synced-hit" />{beatNotes.map((note, index) => { const style = targetStyle(note); return style ? <span className="synced-note" style={style} key={`${note.pitch}-${index}`} /> : null; })}</div>
+        <div className="synced-lane"><div className="synced-hit" />{beatNotes.map((note, index) => { const style = targetStyle(note); return style ? <span className="synced-note" style={style} key={`${note.pitch}-${index}`} /> : null; })}<div className="synced-voice"><i /></div></div>
       </div>
       <div className="synced-top"><strong>{exercise.title}</strong><span>{formatTime(currentSeconds)} / {formatTime(durationSeconds)}</span></div>
       <div className="synced-bar"><i /></div>
       <div className="synced-label">{executionLabel}</div>
       {count ? <div className="synced-count"><b>{count}</b></div> : null}
-      <div className="synced-overlay" onPointerDown={(event) => event.stopPropagation()}>
+      <div className="synced-overlay" onPointerDown={(event) => { event.stopPropagation(); showControls(false); }}>
         <button className="synced-back" type="button" onClick={() => window.history.back()}>←</button>
         <div className="synced-bpm"><button type="button" onClick={() => setBpm((value) => Math.max(48, value - 2))}>−</button><span><b>{bpm}</b><small>BPM</small></span><button type="button" onClick={() => setBpm((value) => Math.min(140, value + 2))}>+</button></div>
         <div className="synced-controls"><button type="button" onClick={restart}>↺<span>Reiniciar</span></button><button className="synced-main" type="button" onClick={startPlayback}>{playing ? 'Ⅱ' : count ? '×' : '▶'}<span>{playing ? 'Pausar' : count ? 'Cancelar' : 'Iniciar'}</span></button><button type="button" onClick={() => setLoop((value) => !value)}>∞<span>{loop ? 'Loop' : 'Único'}</span></button></div>
@@ -195,4 +245,4 @@ export function GuidedTrainingPlayer({ exercise }: { exercise: TrainingExercise;
   );
 }
 
-const css = `.synced-player{position:relative;min-height:100dvh;overflow:hidden;background:#050607;color:#fff;touch-action:manipulation}.synced-bg{position:absolute;inset:0;background:linear-gradient(180deg,#121419,#050608 62%,#020304)}.synced-stage{position:absolute;inset:8.6dvh 0 10.8dvh 0;z-index:4}.synced-ruler{position:absolute;left:3px;top:0;bottom:0;width:54px;display:flex;flex-direction:column;justify-content:space-between;font-size:clamp(5px,.72dvh,9px);font-weight:800;color:rgba(255,255,255,.18)}.synced-ruler span.active{color:#ff3131;font-size:1.35em;text-shadow:0 0 14px rgba(255,49,49,.85)}.synced-lane{position:absolute;left:54px;right:0;top:0;bottom:0;overflow:hidden}.synced-hit{position:absolute;left:18%;top:0;bottom:0;width:1px;background:rgba(255,255,255,.32);z-index:2}.synced-note{position:absolute;height:clamp(7px,.95dvh,12px);border-radius:999px;background:rgba(255,255,255,.72);box-shadow:0 0 16px rgba(255,255,255,.24);transform:translateY(-50%);z-index:4}.synced-top{position:absolute;left:64px;right:20px;top:2.2dvh;z-index:10;text-align:center;opacity:.72}.synced-top strong{display:block;font-size:clamp(13px,1.9dvh,18px);letter-spacing:.08em}.synced-top span{font-size:11px;color:rgba(255,255,255,.52)}.synced-bar{position:absolute;left:72px;right:48px;top:7.2dvh;height:3px;border-radius:999px;background:rgba(255,255,255,.16);z-index:10;overflow:hidden}.synced-bar i{display:block;height:100%;width:var(--progress);background:rgba(255,255,255,.72)}.synced-label{position:absolute;left:24px;right:24px;bottom:calc(max(18px,env(safe-area-inset-bottom)) + 42px);z-index:11;text-align:center;font-size:clamp(28px,7vw,58px);font-weight:950;color:rgba(255,255,255,.88);text-shadow:0 0 26px rgba(255,255,255,.18)}.synced-overlay{position:absolute;inset:0;z-index:20;opacity:0;pointer-events:none;transition:opacity .25s;background:linear-gradient(180deg,rgba(0,0,0,.18),transparent 35%,transparent 52%,rgba(0,0,0,.5))}.controls-on .synced-overlay{opacity:1;pointer-events:auto}.synced-back{position:absolute;left:18px;top:2.2dvh;width:44px;height:44px;border:1px solid rgba(255,255,255,.08);border-radius:50%;background:rgba(255,255,255,.06);color:#fff;font-size:24px}.synced-bpm{position:absolute;left:50%;bottom:calc(max(18px,env(safe-area-inset-bottom)) + 118px);transform:translateX(-50%);display:flex;align-items:center;gap:18px}.synced-bpm button{width:38px;height:38px;border-radius:50%;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.07);color:#fff;font-size:24px}.synced-bpm span{display:grid;place-items:center;min-width:78px}.synced-bpm b{font-size:28px;line-height:1}.synced-bpm small{font-size:10px;letter-spacing:.18em;color:rgba(255,255,255,.58)}.synced-controls{position:absolute;left:24px;right:24px;bottom:max(18px,env(safe-area-inset-bottom));display:grid;grid-template-columns:1fr 1.2fr 1fr;align-items:end;gap:18px}.synced-controls button{border:0;background:transparent;color:#fff;font-weight:700;padding:0;display:grid;place-items:center;gap:8px;font-size:38px}.synced-controls button span{font-size:13px;font-weight:500;color:rgba(255,255,255,.76)}.synced-controls .synced-main{width:86px;height:86px;justify-self:center;border:2px solid rgba(255,255,255,.86);border-radius:50%;font-size:42px;background:rgba(255,255,255,.025)}.synced-controls .synced-main span{position:absolute;top:94px}.synced-count{position:absolute;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.5);z-index:30}.synced-count b{font-size:110px;color:#f5c76b;text-shadow:0 0 50px rgba(245,199,107,.8)}`;
+const css = `.synced-player{position:relative;min-height:100dvh;overflow:hidden;background:#050607;color:#fff;touch-action:manipulation}.synced-bg{position:absolute;inset:0;background:linear-gradient(180deg,#121419,#050608 62%,#020304)}.synced-stage{position:absolute;inset:8.6dvh 0 10.8dvh 0;z-index:4}.synced-ruler{position:absolute;left:3px;top:0;bottom:0;width:54px;display:flex;flex-direction:column;justify-content:space-between;font-size:clamp(5px,.72dvh,9px);font-weight:800;color:rgba(255,255,255,.18)}.synced-ruler span.active{color:#ff3131;font-size:1.35em;text-shadow:0 0 14px rgba(255,49,49,.85)}.synced-lane{position:absolute;left:54px;right:0;top:0;bottom:0;overflow:hidden}.synced-hit{position:absolute;left:18%;top:0;bottom:0;width:1px;background:rgba(255,255,255,.32);z-index:2}.synced-note{position:absolute;height:clamp(7px,.95dvh,12px);border-radius:999px;background:rgba(255,255,255,.72);box-shadow:0 0 16px rgba(255,255,255,.24);transform:translateY(-50%);z-index:4}.synced-voice{position:absolute;left:18%;top:var(--voice-y);width:18px;height:18px;border-radius:50%;background:radial-gradient(circle,#ffd7d7 0 18%,#ff2020 46%,rgba(255,0,0,.32) 72%,transparent 100%);filter:drop-shadow(0 0 14px rgba(255,0,0,.9));transform:translate(-50%,-50%);opacity:var(--voice-visible);transition:top .07s linear,opacity .12s ease;z-index:9}.synced-voice i{position:absolute;inset:5px;border-radius:inherit;background:#fff}.synced-top{position:absolute;left:64px;right:20px;top:2.2dvh;z-index:10;text-align:center;opacity:.72;pointer-events:none}.synced-top strong{display:block;font-size:clamp(13px,1.9dvh,18px);letter-spacing:.08em}.synced-top span{font-size:11px;color:rgba(255,255,255,.52)}.synced-bar{position:absolute;left:72px;right:48px;top:7.2dvh;height:3px;border-radius:999px;background:rgba(255,255,255,.16);z-index:10;overflow:hidden}.synced-bar i{display:block;height:100%;width:var(--progress);background:rgba(255,255,255,.72)}.synced-label{position:absolute;left:24px;right:24px;bottom:calc(max(18px,env(safe-area-inset-bottom)) + 42px);z-index:11;text-align:center;font-size:clamp(28px,7vw,58px);font-weight:950;color:rgba(255,255,255,.88);text-shadow:0 0 26px rgba(255,255,255,.18);pointer-events:none}.synced-overlay{position:absolute;inset:0;z-index:20;opacity:0;pointer-events:none;transition:opacity .25s;background:linear-gradient(180deg,rgba(0,0,0,.18),transparent 35%,transparent 52%,rgba(0,0,0,.5))}.controls-on .synced-overlay{opacity:1;pointer-events:auto}.synced-back{position:absolute;left:18px;top:2.2dvh;width:44px;height:44px;border:1px solid rgba(255,255,255,.08);border-radius:50%;background:rgba(255,255,255,.06);color:#fff;font-size:24px}.synced-bpm{position:absolute;left:50%;bottom:calc(max(18px,env(safe-area-inset-bottom)) + 118px);transform:translateX(-50%);display:flex;align-items:center;gap:18px}.synced-bpm button{width:38px;height:38px;border-radius:50%;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.07);color:#fff;font-size:24px}.synced-bpm span{display:grid;place-items:center;min-width:78px}.synced-bpm b{font-size:28px;line-height:1}.synced-bpm small{font-size:10px;letter-spacing:.18em;color:rgba(255,255,255,.58)}.synced-controls{position:absolute;left:24px;right:24px;bottom:max(18px,env(safe-area-inset-bottom));display:grid;grid-template-columns:1fr 1.2fr 1fr;align-items:end;gap:18px}.synced-controls button{border:0;background:transparent;color:#fff;font-weight:700;padding:0;display:grid;place-items:center;gap:8px;font-size:38px}.synced-controls button span{font-size:13px;font-weight:500;color:rgba(255,255,255,.76)}.synced-controls .synced-main{width:86px;height:86px;justify-self:center;border:2px solid rgba(255,255,255,.86);border-radius:50%;font-size:42px;background:rgba(255,255,255,.025)}.synced-controls .synced-main span{position:absolute;top:94px}.synced-count{position:absolute;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.5);z-index:30}.synced-count b{font-size:110px;color:#f5c76b;text-shadow:0 0 50px rgba(245,199,107,.8)}`;
