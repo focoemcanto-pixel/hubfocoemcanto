@@ -60,6 +60,7 @@ export async function POST(request: Request) {
     if (error || !profile?.id) return redirectLogin(request, { erro: 'perfil', email });
 
     const storedHash = String((profile as any).hub_password_hash || '');
+    const isFirstPasswordSetup = !storedHash;
     const supabase = createAdminClient();
 
     if (intent === 'set-password') {
@@ -71,7 +72,7 @@ export async function POST(request: Request) {
         if (missingPasswordColumn(updateError.message)) return redirectLogin(request, { setup: '1', email, erro: 'schema_senha' });
         return redirectLogin(request, { setup: '1', email, erro: 'senha' });
       }
-      return setSession(request, email, created ? '/aluno/onboarding' : '/aluno');
+      return setSession(request, email, created || isFirstPasswordSetup ? '/aluno/onboarding' : '/aluno');
     }
 
     if (!storedHash) return redirectLogin(request, { setup: '1', email });
