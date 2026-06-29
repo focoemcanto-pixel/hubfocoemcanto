@@ -9,6 +9,8 @@ import './admin-module-premium.css';
 import './admin-live-cover.css';
 import './activity-mobile-fixes.css';
 import './community-premium.css';
+import './instagram-feed.css';
+import './community-fixes.css';
 import './activity-audio-controls.css';
 import './profile-premium.css';
 import './admin-reviews-premium.css';
