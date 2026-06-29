@@ -1,8 +1,10 @@
 export type DuetMicMode = 'studio' | 'clean';
+export type DuetFacingMode = 'user' | 'environment';
 
 type PrepareDuetCameraOptions = {
   audioDeviceId?: string | null;
   micMode?: DuetMicMode;
+  facingMode?: DuetFacingMode;
 };
 
 function isIOSLike() {
@@ -46,7 +48,7 @@ export async function prepareDuetCamera(camera: HTMLVideoElement | null, options
 
   const rawStream = await navigator.mediaDevices.getUserMedia({
     video: {
-      facingMode: 'user',
+      facingMode: options.facingMode || 'user',
       width: ios ? { ideal: 540, max: 720 } : { ideal: 720, max: 1280 },
       height: ios ? { ideal: 540, max: 720 } : { ideal: 720, max: 1280 },
       frameRate: ios ? { ideal: 24, max: 24 } : { ideal: 24, max: 30 },
