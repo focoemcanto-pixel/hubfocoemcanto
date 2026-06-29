@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import './globals.css';
 import './premium-ui.css';
 import './course-ui.css';
@@ -8,8 +9,6 @@ import './admin-module-premium.css';
 import './admin-live-cover.css';
 import './activity-mobile-fixes.css';
 import './community-premium.css';
-import './instagram-feed.css';
-import './community-fixes.css';
 import './activity-audio-controls.css';
 import './profile-premium.css';
 import './admin-reviews-premium.css';
@@ -53,5 +52,15 @@ import { EarPianoDragOnlyGuard } from '@/components/ear-piano-drag-only-guard';
 import { OnboardingReturnGuard } from '@/components/onboarding-return-guard';
 
 export default function RootLayout(props: { children: React.ReactNode }) {
-  return <html lang="pt-BR"><body><EarPianoDragOnlyGuard /><OnboardingReturnGuard />{props.children}</body></html>;
+  return (
+    <html lang="pt-BR">
+      <body>
+        <EarPianoDragOnlyGuard />
+        <Suspense fallback={null}>
+          <OnboardingReturnGuard />
+        </Suspense>
+        {props.children}
+      </body>
+    </html>
+  );
 }
