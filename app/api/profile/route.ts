@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 export const dynamic = 'force-dynamic';
 
 const BUCKET = 'profile-avatars';
+const SUBMISSION_BUCKET = 'submission-media';
 
 function safeName(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9._-]+/g, '-');
@@ -24,6 +25,13 @@ function missingColumn(message?: string) {
   return !!message && (message.includes('schema cache') || message.includes('column') || message.includes('Could not find'));
 }
 
+function storagePathFromPublicUrl(url: string, bucket: string) {
+  const marker = `/storage/v1/object/public/${bucket}/`;
+  const index = url.indexOf(marker);
+  if (index < 0) return '';
+  return decodeURIComponent(url.slice(index + marker.length).split('?')[0]);
+}
+
 async function ensureBucket() {
   const supabase = createAdminClient();
   const { data: buckets } = await supabase.storage.listBuckets();
@@ -41,6 +49,46 @@ async function currentProfile() {
   if (data) return data;
   const { data: created } = await supabase.from('profiles').insert({ email, name: email.split('@')[0], role: 'student' }).select('*').single();
   return created || null;
+}
+
+async function deleteWhere(supabase: ReturnType<typeof createAdminClient>, table: string, column: string, value: string) {
+  const { error } = await supabase.from(table).delete().eq(column, value);
+  if (error) console.warn(`delete_${table}_${column}`, error.message);
+}
+
+async function deleteUserStorage(supabase: ReturnType<typeof createAdminClient>, profile: any) {
+  const profileId = String(profile.id || '');
+  const email = String(profile.email || '');
+  const avatarUrl = String(profile.avatar_url || '');
+  const avatarPath = storagePathFromPublicUrl(avatarUrl, BUCKET);
+
+  if (profileId) {
+    const { data } = await supabase.storage.from(BUCKET).list(profileId, { limit: 100 });
+    const paths = (data || []).map((item) => `${profileId}/${item.name}`);
+    if (paths.length) await supabase.storage.from(BUCKET).remove(paths).catch(() => null);
+  }
+  if (avatarPath) await supabase.storage.from(BUCKET).remove([avatarPath]).catch(() => null);
+
+  if (email) {
+    const folder = safeName(email);
+    const { data } = await supabase.storage.from(SUBMISSION_BUCKET).list(folder, { limit: 100 });
+    const paths = (data || []).map((item) => `${folder}/${item.name}`);
+    if (paths.length) await supabase.storage.from(SUBMISSION_BUCKET).remove(paths).catch(() => null);
+  }
+}
+
+async function deleteAuthUserIfPossible(supabase: ReturnType<typeof createAdminClient>, profile: any) {
+  const profileId = String(profile.id || '');
+  if (profileId) {
+    const { error } = await supabase.auth.admin.deleteUser(profileId);
+    if (!error) return;
+  }
+
+  const email = String(profile.email || '').toLowerCase();
+  if (!email) return;
+  const { data } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  const user = data?.users?.find((item) => item.email?.toLowerCase() === email);
+  if (user?.id) await supabase.auth.admin.deleteUser(user.id).catch(() => null);
 }
 
 export async function POST(request: Request) {
@@ -100,4 +148,51 @@ export async function POST(request: Request) {
   }
 
   return reply(request, { ok: false, error: error?.message || 'perfil_nao_salvo' }, 500);
+}
+
+export async function DELETE(request: Request) {
+  const profile = await currentProfile();
+  if (!profile?.id) return NextResponse.json({ ok: false, error: 'not_authenticated' }, { status: 401 });
+
+  const body = await request.json().catch(() => null);
+  const confirmation = String(body?.confirmation || '').trim().toUpperCase();
+  if (confirmation !== 'EXCLUIR') {
+    return NextResponse.json({ ok: false, error: 'confirmation_required', detail: 'Digite EXCLUIR para confirmar.' }, { status: 400 });
+  }
+
+  const supabase = createAdminClient();
+  const profileId = String(profile.id);
+
+  const { data: posts } = await supabase.from('community_posts').select('id').eq('profile_id', profileId);
+  const postIds = (posts || []).map((post: any) => String(post.id)).filter(Boolean);
+
+  if (postIds.length) {
+    await supabase.from('community_comments').delete().in('post_id', postIds).catch(() => null);
+    await supabase.from('community_likes').delete().in('post_id', postIds).catch(() => null);
+    await supabase.from('community_saves').delete().in('post_id', postIds).catch(() => null);
+    await supabase.from('community_reposts').delete().in('post_id', postIds).catch(() => null);
+  }
+
+  await Promise.all([
+    deleteWhere(supabase, 'community_comments', 'profile_id', profileId),
+    deleteWhere(supabase, 'community_likes', 'profile_id', profileId),
+    deleteWhere(supabase, 'community_saves', 'profile_id', profileId),
+    deleteWhere(supabase, 'community_reposts', 'profile_id', profileId),
+    deleteWhere(supabase, 'community_follows', 'follower_id', profileId),
+    deleteWhere(supabase, 'community_follows', 'following_id', profileId),
+    deleteWhere(supabase, 'submissions', 'profile_id', profileId),
+    deleteWhere(supabase, 'subscriptions', 'profile_id', profileId),
+    deleteWhere(supabase, 'lesson_progress', 'profile_id', profileId),
+    deleteWhere(supabase, 'vocal_profiles', 'profile_id', profileId),
+    deleteWhere(supabase, 'repertoire_studies', 'profile_id', profileId),
+  ]);
+
+  if (postIds.length) await supabase.from('community_posts').delete().in('id', postIds).catch(() => null);
+  await deleteUserStorage(supabase, profile);
+  await supabase.from('profiles').delete().eq('id', profileId);
+  await deleteAuthUserIfPossible(supabase, profile).catch(() => null);
+
+  const response = NextResponse.json({ ok: true, redirect: '/login?conta=excluida' });
+  response.cookies.set('hub_access_email', '', { path: '/', maxAge: 0 });
+  return response;
 }
