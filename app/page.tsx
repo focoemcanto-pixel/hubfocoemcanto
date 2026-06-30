@@ -1,4 +1,4 @@
-import { GraduationCap, Lock, Mail, PlayCircle, ShieldCheck, Sparkles, Star, Users } from 'lucide-react';
+import { GraduationCap, Lock, Mail, PlayCircle, ShieldCheck, Sparkles, Star, Users, Smartphone } from 'lucide-react';
 import { DynamicBrandLogo, dynamicBrandLogoCss } from '@/components/dynamic-brand-logo';
 import { focoAcademyLogoCss } from '@/components/foco-academy-logo';
 import { getAdminSettings } from '@/lib/data/admin-settings';
@@ -10,9 +10,11 @@ function message(code?: string) {
   const map: Record<string, string> = {
     email: 'Informe um e-mail válido.',
     perfil: 'Não consegui preparar seu perfil agora. Tente novamente.',
+    celular: 'Informe seu número de celular para continuar.',
     senha_curta: 'A senha precisa ter pelo menos 6 caracteres.',
     senha_diferente: 'As senhas não conferem.',
     schema_senha: 'Falta ativar a coluna de senha no banco. Rode a migração de login seguro.',
+    schema_celular: 'Falta ativar a coluna de celular no banco. Rode a migração de captação de leads.',
     senha: 'Não consegui salvar sua senha. Tente novamente.',
     senha_obrigatoria: 'Digite sua senha para entrar.',
     senha_incorreta: 'Senha incorreta. Tente novamente.',
@@ -66,6 +68,7 @@ export default async function HomePage({ searchParams }: { searchParams?: Promis
               <form className="academy-login-form" action="/auth/login" method="post">
                 <input type="hidden" name="intent" value="set-password" />
                 <label><span>E-mail</span><div><Mail size={20} /><input name="email" type="email" required defaultValue={email} placeholder="seu@email.com" /></div></label>
+                <label><span>Celular / WhatsApp</span><div><Smartphone size={20} /><input name="whatsapp" type="tel" required inputMode="tel" autoComplete="tel" placeholder="(00) 00000-0000" /></div></label>
                 <label><span>Nova senha</span><div><Lock size={20} /><input name="password" type="password" required minLength={6} placeholder="mínimo 6 caracteres" /></div></label>
                 <label><span>Confirmar senha</span><div><Lock size={20} /><input name="confirm_password" type="password" required minLength={6} placeholder="repita a senha" /></div></label>
                 <button className="academy-primary-button" type="submit">Criar senha e entrar <span>→</span></button>
