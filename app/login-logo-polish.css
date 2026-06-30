@@ -1,0 +1,160 @@
+/* Premium login hero logo tuning */
+.hub-login-brand .academy-brand-lockup {
+  position: relative;
+  justify-content: center;
+  min-height: 150px;
+  margin: 0 auto 28px;
+  padding-top: 4px;
+  text-align: center;
+}
+
+.hub-login-brand .academy-brand-lockup::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(500px, 82vw);
+  height: 190px;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle, rgba(246, 197, 87, .16), rgba(246, 197, 87, .06) 34%, transparent 68%);
+  filter: blur(6px);
+  opacity: .85;
+  pointer-events: none;
+}
+
+.hub-login-brand .academy-brand-lockup .dynamic-brand-logo,
+.hub-login-brand .academy-brand-lockup .foco-academy-logo {
+  position: relative;
+  z-index: 1;
+  transform: scale(1.28);
+  transform-origin: center;
+  animation: loginLogoRise .55s ease-out both;
+}
+
+.hub-login-brand .academy-brand-lockup .dynamic-brand-logo img {
+  max-width: min(520px, 72vw) !important;
+  width: min(520px, 72vw) !important;
+  height: auto !important;
+}
+
+.hub-login-brand h1 {
+  text-align: center;
+  margin: 34px auto 18px;
+  max-width: 640px;
+}
+
+.hub-login-brand > p {
+  text-align: center;
+  margin-left: auto;
+  margin-right: auto;
+  max-width: 690px;
+}
+
+.academy-login-form label > div {
+  border-radius: 18px;
+}
+
+.academy-primary-button,
+.academy-outline-button {
+  min-height: 70px;
+  border-radius: 18px;
+}
+
+.academy-first-access {
+  border-radius: 22px;
+}
+
+.academy-first-access svg {
+  width: 56px;
+  height: 56px;
+}
+
+@keyframes loginLogoRise {
+  from { opacity: 0; transform: scale(1.16) translateY(10px); }
+  to { opacity: 1; transform: scale(1.28) translateY(0); }
+}
+
+@media (max-width: 980px) {
+  .hub-login-shell { padding-top: 30px; }
+
+  .hub-login-brand .academy-brand-lockup {
+    min-height: 132px;
+    margin-bottom: 26px;
+  }
+
+  .hub-login-brand .academy-brand-lockup .dynamic-brand-logo,
+  .hub-login-brand .academy-brand-lockup .foco-academy-logo {
+    transform: scale(1.22);
+  }
+
+  .hub-login-brand .academy-brand-lockup .dynamic-brand-logo img {
+    max-width: min(430px, 78vw) !important;
+    width: min(430px, 78vw) !important;
+  }
+
+  .hub-login-brand h1 { margin: 26px auto 18px; }
+
+  .academy-primary-button,
+  .academy-outline-button { min-height: 68px; }
+}
+
+@media (max-width: 560px) {
+  .hub-login-shell { padding: 24px 15px 22px; }
+
+  .hub-login-brand .academy-brand-lockup {
+    min-height: 118px;
+    margin-bottom: 24px;
+  }
+
+  .hub-login-brand .academy-brand-lockup::before {
+    height: 145px;
+    width: 94vw;
+  }
+
+  .hub-login-brand .academy-brand-lockup .dynamic-brand-logo,
+  .hub-login-brand .academy-brand-lockup .foco-academy-logo {
+    transform: scale(1.18);
+  }
+
+  .hub-login-brand .academy-brand-lockup .dynamic-brand-logo img {
+    max-width: 82vw !important;
+    width: 82vw !important;
+  }
+
+  .hub-login-brand h1 {
+    font-size: 40px;
+    margin: 22px auto 16px;
+  }
+
+  .academy-login-brand > p {
+    font-size: 18px;
+    line-height: 1.55;
+    margin-bottom: 28px;
+  }
+
+  .academy-login-panel-inner {
+    padding: 22px;
+    border-radius: 28px;
+  }
+
+  .academy-login-form label > div {
+    height: 62px;
+    border-radius: 18px;
+  }
+
+  .academy-primary-button,
+  .academy-outline-button {
+    height: 70px;
+    border-radius: 18px;
+  }
+
+  .academy-first-access {
+    grid-template-columns: 58px 1fr;
+    padding: 20px;
+  }
+
+  .academy-first-access svg {
+    width: 54px;
+    height: 54px;
+  }
+}
