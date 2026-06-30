@@ -10,6 +10,7 @@ export async function attachMediaSource(media: HTMLMediaElement, url: string) {
   const source = String(url || '').trim();
   if (!source) throw new Error('missing_media_source');
 
+  media.crossOrigin = 'anonymous';
   media.preload = 'auto';
   if ('playsInline' in media) (media as HTMLVideoElement).playsInline = true;
 
@@ -33,6 +34,9 @@ export async function attachMediaSource(media: HTMLMediaElement, url: string) {
     maxBufferLength: 30,
     maxMaxBufferLength: 90,
     startLevel: -1,
+    xhrSetup: (xhr) => {
+      xhr.withCredentials = false;
+    },
   });
   hls.loadSource(source);
   hls.attachMedia(media);
