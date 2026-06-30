@@ -14,6 +14,9 @@ type Subscription = Record<string, any>;
 type ModuleRow = { id: string; title: string; slug: string; description?: string | null; cover_url?: string | null; exercises?: any[] };
 
 const studentHeroImage = process.env.NEXT_PUBLIC_STUDENT_HERO_IMAGE || '/images/aluno-hero.jpg';
+const VIP_CHECKOUT_URL = 'https://pay.kiwify.com.br/HHr4eyM';
+const HARMONIA_URL = 'https://harmonia.focoemcanto.com';
+const FOCO_CANTO_URL = 'https://focoemcanto.com';
 const covers = [
   'radial-gradient(circle at 60% 18%,rgba(245,199,107,.34),transparent 35%),linear-gradient(145deg,#342414,#07070b)',
   'radial-gradient(circle at 64% 18%,rgba(142,92,255,.34),transparent 36%),linear-gradient(145deg,#211334,#07070b)',
@@ -37,8 +40,12 @@ function hasCourse(subscriptions: Subscription[], courseKey: string) { return su
 function styleForCover(cover: string) { return cover.startsWith('radial-gradient') ? { background: cover } : { backgroundImage: `url(${cover})` }; }
 function productOrder(product: Product, index: number) { return Number(product?.courses?.[0]?.sort_order ?? index + 100); }
 function productKey(product: Product) { const slug = String(product?.slug || '').toLowerCase(); return slug.includes('ebook') ? 'ebooks' : slug; }
-function isVipProduct(product: Product) { return `${product?.name || ''} ${product?.slug || ''}`.toLowerCase().includes('vip'); }
+function normalizedProductText(product: Product) { return `${product?.name || ''} ${product?.slug || ''}`.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
+function isVipProduct(product: Product) { return normalizedProductText(product).includes('vip'); }
+function isHarmonyProduct(product: Product) { const text = normalizedProductText(product); return text.includes('harmonia') || text.includes('harmon'); }
+function isFocoCantoProduct(product: Product) { const text = normalizedProductText(product); return text.includes('foco em canto') || (text.includes('foco') && text.includes('canto') && !text.includes('harmonia')); }
 function productTitle(product: Product) { return isVipProduct(product) ? 'Sala de Atividades VIP' : String(product?.name || 'Produto'); }
+function lockedProductHref(product: Product, vipHref: string) { if (isVipProduct(product)) return vipHref; if (isHarmonyProduct(product)) return HARMONIA_URL; if (isFocoCantoProduct(product)) return FOCO_CANTO_URL; return productLink(product, vipHref); }
 function isProgressTableMissing(error: any) { const text = String(error?.message || '').toLowerCase(); return text.includes('does not exist') || text.includes('schema cache') || text.includes('lesson_progress'); }
 async function getProgressRows(supabase: ReturnType<typeof createAdminClient>, profileId?: string) {
   if (!profileId) return [];
@@ -71,20 +78,20 @@ export default async function StudentPage() {
   const firstName = profile?.name ? profile.name.split(' ')[0] : 'Aluno';
   const freeModule = modules.find((module) => `${module.title} ${module.slug}`.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes('firmando') && `${module.title} ${module.slug}`.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes('afinacao'));
   const hasVip = hasCourse(subscriptions, 'grupo-vip');
-  const vipProduct = products.find(isVipProduct);
-  const vipHref = productLink(vipProduct, '/aluno/biblioteca#sala-vip');
+  const vipHref = VIP_CHECKOUT_URL;
   const courseCards = products.map((product, index) => {
     const vip = isVipProduct(product);
-    const published = product.status === 'published';
     const subscribed = hasCourse(subscriptions, productKey(product));
-    const unlocked = vip ? true : published || subscribed || hasVip;
+    const unlocked = vip ? hasVip : subscribed || hasVip;
     return {
       title: productTitle(product),
-      description: vip ? (hasVip ? 'Todos os módulos, duetos, downloads e avaliações.' : `${freeModule?.title || 'Firmando a Afinação'} liberado grátis. Assine para desbloquear tudo.`) : (product.description || 'Treinamento premium da escola.'),
+      description: vip
+        ? (hasVip ? 'Todos os módulos, duetos, downloads e avaliações.' : 'Módulo bloqueado para assinantes VIP. Garanta seu acesso antes de começar.')
+        : (product.description || 'Treinamento premium da escola.'),
       unlocked,
-      href: unlocked ? (vip ? '/aluno/biblioteca#sala-vip' : unlockedProductLink(product, `/aluno/biblioteca/${product.slug}`)) : vipHref,
+      href: unlocked ? (vip ? '/aluno/biblioteca#sala-vip' : unlockedProductLink(product, `/aluno/biblioteca/${product.slug}`)) : lockedProductHref(product, vipHref),
       cover: productCover(product, vip ? (freeModule?.cover_url || covers[0]) : covers[index % covers.length]),
-      action: unlocked ? (vip ? hasVip ? 'Acessar sala' : 'Explorar grátis' : 'Acessar curso') : 'Liberar no VIP',
+      action: unlocked ? (vip ? 'Acessar sala' : 'Acessar curso') : (vip ? 'Liberar no VIP' : 'Ver oferta'),
     };
   });
   const continueItems = (progressRows || []).filter((row: any) => { const exercise = getRelated(row.exercises) as any; return Boolean(exercise?.slug && (row.completed || Number(row.last_position_seconds || 0) > 5 || row.last_watched_at)); }).map((row: any, index: number) => {
@@ -118,7 +125,7 @@ export default async function StudentPage() {
       <main className="page app-home premium-student-home">
         <style dangerouslySetInnerHTML={{ __html: css }} />
         <section className="premium-hero"><div className="premium-hero-copy"><p className="eyebrow">Escola Foco em Canto ★</p><h1>Olá, {firstName}.<br />Escolha seu treino de hoje.</h1><p>Sua escola vocal organizada por cursos, acessos e progresso real.</p><div className="hero-actions"><Link className="premium-button gold" href="/aluno/biblioteca" prefetch>▶ Abrir biblioteca</Link><Link className="premium-button dark" href="/aluno/perfil" prefetch>Ver avaliações</Link></div></div><div className="premium-hero-photo" aria-hidden="true" style={{ '--student-hero-image': `url(${studentHeroImage})` } as CSSProperties} /></section>
-        <section className="student-course-section"><div className="premium-section-heading"><h2>Meus cursos</h2><Link href="/aluno/biblioteca" prefetch>Ver biblioteca →</Link></div><div className="student-products-grid">{courseCards.map((course) => <a className={`student-product-card ${course.unlocked ? 'unlocked' : 'locked'}`} key={course.title} href={course.href}><span className="student-product-badge">{course.unlocked ? 'Liberado' : 'Premium'}</span><div className="student-product-bg" style={styleForCover(course.cover)} /><div className="student-product-overlay" /><div className="student-product-body"><h3>{course.title}</h3><p>{course.description}</p><span className="student-product-button">{course.action}</span></div></a>)}</div></section>
+        <section className="student-course-section"><div className="premium-section-heading"><h2>Meus cursos</h2><Link href="/aluno/biblioteca" prefetch>Ver biblioteca →</Link></div><div className="student-products-grid">{courseCards.map((course) => <a className={`student-product-card ${course.unlocked ? 'unlocked' : 'locked'}`} key={course.title} href={course.href}><span className="student-product-badge">{course.unlocked ? 'Liberado' : 'Bloqueado'}</span><div className="student-product-bg" style={styleForCover(course.cover)} /><div className="student-product-overlay" /><div className="student-product-body"><h3>{course.title}</h3><p>{course.description}</p><span className="student-product-button">{course.action}</span></div></a>)}</div></section>
         {continueItems.length ? <section className="premium-continue-panel"><div className="premium-section-heading"><h2>Continue de onde parou</h2><Link href="/aluno/biblioteca" prefetch>Ver todos →</Link></div><div className="premium-course-row">{continueItems.map((item) => <Link className="premium-course-card" key={item.id} href={item.href} prefetch><div className="course-cover" style={styleForCover(item.cover)}><span className="course-badge">{item.badge}</span><strong>{item.title}</strong></div><div className="course-resume">{item.moduleTitle} · {item.resume}</div><div className="course-meta"><span>{item.lessons} aulas</span><span>{item.percent}%</span></div><div className="progress"><span style={{ width: `${item.percent}%` }} /></div></Link>)}</div></section> : null}
         <section className="feed-layout premium-community-feed"><div className="section-heading"><div><p className="eyebrow">Comunidade VIP</p><h2>Atividades recentes</h2></div><Link href="/aluno/comunidade" prefetch>Abrir comunidade</Link></div><HomeCommunityFeed initialPosts={feedPosts} hasVipAccess={hasVip} /></section>
       </main>
