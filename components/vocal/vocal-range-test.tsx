@@ -84,7 +84,6 @@ export function VocalRangeTest({ profileId, authUserId, initialProfile }: Props)
     const tick = () => {
       const now = performance.now();
       const isTessitura = stepRef.current === 'tess-high' || stepRef.current === 'tess-low';
-
       if (isTessitura && now < referenceBlockUntilRef.current) {
         setCurrentFrequency(null);
         setCurrentMidi(null);
@@ -108,7 +107,6 @@ export function VocalRangeTest({ profileId, authUserId, initialProfile }: Props)
         const midiRounded = Math.round(midiFloat);
         setCurrentFrequency(activeFrame.frequencyHz);
         setCurrentMidi(midiFloat);
-
         if (stableRef.current.midi === midiRounded) {
           if (now - stableRef.current.since > (isTessitura ? 70 : 180)) {
             setStableMidi(midiRounded);
@@ -118,14 +116,11 @@ export function VocalRangeTest({ profileId, authUserId, initialProfile }: Props)
               setHighest((old) => !old || item.midi > old.midi ? item : old);
             }
           }
-        } else {
-          stableRef.current = { midi: midiRounded, since: now };
-        }
+        } else stableRef.current = { midi: midiRounded, since: now };
       } else {
         setCurrentFrequency(null);
         setCurrentMidi(null);
       }
-
       handle.raf = requestAnimationFrame(tick);
     };
 
@@ -150,7 +145,6 @@ export function VocalRangeTest({ profileId, authUserId, initialProfile }: Props)
       setStableMidi(null);
     }
   }, [step]);
-
   useEffect(() => { document.body.classList.toggle('vocal-capture-active', step === 'lowest'); return () => document.body.classList.remove('vocal-capture-active'); }, [step]);
   useEffect(() => () => stopMic(), []);
 
@@ -173,8 +167,8 @@ export function VocalRangeTest({ profileId, authUserId, initialProfile }: Props)
     setCurrentMidi(null);
     await preloadPianoSamples(ctx, [midi]).catch(() => undefined);
     const now = ctx.currentTime;
-    await playPianoSample(ctx, midi, now + 0.02, now + 2.35, 0.92);
-    window.setTimeout(() => ctx.close().catch(() => undefined), 2800);
+    await playPianoSample(ctx, midi, now + 0.02, now + 3.8, 0.92);
+    window.setTimeout(() => ctx.close().catch(() => undefined), 5200);
   }
 
   function resetAll() { setLowest(null); setHighest(null); setTessHigh(null); setTessLow(null); setSaveMessage(''); setTessituraSteps([]); setCaptureReview(false); setStep('intro'); stopMic(); }
@@ -199,7 +193,7 @@ export function VocalRangeTest({ profileId, authUserId, initialProfile }: Props)
 
   return <div className="vocal-test-shell">
     <style>{css}</style>
-    {step === 'intro' && <section className="vocal-stage hero"><Sparkles size={34} /><h1>Vamos criar seu Mapa Vocal</h1><p>Esse teste identifica sua extensão, sua tessitura confortável e uma tendência vocal aproximada.</p><p className="tip">Não force. Técnica vocal é consciência, não violência.</p>{micError && <strong className="error">{micError}</strong>}<button onClick={() => startMic()} aria-label="Iniciar avaliação vocal"><Mic2 /> Iniciar avaliação</button></section>}
+    {step === 'intro' && <section className="vocal-stage hero vocal-intro-premium"><div className="vocal-intro-icon"><Sparkles size={34} /></div><h1>Descubra o <span>potencial da sua voz</span></h1><p className="vocal-intro-copy">Este teste analisa sua extensão, tessitura confortável e tendência vocal para criar seu Mapa Vocal personalizado.</p><p className="vocal-intro-safe"><b>◇</b>Não force. Técnica vocal é consciência, não violência.</p><div className="vocal-intro-orbit"><Mic2 /></div><div className="vocal-intro-benefits"><div><strong>Extensão</strong><small>Grave e agudo</small></div><div><strong>Tessitura</strong><small>Zona confortável</small></div><div><strong>Tendência</strong><small>Perfil vocal</small></div><div><strong>Evolução</strong><small>Acompanhe</small></div></div>{micError && <strong className="error">{micError}</strong>}<button className="vocal-intro-cta" onClick={() => startMic()} aria-label="Iniciar avaliação vocal"><Mic2 /><span><strong>Iniciar avaliação</strong><small>Leva cerca de 3 a 5 minutos</small></span></button><p className="vocal-intro-private">Seus dados são privados e seguros</p></section>}
     {step === 'lowest' && <section className="vocal-stage grid range-capture"><div className="range-desktop-ui"><VocalNoteMeter currentMidi={currentMidi} lowestMidi={lowest?.midi} highestMidi={highest?.midi} /><div className="range-copy"><p className="eyebrow">ETAPA 1/3</p><h1>Mapeie sua extensão vocal</h1><p className="range-helper">Cante do grave ao agudo. A régua marca os extremos.</p>{captureReview && <div className="capture-result"><span>Extensão captada</span><strong>{captureRange}</strong><small>Confirme para seguir ou tente novamente.</small></div>}<div className="actions"><button disabled={!captureReady} onClick={(event) => { event.stopPropagation(); captureReview ? confirmRangeAndGoToTessitura() : finishMapping(); }}>{captureReview ? 'Confirmar extensão' : 'Pressione quando terminar'}</button><button onClick={(event) => { event.stopPropagation(); retryMapping(); }}><RefreshCw /> Tentar de novo</button></div></div></div><MobileRangeCapture currentMidi={currentMidi} lowestMidi={lowest?.midi} highestMidi={highest?.midi} liveNote={liveNote} captureReady={captureReady} captureReview={captureReview} captureRange={captureRange} onBack={resetAll} onRetry={retryMapping} onPrimary={() => captureReview ? confirmRangeAndGoToTessitura() : finishMapping()} /></section>}
     {step === 'confirm-range' && lowest && highest && <section className="vocal-stage hero"><h1>Confirmar alcance vocal?</h1><div className="range-big">{lowest.note} ↔ {highest.note}</div><p>Extensão mostra tudo que você consegue alcançar hoje.</p><div className="actions"><button onClick={() => startMic()}><RefreshCw /> Refazer</button><button onClick={confirmRangeAndGoToTessitura}><Check /> Confirmar</button></div></section>}
     {step === 'tess-high' && highest && tessHigh != null && <Tessitura title="Tessitura vocal" text="Agora vamos encontrar seu agudo confortável. Repita a palavra na nota sugerida." midi={tessHigh} phrase="eu consigo" instruction="Cante na mesma nota e na mesma oitava da referência" downLabel="Quero descer a nota" tuner={highTuner} onPlay={playNote} onMove={() => { setTessHigh(Math.max(lowest?.midi ?? 24, tessHigh - 1)); setTessituraSteps((s) => [...s, { area: 'high', action: 'down', midi: tessHigh - 1 }]); }} onConfirm={() => setStep('tess-low')} onExit={resetAll} />}
