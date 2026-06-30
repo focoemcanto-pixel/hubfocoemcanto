@@ -51,9 +51,9 @@ function waitForMediaReady(media: HTMLMediaElement, timeoutMs = 15000) {
   });
 }
 
-function prepareSilentMedia(media: HTMLMediaElement) {
+function prepareGraphMedia(media: HTMLMediaElement) {
   media.preload = 'auto';
-  media.volume = 0;
+  media.volume = 1;
   media.muted = false;
   if ('playsInline' in media) (media as HTMLVideoElement).playsInline = true;
 }
@@ -95,8 +95,8 @@ export class DuetPreviewEngine {
     visual.muted = true;
     visual.volume = 0;
 
-    prepareSilentMedia(voice);
-    prepareSilentMedia(reference);
+    prepareGraphMedia(voice);
+    prepareGraphMedia(reference);
     voice.src = this.voiceUrl;
     reference.src = this.options.referenceUrl;
 
@@ -117,8 +117,10 @@ export class DuetPreviewEngine {
     reference.currentTime = 0;
     visual.muted = true;
     visual.volume = 0;
-    voice.volume = 0;
-    reference.volume = 0;
+    voice.volume = 1;
+    reference.volume = 1;
+    voice.muted = false;
+    reference.muted = false;
     this.playing = true;
     await this.audio.resume();
     const faders = this.audio.getFaders();
@@ -163,8 +165,8 @@ export class DuetPreviewEngine {
     this.audio.setFaders(values);
     const faders = this.audio.getFaders();
     if (!this.playing) return;
-    this.syncMutedTrackState(this.refs.voice, faders.voice);
-    this.syncMutedTrackState(this.refs.reference, faders.reference);
+    this.syncTrackPlaybackState(this.refs.voice, faders.voice);
+    this.syncTrackPlaybackState(this.refs.reference, faders.reference);
   }
 
   autoMix() {
@@ -204,8 +206,8 @@ export class DuetPreviewEngine {
     this.prepared = false;
   }
 
-  private syncMutedTrackState(media: HTMLMediaElement, faderValue: number) {
-    media.volume = 0;
+  private syncTrackPlaybackState(media: HTMLMediaElement, faderValue: number) {
+    media.volume = 1;
     media.muted = false;
     if (faderValue <= 0) {
       try { media.pause(); } catch {}
