@@ -21,6 +21,8 @@ export type DuetPreviewDiagnostic = DuetAudioEngineSnapshot & {
   visualPaused: boolean;
   voicePaused: boolean;
   referencePaused: boolean;
+  voiceDriftMs: number;
+  referenceDriftMs: number;
 };
 
 function waitForMediaReady(media: HTMLMediaElement, timeoutMs = 15000) {
@@ -63,7 +65,6 @@ export class DuetPreviewEngine {
   private voiceUrl = '';
   private prepared = false;
   private playing = false;
-  private syncTimer: number | null = null;
 
   constructor(refs: DuetPreviewEngineRefs, options: DuetPreviewEngineOptions) {
     this.refs = refs;
@@ -109,16 +110,15 @@ export class DuetPreviewEngine {
     reference.volume = 0;
     this.playing = true;
     await this.audio.resume();
-    await visual.play();
     const faders = this.audio.getFaders();
-    if (faders.voice > 0) await voice.play().catch(() => undefined);
-    if (faders.reference > 0) await reference.play().catch(() => undefined);
-    this.startSyncGuard();
+    const jobs: Promise<unknown>[] = [visual.play()];
+    if (faders.voice > 0) jobs.push(voice.play().catch(() => undefined));
+    if (faders.reference > 0) jobs.push(reference.play().catch(() => undefined));
+    await Promise.all(jobs);
   }
 
   pause() {
     this.playing = false;
-    this.stopSyncGuard();
     try { this.refs.visual.pause(); } catch {}
     try { this.refs.voice.pause(); } catch {}
     try { this.refs.reference.pause(); } catch {}
@@ -127,11 +127,9 @@ export class DuetPreviewEngine {
   setFaders(values: Partial<DuetFaderValues>) {
     this.audio.setFaders(values);
     const faders = this.audio.getFaders();
-    const visualTime = Number.isFinite(this.refs.visual.currentTime) ? this.refs.visual.currentTime : 0;
-    if (this.playing) {
-      if (typeof values.voice === 'number') this.syncTrackPlayback(this.refs.voice, faders.voice, visualTime);
-      if (typeof values.reference === 'number') this.syncTrackPlayback(this.refs.reference, faders.reference, visualTime);
-    }
+    if (!this.playing) return;
+    this.syncMutedTrackState(this.refs.voice, faders.voice);
+    this.syncMutedTrackState(this.refs.reference, faders.reference);
   }
 
   autoMix() {
@@ -144,14 +142,19 @@ export class DuetPreviewEngine {
 
   getDiagnostic(): DuetPreviewDiagnostic {
     const snapshot = this.audio.getSnapshot();
+    const visualTime = this.refs.visual.currentTime || 0;
+    const voiceTime = this.refs.voice.currentTime || 0;
+    const referenceTime = this.refs.reference.currentTime || 0;
     return {
       ...snapshot,
-      visualTime: this.refs.visual.currentTime || 0,
-      voiceTime: this.refs.voice.currentTime || 0,
-      referenceTime: this.refs.reference.currentTime || 0,
+      visualTime,
+      voiceTime,
+      referenceTime,
       visualPaused: this.refs.visual.paused,
       voicePaused: this.refs.voice.paused,
       referencePaused: this.refs.reference.paused,
+      voiceDriftMs: Math.round((voiceTime - visualTime) * 1000),
+      referenceDriftMs: Math.round((referenceTime - visualTime) * 1000),
     };
   }
 
@@ -165,35 +168,16 @@ export class DuetPreviewEngine {
     this.prepared = false;
   }
 
-  private syncTrackPlayback(media: HTMLMediaElement, faderValue: number, targetTime: number) {
+  private syncMutedTrackState(media: HTMLMediaElement, faderValue: number) {
     media.volume = 0;
     media.muted = false;
     if (faderValue <= 0) {
       try { media.pause(); } catch {}
       return;
     }
-    if (Math.abs((media.currentTime || 0) - targetTime) > 0.18) {
-      try { media.currentTime = targetTime; } catch {}
+    if (media.paused && !this.refs.visual.paused) {
+      try { media.currentTime = this.refs.visual.currentTime || 0; } catch {}
+      media.play().catch(() => undefined);
     }
-    media.play().catch(() => undefined);
-  }
-
-  private startSyncGuard() {
-    this.stopSyncGuard();
-    this.syncTimer = window.setInterval(() => {
-      if (!this.playing) return;
-      const faders = this.audio.getFaders();
-      const time = this.refs.visual.currentTime || 0;
-      this.refs.voice.volume = 0;
-      this.refs.reference.volume = 0;
-      if (faders.voice > 0 && !this.refs.visual.paused) this.syncTrackPlayback(this.refs.voice, faders.voice, time);
-      if (faders.reference > 0 && !this.refs.visual.paused) this.syncTrackPlayback(this.refs.reference, faders.reference, time);
-      if (this.refs.visual.ended) this.pause();
-    }, 500);
-  }
-
-  private stopSyncGuard() {
-    if (this.syncTimer) window.clearInterval(this.syncTimer);
-    this.syncTimer = null;
   }
 }
