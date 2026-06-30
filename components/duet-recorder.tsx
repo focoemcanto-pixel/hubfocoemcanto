@@ -144,10 +144,59 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl, canSendFor
 
   async function reset() { pausePreview(); await previewEngineRef.current?.close().catch(() => undefined); previewEngineRef.current = null; setResult(null); setError(''); setStatus(''); setDiagnostic(''); setPostedHref(''); setStep('intro'); setPlaying(false); }
 
+  async function createServerRenderJob() {
+    if (!result?.canvasBlob || !result?.voiceBlob || !referenceSource) return null;
+    const data = new FormData();
+    data.set('lesson_slug', lessonSlug);
+    data.set('caption', caption || 'Minha prática do dueto.');
+    data.set('visibility', postCommunity ? 'community' : 'private');
+    data.set('review_requested', String(canSendForReview && sendForReview));
+    data.set('voice_volume', String(voiceVolume));
+    data.set('reference_volume', String(referenceVolume));
+    data.set('reference_offset_ms', String(referenceOffsetMs));
+    data.set('reference_url', referenceSource);
+    data.set('video', new File([result.canvasBlob], `${lessonSlug}-visual.${(result.canvasBlob.type || '').includes('webm') ? 'webm' : 'mp4'}`, { type: result.canvasBlob.type || 'video/mp4' }));
+    data.set('voice', new File([result.voiceBlob], `${lessonSlug}-voice.${(result.voiceBlob.type || '').includes('webm') ? 'webm' : 'm4a'}`, { type: result.voiceBlob.type || 'audio/mp4' }));
+
+    setStatus('Enviando stems para renderização no servidor...');
+    const response = await fetch('/api/duet-render/jobs', { method: 'POST', body: data });
+    if (!response.ok) {
+      const json = await response.json().catch(() => null);
+      throw new Error(json?.detail || json?.message || 'Não consegui criar o job de renderização.');
+    }
+    const json = await response.json().catch(() => null);
+    const jobId = String(json?.job_id || '');
+    if (!jobId) return null;
+
+    for (let attempt = 1; attempt <= 4; attempt += 1) {
+      setStatus(`Renderização no servidor em andamento... tentativa ${attempt}/4`);
+      await sleep(2500);
+      const statusResponse = await fetch(`/api/duet-render/status/${jobId}`, { cache: 'no-store' });
+      const statusJson = await statusResponse.json().catch(() => null);
+      const job = statusJson?.job;
+      if (job?.status === 'completed' && job.output_url) return String(job.output_url);
+      if (job?.status === 'failed') throw new Error(job.error_message || 'Renderização no servidor falhou.');
+    }
+    console.info('[duet-render] server job queued but not completed yet', { jobId });
+    return null;
+  }
+
+  async function saveRenderedUrl(fileUrl: string) {
+    const visibility = postCommunity ? 'community' : 'private';
+    const reviewRequested = canSendForReview && sendForReview;
+    const response = await fetch('/api/submissions/duet', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ lesson_slug: lessonSlug, caption: caption || 'Minha prática do dueto.', visibility, review_requested: reviewRequested, file_url: fileUrl }),
+    });
+    if (!response.ok) { const json = await response.json().catch(() => null); throw new Error(json?.detail || json?.message || 'Não consegui salvar a renderização.'); }
+    return response.json().catch(() => null);
+  }
+
   async function buildUploadBlob() {
     if (!result?.canvasBlob || !result?.voiceBlob || !referenceSource) throw new Error('missing_render_media');
     if (isSafariLike() && result.safePublishBlob && result.safePublishBlob.size > 1000) {
-      setStatus('Publicando com modo seguro para iPhone: vídeo composto + áudio direto do microfone.');
+      setStatus('Renderização no servidor ainda não disponível. Publicando com modo seguro para iPhone: vídeo composto + áudio direto do microfone.');
       console.info('[duet-upload] ios-safe-publish', { size: result.safePublishBlob.size, type: result.safePublishBlob.type, chunks: result.diagnostics.safePublishChunks });
       return result.safePublishBlob;
     }
@@ -165,6 +214,18 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl, canSendFor
     if (!postCommunity && !reviewRequested) return setError(canSendForReview ? 'Escolha postar na comunidade, enviar para avaliação ou os dois.' : 'No modo gratuito, poste na comunidade para continuar.');
     setStep('posting'); setError(''); pausePreview();
     try {
+      if (isSafariLike()) {
+        const renderedUrl = await createServerRenderJob().catch((err) => { console.warn('[duet-render] queue failed; falling back', err); return null; });
+        if (renderedUrl) {
+          setStatus('Renderização do servidor concluída. Salvando publicação...');
+          const json = await saveRenderedUrl(renderedUrl);
+          const communityPostId = String(json?.community_post_id || '');
+          setPostedHref(postCommunity ? `/aluno/comunidade${communityPostId ? `#post-${communityPostId}` : ''}` : '');
+          setStep('posted');
+          return;
+        }
+      }
+
       const uploadBlob = await buildUploadBlob(); const fileType = uploadBlob.type || 'video/webm'; const data = new FormData();
       data.set('lesson_slug', lessonSlug); data.set('caption', caption || 'Minha prática do dueto.'); data.set('visibility', visibility); data.set('review_requested', String(reviewRequested)); data.set('voice_volume', String(voiceVolume)); data.set('reference_volume', String(referenceVolume)); data.set('voice_preset', 'natural'); data.set('noise_reduction', 'false'); data.set('file', new File([uploadBlob], `${lessonSlug}-dueto-final.${fileType.includes('mp4') ? 'mp4' : 'webm'}`, { type: fileType }));
       const response = await fetch('/api/submissions/duet', { method: 'POST', body: data });
