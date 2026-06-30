@@ -2,20 +2,11 @@ import type { DuetV2PrepareOptions, DuetV2RecordingResult, DuetV2Session } from 
 import { createDuetV2Recorder } from './recorders';
 import { isSafariLikeV2, stopTracks, waitForMediaReadyV2 } from './utils';
 
-type CapturableVideo = HTMLVideoElement & {
-  captureStream?: () => MediaStream;
-  mozCaptureStream?: () => MediaStream;
-};
+type CapturableVideo = HTMLVideoElement & { captureStream?: () => MediaStream; mozCaptureStream?: () => MediaStream };
+type AudioGraphV2 = { context: AudioContext | null; mixedStream: MediaStream | null; referenceRecordStream: MediaStream | null; usedElementFallback: boolean; startReference: () => void; stopReference: () => void };
 
-type AudioGraphV2 = {
-  context: AudioContext | null;
-  mixedStream: MediaStream | null;
-  referenceRecordStream: MediaStream | null;
-  usedElementFallback: boolean;
-};
-
-const REFERENCE_RECORD_GAIN = 3.8;
-const REFERENCE_MIX_GAIN = 2.4;
+const REFERENCE_RECORD_GAIN = 3.2;
+const REFERENCE_MIX_GAIN = 1.35;
 
 function makeAudioContextV2() {
   const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -24,85 +15,63 @@ function makeAudioContextV2() {
 }
 
 function captureReferenceStream(reference: HTMLVideoElement) {
-  const capturable = reference as CapturableVideo;
-  const capture = capturable.captureStream || capturable.mozCaptureStream;
+  const capture = (reference as CapturableVideo).captureStream || (reference as CapturableVideo).mozCaptureStream;
   if (!capture) return null;
+  try { const stream = capture.call(reference); return stream.getAudioTracks().length ? stream : null; } catch { return null; }
+}
+
+async function decodeReferenceAudio(ctx: AudioContext, url: string) {
   try {
-    const stream = capture.call(reference);
-    return stream.getAudioTracks().length ? stream : null;
-  } catch {
-    return null;
-  }
+    const response = await fetch(url, { cache: 'force-cache' });
+    if (!response.ok) return null;
+    const arrayBuffer = await response.arrayBuffer();
+    return await ctx.decodeAudioData(arrayBuffer.slice(0));
+  } catch { return null; }
 }
 
 function drawCover(ctx: CanvasRenderingContext2D, media: HTMLVideoElement, x: number, y: number, width: number, height: number) {
-  const vw = media.videoWidth || width;
-  const vh = media.videoHeight || height;
+  const vw = media.videoWidth || width, vh = media.videoHeight || height;
   const scale = Math.max(width / vw, height / vh);
-  const sw = width / scale;
-  const sh = height / scale;
+  const sw = width / scale, sh = height / scale;
   ctx.drawImage(media, (vw - sw) / 2, (vh - sh) / 2, sw, sh, x, y, width, height);
 }
 
 function drawSelfie(ctx: CanvasRenderingContext2D, camera: HTMLVideoElement, x: number, y: number, width: number, height: number) {
-  ctx.save();
-  ctx.translate(x + width, y);
-  ctx.scale(-1, 1);
-  drawCover(ctx, camera, 0, 0, width, height);
-  ctx.restore();
+  ctx.save(); ctx.translate(x + width, y); ctx.scale(-1, 1); drawCover(ctx, camera, 0, 0, width, height); ctx.restore();
 }
 
 function startCanvasDraw(args: { canvas: HTMLCanvasElement; camera: HTMLVideoElement; reference: HTMLVideoElement; frameRate: number }) {
   const ctx = args.canvas.getContext('2d');
   if (!ctx) return () => undefined;
-  let frame = 0;
-  let timer: number | null = null;
+  let frame = 0, timer: number | null = null;
   const draw = () => {
-    const width = args.canvas.width;
-    const height = args.canvas.height;
-    const half = width / 2;
-    ctx.fillStyle = '#050507';
-    ctx.fillRect(0, 0, width, height);
+    const width = args.canvas.width, height = args.canvas.height, half = width / 2;
+    ctx.fillStyle = '#050507'; ctx.fillRect(0, 0, width, height);
     if (args.reference.readyState >= 2 && args.reference.videoWidth > 0) drawCover(ctx, args.reference, 0, 0, half, height);
     if (args.camera.readyState >= 2 && args.camera.videoWidth > 0) drawSelfie(ctx, args.camera, half, 0, half, height);
   };
-  if (isSafariLikeV2()) {
-    timer = window.setInterval(draw, Math.max(30, Math.round(1000 / args.frameRate)));
-    draw();
-    return () => { if (timer) window.clearInterval(timer); };
-  }
-  let last = 0;
-  const interval = 1000 / args.frameRate;
-  const loop = (now = 0) => {
-    if (now - last >= interval) { draw(); last = now; }
-    frame = requestAnimationFrame(loop);
-  };
-  loop();
-  return () => cancelAnimationFrame(frame);
+  if (isSafariLikeV2()) { timer = window.setInterval(draw, Math.max(30, Math.round(1000 / args.frameRate))); draw(); return () => { if (timer) window.clearInterval(timer); }; }
+  let last = 0; const interval = 1000 / args.frameRate;
+  const loop = (now = 0) => { if (now - last >= interval) { draw(); last = now; } frame = requestAnimationFrame(loop); };
+  loop(); return () => cancelAnimationFrame(frame);
 }
 
 async function openCameraAndMic(audioDeviceId?: string | null) {
-  const audio: MediaTrackConstraints = {
-    echoCancellation: false,
-    noiseSuppression: false,
-    autoGainControl: false,
-    channelCount: 1,
-    sampleRate: 48000,
-  };
+  const audio: MediaTrackConstraints = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1, sampleRate: 48000 };
   if (audioDeviceId) audio.deviceId = { exact: audioDeviceId };
-  return await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30, max: 30 } },
-    audio,
-  });
+  return await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30, max: 30 } }, audio });
 }
 
-function buildAudioGraphV2(args: { micStream: MediaStream; reference: HTMLVideoElement; capturedReferenceStream: MediaStream | null }): AudioGraphV2 {
+async function buildAudioGraphV2(args: { micStream: MediaStream; reference: HTMLVideoElement; referenceUrl: string; capturedReferenceStream: MediaStream | null }): Promise<AudioGraphV2> {
   const context = makeAudioContextV2();
-  if (!context) return { context: null, mixedStream: null, referenceRecordStream: args.capturedReferenceStream, usedElementFallback: false };
+  if (!context) return { context: null, mixedStream: null, referenceRecordStream: args.capturedReferenceStream, usedElementFallback: false, startReference: () => undefined, stopReference: () => undefined };
 
   const mixedDestination = context.createMediaStreamDestination();
   const referenceDestination = context.createMediaStreamDestination();
   let usedElementFallback = false;
+  let activeSource: AudioBufferSourceNode | null = null;
+  let startReference = () => undefined;
+  let stopReference = () => { try { activeSource?.stop(); } catch {} activeSource = null; };
 
   try {
     const mic = context.createMediaStreamSource(args.micStream);
@@ -111,7 +80,26 @@ function buildAudioGraphV2(args: { micStream: MediaStream; reference: HTMLVideoE
     mic.connect(micGain).connect(mixedDestination);
   } catch {}
 
-  if (args.capturedReferenceStream?.getAudioTracks().length) {
+  const decodedReference = await decodeReferenceAudio(context, args.referenceUrl);
+  if (decodedReference) {
+    startReference = () => {
+      try {
+        const source = context.createBufferSource();
+        const monitorGain = context.createGain();
+        const mixedGain = context.createGain();
+        const recordGain = context.createGain();
+        source.buffer = decodedReference;
+        monitorGain.gain.value = 1;
+        mixedGain.gain.value = REFERENCE_MIX_GAIN;
+        recordGain.gain.value = REFERENCE_RECORD_GAIN;
+        source.connect(monitorGain).connect(context.destination);
+        source.connect(mixedGain).connect(mixedDestination);
+        source.connect(recordGain).connect(referenceDestination);
+        activeSource = source;
+        source.start(0);
+      } catch {}
+    };
+  } else if (args.capturedReferenceStream?.getAudioTracks().length) {
     try {
       const reference = context.createMediaStreamSource(args.capturedReferenceStream);
       const mixedGain = context.createGain();
@@ -121,6 +109,7 @@ function buildAudioGraphV2(args: { micStream: MediaStream; reference: HTMLVideoE
       reference.connect(mixedGain).connect(mixedDestination);
       reference.connect(recordGain).connect(referenceDestination);
     } catch {}
+    startReference = () => undefined;
   } else {
     try {
       const reference = context.createMediaElementSource(args.reference);
@@ -135,34 +124,27 @@ function buildAudioGraphV2(args: { micStream: MediaStream; reference: HTMLVideoE
       reference.connect(recordGain).connect(referenceDestination);
       usedElementFallback = true;
     } catch {}
+    startReference = () => undefined;
   }
 
-  context.resume().catch(() => undefined);
-  const referenceRecordStream = referenceDestination.stream.getAudioTracks().length
-    ? referenceDestination.stream
-    : args.capturedReferenceStream;
-
-  return { context, mixedStream: mixedDestination.stream, referenceRecordStream, usedElementFallback };
+  await context.resume().catch(() => undefined);
+  const referenceRecordStream = referenceDestination.stream.getAudioTracks().length ? referenceDestination.stream : args.capturedReferenceStream;
+  return { context, mixedStream: mixedDestination.stream, referenceRecordStream, usedElementFallback, startReference, stopReference };
 }
 
 export async function startDuetV2Session(options: DuetV2PrepareOptions, refs: { camera: HTMLVideoElement | null; reference: HTMLVideoElement | null; canvas: HTMLCanvasElement | null }): Promise<DuetV2Session> {
-  const camera = refs.camera;
-  const reference = refs.reference;
-  const canvas = refs.canvas;
+  const camera = refs.camera, reference = refs.reference, canvas = refs.canvas;
   if (!camera || !reference || !canvas) throw new Error('missing_duet_v2_refs');
   if (!options.referenceUrl) throw new Error('missing_reference_url');
 
-  const width = options.width || 1280;
-  const height = options.height || 720;
-  const frameRate = options.frameRate || (isSafariLikeV2() ? 24 : 30);
-  canvas.width = width;
-  canvas.height = height;
+  const width = options.width || 1280, height = options.height || 720, frameRate = options.frameRate || (isSafariLikeV2() ? 24 : 30);
+  canvas.width = width; canvas.height = height;
 
   reference.crossOrigin = 'anonymous';
   reference.src = options.referenceUrl;
   reference.preload = 'auto';
   reference.playsInline = true;
-  reference.muted = false;
+  reference.muted = true;
   reference.load();
   await waitForMediaReadyV2(reference);
 
@@ -177,7 +159,7 @@ export async function startDuetV2Session(options: DuetV2PrepareOptions, refs: { 
   reference.currentTime = 0;
   await reference.play();
   const capturedReferenceStream = captureReferenceStream(reference);
-  const audioGraph = buildAudioGraphV2({ micStream: microphoneStream, reference, capturedReferenceStream });
+  const audioGraph = await buildAudioGraphV2({ micStream: microphoneStream, reference, referenceUrl: options.referenceUrl, capturedReferenceStream });
   const referenceStream = audioGraph.referenceRecordStream;
   const stopDraw = startCanvasDraw({ canvas, camera, reference, frameRate });
   const canvasStream = canvas.captureStream(frameRate);
@@ -190,11 +172,11 @@ export async function startDuetV2Session(options: DuetV2PrepareOptions, refs: { 
 
   const startedAt = Date.now();
   [cameraRecorder, canvasRecorder, voiceRecorder, referenceRecorder, mixedRecorder].forEach((handle) => handle?.start());
+  audioGraph.startReference();
 
   const stop = async (): Promise<DuetV2RecordingResult> => {
     const stoppedAt = Date.now();
-    reference.pause();
-    stopDraw();
+    reference.pause(); audioGraph.stopReference(); stopDraw();
     const [cameraBlob, canvasBlob, voiceBlob, referenceBlob, mixedBlob] = await Promise.all([
       cameraRecorder?.stop() ?? Promise.resolve(null),
       canvasRecorder?.stop() ?? Promise.resolve(null),
@@ -202,50 +184,14 @@ export async function startDuetV2Session(options: DuetV2PrepareOptions, refs: { 
       referenceRecorder?.stop() ?? Promise.resolve(null),
       mixedRecorder?.stop() ?? Promise.resolve(null),
     ]);
-    stopTracks(cameraStream);
-    stopTracks(canvasStream);
-    stopTracks(referenceStream);
-    stopTracks(audioGraph.mixedStream);
+    stopTracks(cameraStream); stopTracks(canvasStream); stopTracks(referenceStream); stopTracks(audioGraph.mixedStream);
     await audioGraph.context?.close().catch(() => undefined);
     return {
-      cameraBlob,
-      canvasBlob,
-      voiceBlob,
-      referenceBlob,
-      mixedBlob,
-      startedAt,
-      stoppedAt,
-      durationMs: Math.max(0, stoppedAt - startedAt),
-      mimeTypes: {
-        camera: cameraRecorder?.mimeType,
-        canvas: canvasRecorder?.mimeType,
-        voice: voiceRecorder?.mimeType,
-        reference: referenceRecorder?.mimeType,
-        mixed: mixedRecorder?.mimeType,
-      },
-      diagnostics: {
-        cameraChunks: cameraRecorder?.chunks.length || 0,
-        canvasChunks: canvasRecorder?.chunks.length || 0,
-        voiceChunks: voiceRecorder?.chunks.length || 0,
-        referenceChunks: referenceRecorder?.chunks.length || 0,
-        mixedChunks: mixedRecorder?.chunks.length || 0,
-        hasReferenceTrack: Boolean(referenceStream?.getAudioTracks().length),
-        hasMicrophoneTrack: microphoneStream.getAudioTracks().length > 0,
-        hasCanvasVideoTrack: canvasStream.getVideoTracks().length > 0,
-      },
+      cameraBlob, canvasBlob, voiceBlob, referenceBlob, mixedBlob, startedAt, stoppedAt, durationMs: Math.max(0, stoppedAt - startedAt),
+      mimeTypes: { camera: cameraRecorder?.mimeType, canvas: canvasRecorder?.mimeType, voice: voiceRecorder?.mimeType, reference: referenceRecorder?.mimeType, mixed: mixedRecorder?.mimeType },
+      diagnostics: { cameraChunks: cameraRecorder?.chunks.length || 0, canvasChunks: canvasRecorder?.chunks.length || 0, voiceChunks: voiceRecorder?.chunks.length || 0, referenceChunks: referenceRecorder?.chunks.length || 0, mixedChunks: mixedRecorder?.chunks.length || 0, hasReferenceTrack: Boolean(referenceStream?.getAudioTracks().length), hasMicrophoneTrack: microphoneStream.getAudioTracks().length > 0, hasCanvasVideoTrack: canvasStream.getVideoTracks().length > 0 },
     };
   };
 
-  return {
-    refs,
-    referenceUrl: options.referenceUrl,
-    cameraStream,
-    canvasStream,
-    microphoneStream,
-    referenceStream,
-    mixedStream: audioGraph.mixedStream,
-    audioContext: audioGraph.context,
-    startedAt,
-    stop,
-  };
+  return { refs, referenceUrl: options.referenceUrl, cameraStream, canvasStream, microphoneStream, referenceStream, mixedStream: audioGraph.mixedStream, audioContext: audioGraph.context, startedAt, stop };
 }
