@@ -30,17 +30,9 @@ async function uniqueSlug(supabase: ReturnType<typeof createAdminClient>, module
   return `${base}-${Date.now().toString(36)}`;
 }
 
-export async function POST(request: Request) {
-  const supabase = createAdminClient();
-  const formData = await request.formData();
-  const moduleId = String(formData.get('module_id') || '').trim();
-  const productId = String(formData.get('product_id') || '').trim();
-  const uid = String(formData.get('uid') || '').trim();
-  const name = String(formData.get('name') || uid).trim();
-  if (!moduleId || !uid) redirect('/admin/produtos');
-
+async function importOne(supabase: ReturnType<typeof createAdminClient>, moduleId: string, productId: string, uid: string, fallbackName: string) {
   const video = await fetchStreamVideo(uid);
-  const title = cleanTitle(String(video?.meta?.name || video?.name || name));
+  const title = cleanTitle(String(video?.meta?.name || video?.name || fallbackName || uid));
   const normalized = normalizeMediaTitle(title);
   const status = String(video?.status?.state || 'ready');
   const duration = Number(video?.duration || 0) || null;
@@ -62,7 +54,9 @@ export async function POST(request: Request) {
     const { count } = await supabase.from('exercises').select('*', { count: 'exact', head: true }).eq('module_id', moduleId);
     const slug = await uniqueSlug(supabase, moduleId, title);
     const { data, error } = await supabase.from('exercises').insert({ module_id: moduleId, title, slug, description: '', objective: 'Assista, pratique e envie sua resposta para avaliação.', media_type: 'video', difficulty: 1, media_url: mediaUrl, stream_uid: uid, stream_status: status, stream_thumbnail_url: thumbnail, stream_duration_seconds: duration, stream_synced_at: new Date().toISOString(), is_active: true, sort_order: (count || 0) + 1 }).select('id').single();
-    if (!error) { exerciseId = data.id; createdExercise = true; }
+    if (error) throw error;
+    exerciseId = data.id;
+    createdExercise = true;
   } else {
     await supabase.from('exercises').update({ stream_uid: uid, stream_status: status, stream_thumbnail_url: thumbnail, stream_duration_seconds: duration, stream_synced_at: new Date().toISOString(), media_url: mediaUrl, media_type: 'video' }).eq('id', exerciseId);
   }
@@ -71,8 +65,29 @@ export async function POST(request: Request) {
   const { data: existing } = await supabase.from('media_assets').select('id').eq('stream_uid', uid).maybeSingle();
   if (existing?.id) await supabase.from('media_assets').update(assetPayload).eq('id', existing.id);
   else await supabase.from('media_assets').insert(assetPayload);
+  return { uid, createdExercise };
+}
+
+export async function POST(request: Request) {
+  const supabase = createAdminClient();
+  const formData = await request.formData();
+  const moduleId = String(formData.get('module_id') || '').trim();
+  const productId = String(formData.get('product_id') || '').trim();
+  const uids = formData.getAll('uid').map((value) => String(value || '').trim()).filter(Boolean);
+  if (!moduleId || !uids.length) redirect('/admin/produtos');
+
+  let imported = 0;
+  for (const uid of Array.from(new Set(uids))) {
+    const fallbackName = String(formData.get(`name_${uid}`) || formData.get('name') || uid).trim();
+    try {
+      await importOne(supabase, moduleId, productId, uid, fallbackName);
+      imported += 1;
+    } catch {
+      // Mantém a importação em massa seguindo mesmo se um vídeo falhar.
+    }
+  }
 
   if (productId) revalidatePath(`/admin/produtos/${productId}`);
   revalidatePath(`/admin/conteudos/selecionar-stream?module=${moduleId}`);
-  redirect(`/admin/conteudos/selecionar-stream?module=${moduleId}&imported=1`);
+  redirect(`/admin/conteudos/selecionar-stream?module=${moduleId}&imported=${imported}`);
 }
