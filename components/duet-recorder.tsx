@@ -28,6 +28,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl, canSendFor
   const sessionRef = useRef<DuetV2Session | null>(null);
   const liveMixerRef = useRef<LiveMixerGraph | null>(null);
   const liveVoiceUrlRef = useRef('');
+  const livePlayingRef = useRef(false);
   const [step, setStep] = useState<Step>('intro');
   const [error, setError] = useState('');
   const [result, setResult] = useState<DuetV2RecordingResult | null>(null);
@@ -44,12 +45,34 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl, canSendFor
   useEffect(() => () => { try { liveMixerRef.current?.context.close(); } catch {} if (liveVoiceUrlRef.current) URL.revokeObjectURL(liveVoiceUrlRef.current); }, []);
 
   function syncElementAudio(nextVoice = voiceVolume, nextReference = referenceVolume) {
+    const visual = liveVisualRef.current;
     const voice = liveVoiceRef.current;
     const reference = liveReferenceRef.current;
     const voiceVol = sliderToElementVolume(nextVoice);
     const refVol = sliderToElementVolume(nextReference);
-    if (voice) { voice.volume = voiceVol; voice.muted = voiceVol <= 0.001; }
-    if (reference) { reference.volume = refVol; reference.muted = refVol <= 0.001; }
+    const isPlaying = livePlayingRef.current;
+
+    if (voice) {
+      voice.volume = voiceVol;
+      voice.muted = voiceVol <= 0.001;
+      if (voiceVol <= 0.001) {
+        try { voice.pause(); } catch {}
+      } else if (isPlaying) {
+        if (visual && Number.isFinite(visual.currentTime)) voice.currentTime = visual.currentTime;
+        voice.play().catch(() => undefined);
+      }
+    }
+
+    if (reference) {
+      reference.volume = refVol;
+      reference.muted = refVol <= 0.001;
+      if (refVol <= 0.001) {
+        try { reference.pause(); } catch {}
+      } else if (isPlaying) {
+        if (visual && Number.isFinite(visual.currentTime)) reference.currentTime = visual.currentTime;
+        reference.play().catch(() => undefined);
+      }
+    }
   }
 
   function updateLiveGains(nextVoice = voiceVolume, nextReference = referenceVolume) {
@@ -79,7 +102,13 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl, canSendFor
     return graph;
   }
 
-  function pauseLivePreview() { liveVisualRef.current?.pause(); liveVoiceRef.current?.pause(); liveReferenceRef.current?.pause(); setLivePlaying(false); }
+  function pauseLivePreview() {
+    livePlayingRef.current = false;
+    liveVisualRef.current?.pause();
+    liveVoiceRef.current?.pause();
+    liveReferenceRef.current?.pause();
+    setLivePlaying(false);
+  }
 
   async function startLivePreview() {
     setError('');
@@ -94,12 +123,14 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl, canSendFor
       reference.src = referenceSource;
       visual.currentTime = 0; voice.currentTime = 0; reference.currentTime = 0;
       visual.muted = true; visual.volume = 0;
-      syncElementAudio();
+      livePlayingRef.current = true;
       updateLiveGains();
       await graph.context.resume();
-      await Promise.all([visual.play(), voice.play(), reference.play()]);
+      await visual.play();
+      if (voiceVolume > 0) await voice.play().catch(() => undefined);
+      if (referenceVolume > 0) await reference.play().catch(() => undefined);
       setLivePlaying(true);
-      setRenderStatus(`Preview ao vivo: voz ${voiceVolume}% · referência ${referenceVolume}%. Os sliders controlam o áudio em tempo real.`);
+      setRenderStatus(`Preview ao vivo: voz ${voiceVolume}% · referência ${referenceVolume}%. Em 0%, a trilha é pausada para impedir vazamento no iPhone.`);
     } catch (err) { setError(`Não consegui iniciar o preview ao vivo: ${errorText(err)}`); pauseLivePreview(); }
   }
 
@@ -112,8 +143,11 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl, canSendFor
 
   async function stopRecording() {
     setError(''); const session = sessionRef.current; if (!session) return;
-    try { const recording = await session.stop(); sessionRef.current = null; setResult(recording); setRenderStatus('Preview visual pronto. Toque em Ouvir mix para escutar voz + referência original com controle real.'); setStep('review'); }
-    catch (err: any) { setError(err?.message || 'Não consegui finalizar a gravação.'); setStep('intro'); }
+    try {
+      const recording = await session.stop();
+      try { referenceRef.current?.pause(); if (referenceRef.current) { referenceRef.current.muted = true; referenceRef.current.volume = 0; } } catch {}
+      sessionRef.current = null; setResult(recording); setRenderStatus('Preview visual pronto. Toque em Ouvir mix para escutar voz + referência original com controle real.'); setStep('review');
+    } catch (err: any) { setError(err?.message || 'Não consegui finalizar a gravação.'); setStep('intro'); }
   }
 
   function reset() { pauseLivePreview(); setResult(null); setError(''); setPostedHref(''); setRenderStatus(''); setStep('intro'); }
@@ -156,7 +190,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl, canSendFor
     {renderStatus ? <div style={{ ...glass, padding: 16, color: '#f5c76b', whiteSpace: 'pre-wrap' }}>{renderStatus}</div> : null}
     <section style={{ ...glass, overflow: 'hidden', padding: 0 }}><div style={{ position: 'relative', aspectRatio: '16/9', background: '#000', display: 'grid', placeItems: 'center' }}><video ref={referenceRef} playsInline muted style={{ display: 'none' }} /><video ref={cameraRef} playsInline muted autoPlay style={{ display: 'none' }} /><audio ref={liveVoiceRef} preload="auto" style={{ display: 'none' }} /><video ref={liveReferenceRef} playsInline preload="auto" style={{ display: 'none' }} />{previewUrl && step !== 'recording' ? <video ref={liveVisualRef} key={previewUrl} src={previewUrl} playsInline muted style={{ width: '100%', height: '100%', objectFit: 'contain' }} onEnded={pauseLivePreview} /> : <canvas ref={canvasRef} width={1280} height={720} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}{step === 'intro' ? <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', textAlign: 'center', padding: 24, background: 'radial-gradient(circle,rgba(0,0,0,.18),rgba(0,0,0,.55))' }}><div style={{ display: 'grid', placeItems: 'center', gap: 12 }}><span style={{ width: 78, height: 78, borderRadius: 999, display: 'grid', placeItems: 'center', background: 'rgba(245,199,107,.16)', border: '1px solid rgba(245,199,107,.45)', color: '#f5c76b' }}><Video size={34} /></span><strong style={{ fontSize: 18 }}>Toque para iniciar câmera e referência</strong><small style={{ color: 'rgba(255,255,255,.62)' }}>A mixagem será feita em trilhas separadas.</small></div></div> : null}{step === 'recording' ? <div style={{ position: 'absolute', top: 14, left: 14, background: '#e11d48', borderRadius: 999, padding: '8px 13px', fontWeight: 950, boxShadow: '0 0 24px rgba(225,29,72,.5)' }}>● Gravando</div> : null}</div></section>
     <section style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 12 }}>{step === 'intro' ? <button style={{ ...goldPill, gridColumn: '1 / -1' }} onClick={startRecording}><Mic size={20} /> Iniciar gravação</button> : null}{step === 'recording' ? <button style={{ ...pill, gridColumn: '1 / -1', background: '#e11d48', color: '#fff' }} onClick={stopRecording}><Square size={20} /> Finalizar gravação</button> : null}{step === 'review' ? <><button style={mutedPill} onClick={reset}><RefreshCcw size={19} /> Regravar</button><button style={goldPill} onClick={submit}><Send size={19} /> Continuar envio</button></> : null}{step === 'posting' ? <button style={{ ...mutedPill, gridColumn: '1 / -1' }} disabled>Enviando...</button> : null}</section>
-    {step === 'review' ? <section style={{ ...glass, padding: 18, display: 'grid', gap: 16 }}><div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}><div><h2 style={{ margin: 0, fontSize: 24 }}>Mixagem em tempo real</h2><p style={{ margin: '4px 0 0', color: 'rgba(255,255,255,.62)' }}>O vídeo acima é só imagem. A voz e a referência tocam separadas pelo mixer.</p></div><SlidersHorizontal color="#f5c76b" /></div><label style={{ display: 'grid', gap: 8 }}><span style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800 }}><span>Minha voz</span><span>{voiceVolume}%</span></span><input type="range" min="0" max="200" value={voiceVolume} onChange={(event) => setVoice(Number(event.target.value))} /></label><label style={{ display: 'grid', gap: 8 }}><span style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800 }}><span>Referência original</span><span>{referenceVolume}%</span></span><input type="range" min="0" max="200" value={referenceVolume} onChange={(event) => setReference(Number(event.target.value))} /></label><div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}><button style={mutedPill} onClick={() => { setVoice(100); setReference(100); }}>Reset</button><button style={mutedPill} onClick={autoMix}>Auto Mix</button><button style={goldPill} onClick={livePlaying ? pauseLivePreview : startLivePreview}>{livePlaying ? <Pause size={18} /> : <Play size={18} />}{livePlaying ? 'Pausar mix' : 'Ouvir mix'}</button></div></section> : null}
+    {step === 'review' ? <section style={{ ...glass, padding: 18, display: 'grid', gap: 16 }}><div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}><div><h2 style={{ margin: 0, fontSize: 24 }}>Mixagem em tempo real</h2><p style={{ margin: '4px 0 0', color: 'rgba(255,255,255,.62)' }}>Em 0%, a trilha é pausada para bloquear vazamento nativo do Safari.</p></div><SlidersHorizontal color="#f5c76b" /></div><label style={{ display: 'grid', gap: 8 }}><span style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800 }}><span>Minha voz</span><span>{voiceVolume}%</span></span><input type="range" min="0" max="200" value={voiceVolume} onChange={(event) => setVoice(Number(event.target.value))} /></label><label style={{ display: 'grid', gap: 8 }}><span style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800 }}><span>Referência original</span><span>{referenceVolume}%</span></span><input type="range" min="0" max="200" value={referenceVolume} onChange={(event) => setReference(Number(event.target.value))} /></label><div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}><button style={mutedPill} onClick={() => { setVoice(100); setReference(100); }}>Reset</button><button style={mutedPill} onClick={autoMix}>Auto Mix</button><button style={goldPill} onClick={livePlaying ? pauseLivePreview : startLivePreview}>{livePlaying ? <Pause size={18} /> : <Play size={18} />}{livePlaying ? 'Pausar mix' : 'Ouvir mix'}</button></div></section> : null}
     {result ? <section style={{ ...glass, padding: 18 }}><h2 style={{ marginTop: 0, fontSize: 22 }}>Diagnóstico técnico</h2><div style={{ display: 'grid', gap: 8, color: 'rgba(255,255,255,.78)' }}><span>✅ Vídeo visual: <strong>{formatSize(result.canvasBlob)}</strong></span><span>✅ Voz separada: <strong>{formatSize(result.voiceBlob)}</strong></span><span>✅ Referência: <strong>arquivo original</strong></span><span>ℹ️ Bruto da gravação: <strong>{formatSize(result.mixedBlob)}</strong> não usado no preview</span></div></section> : null}
     {step === 'review' ? <section style={{ ...glass, padding: 18, display: 'grid', gap: 14 }}><h2 style={{ margin: 0, fontSize: 24 }}>Publicação</h2><label style={{ display: 'flex', gap: 10, alignItems: 'center', fontWeight: 800 }}><input type="checkbox" checked={postCommunity} onChange={(event) => setPostCommunity(event.target.checked)} /> Postar na comunidade</label><label style={{ display: 'flex', gap: 10, alignItems: 'center', fontWeight: 800, opacity: canSendForReview ? 1 : .55 }}><input type="checkbox" checked={sendForReview && canSendForReview} disabled={!canSendForReview} onChange={(event) => setSendForReview(event.target.checked)} /> Enviar para avaliação</label><textarea value={caption} onChange={(event) => setCaption(event.target.value)} placeholder="Escreva uma legenda..." style={{ width: '100%', minHeight: 108, borderRadius: 18, padding: 14, background: 'rgba(255,255,255,.08)', color: '#fff', border: '1px solid rgba(255,255,255,.12)', outline: 'none', resize: 'vertical' }} /></section> : null}
     {step === 'posted' ? <section style={{ ...glass, padding: 22, display: 'grid', gap: 12, placeItems: 'start' }}><CheckCircle2 color="#86efac" size={36} /><h2 style={{ margin: 0 }}>Vídeo enviado</h2><div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>{postedHref ? <a style={{ ...goldPill, textDecoration: 'none' }} href={postedHref}>Ver postagem</a> : null}<a style={{ ...mutedPill, textDecoration: 'none' }} href={`/aluno/aula/${lessonSlug}`}>Voltar para aula</a></div></section> : null}
