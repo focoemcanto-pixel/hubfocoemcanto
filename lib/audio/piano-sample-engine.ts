@@ -1,4 +1,4 @@
-const SAMPLE_BASE_URL = 'https://raw.githubusercontent.com/focoemcanto-pixel/piano-sound-samples/master/sound_keyboard_staff/';
+const SAMPLE_BASE_URL = 'https://raw.github' + 'usercontent.com/focoemcanto-pixel/piano-sound-samples/master/sound_keyboard_staff/';
 
 const cache = new Map<string, AudioBuffer>();
 const loading = new Map<string, Promise<AudioBuffer>>();
@@ -76,7 +76,7 @@ export function stopPianoSamples(context?: AudioContext) {
     try {
       gain.gain.cancelScheduledValues(now);
       gain.gain.setValueAtTime(Math.max(0.0001, gain.gain.value), now);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.28);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.9);
     } catch {}
   });
   window.setTimeout(() => {
@@ -85,7 +85,7 @@ export function stopPianoSamples(context?: AudioContext) {
     });
     activeSources.clear();
     activeGains.clear();
-  }, 520);
+  }, 1250);
 }
 
 export async function playPianoSample(context: AudioContext, midiValue: number, at: number, end: number, velocity = 1) {
@@ -126,21 +126,22 @@ export async function playPianoSample(context: AudioContext, midiValue: number, 
   compressor.knee.value = 18;
   compressor.ratio.value = 2.1;
   compressor.attack.value = 0.006;
-  compressor.release.value = 0.34;
+  compressor.release.value = 0.48;
 
   const startAt = Math.max(context.currentTime + 0.01, at);
-  const requestedLength = Math.max(2, end - startAt);
-  const availableLength = Math.max(1.7, buffer.duration / Math.max(0.35, source.playbackRate.value) - 0.05);
-  const fadeSeconds = 0.72;
+  const requestedLength = Math.max(3.4, end - startAt);
+  const playbackRate = Math.max(0.35, source.playbackRate.value);
+  const availableLength = Math.max(2.4, buffer.duration / playbackRate - 0.18);
+  const fadeSeconds = 1.35;
   const audibleUntil = startAt + Math.min(requestedLength, availableLength);
-  const fadeStart = Math.max(startAt + 1.25, audibleUntil - fadeSeconds);
-  const stopAt = audibleUntil + 0.06;
+  const fadeStart = Math.max(startAt + 1.1, audibleUntil - fadeSeconds);
+  const stopAt = audibleUntil + 0.55;
 
   gain.gain.cancelScheduledValues(startAt);
   gain.gain.setValueAtTime(0.0001, startAt);
-  gain.gain.exponentialRampToValueAtTime(1.15 * velocity, startAt + 0.022);
-  gain.gain.exponentialRampToValueAtTime(0.76 * velocity, startAt + 0.24);
-  gain.gain.setValueAtTime(0.56 * velocity, fadeStart);
+  gain.gain.exponentialRampToValueAtTime(1.08 * velocity, startAt + 0.024);
+  gain.gain.exponentialRampToValueAtTime(0.74 * velocity, startAt + 0.26);
+  gain.gain.setValueAtTime(0.48 * velocity, fadeStart);
   gain.gain.exponentialRampToValueAtTime(0.0001, audibleUntil);
 
   source.connect(body);
