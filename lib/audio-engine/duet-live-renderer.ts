@@ -36,8 +36,13 @@ function isSafariLike() {
 
 function recorderMimeType() {
   if (typeof MediaRecorder === 'undefined') return '';
-  const candidates = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp8,opus', 'video/webm'];
-  return candidates.find((type) => MediaRecorder.isTypeSupported(type)) || '';
+  const iosSafeCandidates = ['video/mp4', 'video/mp4;codecs=h264,aac', 'video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/webm;codecs=vp8,opus', 'video/webm'];
+  const defaultCandidates = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4;codecs=h264,aac', 'video/mp4', 'video/webm;codecs=vp8,opus', 'video/webm'];
+  const candidates = isSafariLike() ? iosSafeCandidates : defaultCandidates;
+  const support = candidates.map((type) => [type, MediaRecorder.isTypeSupported(type)]);
+  const selected = candidates.find((type) => MediaRecorder.isTypeSupported(type)) || '';
+  debug('mime-selected', { selected, support, safariLike: isSafariLike(), userAgent: navigator.userAgent });
+  return selected;
 }
 
 function waitForMediaReady(media: HTMLMediaElement, timeoutMs = 18000) {
