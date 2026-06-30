@@ -17,7 +17,7 @@ export class DuetBufferEngine {
   private async finishLoad(ctx: AudioContext, voiceBuffer: AudioBuffer, referenceBuffer: AudioBuffer) {
     this.voiceBuffer = voiceBuffer; this.cleanVoiceBuffer = reduceVoiceNoise(ctx, voiceBuffer); this.referenceBuffer = referenceBuffer;
     this.voicePreGain = this.trackPreGain(voiceBuffer, 0.045, 0.04, 1.6);
-    this.referencePreGain = 1;
+   this.referencePreGain = this.trackPreGain(referenceBuffer, 0.13, 0.65, 7.2);
     await this.bus?.ctx.close().catch(() => undefined); this.bus = this.makeBus(ctx, ctx.destination); this.applySettings();
   }
 
