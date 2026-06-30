@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { ArrowLeft, CheckCircle2, Clock3, Crown, FileVideo, Lightbulb, Loader2, RotateCcw, Save, Scissors, Sparkles } from 'lucide-react';
 
 type ModuleItem = { id: string; title: string };
@@ -13,11 +13,22 @@ function getDriveFileId(url?: string | null) {
   for (const pattern of patterns) { const match = url.match(pattern); if (match?.[1]) return match[1]; }
   return null;
 }
+function isHlsUrl(url: string) { return /\.m3u8(\?|#|$)/i.test(url); }
+function canPlayNativeHls(video: HTMLVideoElement) { return Boolean(video.canPlayType('application/vnd.apple.mpegurl') || video.canPlayType('application/x-mpegURL')); }
+function streamSourceFromUid(uid?: string | null) {
+  const value = String(uid || '').trim();
+  if (!value) return '';
+  if (/^https?:\/\//i.test(value)) return value;
+  const host = process.env.NEXT_PUBLIC_CLOUDFLARE_STREAM_SUBDOMAIN || 'videodelivery.net';
+  return `https://${host}/${value}/manifest/video.m3u8`;
+}
 function sourceFromExercise(exercise: Exercise) {
+  const streamSource = streamSourceFromUid(exercise?.stream_uid || exercise?.streamUid);
+  if (streamSource) return streamSource;
   const raw = String(exercise?.drive_url || exercise?.media_url || exercise?.audio_url || '');
   const fileId = getDriveFileId(raw);
   if (fileId) return `/api/media/drive/${fileId}`;
-  if (raw.startsWith('/api/') || raw.startsWith('/storage/')) return raw;
+  if (raw.startsWith('/api/') || raw.startsWith('/storage/') || /^https?:\/\//i.test(raw)) return raw;
   return '';
 }
 function fmt(value: number) {
@@ -36,6 +47,7 @@ export function AdminVideoTrimEditor({ exercise, modules }: Props) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const source = useMemo(() => sourceFromExercise(exercise), [exercise]);
+  const isHls = useMemo(() => isHlsUrl(source), [source]);
   const [duration, setDuration] = useState(0);
   const [start, setStart] = useState(Number(exercise?.trim_start_seconds || 0));
   const [end, setEnd] = useState(Number(exercise?.trim_end_seconds || 0));
@@ -51,65 +63,69 @@ export function AdminVideoTrimEditor({ exercise, modules }: Props) {
   const endPct = duration ? Math.max(0, Math.min(100, (safeEnd / duration) * 100)) : 100;
   const currentPct = duration ? Math.max(0, Math.min(100, (current / duration) * 100)) : 0;
 
-  function goBack() {
-    if (typeof window !== 'undefined' && window.history.length > 1) window.history.back();
-    else window.location.href = '/admin/produtos';
-  }
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !source) return undefined;
+    setDuration(0); setCurrent(0); setFrames([]); setCapturing(false);
+    if (!isHls) { video.src = source; video.load(); return undefined; }
+    if (canPlayNativeHls(video)) { video.src = source; video.load(); return undefined; }
+    let destroyed = false;
+    let hlsInstance: { destroy: () => void; loadSource: (src: string) => void; attachMedia: (media: HTMLMediaElement) => void; on: (...args: any[]) => void } | null = null;
+    import('hls.js').then(({ default: Hls }) => {
+      if (destroyed) return;
+      if (!Hls.isSupported()) { video.src = source; video.load(); return; }
+      const hls = new Hls({ capLevelToPlayerSize: true, enableWorker: true, lowLatencyMode: false, maxBufferLength: 30, maxMaxBufferLength: 90, startLevel: -1 });
+      hlsInstance = hls;
+      hls.loadSource(source);
+      hls.attachMedia(video);
+    }).catch(() => { if (!destroyed) { video.src = source; video.load(); } });
+    return () => { destroyed = true; hlsInstance?.destroy(); video.removeAttribute('src'); video.load(); };
+  }, [source, isHls]);
+
+  function goBack() { if (typeof window !== 'undefined' && window.history.length > 1) window.history.back(); else window.location.href = '/admin/produtos'; }
   function seek(value: number) { const video = videoRef.current; if (video && Number.isFinite(value)) video.currentTime = Math.max(0, Math.min(value, duration || value)); }
   function setStartValue(value: number) { const next = Math.max(0, Math.min(value, Math.max(0, safeEnd - 1))); setStart(next); seek(next); }
   function setEndValue(value: number) { const next = Math.max(start + 1, Math.min(value, duration || value)); setEnd(next); seek(Math.max(start, next - 1)); }
   function resetCut() { setStart(0); setEnd(duration || 0); seek(0); }
   function secondsFromClientX(clientX: number) { const rect = timelineRef.current?.getBoundingClientRect(); if (!rect || !duration) return 0; return Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)) * duration; }
-  function beginDrag(kind: 'start' | 'end', event: ReactPointerEvent<HTMLButtonElement>) {
-    event.preventDefault(); event.stopPropagation();
-    const update = (clientX: number) => kind === 'start' ? setStartValue(secondsFromClientX(clientX)) : setEndValue(secondsFromClientX(clientX));
-    update(event.clientX);
-    const move = (moveEvent: PointerEvent) => update(moveEvent.clientX);
-    const done = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', done); window.removeEventListener('pointercancel', done); };
-    window.addEventListener('pointermove', move); window.addEventListener('pointerup', done, { once: true }); window.addEventListener('pointercancel', done, { once: true });
-  }
+  function beginDrag(kind: 'start' | 'end', event: ReactPointerEvent<HTMLButtonElement>) { event.preventDefault(); event.stopPropagation(); const update = (clientX: number) => kind === 'start' ? setStartValue(secondsFromClientX(clientX)) : setEndValue(secondsFromClientX(clientX)); update(event.clientX); const move = (moveEvent: PointerEvent) => update(moveEvent.clientX); const done = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', done); window.removeEventListener('pointercancel', done); }; window.addEventListener('pointermove', move); window.addEventListener('pointerup', done, { once: true }); window.addEventListener('pointercancel', done, { once: true }); }
   function pickNearestHandle(event: ReactPointerEvent<HTMLDivElement>) { if (!duration) return; const seconds = secondsFromClientX(event.clientX); Math.abs(seconds - start) <= Math.abs(seconds - safeEnd) ? setStartValue(seconds) : setEndValue(seconds); }
 
   async function captureFrames(video: HTMLVideoElement) {
     if (!video.duration || !Number.isFinite(video.duration) || frames.length) return;
-    const cacheKey = `trim-frames:${exercise?.id}:${Math.floor(video.duration)}`;
+    const cacheKey = `trim-frames:${exercise?.id}:${Math.floor(video.duration)}:${source}`;
     try { const cached = localStorage.getItem(cacheKey); if (cached) { setFrames(JSON.parse(cached)); return; } } catch {}
     setCapturing(true);
     const run = async () => {
-      const canvas = document.createElement('canvas'); canvas.width = 96; canvas.height = 54;
-      const ctx = canvas.getContext('2d'); if (!ctx) { setCapturing(false); return; }
-      const original = video.currentTime; const total = 10; const nextFrames: string[] = [];
-      const waitSeek = () => new Promise<void>((resolve) => { const done = () => { video.removeEventListener('seeked', done); resolve(); }; video.addEventListener('seeked', done, { once: true }); window.setTimeout(done, 220); });
-      for (let i = 0; i < total; i += 1) {
-        video.currentTime = Math.min(video.duration - 0.2, (video.duration * i) / Math.max(1, total - 1));
-        await waitSeek();
-        const vw = video.videoWidth || 96, vh = video.videoHeight || 54, scale = Math.max(canvas.width / vw, canvas.height / vh), sw = canvas.width / scale, sh = canvas.height / scale;
-        ctx.drawImage(video, (vw - sw) / 2, (vh - sh) / 2, sw, sh, 0, 0, canvas.width, canvas.height);
-        nextFrames.push(canvas.toDataURL('image/jpeg', .45));
-        if (i === 3) setFrames([...nextFrames]);
-      }
-      video.currentTime = Math.min(original || start || 0, video.duration - .2);
-      setFrames(nextFrames); setCapturing(false);
-      try { localStorage.setItem(cacheKey, JSON.stringify(nextFrames)); } catch {}
+      try {
+        const canvas = document.createElement('canvas'); canvas.width = 96; canvas.height = 54;
+        const ctx = canvas.getContext('2d'); if (!ctx) { setCapturing(false); return; }
+        const original = video.currentTime; const total = 10; const nextFrames: string[] = [];
+        const waitSeek = () => new Promise<void>((resolve) => { const done = () => { video.removeEventListener('seeked', done); resolve(); }; video.addEventListener('seeked', done, { once: true }); window.setTimeout(done, 280); });
+        for (let i = 0; i < total; i += 1) {
+          video.currentTime = Math.min(video.duration - 0.2, (video.duration * i) / Math.max(1, total - 1));
+          await waitSeek();
+          const vw = video.videoWidth || 96, vh = video.videoHeight || 54, scale = Math.max(canvas.width / vw, canvas.height / vh), sw = canvas.width / scale, sh = canvas.height / scale;
+          ctx.drawImage(video, (vw - sw) / 2, (vh - sh) / 2, sw, sh, 0, 0, canvas.width, canvas.height);
+          nextFrames.push(canvas.toDataURL('image/jpeg', .45));
+          if (i === 3) setFrames([...nextFrames]);
+        }
+        video.currentTime = Math.min(original || start || 0, video.duration - .2);
+        setFrames(nextFrames);
+        try { localStorage.setItem(cacheKey, JSON.stringify(nextFrames)); } catch {}
+      } catch { setFrames([]); }
+      setCapturing(false);
     };
     window.setTimeout(run, 120);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setSaving(true); setStatus(null);
-    const form = event.currentTarget;
-    const body = new FormData(form);
-    body.set('trim_start_seconds', String(Math.round(start)));
-    body.set('trim_end_seconds', String(Math.round(safeEnd || 0)));
-    try {
-      const response = await fetch(form.action, { method: 'POST', body, headers: { Accept: 'application/json', 'x-requested-with': 'fetch' } });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok || !data?.ok) throw new Error(data?.error || 'Não foi possível salvar.');
-      setStatus({ ok: true, text: 'Corte salvo sem recarregar a página.' });
-    } catch (error) {
-      setStatus({ ok: false, text: error instanceof Error ? error.message : 'Falha ao salvar.' });
-    } finally { setSaving(false); }
+    event.preventDefault(); setSaving(true); setStatus(null);
+    const form = event.currentTarget; const body = new FormData(form);
+    body.set('trim_start_seconds', String(Math.round(start))); body.set('trim_end_seconds', String(Math.round(safeEnd || 0)));
+    try { const response = await fetch(form.action, { method: 'POST', body, headers: { Accept: 'application/json', 'x-requested-with': 'fetch' } }); const data = await response.json().catch(() => ({})); if (!response.ok || !data?.ok) throw new Error(data?.error || 'Não foi possível salvar.'); setStatus({ ok: true, text: 'Corte salvo sem recarregar a página.' }); }
+    catch (error) { setStatus({ ok: false, text: error instanceof Error ? error.message : 'Falha ao salvar.' }); }
+    finally { setSaving(false); }
   }
 
   return (
@@ -117,8 +133,8 @@ export function AdminVideoTrimEditor({ exercise, modules }: Props) {
       <form className="video-editor-shell" action={`/admin/conteudos/exercicios/${exercise?.id}/editar/salvar`} method="post" onSubmit={handleSubmit}>
         <div className="video-editor-top"><div className="video-editor-title"><button type="button" className="video-back" onClick={goBack}><ArrowLeft size={18} /> Voltar para onde estava</button><h1>Editar vídeo da aula <span className="premium-pill"><Crown size={15} /> Premium</span></h1><p>Ajuste o início e o fim do vídeo para remover introduções, finais e partes desnecessárias.</p>{status ? <span className={status.ok ? 'save-status' : 'save-status bad'}>{status.ok ? <CheckCircle2 size={16} /> : null}{status.text}</span> : null}</div><button className="save-video-button" type="submit" disabled={saving}>{saving ? <Loader2 size={18} className="spin" /> : <Save size={18} />}{saving ? 'Salvando...' : 'Salvar alterações'}</button></div>
         <input type="hidden" name="trim_start_seconds" value={Math.round(start)} /><input type="hidden" name="trim_end_seconds" value={Math.round(safeEnd || 0)} />
-        <div className="video-editor-grid"><aside className="video-side-stack"><section className="video-editor-card"><h2>Informações do vídeo</h2><label>Título<input name="title" defaultValue={exercise?.title || ''} required /></label><label>Módulo<select name="module_id" defaultValue={exercise?.module_id || ''} required>{modules.map((module) => <option value={module.id} key={module.id}>{module.title}</option>)}</select></label><div className="field-grid-2"><label>Nível<select name="difficulty" defaultValue={String(exercise?.difficulty || 1)}>{[1,2,3,4,5].map((level) => <option value={level} key={level}>{level}</option>)}</select></label><label>Tipo<select name="media_type" defaultValue={exercise?.media_type || 'video'}><option value="video">Vídeo</option><option value="audio">Áudio</option><option value="dueto">Dueto</option></select></label></div><label>Link Drive<input name="drive_url" defaultValue={exercise?.drive_url || ''} /></label><label>Descrição<textarea name="description" defaultValue={exercise?.description || ''} /></label><label>Objetivo<textarea name="objective" defaultValue={exercise?.objective || ''} /></label></section><section className="video-editor-card trim-card"><h2>Corte do vídeo <span className="premium-pill"><Crown size={13} /> Premium</span></h2><div className="trim-times"><label>Início<input value={secondsToInput(start)} onChange={(event) => setStartValue(inputToSeconds(event.target.value))} /></label><label>Fim<input value={secondsToInput(safeEnd || 0)} onChange={(event) => setEndValue(inputToSeconds(event.target.value))} /></label></div><div className="duration-box"><span>Duração final</span><strong>{fmt(finalDuration)}</strong></div><div className="tip-box"><strong><Lightbulb size={15} /> Dica</strong>O salvamento agora acontece sem recarregar. Use Voltar para retornar à tela anterior.</div></section></aside>
-          <section className="video-preview-card"><h2>Preview do vídeo</h2><div className="video-frame">{source ? <video ref={videoRef} src={source} controls preload="metadata" onLoadedMetadata={(event) => { const d = event.currentTarget.duration || 0; setDuration(d); if (!end && d) setEnd(d); if (start > 0) event.currentTarget.currentTime = start; captureFrames(event.currentTarget); }} onTimeUpdate={(event) => { setCurrent(event.currentTarget.currentTime || 0); if (safeEnd && event.currentTarget.currentTime >= safeEnd) event.currentTarget.pause(); }} /> : <div className="video-empty"><FileVideo size={28} /> Vídeo indisponível</div>}</div>
+        <div className="video-editor-grid"><aside className="video-side-stack"><section className="video-editor-card"><h2>Informações do vídeo</h2><label>Título<input name="title" defaultValue={exercise?.title || ''} required /></label><label>Módulo<select name="module_id" defaultValue={exercise?.module_id || ''} required>{modules.map((module) => <option value={module.id} key={module.id}>{module.title}</option>)}</select></label><div className="field-grid-2"><label>Nível<select name="difficulty" defaultValue={String(exercise?.difficulty || 1)}>{[1,2,3,4,5].map((level) => <option value={level} key={level}>{level}</option>)}</select></label><label>Tipo<select name="media_type" defaultValue={exercise?.media_type || 'video'}><option value="video">Vídeo</option><option value="hls">Stream</option><option value="audio">Áudio</option><option value="dueto">Dueto</option></select></label></div><label>Link Drive<input name="drive_url" defaultValue={exercise?.drive_url || ''} /></label><label>Descrição<textarea name="description" defaultValue={exercise?.description || ''} /></label><label>Objetivo<textarea name="objective" defaultValue={exercise?.objective || ''} /></label></section><section className="video-editor-card trim-card"><h2>Corte do vídeo <span className="premium-pill"><Crown size={13} /> Premium</span></h2><div className="trim-times"><label>Início<input value={secondsToInput(start)} onChange={(event) => setStartValue(inputToSeconds(event.target.value))} /></label><label>Fim<input value={secondsToInput(safeEnd || 0)} onChange={(event) => setEndValue(inputToSeconds(event.target.value))} /></label></div><div className="duration-box"><span>Duração final</span><strong>{fmt(finalDuration)}</strong></div><div className="tip-box"><strong><Lightbulb size={15} /> Dica</strong>O corte também funciona para vídeos do Stream. Aguarde a duração aparecer antes de salvar.</div></section></aside>
+          <section className="video-preview-card"><h2>Preview do vídeo</h2><div className="video-frame">{source ? <video ref={videoRef} controls preload="metadata" playsInline onLoadedMetadata={(event) => { const d = event.currentTarget.duration || 0; setDuration(d); if (!end && d) setEnd(d); if (start > 0) event.currentTarget.currentTime = start; captureFrames(event.currentTarget); }} onDurationChange={(event) => { const d = event.currentTarget.duration || 0; if (d && Number.isFinite(d)) { setDuration(d); if (!end) setEnd(d); } }} onTimeUpdate={(event) => { setCurrent(event.currentTarget.currentTime || 0); if (safeEnd && event.currentTarget.currentTime >= safeEnd) event.currentTarget.pause(); }} /> : <div className="video-empty"><FileVideo size={28} /> Vídeo indisponível</div>}</div>
             <div className="pro-timeline"><div className="timeline-ruler"><span>00:00</span><strong>{fmt(start)} — {fmt(safeEnd || 0)}</strong><span>{fmt(duration)}</span></div><div ref={timelineRef} className="filmstrip" onPointerDown={pickNearestHandle}><div className="filmstrip-inner">{Array.from({ length: 10 }).map((_, index) => <span className="frame-cell" key={index}>{frames[index] ? <img src={frames[index]} alt="frame" /> : <span className="frame-fallback" />}</span>)}</div>{capturing ? <div className="loading-frames">gerando prévia rápida...</div> : null}<span className="trim-mask" style={{ left: 0, width: `${startPct}%` }} /><span className="trim-mask" style={{ left: `${endPct}%`, right: 0 }} /><span className="trim-window" style={{ left: `${startPct}%`, width: `${Math.max(0, endPct - startPct)}%` }} /><span className="time-pop" style={{ left: `${startPct}%` }}>{fmt(start)}</span><span className="time-pop" style={{ left: `${endPct}%` }}>{fmt(safeEnd || 0)}</span><span className="playhead" style={{ left: `${currentPct}%` }} /><button type="button" className="trim-handle" style={{ left: `${startPct}%` }} onPointerDown={(event) => beginDrag('start', event)} aria-label="Arrastar início do corte" /><button type="button" className="trim-handle" style={{ left: `${endPct}%` }} onPointerDown={(event) => beginDrag('end', event)} aria-label="Arrastar fim do corte" /></div><div className="timeline-actions"><button className="reset-cut" type="button" onClick={resetCut}><RotateCcw size={16} /> Redefinir corte</button></div></div>
             <div className="video-editor-stats"><div className="stat-box"><Clock3 size={30} /><div><span>Duração original</span><strong>{fmt(duration)}</strong></div></div><div className="stat-box"><Scissors size={30} /><div><span>Parte selecionada</span><strong>{fmt(finalDuration)}</strong></div></div><div className="stat-box"><Sparkles size={30} /><div><span>Será exibido ao aluno</span><strong>Apenas o corte</strong></div></div></div></section></div>
       </form></main>
