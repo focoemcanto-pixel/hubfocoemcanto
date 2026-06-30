@@ -200,7 +200,9 @@ export class DuetRendererEngine {
     ]);
     const referenceOffsetMs = clampReferenceOffsetMs(this.options.referenceOffsetMs);
     const referenceOffsetSeconds = referenceOffsetMs / 1000;
-    const duration = Math.max(voiceBuffer.duration, referenceBuffer.duration + Math.max(0, referenceOffsetSeconds), 1);
+    const delayVoiceSeconds = Math.max(0, -referenceOffsetSeconds);
+    const delayReferenceSeconds = Math.max(0, referenceOffsetSeconds);
+    const duration = Math.max(voiceBuffer.duration + delayVoiceSeconds, referenceBuffer.duration + delayReferenceSeconds, 1);
     const frameCount = Math.ceil(duration * sampleRate);
     const context = new OfflineAudioContext({ numberOfChannels: 2, length: frameCount, sampleRate });
 
@@ -222,9 +224,8 @@ export class DuetRendererEngine {
     voiceSource.connect(compressor).connect(voiceGain).connect(limiter);
     referenceSource.connect(referenceGain).connect(limiter);
     limiter.connect(context.destination);
-    voiceSource.start(latencySeconds);
-    if (referenceOffsetSeconds > 0) referenceSource.start(referenceOffsetSeconds);
-    else referenceSource.start(0, Math.abs(referenceOffsetSeconds));
+    voiceSource.start(latencySeconds + delayVoiceSeconds);
+    referenceSource.start(delayReferenceSeconds);
 
     const audioBuffer = await context.startRendering();
     return { audioBuffer, wavBlob: audioBufferToWav(audioBuffer), durationSeconds: audioBuffer.duration, sampleRate };
