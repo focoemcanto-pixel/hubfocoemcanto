@@ -1,3 +1,5 @@
+import { attachMediaSource } from '@/lib/media/hls-client';
+
 export type DuetRecorderEngineRefs = {
   camera: HTMLVideoElement;
   referenceVideo: HTMLVideoElement;
@@ -19,18 +21,8 @@ export type DuetRecorderEngineResult = {
   startedAt: number;
   stoppedAt: number;
   durationMs: number;
-  mimeTypes: {
-    camera?: string;
-    canvas?: string;
-    voice?: string;
-  };
-  diagnostics: {
-    cameraChunks: number;
-    canvasChunks: number;
-    voiceChunks: number;
-    hasMicrophoneTrack: boolean;
-    hasCanvasVideoTrack: boolean;
-  };
+  mimeTypes: { camera?: string; canvas?: string; voice?: string };
+  diagnostics: { cameraChunks: number; canvasChunks: number; voiceChunks: number; hasMicrophoneTrack: boolean; hasCanvasVideoTrack: boolean };
 };
 
 type RecorderHandle = {
@@ -42,6 +34,7 @@ type RecorderHandle = {
 };
 
 type CapturableCanvas = HTMLCanvasElement & { captureStream: (frameRate?: number) => MediaStream };
+type MediaAttachment = { destroy: () => void };
 
 function isSafariLike() {
   if (typeof navigator === 'undefined') return false;
@@ -51,25 +44,13 @@ function isSafariLike() {
 
 function videoMimeType() {
   if (typeof MediaRecorder === 'undefined') return '';
-  const candidates = [
-    'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
-    'video/mp4;codecs=h264,aac',
-    'video/mp4',
-    'video/webm;codecs=vp8,opus',
-    'video/webm;codecs=vp9,opus',
-    'video/webm',
-  ];
+  const candidates = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4;codecs=h264,aac', 'video/mp4', 'video/webm;codecs=vp8,opus', 'video/webm;codecs=vp9,opus', 'video/webm'];
   return candidates.find((type) => MediaRecorder.isTypeSupported(type)) || '';
 }
 
 function audioMimeType() {
   if (typeof MediaRecorder === 'undefined') return '';
-  const candidates = [
-    'audio/mp4;codecs=mp4a.40.2',
-    'audio/mp4',
-    'audio/webm;codecs=opus',
-    'audio/webm',
-  ];
+  const candidates = ['audio/mp4;codecs=mp4a.40.2', 'audio/mp4', 'audio/webm;codecs=opus', 'audio/webm'];
   return candidates.find((type) => MediaRecorder.isTypeSupported(type)) || '';
 }
 
@@ -77,14 +58,9 @@ function createRecorder(stream: MediaStream, kind: 'video' | 'audio'): RecorderH
   if (typeof MediaRecorder === 'undefined') throw new Error('media_recorder_missing');
   if (!stream.getTracks().length) return null;
   const mimeType = kind === 'audio' ? audioMimeType() : videoMimeType();
-  const recorder = new MediaRecorder(stream, {
-    ...(mimeType ? { mimeType } : {}),
-    ...(kind === 'video' ? { videoBitsPerSecond: isSafariLike() ? 2500000 : 5200000, audioBitsPerSecond: 160000 } : { audioBitsPerSecond: 192000 }),
-  });
+  const recorder = new MediaRecorder(stream, { ...(mimeType ? { mimeType } : {}), ...(kind === 'video' ? { videoBitsPerSecond: isSafariLike() ? 2500000 : 5200000, audioBitsPerSecond: 160000 } : { audioBitsPerSecond: 192000 }) });
   const chunks: Blob[] = [];
-  recorder.ondataavailable = (event) => {
-    if (event.data?.size) chunks.push(event.data);
-  };
+  recorder.ondataavailable = (event) => { if (event.data?.size) chunks.push(event.data); };
   return {
     recorder,
     chunks,
@@ -94,9 +70,7 @@ function createRecorder(stream: MediaStream, kind: 'video' | 'audio'): RecorderH
       if (recorder.state === 'inactive') return resolve(chunks.length ? new Blob(chunks, { type: recorder.mimeType || mimeType || undefined }) : null);
       recorder.onstop = () => resolve(chunks.length ? new Blob(chunks, { type: recorder.mimeType || mimeType || undefined }) : null);
       try { recorder.requestData(); } catch {}
-      window.setTimeout(() => {
-        try { if (recorder.state !== 'inactive') recorder.stop(); } catch { resolve(null); }
-      }, 80);
+      window.setTimeout(() => { try { if (recorder.state !== 'inactive') recorder.stop(); } catch { resolve(null); } }, 80);
     }),
   };
 }
@@ -125,11 +99,7 @@ function waitForMediaReady(media: HTMLMediaElement, timeoutMs = 15000) {
   });
 }
 
-function stopTracks(stream?: MediaStream | null) {
-  stream?.getTracks().forEach((track) => {
-    try { track.stop(); } catch {}
-  });
-}
+function stopTracks(stream?: MediaStream | null) { stream?.getTracks().forEach((track) => { try { track.stop(); } catch {} }); }
 
 function drawCover(ctx: CanvasRenderingContext2D, media: HTMLVideoElement, x: number, y: number, width: number, height: number) {
   const vw = media.videoWidth || width;
@@ -141,11 +111,7 @@ function drawCover(ctx: CanvasRenderingContext2D, media: HTMLVideoElement, x: nu
 }
 
 function drawSelfie(ctx: CanvasRenderingContext2D, camera: HTMLVideoElement, x: number, y: number, width: number, height: number) {
-  ctx.save();
-  ctx.translate(x + width, y);
-  ctx.scale(-1, 1);
-  drawCover(ctx, camera, 0, 0, width, height);
-  ctx.restore();
+  ctx.save(); ctx.translate(x + width, y); ctx.scale(-1, 1); drawCover(ctx, camera, 0, 0, width, height); ctx.restore();
 }
 
 function startCanvasDraw(args: { canvas: HTMLCanvasElement; camera: HTMLVideoElement; reference: HTMLVideoElement; frameRate: number }) {
@@ -169,13 +135,7 @@ function startCanvasDraw(args: { canvas: HTMLCanvasElement; camera: HTMLVideoEle
   }
   let last = 0;
   const interval = 1000 / args.frameRate;
-  const loop = (now = 0) => {
-    if (now - last >= interval) {
-      draw();
-      last = now;
-    }
-    frame = requestAnimationFrame(loop);
-  };
+  const loop = (now = 0) => { if (now - last >= interval) { draw(); last = now; } frame = requestAnimationFrame(loop); };
   loop();
   return () => cancelAnimationFrame(frame);
 }
@@ -189,41 +149,28 @@ export class DuetRecorderEngine {
   private cameraRecorder: RecorderHandle | null = null;
   private canvasRecorder: RecorderHandle | null = null;
   private voiceRecorder: RecorderHandle | null = null;
+  private referenceAttachment: MediaAttachment | null = null;
   private stopDrawing: (() => void) | null = null;
   private startedAt = 0;
 
   constructor(refs: DuetRecorderEngineRefs, options: DuetRecorderEngineOptions) {
     if (!options.referenceUrl) throw new Error('missing_reference_url');
     this.refs = refs;
-    this.options = {
-      ...options,
-      width: options.width || 1280,
-      height: options.height || 720,
-      frameRate: options.frameRate || (isSafariLike() ? 24 : 30),
-    };
+    this.options = { ...options, width: options.width || 1280, height: options.height || 720, frameRate: options.frameRate || (isSafariLike() ? 24 : 30) };
   }
 
   async prepare() {
     const { camera, referenceVideo, canvas } = this.refs;
     canvas.width = this.options.width;
     canvas.height = this.options.height;
-
+    try { this.referenceAttachment?.destroy(); } catch {}
     referenceVideo.removeAttribute('crossorigin');
-    referenceVideo.src = this.options.referenceUrl;
-    referenceVideo.preload = 'auto';
-    referenceVideo.playsInline = true;
     referenceVideo.muted = true;
     referenceVideo.volume = 0;
-    referenceVideo.load();
+    this.referenceAttachment = await attachMediaSource(referenceVideo, this.options.referenceUrl);
     await waitForMediaReady(referenceVideo);
 
-    const audio: MediaTrackConstraints = {
-      echoCancellation: false,
-      noiseSuppression: false,
-      autoGainControl: false,
-      channelCount: 1,
-      sampleRate: 48000,
-    };
+    const audio: MediaTrackConstraints = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1, sampleRate: 48000 };
     if (this.options.audioDeviceId) audio.deviceId = { exact: this.options.audioDeviceId };
     this.cameraStream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: 'user', width: { ideal: this.options.width }, height: { ideal: this.options.height }, frameRate: { ideal: this.options.frameRate, max: this.options.frameRate } },
@@ -234,7 +181,6 @@ export class DuetRecorderEngine {
     camera.playsInline = true;
     await waitForMediaReady(camera, 12000).catch(() => undefined);
     await camera.play().catch(() => undefined);
-
     this.microphoneStream = new MediaStream(this.cameraStream.getAudioTracks());
     referenceVideo.currentTime = 0;
   }
@@ -243,15 +189,12 @@ export class DuetRecorderEngine {
     const { camera, referenceVideo, canvas } = this.refs;
     if (!this.cameraStream || !this.microphoneStream) await this.prepare();
     if (!this.cameraStream || !this.microphoneStream) throw new Error('recorder_not_prepared');
-
     await referenceVideo.play();
     this.stopDrawing = startCanvasDraw({ canvas, camera, reference: referenceVideo, frameRate: this.options.frameRate });
     this.canvasStream = (canvas as CapturableCanvas).captureStream(this.options.frameRate);
-
     this.cameraRecorder = createRecorder(new MediaStream(this.cameraStream.getVideoTracks()), 'video');
     this.canvasRecorder = createRecorder(new MediaStream(this.canvasStream.getVideoTracks()), 'video');
     this.voiceRecorder = createRecorder(this.microphoneStream, 'audio');
-
     this.startedAt = Date.now();
     this.cameraRecorder?.start();
     this.canvasRecorder?.start();
@@ -263,13 +206,7 @@ export class DuetRecorderEngine {
     const { referenceVideo } = this.refs;
     try { referenceVideo.pause(); } catch {}
     try { this.stopDrawing?.(); } catch {}
-
-    const [cameraBlob, canvasBlob, voiceBlob] = await Promise.all([
-      this.cameraRecorder?.stop() ?? Promise.resolve(null),
-      this.canvasRecorder?.stop() ?? Promise.resolve(null),
-      this.voiceRecorder?.stop() ?? Promise.resolve(null),
-    ]);
-
+    const [cameraBlob, canvasBlob, voiceBlob] = await Promise.all([this.cameraRecorder?.stop() ?? Promise.resolve(null), this.canvasRecorder?.stop() ?? Promise.resolve(null), this.voiceRecorder?.stop() ?? Promise.resolve(null)]);
     const result: DuetRecorderEngineResult = {
       cameraBlob,
       canvasBlob,
@@ -277,34 +214,20 @@ export class DuetRecorderEngine {
       startedAt: this.startedAt,
       stoppedAt,
       durationMs: Math.max(0, stoppedAt - this.startedAt),
-      mimeTypes: {
-        camera: this.cameraRecorder?.mimeType,
-        canvas: this.canvasRecorder?.mimeType,
-        voice: this.voiceRecorder?.mimeType,
-      },
-      diagnostics: {
-        cameraChunks: this.cameraRecorder?.chunks.length || 0,
-        canvasChunks: this.canvasRecorder?.chunks.length || 0,
-        voiceChunks: this.voiceRecorder?.chunks.length || 0,
-        hasMicrophoneTrack: Boolean(this.microphoneStream?.getAudioTracks().length),
-        hasCanvasVideoTrack: Boolean(this.canvasStream?.getVideoTracks().length),
-      },
+      mimeTypes: { camera: this.cameraRecorder?.mimeType, canvas: this.canvasRecorder?.mimeType, voice: this.voiceRecorder?.mimeType },
+      diagnostics: { cameraChunks: this.cameraRecorder?.chunks.length || 0, canvasChunks: this.canvasRecorder?.chunks.length || 0, voiceChunks: this.voiceRecorder?.chunks.length || 0, hasMicrophoneTrack: Boolean(this.microphoneStream?.getAudioTracks().length), hasCanvasVideoTrack: Boolean(this.canvasStream?.getVideoTracks().length) },
     };
-
     this.cleanup();
     return result;
   }
 
-  getMicrophoneStream() {
-    return this.microphoneStream;
-  }
-
-  getCanvasStream() {
-    return this.canvasStream;
-  }
+  getMicrophoneStream() { return this.microphoneStream; }
+  getCanvasStream() { return this.canvasStream; }
 
   cleanup() {
     try { this.refs.referenceVideo.pause(); } catch {}
+    try { this.referenceAttachment?.destroy(); } catch {}
+    try { this.refs.referenceVideo.removeAttribute('src'); this.refs.referenceVideo.load(); } catch {}
     try { this.stopDrawing?.(); } catch {}
     stopTracks(this.cameraStream);
     stopTracks(this.canvasStream);
@@ -314,6 +237,7 @@ export class DuetRecorderEngine {
     this.cameraRecorder = null;
     this.canvasRecorder = null;
     this.voiceRecorder = null;
+    this.referenceAttachment = null;
     this.stopDrawing = null;
   }
 }
