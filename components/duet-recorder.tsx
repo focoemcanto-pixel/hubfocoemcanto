@@ -346,7 +346,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl, canSendFor
       <video ref={recorder.referenceRef} className="duet-hidden-media" src={referenceSource} crossOrigin="anonymous" playsInline muted preload="auto" />
       <video ref={recorder.cameraRef} className="duet-hidden-media" autoPlay muted playsInline />
       {recorder.previewUrl ? <>
-        <video ref={recorder.previewRef} className="duet-final-video" src={recorder.visualUrl || recorder.previewUrl} playsInline muted={Boolean(recorder.visualUrl)} controls={!recorder.visualUrl} onLoadedMetadata={() => recorder.engineRef.current?.setVideo(recorder.previewRef.current)} onEnded={() => { recorder.engineRef.current?.pause(false, true); recorder.setIsPlaying(false); }} />
+        <video ref={recorder.previewRef} className="duet-final-video" src={recorder.visualUrl || recorder.previewUrl} playsInline muted controls={!recorder.visualUrl} onLoadedMetadata={() => recorder.engineRef.current?.setVideo(recorder.previewRef.current)} onEnded={() => { recorder.engineRef.current?.pause(false, true); recorder.setIsPlaying(false); }} />
         {recorder.visualUrl ? <button type="button" className="duet-stable-play" onClick={togglePlayback}>{recorder.isPlaying ? <Pause size={38} fill="currentColor" /> : <Play size={42} fill="currentColor" />}</button> : null}
       </> : <canvas ref={recorder.canvasRef} className="duet-canvas" width={1280} height={720} />}
       {recorder.step === 'intro' ? <div className="duet-stable-empty"><Video size={44} /><strong>O vídeo do dueto aparece aqui</strong><small>Toque em gravar para iniciar a câmera e a referência.</small></div> : null}
