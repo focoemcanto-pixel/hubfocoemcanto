@@ -36,7 +36,7 @@ function drawCover(ctx: CanvasRenderingContext2D, media: HTMLVideoElement, x: nu
   ctx.drawImage(media, (vw - sw) / 2, (vh - sh) / 2, sw, sh, x, y, width, height);
 }
 
-function drawSelfie(ctx: CanvasRenderingContext2D, camera: HTMLVideoElement, x: number, y: number, width: number, height) {
+function drawSelfie(ctx: CanvasRenderingContext2D, camera: HTMLVideoElement, x: number, y: number, width: number, height: number) {
   ctx.save(); ctx.translate(x + width, y); ctx.scale(-1, 1); drawCover(ctx, camera, 0, 0, width, height); ctx.restore();
 }
 
