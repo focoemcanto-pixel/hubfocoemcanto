@@ -454,20 +454,26 @@ export function classifyVoice(params: { tessituraLowMidi?: number | null; tessit
   const high = params.tessituraHighMidi;
   if (low == null || high == null || low > high) return { classification: 'Indefinida', confidence: 0.55 };
   const span = high - low;
+  const center = (low + high) / 2;
   const coherent = params.lowestMidi == null || params.highestMidi == null || (low >= params.lowestMidi && high <= params.highestMidi);
-  const confidence = Math.min(0.85, Math.max(0.55, 0.62 + Math.min(span, 18) / 100 + (coherent ? 0.05 : -0.04)));
+  const baseConfidence = Math.min(0.92, Math.max(0.58, 0.64 + Math.min(span, 24) / 120 + (coherent ? 0.06 : -0.05)));
 
   if (params.gender === 'masculino') {
-    if (high >= 67 && low >= 48) return { classification: 'Tenor', confidence };
-    if (low <= 45 && high <= 64) return { classification: (low + high) / 2 < 54 ? 'Baixo' : 'Barítono', confidence };
-    return { classification: 'Barítono', confidence };
+    if (high >= 74) return { classification: 'Tenor', confidence: baseConfidence };
+    if (high >= 67 && center >= 54) return { classification: 'Tenor', confidence: Math.max(baseConfidence, 0.82) };
+    if (high >= 65 && center >= 58) return { classification: 'Tenor', confidence: Math.max(baseConfidence - 0.03, 0.76) };
+    if (high <= 60 && low <= 43) return { classification: 'Baixo', confidence: baseConfidence };
+    return { classification: 'Barítono', confidence: baseConfidence };
   }
+
   if (params.gender === 'feminino') {
-    if (high >= 72) return { classification: 'Soprano', confidence };
-    if (low <= 53 && high <= 69) return { classification: 'Contralto', confidence };
-    return { classification: 'Mezzo', confidence };
+    if (high >= 76) return { classification: 'Soprano', confidence: baseConfidence };
+    if (high >= 70 && center >= 60) return { classification: 'Soprano', confidence: Math.max(baseConfidence - 0.02, 0.78) };
+    if (high <= 67 && low <= 53) return { classification: 'Contralto', confidence: baseConfidence };
+    return { classification: 'Mezzo', confidence: baseConfidence };
   }
-  if (high >= 72) return { classification: 'Voz aguda', confidence: Math.min(confidence, 0.72) };
-  if (high <= 64 || low <= 45) return { classification: 'Voz grave', confidence: Math.min(confidence, 0.72) };
-  return { classification: 'Voz média', confidence: Math.min(confidence, 0.72) };
+
+  if (high >= 74) return { classification: 'Voz aguda', confidence: Math.min(baseConfidence, 0.82) };
+  if (high <= 62 || center < 53) return { classification: 'Voz grave', confidence: Math.min(baseConfidence, 0.78) };
+  return { classification: 'Voz média', confidence: Math.min(baseConfidence, 0.78) };
 }
