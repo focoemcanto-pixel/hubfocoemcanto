@@ -13,11 +13,9 @@ type LiveMixerGraph = { context: AudioContext; voiceGain: GainNode; referenceGai
 function blobUrl(blob?: Blob | null) { return blob ? URL.createObjectURL(blob) : ''; }
 function errorText(error: unknown) { return error instanceof Error ? `${error.name}: ${error.message}` : String(error || 'erro_desconhecido'); }
 function formatSize(blob?: Blob | null) { return blob?.size ? `${Math.round(blob.size / 1024)} KB` : 'vazio'; }
-function makeAudioContext() {
-  const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-  if (!AudioCtx) throw new Error('audio_context_missing');
-  return new AudioCtx({ latencyHint: 'interactive', sampleRate: 48000 });
-}
+function makeAudioContext() { const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext; if (!AudioCtx) throw new Error('audio_context_missing'); return new AudioCtx({ latencyHint: 'interactive', sampleRate: 48000 }); }
+function sliderToGain(value: number) { return Math.max(0, Math.min(2, value / 100)); }
+function sliderToElementVolume(value: number) { return Math.max(0, Math.min(1, value / 100)); }
 
 export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl, canSendForReview = true }: Props) {
   const referenceSource = useMemo(() => proxiedVideoUrl(referenceUrl), [referenceUrl]);
@@ -43,18 +41,24 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl, canSendFor
   const [livePlaying, setLivePlaying] = useState(false);
   const previewUrl = useMemo(() => blobUrl(result?.canvasBlob), [result?.canvasBlob]);
 
-  useEffect(() => {
-    return () => {
-      try { liveMixerRef.current?.context.close(); } catch {}
-      if (liveVoiceUrlRef.current) URL.revokeObjectURL(liveVoiceUrlRef.current);
-    };
-  }, []);
+  useEffect(() => () => { try { liveMixerRef.current?.context.close(); } catch {} if (liveVoiceUrlRef.current) URL.revokeObjectURL(liveVoiceUrlRef.current); }, []);
+
+  function syncElementAudio(nextVoice = voiceVolume, nextReference = referenceVolume) {
+    const voice = liveVoiceRef.current;
+    const reference = liveReferenceRef.current;
+    const voiceVol = sliderToElementVolume(nextVoice);
+    const refVol = sliderToElementVolume(nextReference);
+    if (voice) { voice.volume = voiceVol; voice.muted = voiceVol <= 0.001; }
+    if (reference) { reference.volume = refVol; reference.muted = refVol <= 0.001; }
+  }
 
   function updateLiveGains(nextVoice = voiceVolume, nextReference = referenceVolume) {
     const graph = liveMixerRef.current;
-    if (!graph) return;
-    graph.voiceGain.gain.value = Math.max(0, Math.min(2, nextVoice / 100));
-    graph.referenceGain.gain.value = Math.max(0, Math.min(2, nextReference / 100));
+    if (graph) {
+      graph.voiceGain.gain.value = sliderToGain(nextVoice);
+      graph.referenceGain.gain.value = sliderToGain(nextReference);
+    }
+    syncElementAudio(nextVoice, nextReference);
   }
 
   function ensureLiveMixer() {
@@ -75,133 +79,67 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl, canSendFor
     return graph;
   }
 
-  function pauseLivePreview() {
-    liveVisualRef.current?.pause();
-    liveVoiceRef.current?.pause();
-    liveReferenceRef.current?.pause();
-    setLivePlaying(false);
-  }
+  function pauseLivePreview() { liveVisualRef.current?.pause(); liveVoiceRef.current?.pause(); liveReferenceRef.current?.pause(); setLivePlaying(false); }
 
   async function startLivePreview() {
     setError('');
     if (!result?.canvasBlob || !result?.voiceBlob || !referenceSource) return setError('Grave o dueto antes de ouvir o mix.');
     try {
-      const visual = liveVisualRef.current;
-      const voice = liveVoiceRef.current;
-      const reference = liveReferenceRef.current;
+      const visual = liveVisualRef.current, voice = liveVoiceRef.current, reference = liveReferenceRef.current;
       if (!visual || !voice || !reference) throw new Error('live_preview_refs_missing');
       const graph = ensureLiveMixer();
       if (liveVoiceUrlRef.current) URL.revokeObjectURL(liveVoiceUrlRef.current);
       liveVoiceUrlRef.current = URL.createObjectURL(result.voiceBlob);
       voice.src = liveVoiceUrlRef.current;
       reference.src = referenceSource;
-      visual.currentTime = 0;
-      voice.currentTime = 0;
-      reference.currentTime = 0;
-      visual.muted = true;
-      voice.muted = false;
-      reference.muted = false;
+      visual.currentTime = 0; voice.currentTime = 0; reference.currentTime = 0;
+      visual.muted = true; visual.volume = 0;
+      syncElementAudio();
       updateLiveGains();
       await graph.context.resume();
       await Promise.all([visual.play(), voice.play(), reference.play()]);
       setLivePlaying(true);
       setRenderStatus(`Preview ao vivo: voz ${voiceVolume}% · referência ${referenceVolume}%. Os sliders controlam o áudio em tempo real.`);
-    } catch (err) {
-      setError(`Não consegui iniciar o preview ao vivo: ${errorText(err)}`);
-      pauseLivePreview();
-    }
+    } catch (err) { setError(`Não consegui iniciar o preview ao vivo: ${errorText(err)}`); pauseLivePreview(); }
   }
 
   async function startRecording() {
-    setError(''); setResult(null); setPostedHref(''); setRenderStatus(''); setLivePlaying(false);
+    setError(''); setResult(null); setPostedHref(''); setRenderStatus(''); setLivePlaying(false); pauseLivePreview();
     if (!referenceSource) return setError('Essa atividade ainda não tem vídeo de referência vinculado.');
-    try {
-      const session = await startDuetV2Session({ referenceUrl: referenceSource }, { camera: cameraRef.current, reference: referenceRef.current, canvas: canvasRef.current });
-      sessionRef.current = session;
-      setStep('recording');
-    } catch (err: any) {
-      setStep('intro'); setError(err?.message || 'Não consegui iniciar a gravação. Permita câmera e microfone e tente novamente.');
-    }
+    try { const session = await startDuetV2Session({ referenceUrl: referenceSource }, { camera: cameraRef.current, reference: referenceRef.current, canvas: canvasRef.current }); sessionRef.current = session; setStep('recording'); }
+    catch (err: any) { setStep('intro'); setError(err?.message || 'Não consegui iniciar a gravação. Permita câmera e microfone e tente novamente.'); }
   }
 
   async function stopRecording() {
-    setError('');
-    const session = sessionRef.current;
-    if (!session) return;
-    try {
-      const recording = await session.stop();
-      sessionRef.current = null;
-      setResult(recording);
-      setRenderStatus('Preview visual pronto. Toque em Ouvir mix para escutar voz + referência original com controle real.');
-      setStep('review');
-    } catch (err: any) {
-      setError(err?.message || 'Não consegui finalizar a gravação.'); setStep('intro');
-    }
+    setError(''); const session = sessionRef.current; if (!session) return;
+    try { const recording = await session.stop(); sessionRef.current = null; setResult(recording); setRenderStatus('Preview visual pronto. Toque em Ouvir mix para escutar voz + referência original com controle real.'); setStep('review'); }
+    catch (err: any) { setError(err?.message || 'Não consegui finalizar a gravação.'); setStep('intro'); }
   }
 
-  function reset() {
-    pauseLivePreview();
-    setResult(null); setError(''); setPostedHref(''); setRenderStatus(''); setStep('intro');
-  }
-
-  function setVoice(value: number) {
-    setVoiceVolume(value);
-    updateLiveGains(value, referenceVolume);
-  }
-
-  function setReference(value: number) {
-    setReferenceVolume(value);
-    updateLiveGains(voiceVolume, value);
-  }
-
-  function autoMix() {
-    setVoiceVolume(115);
-    setReferenceVolume(85);
-    updateLiveGains(115, 85);
-    setRenderStatus('Auto Mix aplicado em tempo real: voz em destaque e referência equilibrada.');
-  }
+  function reset() { pauseLivePreview(); setResult(null); setError(''); setPostedHref(''); setRenderStatus(''); setStep('intro'); }
+  function setVoice(value: number) { setVoiceVolume(value); updateLiveGains(value, referenceVolume); setRenderStatus(`Preview ao vivo: voz ${value}% · referência ${referenceVolume}%.`); }
+  function setReference(value: number) { setReferenceVolume(value); updateLiveGains(voiceVolume, value); setRenderStatus(`Preview ao vivo: voz ${voiceVolume}% · referência ${value}%.`); }
+  function autoMix() { setVoiceVolume(115); setReferenceVolume(85); updateLiveGains(115, 85); setRenderStatus('Auto Mix aplicado em tempo real: voz em destaque e referência equilibrada.'); }
 
   async function buildUploadBlob() {
     if (!result?.canvasBlob || !result?.voiceBlob || !referenceSource) return result?.canvasBlob || null;
     setRenderStatus(`Renderizando final: voz ${voiceVolume}% · referência ${referenceVolume}%...`);
-    const rendered = await renderFinalDuetVideo({
-      visualBlob: result.canvasBlob,
-      voiceBlob: result.voiceBlob,
-      referenceBlob: null,
-      referenceSource,
-      settings: { voiceVolume, referenceVolume, preset: 'natural', latencyMs: 0, noiseReduction: false },
-    });
+    const rendered = await renderFinalDuetVideo({ visualBlob: result.canvasBlob, voiceBlob: result.voiceBlob, referenceBlob: null, referenceSource, settings: { voiceVolume, referenceVolume, preset: 'natural', latencyMs: 0, noiseReduction: false } });
     if (!rendered || rendered.size < 1000) throw new Error(`render_empty_or_too_small:${rendered?.size || 0}`);
-    setRenderStatus('Vídeo final renderizado com o mesmo mix do preview.');
-    return rendered;
+    setRenderStatus('Vídeo final renderizado com o mesmo mix do preview.'); return rendered;
   }
 
   async function submit() {
     if (!result?.canvasBlob) return setError('Grave o dueto antes de enviar.');
-    const visibility = postCommunity ? 'community' : 'private';
-    const reviewRequested = canSendForReview && sendForReview;
+    const visibility = postCommunity ? 'community' : 'private'; const reviewRequested = canSendForReview && sendForReview;
     if (!postCommunity && !reviewRequested) return setError(canSendForReview ? 'Escolha postar na comunidade, enviar para avaliação ou os dois.' : 'No modo gratuito, poste na comunidade para continuar.');
     setStep('posting'); setError(''); pauseLivePreview();
     try {
-      const uploadBlob = await buildUploadBlob();
-      if (!uploadBlob) throw new Error('Vídeo final indisponível.');
-      const data = new FormData();
-      const fileType = uploadBlob.type || 'video/webm';
-      data.set('lesson_slug', lessonSlug);
-      data.set('caption', caption || 'Minha prática do dueto.');
-      data.set('visibility', visibility);
-      data.set('review_requested', String(reviewRequested));
-      data.set('voice_volume', String(voiceVolume));
-      data.set('reference_volume', String(referenceVolume));
-      data.set('voice_preset', 'natural');
-      data.set('noise_reduction', 'false');
-      data.set('file', new File([uploadBlob], `${lessonSlug}-dueto-final.${fileType.includes('mp4') ? 'mp4' : 'webm'}`, { type: fileType }));
-      const response = await fetch('/api/submissions/duet', { method: 'POST', body: data });
-      if (!response.ok) { const json = await response.json().catch(() => null); throw new Error(json?.detail || json?.message || 'Não consegui enviar sua atividade.'); }
-      const json = await response.json().catch(() => null);
-      const communityPostId = String(json?.community_post_id || '');
-      setPostedHref(postCommunity ? `/aluno/comunidade${communityPostId ? `#post-${communityPostId}` : ''}` : '');
-      setStep('posted');
+      const uploadBlob = await buildUploadBlob(); if (!uploadBlob) throw new Error('Vídeo final indisponível.');
+      const data = new FormData(); const fileType = uploadBlob.type || 'video/webm';
+      data.set('lesson_slug', lessonSlug); data.set('caption', caption || 'Minha prática do dueto.'); data.set('visibility', visibility); data.set('review_requested', String(reviewRequested)); data.set('voice_volume', String(voiceVolume)); data.set('reference_volume', String(referenceVolume)); data.set('voice_preset', 'natural'); data.set('noise_reduction', 'false'); data.set('file', new File([uploadBlob], `${lessonSlug}-dueto-final.${fileType.includes('mp4') ? 'mp4' : 'webm'}`, { type: fileType }));
+      const response = await fetch('/api/submissions/duet', { method: 'POST', body: data }); if (!response.ok) { const json = await response.json().catch(() => null); throw new Error(json?.detail || json?.message || 'Não consegui enviar sua atividade.'); }
+      const json = await response.json().catch(() => null); const communityPostId = String(json?.community_post_id || ''); setPostedHref(postCommunity ? `/aluno/comunidade${communityPostId ? `#post-${communityPostId}` : ''}` : ''); setStep('posted');
     } catch (err: any) { setError(err?.message || 'Não consegui enviar sua atividade.'); setStep('review'); }
   }
 
