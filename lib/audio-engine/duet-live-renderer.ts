@@ -1,3 +1,4 @@
+import { attachMediaSource } from '@/lib/media/hls-client';
 import type { DuetFaderValues } from './duet-audio-engine';
 
 type LiveDuetRenderOptions = {
@@ -13,6 +14,10 @@ type LiveDuetRenderOptions = {
 const DEFAULT_SAMPLE_RATE = 48000;
 const DEFAULT_VOICE_PRE_GAIN = 3.2;
 const DEFAULT_REFERENCE_PRE_GAIN = 0.08;
+
+function debug(label: string, data?: Record<string, unknown>) {
+  try { console.info(`[duet-live-render] ${label}`, data || {}); } catch {}
+}
 
 function linearGain(percent: number, preGain: number) {
   if (!Number.isFinite(percent)) return 0;
@@ -51,7 +56,7 @@ function waitForMediaReady(media: HTMLMediaElement, timeoutMs = 18000) {
     };
     const ok = () => cleanup(resolve);
     const fail = () => cleanup(() => reject(new Error('live_render_media_failed')));
-    const timer = window.setTimeout(() => cleanup(() => reject(new Error('live_render_media_timeout'))), timeoutMs);
+    const timer = window.setTimeout(() => cleanup(() => reject(new Error(`live_render_media_timeout:readyState=${media.readyState}:networkState=${media.networkState}`))), timeoutMs);
     media.addEventListener('loadedmetadata', ok, { once: true });
     media.addEventListener('loadeddata', ok, { once: true });
     media.addEventListener('canplay', ok, { once: true });
@@ -68,6 +73,7 @@ async function makeVideoFromBlob(blob: Blob) {
   video.muted = true;
   video.volume = 0;
   await waitForMediaReady(video);
+  debug('visual-ready', { size: blob.size, type: blob.type, duration: video.duration });
   return { video, url };
 }
 
@@ -79,18 +85,21 @@ async function makeAudioFromBlob(blob: Blob) {
   audio.muted = false;
   audio.volume = 1;
   await waitForMediaReady(audio);
+  debug('voice-ready', { size: blob.size, type: blob.type, duration: audio.duration });
   return { audio, url };
 }
 
 async function makeReferenceVideo(url: string) {
   const video = document.createElement('video');
-  video.src = url;
   video.preload = 'auto';
   video.playsInline = true;
   video.muted = false;
   video.volume = 1;
+  video.crossOrigin = 'anonymous';
+  const attachment = await attachMediaSource(video, url);
   await waitForMediaReady(video);
-  return video;
+  debug('reference-ready', { url, duration: video.duration, readyState: video.readyState, networkState: video.networkState });
+  return { video, attachment };
 }
 
 function makeCanvasVideoStream(visual: HTMLVideoElement) {
@@ -129,9 +138,10 @@ function configureLimiter(node: DynamicsCompressorNode) {
 }
 
 export async function renderLiveDuetVideo(options: LiveDuetRenderOptions) {
+  debug('start', { faders: options.faders, referenceOffsetMs: options.referenceOffsetMs, referenceUrl: options.referenceUrl });
   const { video: visual, url: visualUrl } = await makeVideoFromBlob(options.visualBlob);
   const { audio: voice, url: voiceUrl } = await makeAudioFromBlob(options.voiceBlob);
-  const reference = await makeReferenceVideo(options.referenceUrl);
+  const { video: reference, attachment: referenceAttachment } = await makeReferenceVideo(options.referenceUrl);
   const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
   if (!AudioCtx) throw new Error('audio_context_missing');
   const audioContext = new AudioCtx({ sampleRate: options.sampleRate || DEFAULT_SAMPLE_RATE, latencyHint: 'playback' });
@@ -150,18 +160,27 @@ export async function renderLiveDuetVideo(options: LiveDuetRenderOptions) {
   referenceGain.gain.value = linearGain(options.faders.reference, options.preGains?.reference ?? DEFAULT_REFERENCE_PRE_GAIN);
   audioContext.createMediaElementSource(reference).connect(referenceGain).connect(limiter);
 
+  const audioTrack = destination.stream.getAudioTracks()[0];
+  if (audioTrack) {
+    audioTrack.onmute = () => debug('destination-audio-muted', { readyState: audioTrack.readyState });
+    audioTrack.onunmute = () => debug('destination-audio-unmuted', { readyState: audioTrack.readyState });
+    audioTrack.onended = () => debug('destination-audio-ended', { readyState: audioTrack.readyState });
+  }
+
   const videoCapture = makeCanvasVideoStream(visual);
   const stream = new MediaStream([...videoCapture.stream.getVideoTracks(), ...destination.stream.getAudioTracks()]);
   const mimeType = recorderMimeType();
   const recorder = new MediaRecorder(stream, { ...(mimeType ? { mimeType } : {}), videoBitsPerSecond: isSafariLike() ? 2500000 : 5200000, audioBitsPerSecond: 256000 });
   const chunks: Blob[] = [];
-  recorder.ondataavailable = (event) => { if (event.data?.size) chunks.push(event.data); };
-  const done = new Promise<Blob>((resolve) => { recorder.onstop = () => resolve(new Blob(chunks, { type: recorder.mimeType || mimeType || 'video/webm' })); });
+  recorder.onstart = () => debug('recorder-start', { mimeType: recorder.mimeType, audioTracks: stream.getAudioTracks().length, videoTracks: stream.getVideoTracks().length });
+  recorder.ondataavailable = (event) => { debug('recorder-chunk', { size: event.data?.size || 0 }); if (event.data?.size) chunks.push(event.data); };
+  const done = new Promise<Blob>((resolve) => { recorder.onstop = () => { const blob = new Blob(chunks, { type: recorder.mimeType || mimeType || 'video/webm' }); debug('recorder-stop', { chunks: chunks.length, size: blob.size, type: blob.type }); resolve(blob); }; });
 
   let stopped = false;
   const stop = () => {
     if (stopped) return;
     stopped = true;
+    debug('stop-requested', { visualTime: visual.currentTime, voiceTime: voice.currentTime, referenceTime: reference.currentTime, recorderState: recorder.state });
     try { recorder.requestData(); } catch {}
     try { visual.pause(); } catch {}
     try { voice.pause(); } catch {}
@@ -176,21 +195,25 @@ export async function renderLiveDuetVideo(options: LiveDuetRenderOptions) {
   reference.currentTime = 0;
   const offsetSeconds = clampOffsetMs(options.referenceOffsetMs) / 1000;
   if (offsetSeconds < 0) {
-    await reference.play().catch(() => undefined);
+    await reference.play().then(() => debug('reference-playing', { currentTime: reference.currentTime })).catch((error) => debug('reference-play-failed', { message: error instanceof Error ? error.message : String(error) }));
     window.setTimeout(() => {
-      visual.play().catch(() => undefined);
-      voice.play().catch(() => undefined);
+      visual.play().then(() => debug('visual-playing', { currentTime: visual.currentTime })).catch(() => undefined);
+      voice.play().then(() => debug('voice-playing', { currentTime: voice.currentTime })).catch((error) => debug('voice-play-failed', { message: error instanceof Error ? error.message : String(error) }));
     }, Math.abs(offsetSeconds) * 1000);
   } else {
-    await Promise.all([visual.play(), voice.play()]);
-    window.setTimeout(() => { reference.play().catch(() => undefined); }, offsetSeconds * 1000);
+    await Promise.all([
+      visual.play().then(() => debug('visual-playing', { currentTime: visual.currentTime })),
+      voice.play().then(() => debug('voice-playing', { currentTime: voice.currentTime })).catch((error) => debug('voice-play-failed', { message: error instanceof Error ? error.message : String(error) })),
+    ]);
+    window.setTimeout(() => { reference.play().then(() => debug('reference-playing', { currentTime: reference.currentTime })).catch((error) => debug('reference-play-failed', { message: error instanceof Error ? error.message : String(error) })); }, offsetSeconds * 1000);
   }
 
-  const durationSeconds = Math.max(visual.duration || 0, voice.duration || 0, reference.duration || 0, 1);
+  const durationSeconds = Math.max(visual.duration || 0, voice.duration || 0, Number.isFinite(reference.duration) ? reference.duration : 0, 1);
   visual.onended = () => window.setTimeout(stop, 350);
   window.setTimeout(stop, durationSeconds * 1000 + Math.abs(offsetSeconds) * 1000 + 1200);
   const blob = await done;
   videoCapture.stop();
+  try { referenceAttachment.destroy(); } catch {}
   await audioContext.close().catch(() => undefined);
   URL.revokeObjectURL(visualUrl);
   URL.revokeObjectURL(voiceUrl);
