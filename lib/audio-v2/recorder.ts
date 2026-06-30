@@ -85,14 +85,11 @@ async function buildAudioGraphV2(args: { micStream: MediaStream; reference: HTML
     startReference = () => {
       try {
         const source = context.createBufferSource();
-        const monitorGain = context.createGain();
         const mixedGain = context.createGain();
         const recordGain = context.createGain();
         source.buffer = decodedReference;
-        monitorGain.gain.value = 1;
         mixedGain.gain.value = REFERENCE_MIX_GAIN;
         recordGain.gain.value = REFERENCE_RECORD_GAIN;
-        source.connect(monitorGain).connect(context.destination);
         source.connect(mixedGain).connect(mixedDestination);
         source.connect(recordGain).connect(referenceDestination);
         activeSource = source;
@@ -113,13 +110,10 @@ async function buildAudioGraphV2(args: { micStream: MediaStream; reference: HTML
   } else {
     try {
       const reference = context.createMediaElementSource(args.reference);
-      const monitorGain = context.createGain();
       const mixedGain = context.createGain();
       const recordGain = context.createGain();
-      monitorGain.gain.value = 1;
       mixedGain.gain.value = REFERENCE_MIX_GAIN;
       recordGain.gain.value = REFERENCE_RECORD_GAIN;
-      reference.connect(monitorGain).connect(context.destination);
       reference.connect(mixedGain).connect(mixedDestination);
       reference.connect(recordGain).connect(referenceDestination);
       usedElementFallback = true;
@@ -144,7 +138,7 @@ export async function startDuetV2Session(options: DuetV2PrepareOptions, refs: { 
   reference.src = options.referenceUrl;
   reference.preload = 'auto';
   reference.playsInline = true;
-  reference.muted = true;
+  reference.muted = false;
   reference.load();
   await waitForMediaReadyV2(reference);
 
