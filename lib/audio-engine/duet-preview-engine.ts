@@ -72,7 +72,7 @@ export class DuetPreviewEngine {
   private prepared = false;
   private playing = false;
   private referenceOffsetMs = 0;
-  private referenceDelayTimer: number | null = null;
+  private delayedStartTimer: number | null = null;
 
   constructor(refs: DuetPreviewEngineRefs, options: DuetPreviewEngineOptions) {
     this.refs = refs;
@@ -109,12 +109,12 @@ export class DuetPreviewEngine {
 
   async play() {
     await this.prepare();
-    this.clearReferenceDelay();
+    this.clearDelayedStart();
     const { visual, voice, reference } = this.refs;
     const offsetSeconds = this.referenceOffsetMs / 1000;
     visual.currentTime = 0;
     voice.currentTime = 0;
-    reference.currentTime = offsetSeconds < 0 ? Math.abs(offsetSeconds) : 0;
+    reference.currentTime = 0;
     visual.muted = true;
     visual.volume = 0;
     voice.volume = 0;
@@ -122,11 +122,22 @@ export class DuetPreviewEngine {
     this.playing = true;
     await this.audio.resume();
     const faders = this.audio.getFaders();
+
+    if (offsetSeconds < 0 && faders.reference > 0) {
+      await reference.play().catch(() => undefined);
+      this.delayedStartTimer = window.setTimeout(() => {
+        if (!this.playing) return;
+        this.refs.visual.play().catch(() => undefined);
+        if (this.audio.getFaders().voice > 0) this.refs.voice.play().catch(() => undefined);
+      }, Math.abs(this.referenceOffsetMs));
+      return;
+    }
+
     const jobs: Promise<unknown>[] = [visual.play()];
     if (faders.voice > 0) jobs.push(voice.play().catch(() => undefined));
     if (faders.reference > 0) {
       if (offsetSeconds > 0) {
-        this.referenceDelayTimer = window.setTimeout(() => {
+        this.delayedStartTimer = window.setTimeout(() => {
           if (this.playing && !this.refs.visual.paused) this.refs.reference.play().catch(() => undefined);
         }, this.referenceOffsetMs);
       } else {
@@ -138,7 +149,7 @@ export class DuetPreviewEngine {
 
   pause() {
     this.playing = false;
-    this.clearReferenceDelay();
+    this.clearDelayedStart();
     try { this.refs.visual.pause(); } catch {}
     try { this.refs.voice.pause(); } catch {}
     try { this.refs.reference.pause(); } catch {}
@@ -206,8 +217,8 @@ export class DuetPreviewEngine {
     }
   }
 
-  private clearReferenceDelay() {
-    if (this.referenceDelayTimer) window.clearTimeout(this.referenceDelayTimer);
-    this.referenceDelayTimer = null;
+  private clearDelayedStart() {
+    if (this.delayedStartTimer) window.clearTimeout(this.delayedStartTimer);
+    this.delayedStartTimer = null;
   }
 }
