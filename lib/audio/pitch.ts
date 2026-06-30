@@ -12,6 +12,20 @@ export type PitchDetectionResult = {
   rms: number;
 };
 
+type PitchCandidate = {
+  frequencyHz: number;
+  midiFloat: number;
+  confidence: number;
+  source: 'mpm' | 'yin' | 'acf';
+};
+
+type PitchFrame = {
+  frequencyHz: number;
+  midiFloat: number;
+  confidence: number;
+  rms: number;
+};
+
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const BRAZILIAN_NOTE_NAMES = ['Dó', 'Dó#', 'Ré', 'Ré#', 'Mi', 'Fá', 'Fá#', 'Sol', 'Sol#', 'Lá', 'Lá#', 'Si'];
 const BRAZILIAN_NOTE_BY_SCIENTIFIC: Record<string, string> = {
@@ -29,59 +43,306 @@ const BRAZILIAN_NOTE_BY_SCIENTIFIC: Record<string, string> = {
   B: 'Si'
 };
 
+const MIN_VOCAL_FREQUENCY = 24;
+const MAX_VOCAL_FREQUENCY = 1800;
+const SILENCE_RMS = 0.0048;
+const SILENCE_PEAK = 0.018;
+
 function rmsFromBuffer(buffer: Float32Array) {
   let sum = 0;
   for (let i = 0; i < buffer.length; i += 1) sum += buffer[i] * buffer[i];
   return Math.sqrt(sum / Math.max(1, buffer.length));
 }
 
+function signalStats(buffer: Float32Array) {
+  let mean = 0;
+  let peak = 0;
+  for (let i = 0; i < buffer.length; i += 1) mean += buffer[i];
+  mean /= Math.max(1, buffer.length);
+  let sum = 0;
+  for (let i = 0; i < buffer.length; i += 1) {
+    const value = buffer[i] - mean;
+    sum += value * value;
+    peak = Math.max(peak, Math.abs(value));
+  }
+  return { mean, rms: Math.sqrt(sum / Math.max(1, buffer.length)), peak };
+}
+
+function makeAnalysisBuffer(buffer: Float32Array, mean: number) {
+  const out = new Float32Array(buffer.length);
+  const last = buffer.length - 1;
+  for (let i = 0; i < buffer.length; i += 1) {
+    const window = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / Math.max(1, last));
+    out[i] = (buffer[i] - mean) * window;
+  }
+  return out;
+}
+
+function parabolic(values: ArrayLike<number>, index: number) {
+  const left = values[index - 1] ?? values[index];
+  const center = values[index];
+  const right = values[index + 1] ?? values[index];
+  const divisor = left - 2 * center + right;
+  if (!divisor) return index;
+  const offset = 0.5 * (left - right) / divisor;
+  return Number.isFinite(offset) && Math.abs(offset) <= 1 ? index + offset : index;
+}
+
+function confidenceFloor(frequencyHz: number) {
+  if (frequencyHz < 45) return 0.72;
+  if (frequencyHz < 80) return 0.62;
+  return 0.5;
+}
+
+function addCandidate(list: PitchCandidate[], candidate: PitchCandidate | null) {
+  if (!candidate) return;
+  if (!Number.isFinite(candidate.frequencyHz) || candidate.frequencyHz < MIN_VOCAL_FREQUENCY || candidate.frequencyHz > MAX_VOCAL_FREQUENCY) return;
+  if (candidate.confidence < confidenceFloor(candidate.frequencyHz)) return;
+  const existing = list.find((item) => Math.abs(item.midiFloat - candidate.midiFloat) < 0.28);
+  if (existing) {
+    existing.frequencyHz = (existing.frequencyHz * existing.confidence + candidate.frequencyHz * candidate.confidence) / (existing.confidence + candidate.confidence);
+    existing.midiFloat = frequencyToMidiFloat(existing.frequencyHz);
+    existing.confidence = Math.min(1, Math.max(existing.confidence, candidate.confidence) + 0.035);
+  } else {
+    list.push(candidate);
+  }
+}
+
+function detectMpm(buffer: Float32Array, sampleRate: number): PitchCandidate[] {
+  const minLag = Math.max(2, Math.floor(sampleRate / MAX_VOCAL_FREQUENCY));
+  const maxLag = Math.min(buffer.length - 2, Math.ceil(sampleRate / MIN_VOCAL_FREQUENCY));
+  const nsdf = new Float32Array(maxLag + 2);
+  const candidates: PitchCandidate[] = [];
+
+  for (let lag = minLag; lag <= maxLag; lag += 1) {
+    let acf = 0;
+    let divisor = 0;
+    const limit = buffer.length - lag;
+    for (let i = 0; i < limit; i += 1) {
+      const a = buffer[i];
+      const b = buffer[i + lag];
+      acf += a * b;
+      divisor += a * a + b * b;
+    }
+    nsdf[lag] = divisor > 1e-9 ? (2 * acf) / divisor : 0;
+  }
+
+  let bestScore = 0;
+  for (let lag = minLag + 1; lag < maxLag - 1; lag += 1) {
+    const score = nsdf[lag];
+    if (score > bestScore) bestScore = score;
+  }
+  if (bestScore < 0.45) return candidates;
+
+  const peakFloor = Math.max(0.42, bestScore * 0.72);
+  for (let lag = minLag + 1; lag < maxLag - 1; lag += 1) {
+    const score = nsdf[lag];
+    if (score < peakFloor) continue;
+    if (score >= nsdf[lag - 1] && score >= nsdf[lag + 1]) {
+      const refined = parabolic(nsdf, lag);
+      const frequencyHz = sampleRate / refined;
+      candidates.push({ frequencyHz, midiFloat: frequencyToMidiFloat(frequencyHz), confidence: Math.min(1, score), source: 'mpm' });
+    }
+  }
+
+  return candidates.sort((a, b) => b.confidence - a.confidence).slice(0, 8);
+}
+
+function detectYin(buffer: Float32Array, sampleRate: number): PitchCandidate | null {
+  const minLag = Math.max(2, Math.floor(sampleRate / MAX_VOCAL_FREQUENCY));
+  const maxLag = Math.min(buffer.length - 2, Math.ceil(sampleRate / MIN_VOCAL_FREQUENCY));
+  const yin = new Float32Array(maxLag + 2);
+  yin[0] = 1;
+
+  for (let lag = 1; lag <= maxLag; lag += 1) {
+    let sum = 0;
+    const limit = buffer.length - lag;
+    for (let i = 0; i < limit; i += 1) {
+      const diff = buffer[i] - buffer[i + lag];
+      sum += diff * diff;
+    }
+    yin[lag] = sum;
+  }
+
+  let runningSum = 0;
+  for (let lag = 1; lag <= maxLag; lag += 1) {
+    runningSum += yin[lag];
+    yin[lag] = runningSum ? (yin[lag] * lag) / runningSum : 1;
+  }
+
+  let tau = -1;
+  const threshold = 0.14;
+  for (let lag = minLag; lag <= maxLag; lag += 1) {
+    if (yin[lag] < threshold) {
+      tau = lag;
+      while (tau + 1 <= maxLag && yin[tau + 1] < yin[tau]) tau += 1;
+      break;
+    }
+  }
+
+  if (tau < 0) {
+    let best = 1;
+    let bestLag = -1;
+    for (let lag = minLag; lag <= maxLag; lag += 1) {
+      if (yin[lag] < best) { best = yin[lag]; bestLag = lag; }
+    }
+    if (bestLag < 0 || best > 0.24) return null;
+    tau = bestLag;
+  }
+
+  const refined = parabolic(yin, tau);
+  const frequencyHz = sampleRate / refined;
+  const confidence = Math.max(0, Math.min(1, 1 - yin[tau]));
+  return { frequencyHz, midiFloat: frequencyToMidiFloat(frequencyHz), confidence, source: 'yin' };
+}
+
+function detectNormalizedAcf(buffer: Float32Array, sampleRate: number): PitchCandidate | null {
+  const minLag = Math.max(2, Math.floor(sampleRate / MAX_VOCAL_FREQUENCY));
+  const maxLag = Math.min(buffer.length - 2, Math.ceil(sampleRate / MIN_VOCAL_FREQUENCY));
+  let bestLag = -1;
+  let bestScore = 0;
+
+  for (let lag = minLag; lag <= maxLag; lag += 1) {
+    let correlation = 0;
+    let energyA = 0;
+    let energyB = 0;
+    const limit = buffer.length - lag;
+    for (let i = 0; i < limit; i += 1) {
+      const a = buffer[i];
+      const b = buffer[i + lag];
+      correlation += a * b;
+      energyA += a * a;
+      energyB += b * b;
+    }
+    const score = correlation / Math.sqrt(energyA * energyB || 1);
+    if (score > bestScore) { bestScore = score; bestLag = lag; }
+  }
+
+  if (bestLag <= 0 || bestScore < 0.54) return null;
+  const frequencyHz = sampleRate / bestLag;
+  return { frequencyHz, midiFloat: frequencyToMidiFloat(frequencyHz), confidence: Math.min(1, bestScore), source: 'acf' };
+}
+
+function rawCandidates(buffer: Float32Array, sampleRate: number, rms: number, peak: number) {
+  if (rms < SILENCE_RMS || peak < SILENCE_PEAK) return [] as PitchCandidate[];
+  const { mean } = signalStats(buffer);
+  const analysis = makeAnalysisBuffer(buffer, mean);
+  const candidates: PitchCandidate[] = [];
+  for (const candidate of detectMpm(analysis, sampleRate)) addCandidate(candidates, candidate);
+  addCandidate(candidates, detectYin(analysis, sampleRate));
+  addCandidate(candidates, detectNormalizedAcf(analysis, sampleRate));
+  return candidates.sort((a, b) => b.confidence - a.confidence);
+}
+
+function octaveDistance(a: number, b: number) {
+  const diff = Math.abs(a - b);
+  return Math.min(diff, Math.abs(diff - 12), Math.abs(diff - 24), Math.abs(diff - 36));
+}
+
+class VocalPitchTracker {
+  private last: PitchFrame | null = null;
+  private lastAt = 0;
+  private pending: { midi: number; count: number } | null = null;
+
+  reset() {
+    this.last = null;
+    this.lastAt = 0;
+    this.pending = null;
+  }
+
+  private scoreCandidate(candidate: PitchCandidate, now: number) {
+    if (!this.last || now - this.lastAt > 900) return candidate.confidence;
+    const direct = Math.abs(candidate.midiFloat - this.last.midiFloat);
+    const octave = octaveDistance(candidate.midiFloat, this.last.midiFloat);
+    const continuity = Math.max(0, 1 - Math.min(direct, octave) / 12);
+    const octavePenalty = direct > 7 && octave < 1.8 ? 0.02 : 0;
+    const jumpPenalty = direct > 9 && octave > 2 ? 0.35 : 0;
+    return candidate.confidence + continuity * 0.28 + octavePenalty - jumpPenalty;
+  }
+
+  private choose(candidates: PitchCandidate[], now: number) {
+    if (!candidates.length) return null;
+    const ranked = [...candidates].sort((a, b) => this.scoreCandidate(b, now) - this.scoreCandidate(a, now));
+    let chosen = ranked[0];
+
+    if (this.last && now - this.lastAt <= 900) {
+      const direct = Math.abs(chosen.midiFloat - this.last.midiFloat);
+      const octave = octaveDistance(chosen.midiFloat, this.last.midiFloat);
+      if (direct > 9 && octave < 1.4) {
+        const adjusted = Math.round((this.last.midiFloat - chosen.midiFloat) / 12) * 12;
+        const correctedMidi = chosen.midiFloat + adjusted;
+        if (correctedMidi >= frequencyToMidiFloat(MIN_VOCAL_FREQUENCY) && correctedMidi <= frequencyToMidiFloat(MAX_VOCAL_FREQUENCY)) {
+          const correctedFrequency = midiToFrequency(correctedMidi);
+          chosen = { ...chosen, midiFloat: correctedMidi, frequencyHz: correctedFrequency, confidence: Math.min(1, chosen.confidence + 0.05) };
+        }
+      }
+
+      const postJump = Math.abs(chosen.midiFloat - this.last.midiFloat);
+      if (postJump > 10 && chosen.confidence < 0.84) {
+        const rounded = Math.round(chosen.midiFloat);
+        if (this.pending && Math.abs(this.pending.midi - rounded) <= 1) this.pending.count += 1;
+        else this.pending = { midi: rounded, count: 1 };
+        if (this.pending.count < 2) return null;
+      } else {
+        this.pending = null;
+      }
+    }
+
+    return chosen;
+  }
+
+  accept(candidates: PitchCandidate[], now: number, rms: number): PitchFrame | null {
+    const chosen = this.choose(candidates, now);
+    if (!chosen) {
+      if (this.last && now - this.lastAt < 180) return this.last;
+      return null;
+    }
+
+    const elapsed = this.lastAt ? Math.max(1 / 120, Math.min(0.08, (now - this.lastAt) / 1000)) : 1 / 60;
+    let midiFloat = chosen.midiFloat;
+
+    if (this.last && now - this.lastAt <= 900) {
+      const jump = Math.abs(chosen.midiFloat - this.last.midiFloat);
+      const speed = jump > 5 ? 0.72 : jump > 1.2 ? 0.58 : 0.42;
+      const alpha = Math.max(0.34, Math.min(0.82, speed + chosen.confidence * 0.16 + elapsed * 1.8));
+      midiFloat = this.last.midiFloat + (chosen.midiFloat - this.last.midiFloat) * alpha;
+    }
+
+    const frame = { frequencyHz: midiToFrequency(midiFloat), midiFloat, confidence: chosen.confidence, rms };
+    this.last = frame;
+    this.lastAt = now;
+    return frame;
+  }
+}
+
+const globalTracker = new VocalPitchTracker();
+let lastSampleRate = 0;
+
+function detectPitchFrame(buffer: Float32Array, sampleRate: number, tracked: boolean): PitchFrame | null {
+  const stats = signalStats(buffer);
+  if (stats.rms < SILENCE_RMS || stats.peak < SILENCE_PEAK) {
+    if (tracked) return globalTracker.accept([], performance.now(), stats.rms);
+    return null;
+  }
+
+  const candidates = rawCandidates(buffer, sampleRate, stats.rms, stats.peak);
+  if (!candidates.length) {
+    if (tracked) return globalTracker.accept([], performance.now(), stats.rms);
+    return null;
+  }
+
+  if (!tracked) {
+    const best = candidates[0];
+    return { frequencyHz: best.frequencyHz, midiFloat: best.midiFloat, confidence: best.confidence, rms: stats.rms };
+  }
+
+  if (lastSampleRate && Math.abs(lastSampleRate - sampleRate) > 1) globalTracker.reset();
+  lastSampleRate = sampleRate;
+  return globalTracker.accept(candidates, performance.now(), stats.rms);
+}
+
 export function autoCorrelate(buffer: Float32Array, sampleRate: number): number | null {
-  const size = buffer.length;
-  let rms = 0;
-  for (let i = 0; i < size; i += 1) rms += buffer[i] * buffer[i];
-  rms = Math.sqrt(rms / size);
-  if (rms < 0.012) return null;
-
-  let start = 0;
-  let end = size - 1;
-  const threshold = 0.2;
-  for (let i = 0; i < size / 2; i += 1) {
-    if (Math.abs(buffer[i]) < threshold) { start = i; break; }
-  }
-  for (let i = 1; i < size / 2; i += 1) {
-    if (Math.abs(buffer[size - i]) < threshold) { end = size - i; break; }
-  }
-
-  const trimmed = buffer.slice(start, end);
-  const trimmedSize = trimmed.length;
-  if (trimmedSize < 32) return null;
-
-  const correlations = new Array<number>(trimmedSize).fill(0);
-  for (let lag = 0; lag < trimmedSize; lag += 1) {
-    for (let i = 0; i < trimmedSize - lag; i += 1) {
-      correlations[lag] += trimmed[i] * trimmed[i + lag];
-    }
-  }
-
-  let d = 0;
-  while (d < trimmedSize - 1 && correlations[d] > correlations[d + 1]) d += 1;
-
-  let maxValue = -1;
-  let maxPosition = -1;
-  for (let i = d; i < trimmedSize; i += 1) {
-    if (correlations[i] > maxValue) {
-      maxValue = correlations[i];
-      maxPosition = i;
-    }
-  }
-  if (maxPosition <= 0) return null;
-
-  const x1 = correlations[maxPosition - 1] || 0;
-  const x2 = correlations[maxPosition] || 0;
-  const x3 = correlations[maxPosition + 1] || 0;
-  const adjustment = (x1 - x3) / (2 * (x1 - 2 * x2 + x3));
-  const frequency = sampleRate / (maxPosition + (Number.isFinite(adjustment) ? adjustment : 0));
-  return frequency >= 40 && frequency <= 2000 ? frequency : null;
+  return detectPitchFrame(buffer, sampleRate, false)?.frequencyHz ?? null;
 }
 
 export function frequencyToMidiFloat(freq: number): number {
@@ -93,22 +354,20 @@ export function frequencyToMidi(freq: number): number {
 }
 
 export function detectPitch(buffer: Float32Array, sampleRate: number): PitchDetectionResult | null {
-  const frequencyHz = autoCorrelate(buffer, sampleRate);
-  if (!frequencyHz) return null;
-  const rms = rmsFromBuffer(buffer);
-  const midiFloat = frequencyToMidiFloat(frequencyHz);
-  const midiRounded = Math.round(midiFloat);
+  const frame = detectPitchFrame(buffer, sampleRate, true);
+  if (!frame) return null;
+  const midiRounded = Math.round(frame.midiFloat);
   const nearestFrequency = midiToFrequency(midiRounded);
-  const cents = 1200 * Math.log2(frequencyHz / nearestFrequency);
+  const cents = 1200 * Math.log2(frame.frequencyHz / nearestFrequency);
   return {
-    frequencyHz,
-    midiFloat,
+    frequencyHz: frame.frequencyHz,
+    midiFloat: frame.midiFloat,
     midiRounded,
     noteName: midiToBrazilianNoteName(midiRounded),
     cents,
-    confidence: 1,
-    volume: rms,
-    rms,
+    confidence: frame.confidence,
+    volume: frame.rms,
+    rms: frame.rms,
   };
 }
 
