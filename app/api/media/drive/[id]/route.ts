@@ -87,17 +87,10 @@ function parseRange(rangeHeader: string | null, size: number): ParsedRange | nul
     end = rawEnd ? Number(rawEnd) : Math.min(size - 1, start + DEFAULT_CHUNK_SIZE - 1);
   }
 
-  if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || start >= size || end < start) return null;
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end < start) return null;
+  if (start >= size) return null;
   end = Math.min(end, size - 1);
   return { start, end, size, header: `bytes=${start}-${end}`, contentLength: end - start + 1 };
-}
-
-function notSatisfiableHeaders(size: number, metadata?: DriveMetadata | null) {
-  const headers = new Headers();
-  headers.set('content-range', `bytes */${size || '*'}`);
-  headers.set('accept-ranges', 'bytes');
-  headers.set('content-type', inferMediaContentType(metadata));
-  return headers;
 }
 
 async function canAccessLessonFile(fileId: string) {
@@ -228,9 +221,9 @@ function mediaHeaders(upstream: Response, metadata: DriveMetadata | null | undef
   return headers;
 }
 
-async function fetchDriveMedia(fileId: string, access: string, range: ParsedRange | null) {
+async function fetchDriveMedia(fileId: string, access: string, rangeHeader: string | null) {
   const headers: Record<string, string> = { authorization: `Bearer ${access}` };
-  if (range) headers.range = range.header;
+  if (rangeHeader) headers.range = rangeHeader;
 
   return fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&supportsAllDrives=true`, {
     headers,
@@ -279,21 +272,18 @@ export async function GET(request: Request, { params }: Params) {
     const size = Number(metadata?.size || 0);
     const requestedRange = request.headers.get('range');
     const forceFull = new URL(request.url).searchParams.get('full') === '1';
-    const range = forceFull ? null : parseRange(requestedRange, size);
+    const parsedRange = forceFull ? null : parseRange(requestedRange, size);
+    const upstreamRangeHeader = forceFull ? null : (parsedRange?.header || requestedRange || (size > 0 ? parseRange(null, size)?.header || null : null));
 
-    if (!forceFull && (requestedRange || size > 0) && !range) {
-      return new Response(null, { status: 416, headers: notSatisfiableHeaders(size, metadata) });
-    }
-
-    const upstream = await fetchDriveMedia(id, auth.access, range);
+    const upstream = await fetchDriveMedia(id, auth.access, upstreamRangeHeader);
 
     if (!upstream.ok || !upstream.body) {
       const detail = await upstream.text().catch(() => '');
       return NextResponse.json({ error: 'drive_video_unavailable', status: upstream.status, detail: detail.slice(0, 300) }, { status: upstream.status || 500 });
     }
 
-    const status = range ? 206 : upstream.status;
-    return new Response(upstream.body, { status, headers: mediaHeaders(upstream, metadata, range) });
+    const status = upstream.status === 206 || upstreamRangeHeader ? 206 : upstream.status;
+    return new Response(upstream.body, { status, headers: mediaHeaders(upstream, metadata, parsedRange) });
   } catch (error) {
     return NextResponse.json({ error: 'drive_proxy_failed', message: error instanceof Error ? error.message : 'unknown_error' }, { status: 500 });
   }
