@@ -7,6 +7,7 @@ export type DuetRendererEngineOptions = {
   faders: DuetFaderValues;
   preGains?: Partial<{ voice: number; reference: number }>;
   latencyMs?: number;
+  referenceOffsetMs?: number;
   sampleRate?: number;
 };
 
@@ -30,6 +31,10 @@ const DEFAULT_REFERENCE_PRE_GAIN = 0.08;
 function linearGain(percent: number, preGain: number) {
   if (!Number.isFinite(percent)) return 0;
   return Math.max(0, Math.min(6, (percent / 100) * preGain));
+}
+
+function clampReferenceOffsetMs(value?: number) {
+  return Math.max(-300, Math.min(300, Number.isFinite(value || 0) ? value || 0 : 0));
 }
 
 function recorderMimeType() {
@@ -193,7 +198,9 @@ export class DuetRendererEngine {
       blobToAudioBuffer(this.options.voiceBlob, sampleRate),
       urlToAudioBuffer(this.options.referenceUrl, sampleRate),
     ]);
-    const duration = Math.max(voiceBuffer.duration, referenceBuffer.duration, 1);
+    const referenceOffsetMs = clampReferenceOffsetMs(this.options.referenceOffsetMs);
+    const referenceOffsetSeconds = referenceOffsetMs / 1000;
+    const duration = Math.max(voiceBuffer.duration, referenceBuffer.duration + Math.max(0, referenceOffsetSeconds), 1);
     const frameCount = Math.ceil(duration * sampleRate);
     const context = new OfflineAudioContext({ numberOfChannels: 2, length: frameCount, sampleRate });
 
@@ -216,7 +223,8 @@ export class DuetRendererEngine {
     referenceSource.connect(referenceGain).connect(limiter);
     limiter.connect(context.destination);
     voiceSource.start(latencySeconds);
-    referenceSource.start(0);
+    if (referenceOffsetSeconds > 0) referenceSource.start(referenceOffsetSeconds);
+    else referenceSource.start(0, Math.abs(referenceOffsetSeconds));
 
     const audioBuffer = await context.startRendering();
     return { audioBuffer, wavBlob: audioBufferToWav(audioBuffer), durationSeconds: audioBuffer.duration, sampleRate };
