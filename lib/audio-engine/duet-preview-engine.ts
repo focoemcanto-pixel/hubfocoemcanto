@@ -25,6 +25,7 @@ export type DuetPreviewDiagnostic = DuetAudioEngineSnapshot & {
   voiceDriftMs: number;
   referenceDriftMs: number;
   referenceOffsetMs: number;
+  referenceMode: 'buffer' | 'media-element';
 };
 
 function waitForMediaReady(media: HTMLMediaElement, timeoutMs = 15000) {
@@ -87,7 +88,7 @@ export class DuetPreviewEngine {
   private referenceOffsetMs = 0;
   private delayedStartTimer: number | null = null;
   private referenceStartedAt = 0;
-  private referenceStartDelay = 0;
+  private referenceMode: 'buffer' | 'media-element' = 'buffer';
 
   constructor(refs: DuetPreviewEngineRefs, options: DuetPreviewEngineOptions) {
     this.refs = refs;
@@ -111,39 +112,74 @@ export class DuetPreviewEngine {
     visual.volume = 0;
 
     prepareGraphMedia(voice);
+    prepareGraphMedia(reference);
     voice.src = this.voiceUrl;
-    reference.removeAttribute('src');
-    reference.volume = 0;
-    reference.muted = true;
+    reference.src = this.options.referenceUrl;
 
-    await Promise.all([waitForMediaReady(visual), waitForMediaReady(voice)]);
+    await Promise.all([waitForMediaReady(visual), waitForMediaReady(voice), waitForMediaReady(reference)]);
 
     this.audio.connectVoiceElement(voice);
-    const referenceBuffer = await decodeReferenceBuffer(this.audio.context, this.options.referenceUrl);
-    this.audio.connectReferenceBuffer(referenceBuffer);
+    try {
+      const referenceBuffer = await decodeReferenceBuffer(this.audio.context, this.options.referenceUrl);
+      this.audio.connectReferenceBuffer(referenceBuffer);
+      reference.pause();
+      reference.removeAttribute('src');
+      reference.load();
+      this.referenceMode = 'buffer';
+    } catch {
+      reference.src = this.options.referenceUrl;
+      await waitForMediaReady(reference);
+      prepareGraphMedia(reference);
+      this.audio.connectReferenceElement(reference);
+      this.referenceMode = 'media-element';
+    }
     this.prepared = true;
   }
 
   async play() {
     await this.prepare();
     this.clearDelayedStart();
-    const { visual, voice } = this.refs;
+    const { visual, voice, reference } = this.refs;
     const offsetSeconds = this.referenceOffsetMs / 1000;
     visual.currentTime = 0;
     voice.currentTime = 0;
+    try { reference.currentTime = 0; } catch {}
     visual.muted = true;
     visual.volume = 0;
     voice.volume = 1;
     voice.muted = false;
+    reference.volume = 1;
+    reference.muted = false;
     this.playing = true;
     await this.audio.resume();
     this.audio.stopReferenceBuffer();
     const faders = this.audio.getFaders();
 
+    if (this.referenceMode === 'buffer') {
+      if (offsetSeconds < 0 && faders.reference > 0) {
+        this.referenceStartedAt = this.audio.context.currentTime;
+        this.audio.startReferenceBuffer(0, 0);
+        this.delayedStartTimer = window.setTimeout(() => {
+          if (!this.playing) return;
+          this.refs.visual.play().catch(() => undefined);
+          if (this.audio.getFaders().voice > 0) this.refs.voice.play().catch(() => undefined);
+        }, Math.abs(this.referenceOffsetMs));
+        return;
+      }
+      const jobs: Promise<unknown>[] = [visual.play()];
+      if (faders.voice > 0) jobs.push(voice.play().catch(() => undefined));
+      if (faders.reference > 0) {
+        const delay = Math.max(0, offsetSeconds);
+        this.referenceStartedAt = this.audio.context.currentTime + delay;
+        this.audio.startReferenceBuffer(delay, 0);
+      }
+      await Promise.all(jobs);
+      return;
+    }
+
     if (offsetSeconds < 0 && faders.reference > 0) {
-      this.referenceStartDelay = 0;
+      await reference.play().catch(() => undefined);
       this.referenceStartedAt = this.audio.context.currentTime;
-      this.audio.startReferenceBuffer(0, 0);
       this.delayedStartTimer = window.setTimeout(() => {
         if (!this.playing) return;
         this.refs.visual.play().catch(() => undefined);
@@ -155,10 +191,15 @@ export class DuetPreviewEngine {
     const jobs: Promise<unknown>[] = [visual.play()];
     if (faders.voice > 0) jobs.push(voice.play().catch(() => undefined));
     if (faders.reference > 0) {
-      const delay = Math.max(0, offsetSeconds);
-      this.referenceStartDelay = delay;
-      this.referenceStartedAt = this.audio.context.currentTime + delay;
-      this.audio.startReferenceBuffer(delay, 0);
+      if (offsetSeconds > 0) {
+        this.referenceStartedAt = this.audio.context.currentTime + offsetSeconds;
+        this.delayedStartTimer = window.setTimeout(() => {
+          if (this.playing && !this.refs.visual.paused) this.refs.reference.play().catch(() => undefined);
+        }, this.referenceOffsetMs);
+      } else {
+        this.referenceStartedAt = this.audio.context.currentTime;
+        jobs.push(reference.play().catch(() => undefined));
+      }
     }
     await Promise.all(jobs);
   }
@@ -181,6 +222,7 @@ export class DuetPreviewEngine {
     const faders = this.audio.getFaders();
     if (!this.playing) return;
     this.syncTrackPlaybackState(this.refs.voice, faders.voice);
+    if (this.referenceMode === 'media-element') this.syncTrackPlaybackState(this.refs.reference, faders.reference);
   }
 
   autoMix() {
@@ -196,7 +238,9 @@ export class DuetPreviewEngine {
     const visualTime = this.refs.visual.currentTime || 0;
     const voiceTime = this.refs.voice.currentTime || 0;
     const now = this.audio.context.currentTime;
-    const referenceTime = this.playing && now >= this.referenceStartedAt ? Math.max(0, now - this.referenceStartedAt) : 0;
+    const referenceTime = this.referenceMode === 'media-element'
+      ? this.refs.reference.currentTime || 0
+      : this.playing && now >= this.referenceStartedAt ? Math.max(0, now - this.referenceStartedAt) : 0;
     return {
       ...snapshot,
       visualTime,
@@ -204,10 +248,11 @@ export class DuetPreviewEngine {
       referenceTime,
       visualPaused: this.refs.visual.paused,
       voicePaused: this.refs.voice.paused,
-      referencePaused: !this.playing || now < this.referenceStartedAt,
+      referencePaused: this.referenceMode === 'media-element' ? this.refs.reference.paused : !this.playing || now < this.referenceStartedAt,
       voiceDriftMs: Math.round((voiceTime - visualTime) * 1000),
       referenceDriftMs: Math.round((referenceTime - visualTime) * 1000),
       referenceOffsetMs: this.referenceOffsetMs,
+      referenceMode: this.referenceMode,
     };
   }
 
