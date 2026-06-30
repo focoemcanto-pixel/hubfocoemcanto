@@ -208,7 +208,7 @@ export class DuetRecorderEngine {
     canvas.width = this.options.width;
     canvas.height = this.options.height;
 
-    referenceVideo.crossOrigin = 'anonymous';
+    referenceVideo.removeAttribute('crossorigin');
     referenceVideo.src = this.options.referenceUrl;
     referenceVideo.preload = 'auto';
     referenceVideo.playsInline = true;
