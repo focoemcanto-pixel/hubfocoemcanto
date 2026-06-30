@@ -6,6 +6,7 @@ import { isAccessActive } from '@/lib/access/products';
 export const dynamic = 'force-dynamic';
 
 const BUCKET = 'submission-media';
+const PRIVATE_TEST_ACCOUNT = 'markuezemarquinhos@hotmail.com';
 let bucketReady = false;
 
 type ResolvedSubmissionContext = {
@@ -33,6 +34,10 @@ function parseBoolean(value: unknown, fallback = true) {
 
 function hasVipSubscription(rows: any[]) {
   return rows.some((sub) => sub.course_key === 'grupo-vip' && isAccessActive(sub.status));
+}
+
+function isPrivateTestProfile(profile: { email?: string | null }) {
+  return String(profile.email || '').trim().toLowerCase() === PRIVATE_TEST_ACCOUNT;
 }
 
 function isMissingColumn(error: any) {
@@ -88,7 +93,26 @@ async function insertCommunityPost(supabase: ReturnType<typeof createAdminClient
   return supabase.from('community_posts').insert(fallbackPayload).select('id').single();
 }
 
+async function insertPrivateSubmission(supabase: ReturnType<typeof createAdminClient>, context: ResolvedSubmissionContext, params: PersistSubmissionParams) {
+  const { data: submission, error: submissionError } = await supabase.from('submissions').insert({
+    profile_id: context.profile.id,
+    exercise_id: context.exercise.id,
+    file_url: params.fileUrl,
+    file_type: 'duet_video',
+    note: params.caption || 'Dueto gravado no Hub.',
+    visibility: 'private',
+    status: 'private_test',
+  }).select('id').single();
+
+  if (submissionError || !submission) return NextResponse.json({ error: 'submission_failed', detail: submissionError?.message }, { status: 500 });
+  return NextResponse.json({ ok: true, id: submission.id, community_post_id: null, posted: false, review_requested: false, private_test: true });
+}
+
 async function persistSubmission(supabase: ReturnType<typeof createAdminClient>, context: ResolvedSubmissionContext, params: PersistSubmissionParams) {
+  if (isPrivateTestProfile(context.profile)) {
+    return insertPrivateSubmission(supabase, context, params);
+  }
+
   const shouldPostCommunity = params.visibility === 'community';
   const shouldReview = context.canRequestReview && params.reviewRequested;
 
