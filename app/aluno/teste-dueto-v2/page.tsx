@@ -1,0 +1,2 @@
+'use client';
+export default function TesteDuetoV2(){return <main style={{padding:24}}><h1>Dueto V2 - Laboratório</h1><p>Esta página será usada para validar o novo motor sem afetar a tela oficial.</p><ul><li>✓ Abrir câmera</li><li>✓ Carregar referência</li><li>✓ Gravar câmera</li><li>✓ Gravar voz</li><li>✓ Gravar referência</li><li>✓ Gravar canvas</li></ul><p>Próxima etapa: integrar startDuetV2Session.</p></main>}
