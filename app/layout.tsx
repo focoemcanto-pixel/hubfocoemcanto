@@ -19,6 +19,7 @@ import './admin-premium.css';
 import './media-migration-premium.css';
 import './admin-product-cover-vertical.css';
 import './academy-login.css';
+import './login-logo-polish.css';
 import './vip-paywall.css';
 import './vip-lock-modal.css';
 import './instagram-performance.css';
