@@ -60,3 +60,10 @@ export async function uploadRenderInput(supabase: ReturnType<typeof createAdminC
   if (uploaded.error) throw new Error(uploaded.error.message);
   return { path: objectPath, url: supabase.storage.from(DUET_RENDER_BUCKET).getPublicUrl(objectPath).data.publicUrl };
 }
+
+export async function uploadRenderOutput(supabase: ReturnType<typeof createAdminClient>, objectPath: string, bytes: ArrayBuffer) {
+  if (bytes.byteLength < 1000) throw new Error(`empty_output:${objectPath}`);
+  const uploaded = await supabase.storage.from(DUET_RENDER_BUCKET).upload(objectPath, bytes, { contentType: 'video/mp4', upsert: true });
+  if (uploaded.error) throw new Error(uploaded.error.message);
+  return { path: objectPath, url: supabase.storage.from(DUET_RENDER_BUCKET).getPublicUrl(objectPath).data.publicUrl };
+}
