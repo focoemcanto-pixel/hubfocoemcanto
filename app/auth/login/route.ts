@@ -37,8 +37,16 @@ function setSession(request: Request, email: string, redirectTo = '/aluno') {
   return response;
 }
 
+function normalizePhone(value: string) {
+  return value.replace(/[^\d+]/g, '').trim();
+}
+
 function missingPasswordColumn(message?: string) {
   return !!message && (message.includes('schema cache') || message.includes('hub_password_hash') || message.includes('Could not find'));
+}
+
+function missingPhoneColumn(message?: string) {
+  return !!message && (message.includes('schema cache') || message.includes('whatsapp') || message.includes('Could not find'));
 }
 
 export async function GET(request: Request) {
@@ -53,6 +61,7 @@ export async function POST(request: Request) {
     const intent = String(formData.get('intent') || 'continue');
     const password = String(formData.get('password') || '');
     const confirm = String(formData.get('confirm_password') || '');
+    const whatsapp = normalizePhone(String(formData.get('whatsapp') || ''));
 
     if (!email || !email.includes('@')) return redirectLogin(request, { erro: 'email' });
 
@@ -64,11 +73,16 @@ export async function POST(request: Request) {
     const supabase = createAdminClient();
 
     if (intent === 'set-password') {
+      if (!whatsapp || whatsapp.replace(/\D/g, '').length < 10) return redirectLogin(request, { setup: '1', email, erro: 'celular' });
       if (!isStrongEnough(password)) return redirectLogin(request, { setup: '1', email, erro: 'senha_curta' });
       if (password !== confirm) return redirectLogin(request, { setup: '1', email, erro: 'senha_diferente' });
       const nextHash = await hashPassword(password);
-      const { error: updateError } = await supabase.from('profiles').update({ hub_password_hash: nextHash, updated_at: new Date().toISOString() }).eq('id', profile.id);
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ hub_password_hash: nextHash, whatsapp, updated_at: new Date().toISOString() })
+        .eq('id', profile.id);
       if (updateError) {
+        if (missingPhoneColumn(updateError.message)) return redirectLogin(request, { setup: '1', email, erro: 'schema_celular' });
         if (missingPasswordColumn(updateError.message)) return redirectLogin(request, { setup: '1', email, erro: 'schema_senha' });
         return redirectLogin(request, { setup: '1', email, erro: 'senha' });
       }
@@ -84,7 +98,7 @@ export async function POST(request: Request) {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'login';
     const setup = email ? '1' : '';
-    const code = missingPasswordColumn(message) ? 'schema_senha' : 'login';
+    const code = missingPhoneColumn(message) ? 'schema_celular' : missingPasswordColumn(message) ? 'schema_senha' : 'login';
     return redirectLogin(request, { email, setup, erro: code });
   }
 }
