@@ -188,7 +188,7 @@ async function createAudioElementFromBlob(blob: Blob) {
   const audio = document.createElement('audio');
   audio.src = url;
   audio.preload = 'auto';
-  audio.volume = 0;
+  audio.volume = 1;
   audio.muted = false;
   await waitForMediaReady(audio);
   return { audio, url };
@@ -298,7 +298,7 @@ export class DuetRendererEngine {
       try { recorder.requestData(); } catch {}
       try { visual.pause(); } catch {}
       try { audio.pause(); } catch {}
-      window.setTimeout(() => { try { if (recorder.state === 'recording') recorder.stop(); } catch {} }, 120);
+      window.setTimeout(() => { try { if (recorder.state === 'recording') recorder.stop(); } catch {} }, 220);
     };
 
     recorder.start(500);
@@ -306,9 +306,8 @@ export class DuetRendererEngine {
     visual.currentTime = 0;
     audio.currentTime = 0;
     await Promise.all([visual.play(), audio.play()]);
-    visual.onended = stop;
-    audio.onended = stop;
-    window.setTimeout(stop, Math.max(renderedAudio.durationSeconds, visual.duration || 0, 1) * 1000 + 600);
+    visual.onended = () => window.setTimeout(stop, 350);
+    window.setTimeout(stop, Math.max(renderedAudio.durationSeconds, visual.duration || 0, 1) * 1000 + 1200);
     const blob = await done;
     videoCapture.stop();
     await audioContext.close().catch(() => undefined);
