@@ -2,6 +2,12 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 
+const PRIVATE_TEST_ACCOUNT = 'markuezemarquinhos@hotmail.com';
+
+function isAdminEmail(email?: string | null) {
+  return String(email || '').trim().toLowerCase() === PRIVATE_TEST_ACCOUNT;
+}
+
 function isBlockedCourseUrl(url: string) {
   const value = url.toLowerCase();
   if (!value) return false;
@@ -39,7 +45,7 @@ export async function POST(request: Request) {
     exercise_id,
     media_url,
     caption,
-    category: 'publicacao',
+    category: isAdminEmail(profile.email) ? 'admin_test' : 'publicacao',
   });
 
   if (error) return NextResponse.redirect(new URL('/aluno/comunidade?erro=publicar', request.url));
