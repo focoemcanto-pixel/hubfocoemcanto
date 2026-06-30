@@ -1,4 +1,5 @@
 import type { DuetFaderValues } from './duet-audio-engine';
+import { renderLiveDuetVideo } from './duet-live-renderer';
 
 export type DuetRendererEngineOptions = {
   visualBlob: Blob;
@@ -257,7 +258,12 @@ export class DuetRendererEngine {
 
   async renderVideo(): Promise<DuetRenderedVideo> {
     if (typeof MediaRecorder === 'undefined') throw new Error('media_recorder_missing');
+    const referenceGainValue = linearGain(this.options.faders.reference, this.options.preGains?.reference ?? DEFAULT_REFERENCE_PRE_GAIN);
+    const wantsReference = referenceGainValue > 0.000001;
     const renderedAudio = await this.renderAudio();
+    if (wantsReference && !renderedAudio.referenceIncluded) {
+      return renderLiveDuetVideo(this.options);
+    }
     const visualUrl = URL.createObjectURL(this.options.visualBlob);
     const visual = document.createElement('video');
     visual.src = visualUrl;
