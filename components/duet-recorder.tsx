@@ -21,6 +21,7 @@ function sliderToGain(value: number, preGain = 1) { return Math.max(0, Math.min(
 function setupVoiceCompressor(node: DynamicsCompressorNode) { node.threshold.value = -22; node.knee.value = 18; node.ratio.value = 2.6; node.attack.value = 0.008; node.release.value = 0.16; }
 function setupLimiter(node: DynamicsCompressorNode) { node.threshold.value = -3; node.knee.value = 0; node.ratio.value = 18; node.attack.value = 0.003; node.release.value = 0.08; }
 function sleep(ms: number) { return new Promise((resolve) => window.setTimeout(resolve, ms)); }
+function waitMediaReady(media: HTMLMediaElement, timeoutMs = 12000) { return new Promise<void>((resolve, reject) => { if (media.readyState >= 2) return resolve(); let done = false; const cleanup = (fn: () => void) => { if (done) return; done = true; window.clearTimeout(timer); media.removeEventListener('loadedmetadata', ok); media.removeEventListener('loadeddata', ok); media.removeEventListener('canplay', ok); media.removeEventListener('error', fail); fn(); }; const ok = () => cleanup(resolve); const fail = () => cleanup(() => reject(new Error('preview_media_load_failed'))); const timer = window.setTimeout(() => cleanup(() => reject(new Error('preview_media_timeout'))), timeoutMs); media.addEventListener('loadedmetadata', ok, { once: true }); media.addEventListener('loadeddata', ok, { once: true }); media.addEventListener('canplay', ok, { once: true }); media.addEventListener('error', fail, { once: true }); }); }
 
 export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl, canSendForReview = true }: Props) {
   const referenceSource = useMemo(() => proxiedVideoUrl(referenceUrl), [referenceUrl]);
@@ -106,16 +107,21 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl, canSendFor
     try {
       const visual = liveVisualRef.current, voice = liveVoiceRef.current, reference = liveReferenceRef.current;
       if (!visual || !voice || !reference) throw new Error('live_preview_refs_missing');
-      const graph = ensureLiveMixer();
       if (liveVoiceUrlRef.current) URL.revokeObjectURL(liveVoiceUrlRef.current);
       liveVoiceUrlRef.current = URL.createObjectURL(result.voiceBlob);
+      voice.pause(); reference.pause();
       voice.src = liveVoiceUrlRef.current; reference.src = referenceSource;
+      voice.preload = 'auto'; reference.preload = 'auto'; reference.playsInline = true;
+      voice.volume = 0; reference.volume = 0; voice.muted = false; reference.muted = false;
+      voice.load(); reference.load();
+      await Promise.all([waitMediaReady(voice), waitMediaReady(reference)]);
+      const graph = ensureLiveMixer();
       visual.currentTime = 0; voice.currentTime = 0; reference.currentTime = 0;
-      visual.muted = true; visual.volume = 0; voice.volume = 0; reference.volume = 0; livePlayingRef.current = true; updateLiveGains();
+      visual.muted = true; visual.volume = 0; livePlayingRef.current = true; updateLiveGains();
       await graph.context.resume(); await visual.play();
       if (voiceVolume > 0) await voice.play().catch(() => undefined);
       if (referenceVolume > 0) await reference.play().catch(() => undefined);
-      setLivePlaying(true); setRenderStatus(`Preview normalizado: voz ${voiceVolume}% · referência ${referenceVolume}%. Áudio nativo zerado; só o mixer toca.`);
+      setLivePlaying(true); setRenderStatus(`Preview normalizado: voz ${voiceVolume}% · referência ${referenceVolume}%. Mídias carregadas antes de conectar o mixer.`);
     } catch (err) { setError(`Não consegui iniciar o preview ao vivo: ${errorText(err)}`); pauseLivePreview(); }
   }
 
