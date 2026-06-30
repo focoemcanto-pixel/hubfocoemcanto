@@ -93,28 +93,10 @@ async function insertCommunityPost(supabase: ReturnType<typeof createAdminClient
   return supabase.from('community_posts').insert(fallbackPayload).select('id').single();
 }
 
-async function insertPrivateSubmission(supabase: ReturnType<typeof createAdminClient>, context: ResolvedSubmissionContext, params: PersistSubmissionParams) {
-  const { data: submission, error: submissionError } = await supabase.from('submissions').insert({
-    profile_id: context.profile.id,
-    exercise_id: context.exercise.id,
-    file_url: params.fileUrl,
-    file_type: 'duet_video',
-    note: params.caption || 'Dueto gravado no Hub.',
-    visibility: 'private',
-    status: 'private_test',
-  }).select('id').single();
-
-  if (submissionError || !submission) return NextResponse.json({ error: 'submission_failed', detail: submissionError?.message }, { status: 500 });
-  return NextResponse.json({ ok: true, id: submission.id, community_post_id: null, posted: false, review_requested: false, private_test: true });
-}
-
 async function persistSubmission(supabase: ReturnType<typeof createAdminClient>, context: ResolvedSubmissionContext, params: PersistSubmissionParams) {
-  if (isPrivateTestProfile(context.profile)) {
-    return insertPrivateSubmission(supabase, context, params);
-  }
-
   const shouldPostCommunity = params.visibility === 'community';
   const shouldReview = context.canRequestReview && params.reviewRequested;
+  const isAdminTest = isPrivateTestProfile(context.profile);
 
   if (params.reviewRequested && !context.canRequestReview) {
     if (!shouldPostCommunity) return NextResponse.json({ error: 'vip_required', detail: 'Avaliação do professor é exclusiva para assinantes VIP.' }, { status: 403 });
@@ -133,7 +115,7 @@ async function persistSubmission(supabase: ReturnType<typeof createAdminClient>,
       file_type: 'duet_video',
       note: params.caption || 'Dueto gravado no Hub.',
       visibility: shouldPostCommunity ? 'community' : 'private',
-      status: 'pending_review',
+      status: isAdminTest ? 'admin_test' : 'pending_review',
     }).select('id').single();
 
     if (submissionError || !submission) return NextResponse.json({ error: 'submission_failed', detail: submissionError?.message }, { status: 500 });
@@ -148,13 +130,13 @@ async function persistSubmission(supabase: ReturnType<typeof createAdminClient>,
       media_url: params.fileUrl,
       poster_url: params.posterUrl || null,
       caption: params.caption || 'Minha prática do dueto.',
-      category: 'dueto',
+      category: isAdminTest ? 'admin_test' : 'dueto',
     });
     if (postError) return NextResponse.json({ error: 'community_post_failed', detail: postError.message }, { status: 500 });
     communityPostId = post?.id || null;
   }
 
-  return NextResponse.json({ ok: true, id: submissionId, community_post_id: communityPostId, posted: shouldPostCommunity, review_requested: shouldReview });
+  return NextResponse.json({ ok: true, id: submissionId, community_post_id: communityPostId, posted: shouldPostCommunity, review_requested: shouldReview, admin_test: isAdminTest });
 }
 
 async function saveSubmission(params: { lessonSlug: string; caption: string; visibility: string; reviewRequested: boolean; fileUrl: string; posterUrl?: string | null }) {
