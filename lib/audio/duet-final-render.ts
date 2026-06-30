@@ -18,6 +18,7 @@ export type RenderArgs = {
 };
 
 type CaptureVideo = HTMLVideoElement & { captureStream?: (fps?: number) => MediaStream; mozCaptureStream?: (fps?: number) => MediaStream };
+const VOICE_RENDER_PRE_GAIN = 5.5;
 function isSafariLike() { if (typeof navigator === 'undefined') return false; const ua = navigator.userAgent; return /iPad|iPhone|iPod/.test(ua) || (/Safari/.test(ua) && !/Chrome|Chromium|Android/.test(ua)); }
 function recorderMimeType() { if (typeof MediaRecorder === 'undefined') return undefined; return ['video/mp4;codecs=avc1.42E01E,mp4a.40.2','video/mp4;codecs=h264,aac','video/mp4','video/webm;codecs=vp8,opus','video/webm;codecs=vp9,opus','video/webm'].find((type) => MediaRecorder.isTypeSupported(type)); }
 function waitReady(media: HTMLMediaElement, timeoutMs = 22000) { return new Promise<void>((resolve, reject) => { if (media.readyState >= 2) return resolve(); let settled = false; const cleanup = (callback: () => void) => { if (settled) return; settled = true; window.clearTimeout(timeout); media.removeEventListener('loadedmetadata', ok); media.removeEventListener('loadeddata', ok); media.removeEventListener('canplay', ok); media.removeEventListener('error', fail); callback(); }; const ok = () => cleanup(resolve); const fail = () => cleanup(() => reject(new Error('media_element_load_failed'))); const timeout = window.setTimeout(() => cleanup(() => reject(new Error('media_timeout'))), timeoutMs); media.addEventListener('loadedmetadata', ok, { once: true }); media.addEventListener('loadeddata', ok, { once: true }); media.addEventListener('canplay', ok, { once: true }); media.addEventListener('error', fail, { once: true }); }); }
@@ -81,5 +82,5 @@ export async function renderFinalDuetVideo({ visualBlob, voiceBlob, referenceBlo
   return rendered;
 }
 
-export function normalizeVoiceTarget(volume: number) { return Math.max(0, Math.min(1, volume / 100)); }
-export function referenceTarget(volume: number) { return Math.max(0, Math.min(1, volume / 100)); }
+export function normalizeVoiceTarget(volume: number) { return Math.max(0, Math.min(12, (volume / 100) * VOICE_RENDER_PRE_GAIN)); }
+export function referenceTarget(volume: number) { return Math.max(0, Math.min(2, volume / 100)); }
