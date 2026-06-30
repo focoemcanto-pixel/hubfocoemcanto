@@ -36,7 +36,7 @@ function drawCover(ctx: CanvasRenderingContext2D, media: HTMLVideoElement, x: nu
   ctx.drawImage(media, (vw - sw) / 2, (vh - sh) / 2, sw, sh, x, y, width, height);
 }
 
-function drawSelfie(ctx: CanvasRenderingContext2D, camera: HTMLVideoElement, x: number, y: number, width: number, height: number) {
+function drawSelfie(ctx: CanvasRenderingContext2D, camera: HTMLVideoElement, x: number, y: number, width: number, height) {
   ctx.save(); ctx.translate(x + width, y); ctx.scale(-1, 1); drawCover(ctx, camera, 0, 0, width, height); ctx.restore();
 }
 
@@ -138,7 +138,8 @@ export async function startDuetV2Session(options: DuetV2PrepareOptions, refs: { 
   reference.src = options.referenceUrl;
   reference.preload = 'auto';
   reference.playsInline = true;
-  reference.muted = false;
+  reference.muted = true;
+  reference.volume = 0;
   reference.load();
   await waitForMediaReadyV2(reference);
 
