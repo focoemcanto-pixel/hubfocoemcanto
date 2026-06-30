@@ -1,15 +1,23 @@
+function streamUid(value: string) {
+  const clean = value.trim();
+  if (!clean) return '';
+  if (!clean.startsWith('http')) return clean;
+  try {
+    const parsed = new URL(clean);
+    return parsed.pathname.split('/').filter(Boolean)[0] || '';
+  } catch {
+    return clean;
+  }
+}
+
 export function cloudflareStreamSource(uid?: string | null) {
-  const value = String(uid || '').trim();
+  const value = streamUid(String(uid || ''));
   if (!value) return '';
-  if (value.startsWith('http://') || value.startsWith('https://')) return value;
-  const host = process.env.NEXT_PUBLIC_CLOUDFLARE_STREAM_SUBDOMAIN || 'videodelivery.net';
-  return `https://${host}/${value}/manifest/video.m3u8`;
+  return `https://videodelivery.net/${value}/manifest/video.m3u8`;
 }
 
 export function cloudflareStreamEmbed(uid?: string | null) {
-  const value = String(uid || '').trim();
+  const value = streamUid(String(uid || ''));
   if (!value) return '';
-  if (value.startsWith('http://') || value.startsWith('https://')) return value;
-  const host = process.env.NEXT_PUBLIC_CLOUDFLARE_STREAM_SUBDOMAIN || 'videodelivery.net';
-  return `https://${host}/${value}/iframe`;
+  return `https://videodelivery.net/${value}/iframe`;
 }
