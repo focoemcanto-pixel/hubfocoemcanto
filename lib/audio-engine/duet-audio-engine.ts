@@ -120,7 +120,7 @@ export class DuetAudioEngine {
 
   connectVoiceElement(element: HTMLMediaElement) {
     this.disconnectTrack('voice');
-    this.prepareSilentElement(element);
+    this.prepareMediaElementForGraph(element);
     const source = this.context.createMediaElementSource(element);
     const gain = this.context.createGain();
     const analyser = this.context.createAnalyser();
@@ -135,7 +135,7 @@ export class DuetAudioEngine {
 
   connectReferenceElement(element: HTMLMediaElement) {
     this.disconnectTrack('reference');
-    this.prepareSilentElement(element);
+    this.prepareMediaElementForGraph(element);
     const source = this.context.createMediaElementSource(element);
     const gain = this.context.createGain();
     const analyser = this.context.createAnalyser();
@@ -195,8 +195,8 @@ export class DuetAudioEngine {
     await this.context.close().catch(() => undefined);
   }
 
-  private prepareSilentElement(element: HTMLMediaElement) {
-    element.volume = 0;
+  private prepareMediaElementForGraph(element: HTMLMediaElement) {
+    element.volume = 1;
     element.muted = false;
     element.preload = 'auto';
     if ('playsInline' in element) (element as HTMLVideoElement).playsInline = true;
@@ -215,7 +215,7 @@ export class DuetAudioEngine {
     try { track.analyser.disconnect(); } catch {}
     if (track.element) {
       try { track.element.pause(); } catch {}
-      track.element.volume = 0;
+      track.element.volume = 1;
     }
     if (kind === 'voice') this.voiceTrack = null;
     else this.referenceTrack = null;
