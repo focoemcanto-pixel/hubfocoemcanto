@@ -64,8 +64,6 @@ export default async function SelectStreamPage({ searchParams }: { searchParams:
   const { data: course } = courseLink?.course_id ? await supabase.from('courses').select('product_id').eq('id', courseLink.course_id).maybeSingle() : { data: null as any };
   const productId = course?.product_id || '';
 
-  // Importador do Stream deve excluir apenas UIDs já vinculados a aulas deste módulo.
-  // Não usamos media_assets aqui porque uploads quebrados antigos podem ter deixado registros órfãos e esconder vídeos reais do Cloudflare.
   const usedUids = new Set((exercises || []).map((item: any) => String(item.stream_uid || '').trim()).filter(Boolean));
   const lessonNames = (exercises || []).map((lesson: any) => ({ title: lesson.title || lesson.slug || '', normalized: normalizeMediaTitle(lesson.title || lesson.slug || '') }));
   const seen = new Set<string>();
@@ -73,7 +71,7 @@ export default async function SelectStreamPage({ searchParams }: { searchParams:
     .filter(validStreamVideo)
     .filter((video) => {
       const uid = String(video.uid || '').trim();
-      if (!uid || usedUids.has(uid) || seen.has(uid)) return false;
+      if (!uid || seen.has(uid)) return false;
       seen.add(uid);
       return true;
     })
@@ -82,10 +80,14 @@ export default async function SelectStreamPage({ searchParams }: { searchParams:
       const title = cleanTitle(name);
       const normalized = normalizeMediaTitle(title);
       const best = lessonNames.map((lesson) => ({ ...lesson, score: score(normalized, lesson.normalized) })).sort((a, b) => b.score - a.score)[0];
-      return { uid: String(video.uid), name, title, duration: Number(video.duration || 0) || null, thumbnail: String(video.thumbnail || ''), matchTitle: best?.score >= 62 ? best.title : '' };
+      const uid = String(video.uid);
+      return { uid, name, title, duration: Number(video.duration || 0) || null, thumbnail: String(video.thumbnail || ''), matchTitle: best?.score >= 62 ? best.title : '', imported: usedUids.has(uid) };
     })
     .filter((video) => !q || video.name.toLowerCase().includes(q.toLowerCase()) || video.title.toLowerCase().includes(q.toLowerCase()))
-    .sort((a, b) => a.title.localeCompare(b.title));
+    .sort((a, b) => Number(a.imported) - Number(b.imported) || a.title.localeCompare(b.title));
+  const availableCount = videos.filter((video) => !video.imported).length;
+  const importedCount = videos.filter((video) => video.imported).length;
+  const importedMessage = Number(params.imported || 0) || 0;
 
   return (
     <main className="admin-page-clean">
@@ -95,14 +97,22 @@ export default async function SelectStreamPage({ searchParams }: { searchParams:
       </section>
       <section className="admin-product-tabs"><a href={productId ? `/admin/produtos/${productId}` : '/admin/produtos'}>Módulo</a><a href={`/admin/conteudos/selecionar-drive?module=${moduleId}`}>Meu Drive</a><a className="active" href={`/admin/conteudos/selecionar-stream?module=${moduleId}`}>Stream</a></section>
       <section className="admin-clean-section">
-        <div className="admin-clean-heading"><div><span className="admin-clean-eyebrow">Vídeos prontos</span><h2>Importar para {module?.title}</h2><p className="admin-clean-muted">Aparecem apenas vídeos Ready, com duração válida e ainda não vinculados neste módulo.</p></div><strong>{videos.length} vídeos</strong></div>
+        <div className="admin-clean-heading"><div><span className="admin-clean-eyebrow">Vídeos prontos</span><h2>Importar para {module?.title}</h2><p className="admin-clean-muted">Marque os vídeos desejados e importe em massa. Os já importados ficam sinalizados.</p></div><strong>{availableCount} livres · {importedCount} importados</strong></div>
         <form className="admin-clean-form" action="/admin/conteudos/selecionar-stream"><input type="hidden" name="module" value={moduleId} /><label>Buscar no Stream<input name="q" defaultValue={q} placeholder="Nome do vídeo..." /></label><button className="admin-clean-button secondary" type="submit">Buscar</button></form>
-        {params.imported ? <p className="admin-save-success">Vídeo importado com sucesso.</p> : null}
+        {importedMessage ? <p className="admin-save-success">{importedMessage} vídeo(s) importado(s) com sucesso.</p> : null}
         {stream.error ? <p className="admin-save-error">{stream.error}</p> : null}
-        <div className="admin-list">
-          {videos.map((video) => <div className="admin-row" key={video.uid}><div><span className="admin-clean-pill success">Stream · {time(video.duration)}</span><h3>{video.title}</h3><p className="muted">{video.matchTitle ? `Provável aula: ${video.matchTitle} · ` : ''}UID {video.uid}</p></div><form action="/admin/stream/importar-video" method="post"><input type="hidden" name="module_id" value={moduleId} /><input type="hidden" name="product_id" value={productId} /><input type="hidden" name="uid" value={video.uid} /><input type="hidden" name="name" value={video.name} /><button className="admin-clean-button primary" type="submit">Importar</button></form></div>)}
-          {!videos.length ? <p className="admin-clean-muted">Nenhum vídeo livre encontrado no Stream.</p> : null}
-        </div>
+        <form action="/admin/stream/importar-video" method="post">
+          <input type="hidden" name="module_id" value={moduleId} />
+          <input type="hidden" name="product_id" value={productId} />
+          <div className="media-migration-toolbar" style={{ marginBottom: 16 }}>
+            <button className="admin-clean-button primary" type="submit" disabled={!availableCount}>Importar selecionados</button>
+            <span className="admin-clean-muted">Selecione os vídeos na lista abaixo.</span>
+          </div>
+          <div className="admin-list">
+            {videos.map((video) => <div className="admin-row" key={video.uid}><div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}><input type="checkbox" name="uid" value={video.uid} disabled={video.imported} style={{ marginTop: 8, width: 18, height: 18 }} /><input type="hidden" name={`name_${video.uid}`} value={video.name} /><div><span className={`admin-clean-pill ${video.imported ? 'success' : 'warning'}`}>{video.imported ? 'Já importado' : 'Livre'} · {time(video.duration)}</span><h3>{video.title}</h3><p className="muted">{video.matchTitle ? `Provável aula: ${video.matchTitle} · ` : ''}UID {video.uid}</p></div></div>{video.imported ? <span className="admin-clean-pill success">Atrelado</span> : <span className="admin-clean-pill warning">Selecionável</span>}</div>)}
+            {!videos.length ? <p className="admin-clean-muted">Nenhum vídeo encontrado no Stream.</p> : null}
+          </div>
+        </form>
       </section>
     </main>
   );
