@@ -31,6 +31,10 @@ const DEFAULT_SAMPLE_RATE = 48000;
 const DEFAULT_VOICE_PRE_GAIN = 3.2;
 const DEFAULT_REFERENCE_PRE_GAIN = 0.08;
 
+function debug(label: string, data?: Record<string, unknown>) {
+  try { console.info(`[duet-render] ${label}`, data || {}); } catch {}
+}
+
 function linearGain(percent: number, preGain: number) {
   if (!Number.isFinite(percent)) return 0;
   return Math.max(0, Math.min(6, (percent / 100) * preGain));
@@ -128,7 +132,6 @@ function audioBufferToWav(buffer: AudioBuffer) {
   view.setUint16(offset, 16, true); offset += 2;
   writeString('data');
   view.setUint32(offset, dataSize, true); offset += 4;
-
   const channels = Array.from({ length: numberOfChannels }, (_, channel) => buffer.getChannelData(channel));
   for (let i = 0; i < length; i += 1) {
     for (let channel = 0; channel < numberOfChannels; channel += 1) {
@@ -183,17 +186,6 @@ function makeCanvasVideoStream(visual: HTMLVideoElement) {
   return { stream: canvas.captureStream(isSafariLike() ? 24 : 30), stop: () => { stopped = true; cancelAnimationFrame(frame); } };
 }
 
-async function createAudioElementFromBlob(blob: Blob) {
-  const url = URL.createObjectURL(blob);
-  const audio = document.createElement('audio');
-  audio.src = url;
-  audio.preload = 'auto';
-  audio.volume = 1;
-  audio.muted = false;
-  await waitForMediaReady(audio);
-  return { audio, url };
-}
-
 export class DuetRendererEngine {
   private options: DuetRendererEngineOptions;
 
@@ -206,34 +198,28 @@ export class DuetRendererEngine {
     const voiceBuffer = await blobToAudioBuffer(this.options.voiceBlob, sampleRate);
     const referenceGainValue = linearGain(this.options.faders.reference, this.options.preGains?.reference ?? DEFAULT_REFERENCE_PRE_GAIN);
     const shouldIncludeReference = referenceGainValue > 0.000001;
-    const referenceBuffer = shouldIncludeReference
-      ? await urlToAudioBuffer(this.options.referenceUrl, sampleRate).catch(() => null)
-      : null;
-
+    const referenceBuffer = shouldIncludeReference ? await urlToAudioBuffer(this.options.referenceUrl, sampleRate).catch((error) => {
+      debug('reference-decode-failed', { message: error instanceof Error ? error.message : String(error) });
+      return null;
+    }) : null;
     const referenceOffsetMs = referenceBuffer ? clampReferenceOffsetMs(this.options.referenceOffsetMs) : 0;
     const referenceOffsetSeconds = referenceOffsetMs / 1000;
     const delayVoiceSeconds = Math.max(0, -referenceOffsetSeconds);
     const delayReferenceSeconds = Math.max(0, referenceOffsetSeconds);
-    const duration = Math.max(
-      voiceBuffer.duration + delayVoiceSeconds,
-      referenceBuffer ? referenceBuffer.duration + delayReferenceSeconds : 0,
-      1,
-    );
+    const duration = Math.max(voiceBuffer.duration + delayVoiceSeconds, referenceBuffer ? referenceBuffer.duration + delayReferenceSeconds : 0, 1);
     const frameCount = Math.ceil(duration * sampleRate);
+    debug('offline-render-start', { sampleRate, duration, voiceDuration: voiceBuffer.duration, referenceIncluded: Boolean(referenceBuffer), referenceOffsetMs });
     const context = new OfflineAudioContext({ numberOfChannels: 2, length: frameCount, sampleRate });
-
     const voiceSource = context.createBufferSource();
     const voiceGain = context.createGain();
     const compressor = context.createDynamicsCompressor();
     const limiter = context.createDynamicsCompressor();
     configureCompressor(compressor);
     configureLimiter(limiter);
-
     voiceSource.buffer = voiceBuffer;
     voiceGain.gain.value = linearGain(this.options.faders.voice, this.options.preGains?.voice ?? DEFAULT_VOICE_PRE_GAIN);
     const latencySeconds = Math.max(0, Math.min(0.45, (this.options.latencyMs || 0) / 1000));
     voiceSource.connect(compressor).connect(voiceGain).connect(limiter);
-
     if (referenceBuffer) {
       const referenceSource = context.createBufferSource();
       const referenceGain = context.createGain();
@@ -242,18 +228,11 @@ export class DuetRendererEngine {
       referenceSource.connect(referenceGain).connect(limiter);
       referenceSource.start(delayReferenceSeconds);
     }
-
     limiter.connect(context.destination);
     voiceSource.start(latencySeconds + delayVoiceSeconds);
-
     const audioBuffer = await context.startRendering();
-    return {
-      audioBuffer,
-      wavBlob: audioBufferToWav(audioBuffer),
-      durationSeconds: audioBuffer.duration,
-      sampleRate,
-      referenceIncluded: Boolean(referenceBuffer),
-    };
+    debug('offline-render-done', { duration: audioBuffer.duration, referenceIncluded: Boolean(referenceBuffer) });
+    return { audioBuffer, wavBlob: audioBufferToWav(audioBuffer), durationSeconds: audioBuffer.duration, sampleRate, referenceIncluded: Boolean(referenceBuffer) };
   }
 
   async renderVideo(): Promise<DuetRenderedVideo> {
@@ -262,6 +241,7 @@ export class DuetRendererEngine {
     const wantsReference = referenceGainValue > 0.000001;
     const renderedAudio = await this.renderAudio();
     if (wantsReference && !renderedAudio.referenceIncluded) {
+      debug('falling-back-live-render', { reason: 'reference_not_decoded' });
       return renderLiveDuetVideo(this.options);
     }
     const visualUrl = URL.createObjectURL(this.options.visualBlob);
@@ -272,53 +252,48 @@ export class DuetRendererEngine {
     visual.muted = true;
     visual.volume = 0;
     await waitForMediaReady(visual);
-
-    const { audio, url: audioUrl } = await createAudioElementFromBlob(renderedAudio.wavBlob);
     const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!AudioCtx) throw new Error('audio_context_missing');
     const audioContext = new AudioCtx({ sampleRate: renderedAudio.sampleRate, latencyHint: 'playback' });
     const audioDestination = audioContext.createMediaStreamDestination();
-    const audioSource = audioContext.createMediaElementSource(audio);
+    const audioSource = audioContext.createBufferSource();
+    audioSource.buffer = renderedAudio.audioBuffer;
     audioSource.connect(audioDestination);
-
     const videoCapture = makeCanvasVideoStream(visual);
     const outputStream = new MediaStream([...videoCapture.stream.getVideoTracks(), ...audioDestination.stream.getAudioTracks()]);
+    const audioTrack = outputStream.getAudioTracks()[0];
+    if (audioTrack) {
+      audioTrack.onmute = () => debug('output-audio-track-muted', { readyState: audioTrack.readyState });
+      audioTrack.onunmute = () => debug('output-audio-track-unmuted', { readyState: audioTrack.readyState });
+      audioTrack.onended = () => debug('output-audio-track-ended', { readyState: audioTrack.readyState });
+    }
     const mimeType = recorderMimeType();
     const recorder = new MediaRecorder(outputStream, { ...(mimeType ? { mimeType } : {}), videoBitsPerSecond: isSafariLike() ? 2500000 : 5200000, audioBitsPerSecond: 256000 });
     const chunks: Blob[] = [];
-    recorder.ondataavailable = (event) => { if (event.data?.size) chunks.push(event.data); };
-    const done = new Promise<Blob>((resolve) => {
-      recorder.onstop = () => resolve(new Blob(chunks, { type: recorder.mimeType || mimeType || 'video/webm' }));
-    });
-
+    recorder.onstart = () => debug('recorder-start', { mimeType: recorder.mimeType, audioTracks: outputStream.getAudioTracks().length, videoTracks: outputStream.getVideoTracks().length });
+    recorder.ondataavailable = (event) => { debug('recorder-chunk', { size: event.data?.size || 0 }); if (event.data?.size) chunks.push(event.data); };
+    const done = new Promise<Blob>((resolve) => { recorder.onstop = () => { const blob = new Blob(chunks, { type: recorder.mimeType || mimeType || 'video/webm' }); debug('recorder-stop', { chunks: chunks.length, size: blob.size, type: blob.type }); resolve(blob); }; });
     let stopped = false;
     const stop = () => {
       if (stopped) return;
       stopped = true;
       try { recorder.requestData(); } catch {}
       try { visual.pause(); } catch {}
-      try { audio.pause(); } catch {}
-      window.setTimeout(() => { try { if (recorder.state === 'recording') recorder.stop(); } catch {} }, 220);
+      try { audioSource.stop(); } catch {}
+      window.setTimeout(() => { try { if (recorder.state === 'recording') recorder.stop(); } catch {} }, 240);
     };
-
     recorder.start(500);
     await audioContext.resume().catch(() => undefined);
     visual.currentTime = 0;
-    audio.currentTime = 0;
-    await Promise.all([visual.play(), audio.play()]);
+    audioSource.start(audioContext.currentTime);
+    await visual.play();
     visual.onended = () => window.setTimeout(stop, 350);
     window.setTimeout(stop, Math.max(renderedAudio.durationSeconds, visual.duration || 0, 1) * 1000 + 1200);
     const blob = await done;
     videoCapture.stop();
     await audioContext.close().catch(() => undefined);
     URL.revokeObjectURL(visualUrl);
-    URL.revokeObjectURL(audioUrl);
     if (blob.size < 1000) throw new Error(`rendered_video_empty:${blob.size}`);
-    return {
-      blob,
-      mimeType: blob.type || recorder.mimeType || mimeType || 'video/webm',
-      durationSeconds: renderedAudio.durationSeconds,
-      referenceIncluded: renderedAudio.referenceIncluded,
-    };
+    return { blob, mimeType: blob.type || recorder.mimeType || mimeType || 'video/webm', durationSeconds: renderedAudio.durationSeconds, referenceIncluded: renderedAudio.referenceIncluded };
   }
 }
