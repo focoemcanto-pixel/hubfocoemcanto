@@ -166,7 +166,7 @@ export async function renderLiveDuetVideo(options: LiveDuetRenderOptions) {
     try { visual.pause(); } catch {}
     try { voice.pause(); } catch {}
     try { reference.pause(); } catch {}
-    window.setTimeout(() => { try { if (recorder.state === 'recording') recorder.stop(); } catch {} }, 120);
+    window.setTimeout(() => { try { if (recorder.state === 'recording') recorder.stop(); } catch {} }, 220);
   };
 
   recorder.start(500);
@@ -186,10 +186,9 @@ export async function renderLiveDuetVideo(options: LiveDuetRenderOptions) {
     window.setTimeout(() => { reference.play().catch(() => undefined); }, offsetSeconds * 1000);
   }
 
-  visual.onended = stop;
-  voice.onended = stop;
   const durationSeconds = Math.max(visual.duration || 0, voice.duration || 0, reference.duration || 0, 1);
-  window.setTimeout(stop, durationSeconds * 1000 + Math.abs(offsetSeconds) * 1000 + 800);
+  visual.onended = () => window.setTimeout(stop, 350);
+  window.setTimeout(stop, durationSeconds * 1000 + Math.abs(offsetSeconds) * 1000 + 1200);
   const blob = await done;
   videoCapture.stop();
   await audioContext.close().catch(() => undefined);
