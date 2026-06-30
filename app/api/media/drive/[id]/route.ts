@@ -278,9 +278,10 @@ export async function GET(request: Request, { params }: Params) {
     const metadata = await getDriveMetadata(id, auth.access);
     const size = Number(metadata?.size || 0);
     const requestedRange = request.headers.get('range');
-    const range = parseRange(requestedRange, size);
+    const forceFull = new URL(request.url).searchParams.get('full') === '1';
+    const range = forceFull ? null : parseRange(requestedRange, size);
 
-    if ((requestedRange || size > 0) && !range) {
+    if (!forceFull && (requestedRange || size > 0) && !range) {
       return new Response(null, { status: 416, headers: notSatisfiableHeaders(size, metadata) });
     }
 
