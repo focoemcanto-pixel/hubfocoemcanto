@@ -1,9 +1,45 @@
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { parseBoolean, parseInteger, pathPart, resolveExerciseAndProfile, uploadRenderInput } from '@/lib/duet-render/queue';
+import { parseBoolean, parseInteger, pathPart, resolveExerciseAndProfile, uploadRenderInput, uploadRenderOutput } from '@/lib/duet-render/queue';
 
 export const dynamic = 'force-dynamic';
+
+async function renderWithWorker(params: {
+  video: File;
+  voice: File;
+  referenceUrl: string;
+  voiceVolume: number;
+  referenceVolume: number;
+  referenceOffsetMs: number;
+}) {
+  const workerUrl = String(process.env.DUET_RENDER_WORKER_URL || '').replace(/\/$/, '');
+  if (!workerUrl) return null;
+
+  const data = new FormData();
+  data.set('referenceUrl', params.referenceUrl);
+  data.set('voiceVolume', String(params.voiceVolume));
+  data.set('referenceVolume', String(params.referenceVolume));
+  data.set('offsetMs', String(params.referenceOffsetMs));
+  data.set('video', params.video);
+  data.set('voice', params.voice);
+
+  const headers: HeadersInit = {};
+  const apiKey = String(process.env.DUET_RENDER_API_KEY || '').trim();
+  if (apiKey) headers['x-api-key'] = apiKey;
+
+  const response = await fetch(`${workerUrl}/render-duet`, { method: 'POST', headers, body: data });
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(`worker_render_failed:${response.status}:${text.slice(0, 240)}`);
+  }
+
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('video')) throw new Error(`worker_invalid_content_type:${contentType}`);
+  const bytes = await response.arrayBuffer();
+  if (bytes.byteLength < 1000) throw new Error(`worker_empty_output:${bytes.byteLength}`);
+  return bytes;
+}
 
 export async function POST(request: Request) {
   try {
@@ -68,6 +104,24 @@ export async function POST(request: Request) {
       .single();
 
     if (jobError || !job) return NextResponse.json({ error: 'render_job_failed', detail: jobError?.message }, { status: 500 });
+
+    try {
+      const renderedBytes = await renderWithWorker({ video, voice, referenceUrl, voiceVolume, referenceVolume, referenceOffsetMs });
+      if (renderedBytes) {
+        const output = await uploadRenderOutput(supabase, outputPath, renderedBytes);
+        const { error: updateError } = await supabase
+          .from('duet_render_jobs')
+          .update({ status: 'completed', output_url: output.url, output_path: output.path, completed_at: new Date().toISOString(), render_meta: { mode: 'worker_sync', bytes: renderedBytes.byteLength } })
+          .eq('id', job.id);
+        if (updateError) throw new Error(updateError.message);
+        return NextResponse.json({ ok: true, job_id: job.id, status: 'completed', output_url: output.url, created_at: job.created_at });
+      }
+    } catch (workerError) {
+      const message = workerError instanceof Error ? workerError.message : String(workerError);
+      await supabase.from('duet_render_jobs').update({ status: 'failed', error_message: message }).eq('id', job.id);
+      return NextResponse.json({ ok: true, job_id: job.id, status: 'failed', error_message: message, created_at: job.created_at });
+    }
+
     return NextResponse.json({ ok: true, job_id: job.id, status: job.status, created_at: job.created_at });
   } catch (error) {
     return NextResponse.json({ error: 'duet_render_job_failed', message: error instanceof Error ? error.message : 'unknown_error' }, { status: 500 });
