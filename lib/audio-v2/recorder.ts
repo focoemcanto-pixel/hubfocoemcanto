@@ -14,6 +14,9 @@ type AudioGraphV2 = {
   usedElementFallback: boolean;
 };
 
+const REFERENCE_RECORD_GAIN = 3.8;
+const REFERENCE_MIX_GAIN = 2.4;
+
 function makeAudioContextV2() {
   const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
   if (!AudioCtx) return null;
@@ -113,8 +116,8 @@ function buildAudioGraphV2(args: { micStream: MediaStream; reference: HTMLVideoE
       const reference = context.createMediaStreamSource(args.capturedReferenceStream);
       const mixedGain = context.createGain();
       const recordGain = context.createGain();
-      mixedGain.gain.value = 1;
-      recordGain.gain.value = 1;
+      mixedGain.gain.value = REFERENCE_MIX_GAIN;
+      recordGain.gain.value = REFERENCE_RECORD_GAIN;
       reference.connect(mixedGain).connect(mixedDestination);
       reference.connect(recordGain).connect(referenceDestination);
     } catch {}
@@ -125,8 +128,8 @@ function buildAudioGraphV2(args: { micStream: MediaStream; reference: HTMLVideoE
       const mixedGain = context.createGain();
       const recordGain = context.createGain();
       monitorGain.gain.value = 1;
-      mixedGain.gain.value = 1;
-      recordGain.gain.value = 1;
+      mixedGain.gain.value = REFERENCE_MIX_GAIN;
+      recordGain.gain.value = REFERENCE_RECORD_GAIN;
       reference.connect(monitorGain).connect(context.destination);
       reference.connect(mixedGain).connect(mixedDestination);
       reference.connect(recordGain).connect(referenceDestination);
