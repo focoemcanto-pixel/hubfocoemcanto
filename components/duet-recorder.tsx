@@ -8,7 +8,7 @@ import { renderFinalDuetVideo } from '@/lib/audio/duet-final-render';
 
 type Props = { lessonTitle: string; lessonSlug: string; referenceUrl?: string | null; referenceEmbedUrl?: string | null; canSendForReview?: boolean };
 type Step = 'intro' | 'recording' | 'review' | 'posting' | 'posted';
-type LiveMixerGraph = { context: AudioContext; voiceGain: GainNode; referenceGain: GainNode; voiceCompressor: DynamicsCompressorNode; masterLimiter: DynamicsCompressorNode; analyser: AnalyserNode; analyserData: Float32Array };
+type LiveMixerGraph = { context: AudioContext; voiceGain: GainNode; referenceGain: GainNode; voiceCompressor: DynamicsCompressorNode; masterLimiter: DynamicsCompressorNode; analyser: AnalyserNode; analyserData: Float32Array<ArrayBuffer> };
 
 const VOICE_PRE_GAIN = 3.2;
 const REFERENCE_PRE_GAIN = 0.08;
@@ -93,7 +93,8 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl, canSendFor
     voiceSource.connect(voiceCompressor).connect(voiceGain).connect(masterLimiter);
     referenceSourceNode.connect(referenceGain).connect(masterLimiter);
     masterLimiter.connect(analyser).connect(context.destination);
-    const graph = { context, voiceGain, referenceGain, voiceCompressor, masterLimiter, analyser, analyserData: new Float32Array(analyser.fftSize) };
+    const analyserData = new Float32Array(analyser.fftSize) as Float32Array<ArrayBuffer>;
+    const graph = { context, voiceGain, referenceGain, voiceCompressor, masterLimiter, analyser, analyserData };
     liveMixerRef.current = graph; updateLiveGains(); return graph;
   }
 
@@ -125,10 +126,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl, canSendFor
     const levels = [0, 5, 13, 50, 100];
     const rows: string[] = [];
     setVoiceVolume(0); updateLiveGains(0, 0); await sleep(700);
-    for (const level of levels) {
-      setReferenceVolume(level); updateLiveGains(0, level); await sleep(900);
-      rows.push(`${level}% → gain=${sliderToGain(level, REFERENCE_PRE_GAIN).toFixed(4)} · WebAudio=${readMasterDb().toFixed(1)} dBFS`);
-    }
+    for (const level of levels) { setReferenceVolume(level); updateLiveGains(0, level); await sleep(900); rows.push(`${level}% → gain=${sliderToGain(level, REFERENCE_PRE_GAIN).toFixed(4)} · WebAudio=${readMasterDb().toFixed(1)} dBFS`); }
     setVoiceVolume(oldVoice); setReferenceVolume(oldRef); updateLiveGains(oldVoice, oldRef);
     setDiagnostic(`TESTE ISOLADO DA REFERÊNCIA\nVoz forçada em 0% durante o teste.\n${rows.join('\n')}\n\nInterpretação: se WebAudio cai mas o ouvido não cai, há áudio fora do mixer. Se WebAudio não cai, o GainNode/grafo está errado.`);
   }
@@ -139,7 +137,6 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl, canSendFor
   function setVoice(value: number) { setVoiceVolume(value); updateLiveGains(value, referenceVolume); setRenderStatus(`Preview normalizado: voz ${value}% · referência ${referenceVolume}%.`); }
   function setReference(value: number) { setReferenceVolume(value); updateLiveGains(voiceVolume, value); setRenderStatus(`Preview normalizado: voz ${voiceVolume}% · referência ${value}%.`); }
   function autoMix() { setVoiceVolume(110); setReferenceVolume(70); updateLiveGains(110, 70); setRenderStatus('Auto Mix aplicado: voz presente e referência em apoio equilibrado.'); }
-
   async function buildUploadBlob() { if (!result?.canvasBlob || !result?.voiceBlob || !referenceSource) return result?.canvasBlob || null; setRenderStatus(`Renderizando final normalizado: voz ${voiceVolume}% · referência ${referenceVolume}%...`); const rendered = await renderFinalDuetVideo({ visualBlob: result.canvasBlob, voiceBlob: result.voiceBlob, referenceBlob: null, referenceSource, settings: { voiceVolume, referenceVolume, preset: 'natural', latencyMs: 0, noiseReduction: false } }); if (!rendered || rendered.size < 1000) throw new Error(`render_empty_or_too_small:${rendered?.size || 0}`); setRenderStatus('Vídeo final renderizado com mix normalizado.'); return rendered; }
   async function submit() { if (!result?.canvasBlob) return setError('Grave o dueto antes de enviar.'); const visibility = postCommunity ? 'community' : 'private'; const reviewRequested = canSendForReview && sendForReview; if (!postCommunity && !reviewRequested) return setError(canSendForReview ? 'Escolha postar na comunidade, enviar para avaliação ou os dois.' : 'No modo gratuito, poste na comunidade para continuar.'); setStep('posting'); setError(''); pauseLivePreview(); try { const uploadBlob = await buildUploadBlob(); if (!uploadBlob) throw new Error('Vídeo final indisponível.'); const data = new FormData(); const fileType = uploadBlob.type || 'video/webm'; data.set('lesson_slug', lessonSlug); data.set('caption', caption || 'Minha prática do dueto.'); data.set('visibility', visibility); data.set('review_requested', String(reviewRequested)); data.set('voice_volume', String(voiceVolume)); data.set('reference_volume', String(referenceVolume)); data.set('voice_preset', 'natural'); data.set('noise_reduction', 'false'); data.set('file', new File([uploadBlob], `${lessonSlug}-dueto-final.${fileType.includes('mp4') ? 'mp4' : 'webm'}`, { type: fileType })); const response = await fetch('/api/submissions/duet', { method: 'POST', body: data }); if (!response.ok) { const json = await response.json().catch(() => null); throw new Error(json?.detail || json?.message || 'Não consegui enviar sua atividade.'); } const json = await response.json().catch(() => null); const communityPostId = String(json?.community_post_id || ''); setPostedHref(postCommunity ? `/aluno/comunidade${communityPostId ? `#post-${communityPostId}` : ''}` : ''); setStep('posted'); } catch (err: any) { setError(err?.message || 'Não consegui enviar sua atividade.'); setStep('review'); } }
 
