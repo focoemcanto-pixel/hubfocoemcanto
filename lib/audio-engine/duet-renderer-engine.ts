@@ -50,23 +50,21 @@ function withFullMedia(url: string) {
   return `${url}${separator}full=1`;
 }
 
-function recorderMimeType() {
-  if (typeof MediaRecorder === 'undefined') return '';
-  const candidates = [
-    'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
-    'video/mp4;codecs=h264,aac',
-    'video/mp4',
-    'video/webm;codecs=vp8,opus',
-    'video/webm;codecs=vp9,opus',
-    'video/webm',
-  ];
-  return candidates.find((type) => MediaRecorder.isTypeSupported(type)) || '';
-}
-
 function isSafariLike() {
   if (typeof navigator === 'undefined') return false;
   const ua = navigator.userAgent;
   return /iPad|iPhone|iPod/.test(ua) || (/Safari/.test(ua) && !/Chrome|Chromium|Android/.test(ua));
+}
+
+function recorderMimeType() {
+  if (typeof MediaRecorder === 'undefined') return '';
+  const iosSafeCandidates = ['video/mp4', 'video/mp4;codecs=h264,aac', 'video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/webm;codecs=vp8,opus', 'video/webm'];
+  const defaultCandidates = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4;codecs=h264,aac', 'video/mp4', 'video/webm;codecs=vp8,opus', 'video/webm;codecs=vp9,opus', 'video/webm'];
+  const candidates = isSafariLike() ? iosSafeCandidates : defaultCandidates;
+  const support = candidates.map((type) => [type, MediaRecorder.isTypeSupported(type)]);
+  const selected = candidates.find((type) => MediaRecorder.isTypeSupported(type)) || '';
+  debug('mime-selected', { selected, support, safariLike: isSafariLike(), userAgent: navigator.userAgent });
+  return selected;
 }
 
 async function blobToAudioBuffer(blob: Blob, sampleRate: number) {
