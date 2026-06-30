@@ -12,6 +12,7 @@ export type DuetPreviewEngineOptions = {
   referenceUrl: string;
   initialFaders?: Partial<DuetFaderValues>;
   preGains?: Partial<{ voice: number; reference: number }>;
+  referenceOffsetMs?: number;
 };
 
 export type DuetPreviewDiagnostic = DuetAudioEngineSnapshot & {
@@ -23,6 +24,7 @@ export type DuetPreviewDiagnostic = DuetAudioEngineSnapshot & {
   referencePaused: boolean;
   voiceDriftMs: number;
   referenceDriftMs: number;
+  referenceOffsetMs: number;
 };
 
 function waitForMediaReady(media: HTMLMediaElement, timeoutMs = 15000) {
@@ -56,6 +58,10 @@ function prepareSilentMedia(media: HTMLMediaElement) {
   if ('playsInline' in media) (media as HTMLVideoElement).playsInline = true;
 }
 
+function clampOffset(value: number) {
+  return Math.max(-300, Math.min(300, Number.isFinite(value) ? value : 0));
+}
+
 export class DuetPreviewEngine {
   readonly audio: DuetAudioEngine;
 
@@ -65,10 +71,13 @@ export class DuetPreviewEngine {
   private voiceUrl = '';
   private prepared = false;
   private playing = false;
+  private referenceOffsetMs = 0;
+  private referenceDelayTimer: number | null = null;
 
   constructor(refs: DuetPreviewEngineRefs, options: DuetPreviewEngineOptions) {
     this.refs = refs;
     this.options = options;
+    this.referenceOffsetMs = clampOffset(options.referenceOffsetMs || 0);
     this.audio = new DuetAudioEngine({ latencyHint: 'interactive', sampleRate: 48000 });
     if (options.preGains) this.audio.setPreGains(options.preGains);
     if (options.initialFaders) this.audio.setFaders(options.initialFaders);
@@ -100,10 +109,12 @@ export class DuetPreviewEngine {
 
   async play() {
     await this.prepare();
+    this.clearReferenceDelay();
     const { visual, voice, reference } = this.refs;
+    const offsetSeconds = this.referenceOffsetMs / 1000;
     visual.currentTime = 0;
     voice.currentTime = 0;
-    reference.currentTime = 0;
+    reference.currentTime = offsetSeconds < 0 ? Math.abs(offsetSeconds) : 0;
     visual.muted = true;
     visual.volume = 0;
     voice.volume = 0;
@@ -113,15 +124,28 @@ export class DuetPreviewEngine {
     const faders = this.audio.getFaders();
     const jobs: Promise<unknown>[] = [visual.play()];
     if (faders.voice > 0) jobs.push(voice.play().catch(() => undefined));
-    if (faders.reference > 0) jobs.push(reference.play().catch(() => undefined));
+    if (faders.reference > 0) {
+      if (offsetSeconds > 0) {
+        this.referenceDelayTimer = window.setTimeout(() => {
+          if (this.playing && !this.refs.visual.paused) this.refs.reference.play().catch(() => undefined);
+        }, this.referenceOffsetMs);
+      } else {
+        jobs.push(reference.play().catch(() => undefined));
+      }
+    }
     await Promise.all(jobs);
   }
 
   pause() {
     this.playing = false;
+    this.clearReferenceDelay();
     try { this.refs.visual.pause(); } catch {}
     try { this.refs.voice.pause(); } catch {}
     try { this.refs.reference.pause(); } catch {}
+  }
+
+  setReferenceOffsetMs(value: number) {
+    this.referenceOffsetMs = clampOffset(value);
   }
 
   setFaders(values: Partial<DuetFaderValues>) {
@@ -155,6 +179,7 @@ export class DuetPreviewEngine {
       referencePaused: this.refs.reference.paused,
       voiceDriftMs: Math.round((voiceTime - visualTime) * 1000),
       referenceDriftMs: Math.round((referenceTime - visualTime) * 1000),
+      referenceOffsetMs: this.referenceOffsetMs,
     };
   }
 
@@ -179,5 +204,10 @@ export class DuetPreviewEngine {
       try { media.currentTime = this.refs.visual.currentTime || 0; } catch {}
       media.play().catch(() => undefined);
     }
+  }
+
+  private clearReferenceDelay() {
+    if (this.referenceDelayTimer) window.clearTimeout(this.referenceDelayTimer);
+    this.referenceDelayTimer = null;
   }
 }
