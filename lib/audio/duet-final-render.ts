@@ -1,6 +1,5 @@
 import type { VoicePreset } from './duet-buffer-engine';
 import { clampLatencyMs } from './duet-latency';
-import { reduceVoiceNoise } from './duet-noise-reduction';
 
 export type FinalRenderSettings = {
   voiceVolume: number;
@@ -38,76 +37,28 @@ function recorderMimeType() {
   ].find((type) => MediaRecorder.isTypeSupported(type));
 }
 
-function waitReady(media: HTMLMediaElement) {
+function waitReady(media: HTMLMediaElement, timeoutMs = 22000) {
   return new Promise<void>((resolve, reject) => {
     if (media.readyState >= 2) return resolve();
-    const timeout = window.setTimeout(() => cleanup(() => reject(new Error('media_timeout'))), 18000);
+    let settled = false;
+    const cleanup = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeout);
+      media.removeEventListener('loadedmetadata', ok);
+      media.removeEventListener('loadeddata', ok);
+      media.removeEventListener('canplay', ok);
+      media.removeEventListener('error', fail);
+      callback();
+    };
     const ok = () => cleanup(resolve);
-    const fail = () => cleanup(() => reject(new Error('media_error')));
-    const cleanup = (callback: () => void) => { window.clearTimeout(timeout); media.removeEventListener('loadedmetadata', ok); media.removeEventListener('canplay', ok); media.removeEventListener('error', fail); callback(); };
+    const fail = () => cleanup(() => reject(new Error('media_element_load_failed')));
+    const timeout = window.setTimeout(() => cleanup(() => reject(new Error('media_timeout'))), timeoutMs);
     media.addEventListener('loadedmetadata', ok, { once: true });
+    media.addEventListener('loadeddata', ok, { once: true });
     media.addEventListener('canplay', ok, { once: true });
     media.addEventListener('error', fail, { once: true });
   });
-}
-
-async function decodeBlob(ctx: AudioContext, blob: Blob) { const buffer = await blob.arrayBuffer(); return ctx.decodeAudioData(buffer.slice(0)); }
-async function decodeUrl(ctx: AudioContext, url: string) { const response = await fetch(url, { cache: 'force-cache' }); if (!response.ok) throw new Error('reference_fetch_failed'); const buffer = await response.arrayBuffer(); return ctx.decodeAudioData(buffer.slice(0)); }
-async function decodeReference(ctx: AudioContext, referenceSource?: string | null, referenceBlob?: Blob | null) {
-  // O áudio capturado do elemento de vídeo pode vir silencioso em Chrome/Safari dependendo da origem/codec.
-  // Para render profissional, priorizamos sempre o arquivo original da referência.
-  if (referenceSource) return decodeUrl(ctx, referenceSource);
-  if (referenceBlob) return decodeBlob(ctx, referenceBlob);
-  throw new Error('reference_missing');
-}
-
-function activeRms(buffer: AudioBuffer) {
-  const data = buffer.getChannelData(0);
-  const step = Math.max(1, Math.floor(data.length / 60000));
-  let sum = 0;
-  let count = 0;
-  const samples: number[] = [];
-  for (let index = 0; index < data.length; index += step) {
-    const sample = Math.abs(data[index]);
-    sum += sample * sample;
-    count++;
-    samples.push(sample);
-  }
-  const rms = Math.sqrt(sum / Math.max(1, count));
-  const gate = Math.max(0.006, rms * 0.55);
-  let activeSum = 0;
-  let activeCount = 0;
-  for (const sample of samples) {
-    if (sample >= gate) { activeSum += sample * sample; activeCount++; }
-  }
-  return Math.sqrt(activeSum / Math.max(1, activeCount)) || rms;
-}
-
-function trackPreGain(buffer: AudioBuffer, targetRms: number, min: number, max: number) {
-  const rms = activeRms(buffer);
-  if (!Number.isFinite(rms) || rms <= 0.0001) return 1;
-  return Math.max(min, Math.min(max, targetRms / rms));
-}
-
-function applyVoicePreset(ctx: AudioContext, input: AudioNode, destination: AudioNode, preset: VoicePreset, voiceGainValue: number) {
-  const gain = ctx.createGain(); const highpass = ctx.createBiquadFilter(); const body = ctx.createBiquadFilter(); const presence = ctx.createBiquadFilter(); const air = ctx.createBiquadFilter(); const compressor = ctx.createDynamicsCompressor(); const delay = ctx.createDelay(0.45); const wet = ctx.createGain(); const dry = ctx.createGain(); const limiter = ctx.createDynamicsCompressor();
-  const presetMap = {
-    natural: { highpass: 65, body: 0.2, presence: 0.8, air: 0.4, threshold: -18, ratio: 1.8, delay: 0.001, wet: 0, dry: 1 },
-    studio: { highpass: 92, body: 2.4, presence: 6.2, air: 4.5, threshold: -32, ratio: 5.8, delay: 0.018, wet: 0.05, dry: 0.95 },
-    worship: { highpass: 105, body: 1.4, presence: 4.8, air: 5.6, threshold: -30, ratio: 4.6, delay: 0.16, wet: 0.28, dry: 0.9 },
-    coral: { highpass: 115, body: 0.6, presence: 3.2, air: 2.2, threshold: -28, ratio: 4, delay: 0.035, wet: 0.36, dry: 0.82 },
-  } satisfies Record<VoicePreset, { highpass: number; body: number; presence: number; air: number; threshold: number; ratio: number; delay: number; wet: number; dry: number }>;
-  const current = presetMap[preset];
-  gain.gain.value = voiceGainValue;
-  highpass.type = 'highpass'; highpass.frequency.value = current.highpass;
-  body.type = 'peaking'; body.frequency.value = 240; body.Q.value = 0.7; body.gain.value = current.body;
-  presence.type = 'peaking'; presence.frequency.value = 3300; presence.Q.value = 0.85; presence.gain.value = current.presence;
-  air.type = 'highshelf'; air.frequency.value = 7200; air.gain.value = current.air;
-  compressor.threshold.value = current.threshold; compressor.knee.value = 14; compressor.ratio.value = current.ratio; compressor.attack.value = 0.003; compressor.release.value = 0.14;
-  delay.delayTime.value = current.delay; wet.gain.value = current.wet; dry.gain.value = current.dry;
-  limiter.threshold.value = -4.8; limiter.knee.value = 1.5; limiter.ratio.value = 16; limiter.attack.value = 0.0015; limiter.release.value = 0.07;
-  input.connect(gain).connect(highpass).connect(body).connect(presence).connect(air).connect(compressor);
-  compressor.connect(dry).connect(limiter); compressor.connect(delay).connect(wet).connect(limiter); limiter.connect(destination);
 }
 
 function makeCanvasVideoStream(visual: HTMLVideoElement) {
@@ -118,7 +69,11 @@ function makeCanvasVideoStream(visual: HTMLVideoElement) {
   if (!ctx2d) throw new Error('canvas_failed');
   let frame = 0;
   let stopped = false;
-  const paint = () => { ctx2d.fillStyle = '#050505'; ctx2d.fillRect(0, 0, canvas.width, canvas.height); try { ctx2d.drawImage(visual, 0, 0, canvas.width, canvas.height); } catch {} };
+  const paint = () => {
+    ctx2d.fillStyle = '#050505';
+    ctx2d.fillRect(0, 0, canvas.width, canvas.height);
+    try { ctx2d.drawImage(visual, 0, 0, canvas.width, canvas.height); } catch {}
+  };
   const draw = () => { if (stopped) return; paint(); frame = requestAnimationFrame(draw); };
   paint(); draw();
   return { stream: canvas.captureStream(isSafariLike() ? 24 : 30), stop: () => { stopped = true; cancelAnimationFrame(frame); } };
@@ -128,9 +83,33 @@ function makeDirectVideoStream(visual: HTMLVideoElement) {
   const video = visual as CaptureVideo;
   const capture = video.captureStream || video.mozCaptureStream;
   if (!capture) return null;
-  const stream = capture.call(video, isSafariLike() ? 24 : 30);
-  if (!stream.getVideoTracks().length) return null;
-  return { stream, stop: () => stream.getTracks().forEach((track) => track.stop()) };
+  try {
+    const stream = capture.call(video, isSafariLike() ? 24 : 30);
+    if (!stream.getVideoTracks().length) return null;
+    return { stream, stop: () => stream.getTracks().forEach((track) => track.stop()) };
+  } catch {
+    return null;
+  }
+}
+
+function createHiddenVideo(src: string, muted = true) {
+  const video = document.createElement('video');
+  video.src = src;
+  video.crossOrigin = 'anonymous';
+  video.playsInline = true;
+  video.preload = 'auto';
+  video.muted = muted;
+  video.volume = muted ? 0 : 1;
+  return video;
+}
+
+function createHiddenAudio(src: string) {
+  const audio = document.createElement('audio');
+  audio.src = src;
+  audio.crossOrigin = 'anonymous';
+  audio.preload = 'auto';
+  audio.volume = 1;
+  return audio;
 }
 
 export async function renderFinalDuetVideo({ visualBlob, voiceBlob, referenceBlob, referenceSource, settings }: RenderArgs) {
@@ -138,36 +117,36 @@ export async function renderFinalDuetVideo({ visualBlob, voiceBlob, referenceBlo
   if (!AudioCtx) throw new Error('audio_context_missing');
   if (typeof MediaRecorder === 'undefined') throw new Error('media_recorder_missing');
 
-  const visual = document.createElement('video');
   const visualUrl = URL.createObjectURL(visualBlob);
-  visual.src = visualUrl;
-  visual.muted = true;
-  visual.playsInline = true;
-  visual.preload = 'auto';
-  await waitReady(visual);
+  const voiceUrl = URL.createObjectURL(voiceBlob);
+  const referenceUrl = referenceSource || (referenceBlob ? URL.createObjectURL(referenceBlob) : '');
+  if (!referenceUrl) throw new Error('reference_missing');
+
+  const visual = createHiddenVideo(visualUrl, true);
+  const voice = createHiddenAudio(voiceUrl);
+  const reference = createHiddenVideo(referenceUrl, true);
+  reference.muted = false;
+  reference.volume = 1;
+
+  await Promise.all([waitReady(visual), waitReady(voice), waitReady(reference)]);
 
   const audioCtx = new AudioCtx({ latencyHint: 'playback', sampleRate: 48000 });
-  const [rawVoiceBuffer, referenceBuffer] = await Promise.all([
-    decodeBlob(audioCtx, voiceBlob),
-    decodeReference(audioCtx, referenceSource, referenceBlob),
-  ]);
-  const voiceBuffer = settings.noiseReduction ? reduceVoiceNoise(audioCtx, rawVoiceBuffer) : rawVoiceBuffer;
-  const voicePreGain = trackPreGain(voiceBuffer, 0.078, 0.12, 2.8);
-  const referencePreGain = 1;
-
   const destination = audioCtx.createMediaStreamDestination();
-  const voiceSource = audioCtx.createBufferSource();
-  const referenceSourceNode = audioCtx.createBufferSource();
+
+  const voiceSource = audioCtx.createMediaElementSource(voice);
+  const referenceSourceNode = audioCtx.createMediaElementSource(reference);
+  const voiceGain = audioCtx.createGain();
   const referenceGain = audioCtx.createGain();
-  voiceSource.buffer = voiceBuffer;
-  referenceSourceNode.buffer = referenceBuffer;
-  referenceGain.gain.value = referenceTarget(settings.referenceVolume) * referencePreGain;
+  const voiceDelay = audioCtx.createDelay(0.45);
+  voiceDelay.delayTime.value = Math.max(0, Math.min(0.35, clampLatencyMs(settings.latencyMs || 0) / 1000));
+  voiceGain.gain.value = normalizeVoiceTarget(settings.voiceVolume);
+  referenceGain.gain.value = referenceTarget(settings.referenceVolume);
+  voiceSource.connect(voiceDelay).connect(voiceGain).connect(destination);
   referenceSourceNode.connect(referenceGain).connect(destination);
-  applyVoicePreset(audioCtx, voiceSource, destination, settings.preset, normalizeVoiceTarget(settings.voiceVolume) * voicePreGain);
 
   visual.currentTime = 0;
-  await audioCtx.resume().catch(() => undefined);
-  await visual.play().catch(() => undefined);
+  voice.currentTime = 0;
+  reference.currentTime = 0;
 
   const videoCapture = makeDirectVideoStream(visual) || makeCanvasVideoStream(visual);
   const outputStream = new MediaStream([...videoCapture.stream.getVideoTracks(), ...destination.stream.getAudioTracks()]);
@@ -178,29 +157,37 @@ export async function renderFinalDuetVideo({ visualBlob, voiceBlob, referenceBlo
   const done = new Promise<Blob>((resolve) => { recorder.onstop = () => resolve(new Blob(chunks, { type: recorder.mimeType || mimeType || 'video/webm' })); });
 
   let stopped = false;
+  const cleanup = async () => {
+    try { visual.pause(); } catch {}
+    try { voice.pause(); } catch {}
+    try { reference.pause(); } catch {}
+    videoCapture.stop();
+    await audioCtx.close().catch(() => undefined);
+    URL.revokeObjectURL(visualUrl);
+    URL.revokeObjectURL(voiceUrl);
+    if (!referenceSource && referenceUrl) URL.revokeObjectURL(referenceUrl);
+  };
   const stop = () => {
     if (stopped) return;
     stopped = true;
     try { recorder.requestData(); } catch {}
-    try { voiceSource.stop(); } catch {}
-    try { referenceSourceNode.stop(); } catch {}
     try { visual.pause(); } catch {}
-    videoCapture.stop();
-    window.setTimeout(() => { if (recorder.state === 'recording') recorder.stop(); }, 120);
+    try { voice.pause(); } catch {}
+    try { reference.pause(); } catch {}
+    window.setTimeout(() => { if (recorder.state === 'recording') recorder.stop(); }, 160);
   };
 
-  recorder.start(1000);
-  const startAt = audioCtx.currentTime + 0.08;
-  const voiceOffset = Math.min(Math.max(0, clampLatencyMs(settings.latencyMs || 0) / 1000), Math.max(0, voiceBuffer.duration - 0.02));
-  voiceSource.start(startAt, voiceOffset);
-  referenceSourceNode.start(startAt, 0);
+  recorder.start(500);
+  await audioCtx.resume().catch(() => undefined);
+  await Promise.all([visual.play(), voice.play(), reference.play()]).catch((error) => { throw new Error(`media_play_failed:${error instanceof Error ? error.message : String(error)}`); });
+
   visual.onended = stop;
-  const maxDuration = Math.max(1, Math.min(visual.duration || 90, referenceBuffer.duration || 90, Math.max(0.5, voiceBuffer.duration - voiceOffset || 90)));
-  window.setTimeout(stop, maxDuration * 1000 + 450);
+  const durations = [visual.duration, voice.duration, reference.duration].filter((value) => Number.isFinite(value) && value > 0);
+  const maxDuration = Math.max(1, Math.min(...durations, 120));
+  window.setTimeout(stop, maxDuration * 1000 + 550);
   const rendered = await done;
-  await audioCtx.close().catch(() => undefined);
-  URL.revokeObjectURL(visualUrl);
-  if (rendered.size < 1000) throw new Error('empty_rendered_duet');
+  await cleanup();
+  if (rendered.size < 1000) throw new Error(`empty_rendered_duet:${rendered.size}`);
   return rendered;
 }
 
