@@ -15,24 +15,10 @@ const DEFAULT_SAMPLE_RATE = 48000;
 const DEFAULT_VOICE_PRE_GAIN = 3.2;
 const DEFAULT_REFERENCE_PRE_GAIN = 0.08;
 
-function debug(label: string, data?: Record<string, unknown>) {
-  try { console.info(`[duet-live-render] ${label}`, data || {}); } catch {}
-}
-
-function linearGain(percent: number, preGain: number) {
-  if (!Number.isFinite(percent)) return 0;
-  return Math.max(0, Math.min(6, (percent / 100) * preGain));
-}
-
-function clampOffsetMs(value?: number) {
-  return Math.max(-300, Math.min(300, Number.isFinite(value || 0) ? value || 0 : 0));
-}
-
-function isSafariLike() {
-  if (typeof navigator === 'undefined') return false;
-  const ua = navigator.userAgent;
-  return /iPad|iPhone|iPod/.test(ua) || (/Safari/.test(ua) && !/Chrome|Chromium|Android/.test(ua));
-}
+function debug(label: string, data?: Record<string, unknown>) { try { console.info(`[duet-live-render] ${label}`, data || {}); } catch {} }
+function linearGain(percent: number, preGain: number) { if (!Number.isFinite(percent)) return 0; return Math.max(0, Math.min(6, (percent / 100) * preGain)); }
+function clampOffsetMs(value?: number) { return Math.max(-300, Math.min(300, Number.isFinite(value || 0) ? value || 0 : 0)); }
+function isSafariLike() { if (typeof navigator === 'undefined') return false; const ua = navigator.userAgent; return /iPad|iPhone|iPod/.test(ua) || (/Safari/.test(ua) && !/Chrome|Chromium|Android/.test(ua)); }
 
 function recorderMimeType() {
   if (typeof MediaRecorder === 'undefined') return '';
@@ -126,21 +112,8 @@ function makeCanvasVideoStream(visual: HTMLVideoElement) {
   return { stream: canvas.captureStream(isSafariLike() ? 24 : 30), stop: () => { stopped = true; cancelAnimationFrame(frame); } };
 }
 
-function configureCompressor(node: DynamicsCompressorNode) {
-  node.threshold.value = -22;
-  node.knee.value = 18;
-  node.ratio.value = 2.6;
-  node.attack.value = 0.008;
-  node.release.value = 0.16;
-}
-
-function configureLimiter(node: DynamicsCompressorNode) {
-  node.threshold.value = -3;
-  node.knee.value = 0;
-  node.ratio.value = 18;
-  node.attack.value = 0.003;
-  node.release.value = 0.08;
-}
+function configureCompressor(node: DynamicsCompressorNode) { node.threshold.value = -22; node.knee.value = 18; node.ratio.value = 2.6; node.attack.value = 0.008; node.release.value = 0.16; }
+function configureLimiter(node: DynamicsCompressorNode) { node.threshold.value = -3; node.knee.value = 0; node.ratio.value = 18; node.attack.value = 0.003; node.release.value = 0.08; }
 
 export async function renderLiveDuetVideo(options: LiveDuetRenderOptions) {
   debug('start', { faders: options.faders, referenceOffsetMs: options.referenceOffsetMs, referenceUrl: options.referenceUrl });
@@ -154,6 +127,12 @@ export async function renderLiveDuetVideo(options: LiveDuetRenderOptions) {
   const limiter = audioContext.createDynamicsCompressor();
   configureLimiter(limiter);
   limiter.connect(destination);
+
+  const silentGain = audioContext.createGain();
+  silentGain.gain.value = 0.00001;
+  const silentOscillator = audioContext.createOscillator();
+  silentOscillator.frequency.value = 20;
+  silentOscillator.connect(silentGain).connect(limiter);
 
   const voiceGain = audioContext.createGain();
   const voiceCompressor = audioContext.createDynamicsCompressor();
@@ -190,11 +169,14 @@ export async function renderLiveDuetVideo(options: LiveDuetRenderOptions) {
     try { visual.pause(); } catch {}
     try { voice.pause(); } catch {}
     try { reference.pause(); } catch {}
+    try { silentOscillator.stop(); } catch {}
     window.setTimeout(() => { try { if (recorder.state === 'recording') recorder.stop(); } catch {} }, 220);
   };
 
-  recorder.start(500);
   await audioContext.resume().catch(() => undefined);
+  silentOscillator.start();
+  debug('silent-keeper-started', { gain: silentGain.gain.value });
+  recorder.start(500);
   visual.currentTime = 0;
   voice.currentTime = 0;
   reference.currentTime = 0;
