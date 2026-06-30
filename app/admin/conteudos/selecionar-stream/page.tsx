@@ -4,32 +4,40 @@ import { normalizeMediaTitle } from '@/lib/media/cloudflare-stream';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-type StreamVideo = { uid?: string; name?: string; duration?: number; thumbnail?: string; status?: { state?: string }; meta?: Record<string, unknown> };
+type StreamVideo = { uid?: string; name?: string; duration?: number; thumbnail?: string; status?: { state?: string; errorReasonCode?: string | null; errorReasonText?: string | null }; meta?: Record<string, unknown> };
 
 async function listStreamVideos() {
   const accountId = process.env.CLOUDFLARE_ACCOUNT_ID || '';
   const token = process.env.CLOUDFLARE_STREAM_TOKEN || '';
   if (!accountId || !token) return { videos: [] as StreamVideo[], error: 'Configure CLOUDFLARE_ACCOUNT_ID e CLOUDFLARE_STREAM_TOKEN.' };
-  const videos: StreamVideo[] = [];
+  const videosByUid = new Map<string, StreamVideo>();
+  let previousFirstUid = '';
   for (let page = 1; page <= 50; page += 1) {
-    const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/stream?per_page=100&page=${page}`, {
+    const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/stream?per_page=100&page=${page}&asc=false`, {
       headers: { authorization: ['Bearer', token].join(' ') },
       cache: 'no-store',
     });
     const json = await response.json().catch(() => ({}));
-    if (!response.ok || json?.success === false) return { videos, error: json?.errors?.[0]?.message || `Cloudflare Stream respondeu ${response.status}.` };
+    if (!response.ok || json?.success === false) return { videos: [...videosByUid.values()], error: json?.errors?.[0]?.message || `Cloudflare Stream respondeu ${response.status}.` };
     const batch = Array.isArray(json?.result) ? json.result : [];
-    videos.push(...batch);
+    const firstUid = String(batch[0]?.uid || '');
+    if (page > 1 && firstUid && firstUid === previousFirstUid) break;
+    previousFirstUid = firstUid;
+    for (const video of batch) {
+      const uid = String(video?.uid || '').trim();
+      if (uid) videosByUid.set(uid, video);
+    }
     const info = json?.result_info;
-    if (!batch.length || (info?.total_pages && page >= Number(info.total_pages))) break;
+    if (!batch.length || (info?.total_pages && page >= Number(info.total_pages)) || (info?.count && Number(info.count) < 100)) break;
   }
-  return { videos, error: '' };
+  return { videos: [...videosByUid.values()], error: '' };
 }
 
 function videoName(video: StreamVideo) { return String(video.meta?.name || video.name || video.uid || 'Vídeo sem nome'); }
 function cleanTitle(name: string) { return name.replace(/\.[^/.]+$/, '').trim(); }
 function time(seconds?: number | null) { if (!seconds) return '—'; const total = Math.round(seconds); const min = Math.floor(total / 60); const sec = total % 60; return `${min}:${String(sec).padStart(2, '0')}`; }
 function score(a: string, b: string) { if (!a || !b) return 0; if (a === b) return 100; if (a.includes(b) || b.includes(a)) return Math.min(98, Math.round((Math.min(a.length, b.length) / Math.max(a.length, b.length)) * 100) + 18); const aw = new Set(a.split(/\s+/).filter(Boolean)); const bw = new Set(b.split(/\s+/).filter(Boolean)); const common = [...aw].filter((word) => bw.has(word)).length; return Math.round((common / (new Set([...aw, ...bw]).size || 1)) * 100); }
+function validStreamVideo(video: StreamVideo) { return Boolean(String(video.uid || '').trim()) && String(video.status?.state || '') === 'ready' && !video.status?.errorReasonCode && (Number(video.duration || 0) || 0) > 0; }
 
 export default async function SelectStreamPage({ searchParams }: { searchParams: Promise<{ module?: string; q?: string; imported?: string }> }) {
   const params = await searchParams;
@@ -47,20 +55,30 @@ export default async function SelectStreamPage({ searchParams }: { searchParams:
     );
   }
 
-  const [{ data: module }, { data: exercises }, stream] = await Promise.all([
+  const [{ data: module }, { data: exercises }, { data: assets }, stream] = await Promise.all([
     supabase.from('modules').select('id,title').eq('id', moduleId).maybeSingle(),
     supabase.from('exercises').select('id,title,slug,stream_uid').eq('module_id', moduleId).limit(1000),
+    supabase.from('media_assets').select('stream_uid').not('stream_uid', 'is', null).limit(5000),
     listStreamVideos(),
   ]);
   const { data: courseLink } = await supabase.from('course_module_links').select('course_id').eq('module_id', moduleId).limit(1).maybeSingle();
   const { data: course } = courseLink?.course_id ? await supabase.from('courses').select('product_id').eq('id', courseLink.course_id).maybeSingle() : { data: null as any };
   const productId = course?.product_id || '';
 
-  const usedUids = new Set((exercises || []).map((item: any) => String(item.stream_uid || '').trim()).filter(Boolean));
+  const usedUids = new Set([
+    ...(exercises || []).map((item: any) => String(item.stream_uid || '').trim()).filter(Boolean),
+    ...(assets || []).map((item: any) => String(item.stream_uid || '').trim()).filter(Boolean),
+  ]);
   const lessonNames = (exercises || []).map((lesson: any) => ({ title: lesson.title || lesson.slug || '', normalized: normalizeMediaTitle(lesson.title || lesson.slug || '') }));
+  const seen = new Set<string>();
   const videos = (stream.videos || [])
-    .filter((video) => String(video.status?.state || '') === 'ready')
-    .filter((video) => video.uid && !usedUids.has(String(video.uid)))
+    .filter(validStreamVideo)
+    .filter((video) => {
+      const uid = String(video.uid || '').trim();
+      if (!uid || usedUids.has(uid) || seen.has(uid)) return false;
+      seen.add(uid);
+      return true;
+    })
     .map((video) => {
       const name = videoName(video);
       const title = cleanTitle(name);
@@ -79,7 +97,7 @@ export default async function SelectStreamPage({ searchParams }: { searchParams:
       </section>
       <section className="admin-product-tabs"><a href={productId ? `/admin/produtos/${productId}` : '/admin/produtos'}>Módulo</a><a href={`/admin/conteudos/selecionar-drive?module=${moduleId}`}>Meu Drive</a><a className="active" href={`/admin/conteudos/selecionar-stream?module=${moduleId}`}>Stream</a></section>
       <section className="admin-clean-section">
-        <div className="admin-clean-heading"><div><span className="admin-clean-eyebrow">Vídeos prontos</span><h2>Importar para {module?.title}</h2><p className="admin-clean-muted">Aparecem apenas vídeos Ready ainda não vinculados neste módulo.</p></div><strong>{videos.length} vídeos</strong></div>
+        <div className="admin-clean-heading"><div><span className="admin-clean-eyebrow">Vídeos prontos</span><h2>Importar para {module?.title}</h2><p className="admin-clean-muted">Aparecem apenas vídeos Ready, com duração válida e ainda não vinculados no Hub.</p></div><strong>{videos.length} vídeos</strong></div>
         <form className="admin-clean-form" action="/admin/conteudos/selecionar-stream"><input type="hidden" name="module" value={moduleId} /><label>Buscar no Stream<input name="q" defaultValue={q} placeholder="Nome do vídeo..." /></label><button className="admin-clean-button secondary" type="submit">Buscar</button></form>
         {params.imported ? <p className="admin-save-success">Vídeo importado com sucesso.</p> : null}
         {stream.error ? <p className="admin-save-error">{stream.error}</p> : null}
