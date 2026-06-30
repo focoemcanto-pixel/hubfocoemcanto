@@ -5,6 +5,8 @@ import { isAccessActive } from '@/lib/access/products';
 
 export const dynamic = 'force-dynamic';
 
+const VIP_CHECKOUT_URL = 'https://pay.kiwify.com.br/HHr4eyM';
+
 const covers = [
   'radial-gradient(circle at 60% 18%,rgba(245,199,107,.34),transparent 35%),linear-gradient(145deg,#342414,#07070b)',
   'radial-gradient(circle at 64% 18%,rgba(142,92,255,.34),transparent 36%),linear-gradient(145deg,#211334,#07070b)',
@@ -16,7 +18,6 @@ const css = `.school-library-page{max-width:1180px}.school-library-hero,.course-
 
 function progressFor(index: number) { return [75, 40, 12, 10, 0, 0][index % 6]; }
 function isRealModule(module: any) { const description = String(module.description || '').toLowerCase(); return !description.startsWith('conteudos importados da pasta') && !description.startsWith('conteúdos importados da pasta'); }
-function isFreeTuningModule(module: any) { const value = `${module?.title || ''} ${module?.slug || ''}`.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); return value.includes('firm') && value.includes('afin'); }
 function hasCourse(subscriptions: any[], courseKey: string) { return subscriptions.some((sub) => sub.course_key === courseKey && isAccessActive(sub.status)); }
 function styleForCover(cover: string) { return cover.startsWith('radial-gradient') ? { background: cover } : { backgroundImage: `url(${cover})` }; }
 function productLink(product: any, fallback: string) { return product?.member_url || product?.checkout_url || product?.sales_url || product?.external_url || product?.kiwify_url || fallback; }
@@ -28,11 +29,10 @@ function isVip(product: any) { return `${product?.name || ''} ${product?.slug ||
 function ModuleCard({ module, index, hasVip }: { module: any; index: number; hasVip: boolean }) {
   const progress = progressFor(index);
   const fallback = covers[index % covers.length];
-  const isFree = isFreeTuningModule(module);
-  const unlocked = hasVip || isFree;
-  const label = hasVip ? (progress ? 'Em andamento' : 'Módulo') : isFree ? 'GRATIS' : 'VIP';
+  const unlocked = hasVip;
+  const label = hasVip ? (progress ? 'Em andamento' : 'Módulo') : 'VIP';
   return (
-    <a className={`module-vertical-card ${unlocked ? isFree ? 'free' : '' : 'frozen'}`} href={`/aluno/biblioteca/${module.slug}`}>
+    <a className={`module-vertical-card ${unlocked ? 'free' : 'frozen'}`} href={unlocked ? `/aluno/biblioteca/${module.slug}` : VIP_CHECKOUT_URL}>
       <span className="module-status">{label}</span>
       <div className="module-vertical-bg" style={module.cover_url ? { backgroundImage: `url(${module.cover_url})` } : { background: fallback }} />
       {!unlocked ? <div className="module-lock-layer"><span>Acesso exclusivo VIP</span></div> : null}
@@ -54,18 +54,15 @@ export default async function StudentLibraryPage() {
   const modules = (data || []).filter(isRealModule);
   const activeSubs = (subscriptions || []).filter((sub: any) => isAccessActive(sub.status));
   const productList = ((products || []) as any[]).sort((a, b) => productOrder(a, 0) - productOrder(b, 0));
-  const vipProduct = productList.find(isVip);
-  const vipHref = productLink(vipProduct, '#sala-vip');
   const hasVip = hasCourse(activeSubs, 'grupo-vip');
   const courseCards = productList.map((product, index) => {
     const vip = isVip(product);
-    const published = product.status === 'published';
     const subscribed = hasCourse(activeSubs, productKey(product));
-    const unlocked = vip ? true : published || subscribed || hasVip;
+    const unlocked = vip ? hasVip : subscribed || hasVip;
     const title = vip ? 'Sala de Atividades VIP' : product.name;
-    const description = vip ? (hasVip ? 'Atividades, duetos e comunidade.' : 'Modulo gratis disponivel. O VIP libera tudo.') : (unlocked ? (product.description || 'Acesso liberado.') : 'Bloqueado. Entre no Grupo VIP para liberar.');
-    const href = unlocked ? (vip ? '#sala-vip' : productLink(product, `/aluno/biblioteca/${product.slug}`)) : vipHref;
-    const action = unlocked ? (vip ? hasVip ? 'Abrir modulos' : 'Explorar gratis' : 'Acessar curso') : 'Liberar no VIP';
+    const description = vip ? (hasVip ? 'Atividades, duetos e comunidade.' : 'Bloqueado para assinantes VIP. Garanta seu acesso para começar.') : (unlocked ? (product.description || 'Acesso liberado.') : 'Bloqueado. Entre no Grupo VIP para liberar.');
+    const href = unlocked ? (vip ? '#sala-vip' : productLink(product, `/aluno/biblioteca/${product.slug}`)) : VIP_CHECKOUT_URL;
+    const action = unlocked ? (vip ? 'Abrir módulos' : 'Acessar curso') : 'Liberar no VIP';
     return { title, description, unlocked, href, cover: productCover(product, covers[index % covers.length]), action };
   });
 
@@ -73,9 +70,9 @@ export default async function StudentLibraryPage() {
     <AppShell>
       <main className="page school-library-page">
         <style dangerouslySetInnerHTML={{ __html: css }} />
-        <section className="school-library-hero"><p className="eyebrow">Biblioteca da escola</p><h1>Escolha seu curso vocal.</h1><p>Experimente a Sala de Atividades com o modulo Firmando a Afinacao. O VIP libera todos os modulos, downloads e avaliacoes do professor.</p></section>
+        <section className="school-library-hero"><p className="eyebrow">Biblioteca da escola</p><h1>Escolha seu curso vocal.</h1><p>A Sala de Atividades agora é exclusiva para alunos VIP, com todos os módulos, duetos, downloads e avaliações do professor.</p></section>
         <section className="school-section"><div className="school-section-head"><h2>Meus cursos</h2><span>{courseCards.filter((course) => course.unlocked).length} liberado(s)</span></div><div className="course-access-grid">{courseCards.map((course) => <a className={`course-access-card ${course.unlocked ? 'unlocked' : 'locked'}`} href={course.href} key={course.title}><span className="course-access-badge">{course.unlocked ? 'Liberado' : 'Bloqueado'}</span><div className="course-access-bg" style={styleForCover(course.cover)} /><div className="course-access-copy"><h3>{course.title}</h3><p>{course.description}</p><span className="course-access-action">{course.action}</span></div></a>)}</div></section>
-        <section id="sala-vip" className="school-section course-room"><div className="course-room-header"><div><span className="eyebrow">Grupo VIP</span><h2>Sala de Atividades VIP</h2></div><span className="course-room-pill">{modules.length} modulos</span></div><div className="module-vertical-grid">{modules.map((module: any, index: number) => <ModuleCard module={module} index={index} hasVip={hasVip} key={module.id} />)}</div></section>
+        <section id="sala-vip" className="school-section course-room"><div className="course-room-header"><div><span className="eyebrow">Grupo VIP</span><h2>Sala de Atividades VIP</h2></div><span className="course-room-pill">{modules.length} módulos</span></div><div className="module-vertical-grid">{modules.map((module: any, index: number) => <ModuleCard module={module} index={index} hasVip={hasVip} key={module.id} />)}</div></section>
       </main>
     </AppShell>
   );
