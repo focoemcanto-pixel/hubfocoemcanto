@@ -55,20 +55,18 @@ export default async function SelectStreamPage({ searchParams }: { searchParams:
     );
   }
 
-  const [{ data: module }, { data: exercises }, { data: assets }, stream] = await Promise.all([
+  const [{ data: module }, { data: exercises }, stream] = await Promise.all([
     supabase.from('modules').select('id,title').eq('id', moduleId).maybeSingle(),
     supabase.from('exercises').select('id,title,slug,stream_uid').eq('module_id', moduleId).limit(1000),
-    supabase.from('media_assets').select('stream_uid').not('stream_uid', 'is', null).limit(5000),
     listStreamVideos(),
   ]);
   const { data: courseLink } = await supabase.from('course_module_links').select('course_id').eq('module_id', moduleId).limit(1).maybeSingle();
   const { data: course } = courseLink?.course_id ? await supabase.from('courses').select('product_id').eq('id', courseLink.course_id).maybeSingle() : { data: null as any };
   const productId = course?.product_id || '';
 
-  const usedUids = new Set([
-    ...(exercises || []).map((item: any) => String(item.stream_uid || '').trim()).filter(Boolean),
-    ...(assets || []).map((item: any) => String(item.stream_uid || '').trim()).filter(Boolean),
-  ]);
+  // Importador do Stream deve excluir apenas UIDs já vinculados a aulas deste módulo.
+  // Não usamos media_assets aqui porque uploads quebrados antigos podem ter deixado registros órfãos e esconder vídeos reais do Cloudflare.
+  const usedUids = new Set((exercises || []).map((item: any) => String(item.stream_uid || '').trim()).filter(Boolean));
   const lessonNames = (exercises || []).map((lesson: any) => ({ title: lesson.title || lesson.slug || '', normalized: normalizeMediaTitle(lesson.title || lesson.slug || '') }));
   const seen = new Set<string>();
   const videos = (stream.videos || [])
@@ -97,7 +95,7 @@ export default async function SelectStreamPage({ searchParams }: { searchParams:
       </section>
       <section className="admin-product-tabs"><a href={productId ? `/admin/produtos/${productId}` : '/admin/produtos'}>Módulo</a><a href={`/admin/conteudos/selecionar-drive?module=${moduleId}`}>Meu Drive</a><a className="active" href={`/admin/conteudos/selecionar-stream?module=${moduleId}`}>Stream</a></section>
       <section className="admin-clean-section">
-        <div className="admin-clean-heading"><div><span className="admin-clean-eyebrow">Vídeos prontos</span><h2>Importar para {module?.title}</h2><p className="admin-clean-muted">Aparecem apenas vídeos Ready, com duração válida e ainda não vinculados no Hub.</p></div><strong>{videos.length} vídeos</strong></div>
+        <div className="admin-clean-heading"><div><span className="admin-clean-eyebrow">Vídeos prontos</span><h2>Importar para {module?.title}</h2><p className="admin-clean-muted">Aparecem apenas vídeos Ready, com duração válida e ainda não vinculados neste módulo.</p></div><strong>{videos.length} vídeos</strong></div>
         <form className="admin-clean-form" action="/admin/conteudos/selecionar-stream"><input type="hidden" name="module" value={moduleId} /><label>Buscar no Stream<input name="q" defaultValue={q} placeholder="Nome do vídeo..." /></label><button className="admin-clean-button secondary" type="submit">Buscar</button></form>
         {params.imported ? <p className="admin-save-success">Vídeo importado com sucesso.</p> : null}
         {stream.error ? <p className="admin-save-error">{stream.error}</p> : null}
