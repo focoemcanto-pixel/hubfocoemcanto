@@ -46,6 +46,7 @@ import './vocal-capture-final-tune.css';
 import './vocal-tessitura-stage.css';
 import './vocal-tessitura-live.css';
 import './vocal-result-final-polish.css';
+import './vocal-intro-premium.css';
 import './vocal-emergency-layout-fix.css';
 import './guided-training-polish.css';
 import './ear-training-reference.css';
