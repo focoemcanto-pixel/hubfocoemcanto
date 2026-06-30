@@ -16,12 +16,14 @@ export type DuetRenderedAudio = {
   wavBlob: Blob;
   durationSeconds: number;
   sampleRate: number;
+  referenceIncluded: boolean;
 };
 
 export type DuetRenderedVideo = {
   blob: Blob;
   mimeType: string;
   durationSeconds: number;
+  referenceIncluded: boolean;
 };
 
 const DEFAULT_SAMPLE_RATE = 48000;
@@ -35,6 +37,12 @@ function linearGain(percent: number, preGain: number) {
 
 function clampReferenceOffsetMs(value?: number) {
   return Math.max(-300, Math.min(300, Number.isFinite(value || 0) ? value || 0 : 0));
+}
+
+function withFullMedia(url: string) {
+  if (!url) return url;
+  const separator = url.includes('?') ? '&' : '?';
+  return `${url}${separator}full=1`;
 }
 
 function recorderMimeType() {
@@ -69,7 +77,7 @@ async function blobToAudioBuffer(blob: Blob, sampleRate: number) {
 }
 
 async function urlToAudioBuffer(url: string, sampleRate: number) {
-  const response = await fetch(url, { cache: 'force-cache' });
+  const response = await fetch(withFullMedia(url), { cache: 'force-cache' });
   if (!response.ok) throw new Error(`reference_fetch_failed:${response.status}`);
   const blob = await response.blob();
   return blobToAudioBuffer(blob, sampleRate);
@@ -194,41 +202,57 @@ export class DuetRendererEngine {
 
   async renderAudio(): Promise<DuetRenderedAudio> {
     const sampleRate = this.options.sampleRate || DEFAULT_SAMPLE_RATE;
-    const [voiceBuffer, referenceBuffer] = await Promise.all([
-      blobToAudioBuffer(this.options.voiceBlob, sampleRate),
-      urlToAudioBuffer(this.options.referenceUrl, sampleRate),
-    ]);
-    const referenceOffsetMs = clampReferenceOffsetMs(this.options.referenceOffsetMs);
+    const voiceBuffer = await blobToAudioBuffer(this.options.voiceBlob, sampleRate);
+    const referenceGainValue = linearGain(this.options.faders.reference, this.options.preGains?.reference ?? DEFAULT_REFERENCE_PRE_GAIN);
+    const shouldIncludeReference = referenceGainValue > 0.000001;
+    const referenceBuffer = shouldIncludeReference
+      ? await urlToAudioBuffer(this.options.referenceUrl, sampleRate).catch(() => null)
+      : null;
+
+    const referenceOffsetMs = referenceBuffer ? clampReferenceOffsetMs(this.options.referenceOffsetMs) : 0;
     const referenceOffsetSeconds = referenceOffsetMs / 1000;
     const delayVoiceSeconds = Math.max(0, -referenceOffsetSeconds);
     const delayReferenceSeconds = Math.max(0, referenceOffsetSeconds);
-    const duration = Math.max(voiceBuffer.duration + delayVoiceSeconds, referenceBuffer.duration + delayReferenceSeconds, 1);
+    const duration = Math.max(
+      voiceBuffer.duration + delayVoiceSeconds,
+      referenceBuffer ? referenceBuffer.duration + delayReferenceSeconds : 0,
+      1,
+    );
     const frameCount = Math.ceil(duration * sampleRate);
     const context = new OfflineAudioContext({ numberOfChannels: 2, length: frameCount, sampleRate });
 
     const voiceSource = context.createBufferSource();
-    const referenceSource = context.createBufferSource();
     const voiceGain = context.createGain();
-    const referenceGain = context.createGain();
     const compressor = context.createDynamicsCompressor();
     const limiter = context.createDynamicsCompressor();
     configureCompressor(compressor);
     configureLimiter(limiter);
 
     voiceSource.buffer = voiceBuffer;
-    referenceSource.buffer = referenceBuffer;
     voiceGain.gain.value = linearGain(this.options.faders.voice, this.options.preGains?.voice ?? DEFAULT_VOICE_PRE_GAIN);
-    referenceGain.gain.value = linearGain(this.options.faders.reference, this.options.preGains?.reference ?? DEFAULT_REFERENCE_PRE_GAIN);
-
     const latencySeconds = Math.max(0, Math.min(0.45, (this.options.latencyMs || 0) / 1000));
     voiceSource.connect(compressor).connect(voiceGain).connect(limiter);
-    referenceSource.connect(referenceGain).connect(limiter);
+
+    if (referenceBuffer) {
+      const referenceSource = context.createBufferSource();
+      const referenceGain = context.createGain();
+      referenceSource.buffer = referenceBuffer;
+      referenceGain.gain.value = referenceGainValue;
+      referenceSource.connect(referenceGain).connect(limiter);
+      referenceSource.start(delayReferenceSeconds);
+    }
+
     limiter.connect(context.destination);
     voiceSource.start(latencySeconds + delayVoiceSeconds);
-    referenceSource.start(delayReferenceSeconds);
 
     const audioBuffer = await context.startRendering();
-    return { audioBuffer, wavBlob: audioBufferToWav(audioBuffer), durationSeconds: audioBuffer.duration, sampleRate };
+    return {
+      audioBuffer,
+      wavBlob: audioBufferToWav(audioBuffer),
+      durationSeconds: audioBuffer.duration,
+      sampleRate,
+      referenceIncluded: Boolean(referenceBuffer),
+    };
   }
 
   async renderVideo(): Promise<DuetRenderedVideo> {
@@ -285,6 +309,11 @@ export class DuetRendererEngine {
     URL.revokeObjectURL(visualUrl);
     URL.revokeObjectURL(audioUrl);
     if (blob.size < 1000) throw new Error(`rendered_video_empty:${blob.size}`);
-    return { blob, mimeType: blob.type || recorder.mimeType || mimeType || 'video/webm', durationSeconds: renderedAudio.durationSeconds };
+    return {
+      blob,
+      mimeType: blob.type || recorder.mimeType || mimeType || 'video/webm',
+      durationSeconds: renderedAudio.durationSeconds,
+      referenceIncluded: renderedAudio.referenceIncluded,
+    };
   }
 }
