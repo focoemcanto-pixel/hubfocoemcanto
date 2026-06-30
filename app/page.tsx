@@ -37,7 +37,7 @@ export default async function HomePage({ searchParams }: { searchParams?: Promis
         <aside className="academy-login-brand hub-login-brand">
           <div className="academy-brand-lockup"><DynamicBrandLogo settings={settings} /></div>
           <h1>Sua voz. <span>Seu treino.</span></h1>
-          <p>O hub completo para assistir aulas, gravar duetos, postar na comunidade e evoluir com direção.</p>
+          <p>A escola completa para assistir aulas, gravar duetos, postar na comunidade e evoluir com direção.</p>
           <div className="academy-benefits">
             <article><GraduationCap size={24} /><div><strong>Sala de Atividades VIP</strong><span>Um módulo gratuito e todos os módulos para assinantes.</span></div></article>
             <article><PlayCircle size={24} /><div><strong>Aulas e duetos</strong><span>Pratique com vídeos reais e publique sua evolução.</span></div></article>
@@ -52,7 +52,7 @@ export default async function HomePage({ searchParams }: { searchParams?: Promis
         <section className="academy-login-panel">
           <div className="academy-login-panel-inner">
             <p className="academy-eyebrow"><Sparkles size={16} /> Acesso seguro</p>
-            <h2>{setup ? 'Crie sua senha de acesso' : passwordMode ? 'Bem-vindo(a) de volta' : 'Entre no Hub Foco em Canto'}</h2>
+            <h2>{setup ? 'Crie sua senha de acesso' : passwordMode ? 'Bem-vindo(a) de volta' : 'Entre na Escola Foco em Canto'}</h2>
             <p className="academy-muted">
               {setup
                 ? 'Este será seu acesso definitivo. Depois disso, ninguém entra apenas sabendo seu e-mail.'
@@ -85,7 +85,7 @@ export default async function HomePage({ searchParams }: { searchParams?: Promis
               </form>
             )}
 
-            <div className="academy-first-access"><ShieldCheck size={48} /><div><strong>Primeiro acesso?</strong><p>Informe seu e-mail, crie sua senha e entre no hub.</p></div></div>
+            <div className="academy-first-access"><ShieldCheck size={48} /><div><strong>Primeiro acesso?</strong><p>Informe seu e-mail, crie sua senha e entre na escola.</p></div></div>
             <p className="academy-security"><Lock size={16} /> Seu acesso fica protegido por senha.</p>
           </div>
         </section>
