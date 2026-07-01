@@ -83,7 +83,9 @@ export class DuetAudioEngine {
 
   private voiceTrack: DuetAudioEngineTrack | null = null;
   private referenceTrack: DuetAudioEngineTrack | null = null;
+  private voiceBuffer: AudioBuffer | null = null;
   private referenceBuffer: AudioBuffer | null = null;
+  private activeVoiceBufferSource: AudioBufferSourceNode | null = null;
   private activeReferenceBufferSource: AudioBufferSourceNode | null = null;
   private voicePreGain = DEFAULT_VOICE_PRE_GAIN;
   private referencePreGain = DEFAULT_REFERENCE_PRE_GAIN;
@@ -130,7 +132,22 @@ export class DuetAudioEngine {
     configureAnalyser(analyser);
     configureVoiceCompressor(compressor);
     source.connect(compressor).connect(gain).connect(analyser).connect(this.masterLimiter);
+    this.voiceBuffer = null;
     this.voiceTrack = { kind: 'voice', element, source, gain, analyser };
+    this.applyFaders();
+    return this.voiceTrack;
+  }
+
+  connectVoiceBuffer(buffer: AudioBuffer) {
+    this.disconnectTrack('voice');
+    const gain = this.context.createGain();
+    const analyser = this.context.createAnalyser();
+    const compressor = this.context.createDynamicsCompressor();
+    configureAnalyser(analyser);
+    configureVoiceCompressor(compressor);
+    compressor.connect(gain).connect(analyser).connect(this.masterLimiter);
+    this.voiceBuffer = buffer;
+    this.voiceTrack = { kind: 'voice', gain, analyser };
     this.applyFaders();
     return this.voiceTrack;
   }
@@ -161,6 +178,19 @@ export class DuetAudioEngine {
     return this.referenceTrack;
   }
 
+  startVoiceBuffer(delaySeconds = 0, offsetSeconds = 0) {
+    if (!this.voiceBuffer || !this.voiceTrack) return null;
+    this.stopVoiceBuffer();
+    const source = this.context.createBufferSource();
+    source.buffer = this.voiceBuffer;
+    source.connect(this.voiceTrack.gain);
+    const safeDelay = Math.max(0, delaySeconds || 0);
+    const safeOffset = Math.max(0, Math.min(this.voiceBuffer.duration - 0.01, offsetSeconds || 0));
+    source.start(this.context.currentTime + safeDelay, safeOffset);
+    this.activeVoiceBufferSource = source;
+    return source;
+  }
+
   startReferenceBuffer(delaySeconds = 0, offsetSeconds = 0) {
     if (!this.referenceBuffer || !this.referenceTrack) return null;
     this.stopReferenceBuffer();
@@ -172,6 +202,13 @@ export class DuetAudioEngine {
     source.start(this.context.currentTime + safeDelay, safeOffset);
     this.activeReferenceBufferSource = source;
     return source;
+  }
+
+  stopVoiceBuffer() {
+    if (!this.activeVoiceBufferSource) return;
+    try { this.activeVoiceBufferSource.stop(); } catch {}
+    try { this.activeVoiceBufferSource.disconnect(); } catch {}
+    this.activeVoiceBufferSource = null;
   }
 
   stopReferenceBuffer() {
@@ -190,6 +227,7 @@ export class DuetAudioEngine {
     configureAnalyser(analyser);
     configureVoiceCompressor(compressor);
     source.connect(compressor).connect(gain).connect(analyser).connect(this.masterLimiter);
+    this.voiceBuffer = null;
     this.voiceTrack = { kind: 'voice', source, gain, analyser };
     this.applyFaders();
     return this.voiceTrack;
@@ -246,6 +284,10 @@ export class DuetAudioEngine {
   private disconnectTrack(kind: DuetTrackKind) {
     const track = kind === 'voice' ? this.voiceTrack : this.referenceTrack;
     if (!track) return;
+    if (kind === 'voice') {
+      this.stopVoiceBuffer();
+      this.voiceBuffer = null;
+    }
     if (kind === 'reference') {
       this.stopReferenceBuffer();
       this.referenceBuffer = null;
