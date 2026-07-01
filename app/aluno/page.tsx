@@ -86,10 +86,11 @@ export default async function StudentPage() {
   const courseCards = products.map((product, index) => {
     const vip = isVipProduct(product);
     const subscribed = hasCourse(subscriptions, productKey(product));
-    const unlocked = vip ? hasVip : subscribed || hasVip;
+    const published = product.status === 'published';
+    const unlocked = vip ? hasVip : published || subscribed || hasVip;
     return {
       title: productTitle(product),
-      description: vip ? (hasVip ? 'Todos os módulos, duetos, downloads e avaliações.' : 'Módulo bloqueado para assinantes VIP. Garanta seu acesso antes de começar.') : (product.description || 'Treinamento premium da escola.'),
+      description: vip ? (hasVip ? 'Todos os módulos, duetos, downloads e avaliações.' : 'Módulo bloqueado para assinantes VIP. Garanta seu acesso antes de começar.') : (unlocked ? (product.description || 'Treinamento premium da escola.') : 'Bloqueado. Entre no Grupo VIP ou aguarde a liberação.'),
       unlocked,
       href: unlocked ? (vip ? '/aluno/biblioteca#sala-vip' : unlockedProductLink(product, `/aluno/biblioteca/${product.slug}`)) : lockedProductHref(product, vipHref),
       cover: productCover(product, vip ? (freeModule?.cover_url || covers[0]) : covers[index % covers.length]),
@@ -115,21 +116,16 @@ export default async function StudentPage() {
   const savedPostIds = new Set((savesResult.data || []).map((save: any) => save.post_id));
   const fallbackSubmissionByKey = new Map<string, string>();
   communitySubmissions.forEach((submission: any) => { const key = `${submission.profile_id}:${submission.exercise_id}`; if (!fallbackSubmissionByKey.has(key) && submission.file_url) fallbackSubmissionByKey.set(key, submission.file_url); });
-  const feedPosts = posts.map((post: any) => {
-    const exercise = getRelated(post.exercises) as any;
-    const author = getRelated(post.profiles) as any;
-    const submission = getRelated(post.submissions) as any;
-    const fallbackMedia = fallbackSubmissionByKey.get(`${post.profile_id}:${post.exercise_id}`) || '';
-    return { id: post.id, authorId: post.profile_id, authorName: author?.name || 'Aluno VIP', authorAvatarUrl: author?.avatar_url || null, createdAt: post.created_at, exerciseTitle: exercise?.title || 'Atividade da comunidade', exerciseSlug: exercise?.slug || null, caption: post.caption || 'Compartilhou uma prática.', mediaUrl: post.media_url || submission?.file_url || fallbackMedia || null, likesCount: post.likes_count || 0, commentsCount: post.comments_count || 0, canDelete: Boolean(profile?.id && profile.id === post.profile_id), isFollowing: followingIds.has(post.profile_id), isLiked: likedPostIds.has(post.id), isSaved: savedPostIds.has(post.id) };
-  });
+  const feedPosts = posts.map((post: any) => { const fallbackKey = `${post.profile_id}:${post.exercise_id}`; return { ...post, fallback_file_url: fallbackSubmissionByKey.get(fallbackKey) || null, isFollowing: followingIds.has(post.profile_id), isLiked: likedPostIds.has(post.id), isSaved: savedPostIds.has(post.id) }; });
+
   return (
     <AppShell>
-      <main className="page app-home premium-student-home">
+      <main className="page premium-student-home">
         <style dangerouslySetInnerHTML={{ __html: css }} />
-        <section className="premium-hero"><div className="premium-hero-copy"><p className="eyebrow">Escola Foco em Canto ★</p><h1>Olá, {firstName}.<br />Escolha seu treino de hoje.</h1><p>Sua escola vocal organizada por cursos, acessos e progresso real.</p><div className="hero-actions"><Link className="premium-button gold" href="/aluno/biblioteca" prefetch>▶ Abrir biblioteca</Link><Link className="premium-button dark" href="/aluno/perfil" prefetch>Ver avaliações</Link></div></div><div className="premium-hero-photo" aria-hidden="true" style={{ '--student-hero-image': `url(${studentHeroImage})` } as CSSProperties} /></section>
-        <section className="student-course-section"><div className="premium-section-heading"><h2>Meus cursos</h2><Link href="/aluno/biblioteca" prefetch>Ver biblioteca →</Link></div><div className="student-products-grid">{courseCards.map((course) => <a className={`student-product-card ${course.unlocked ? 'unlocked' : 'locked'}`} key={course.title} href={course.href}><span className="student-product-badge">{course.unlocked ? 'Liberado' : 'Bloqueado'}</span><div className="student-product-bg" style={styleForCover(course.cover)} /><div className="student-product-overlay" /><div className="student-product-body"><h3>{course.title}</h3><p>{course.description}</p><span className="student-product-button">{course.action}</span></div></a>)}</div></section>
-        {continueItems.length ? <section className="premium-continue-panel"><div className="premium-section-heading"><h2>Continue de onde parou</h2><Link href="/aluno/biblioteca" prefetch>Ver todos →</Link></div><div className="premium-course-row">{continueItems.map((item) => <Link className="premium-course-card" key={item.id} href={item.href} prefetch><div className="course-cover" style={styleForCover(item.cover)}><span className="course-badge">{item.badge}</span><strong>{item.title}</strong></div><div className="course-resume">{item.moduleTitle} · {item.resume}</div><div className="course-meta"><span>{item.lessons} aulas</span><span>{item.percent}%</span></div><div className="progress"><span style={{ width: `${item.percent}%` }} /></div></Link>)}</div></section> : null}
-        <section className="feed-layout premium-community-feed"><div className="section-heading"><div><p className="eyebrow">Comunidade VIP</p><h2>Atividades recentes</h2></div><Link href="/aluno/comunidade" prefetch>Abrir comunidade</Link></div><HomeCommunityFeed initialPosts={feedPosts} hasVipAccess={hasVip} /></section>
+        <section className="premium-hero" style={{ '--student-hero-image': `url(${studentHeroImage})` } as CSSProperties}><div className="premium-hero-photo" /><div className="premium-hero-copy"><p className="eyebrow">Bem-vindo, {firstName}</p><h1>Treine sua voz com direção.</h1><p>Acesse seus cursos, continue de onde parou e publique suas práticas para evolução real.</p><div className="hero-actions"><Link className="premium-button gold" href="/aluno/central">Central de Treinamento</Link><Link className="premium-button dark" href="/aluno/biblioteca#sala-vip">Sala VIP</Link></div></div></section>
+        <section className="student-course-section"><div className="premium-section-heading"><h2>Produtos e acessos</h2><Link href="/aluno/biblioteca">Ver biblioteca</Link></div><div className="student-products-grid">{courseCards.map((course) => <a className={`student-product-card ${course.unlocked ? 'unlocked' : 'locked'}`} href={course.href} key={course.title}><span className="student-product-badge">{course.unlocked ? 'Liberado' : 'Bloqueado'}</span><div className="student-product-bg" style={styleForCover(course.cover)} /><div className="student-product-overlay" /><div className="student-product-body"><h3>{course.title}</h3><p>{course.description}</p><span className="student-product-button">{course.action}</span></div></a>)}</div></section>
+        {continueItems.length ? <section className="premium-continue-panel"><div className="premium-section-heading"><h2>Continue estudando</h2><Link href="/aluno/biblioteca#sala-vip">Ver tudo</Link></div><div className="premium-course-row">{continueItems.map((item: any, index: number) => <Link className="premium-course-card" href={item.href} key={item.id}><span className="course-badge">{item.badge}</span><div className="course-cover" style={styleForCover(item.cover)}><strong>{item.title}</strong></div><div className="course-meta"><span>{item.moduleTitle}</span><span>{item.lessons} aulas</span></div><div className="course-resume">{item.resume}</div><div className="progress"><i style={{ width: `${item.percent}%` }} /></div></Link>)}</div></section> : null}
+        <HomeCommunityFeed posts={feedPosts} currentProfileId={profile?.id || null} />
       </main>
     </AppShell>
   );
