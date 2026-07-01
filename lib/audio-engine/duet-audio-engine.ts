@@ -41,8 +41,15 @@ function createAudioContext(options?: DuetAudioEngineOptions) {
 }
 
 function toLinearGain(percent: number, preGain: number) {
-  if (!Number.isFinite(percent)) return 0;
+  if (!Number.isFinite(percent) || percent <= 0) return 0;
   return Math.max(0, Math.min(6, (percent / 100) * preGain));
+}
+
+function toReferenceGain(percent: number, preGain: number) {
+  if (!Number.isFinite(percent) || percent <= 0) return 0;
+  const normalized = Math.max(0, Math.min(1.4, percent / 100));
+  const db = -48 + normalized * 48;
+  return Math.max(0, Math.min(6, Math.pow(10, db / 20) * preGain));
 }
 
 function configureAnalyser(analyser: AnalyserNode) {
@@ -179,27 +186,35 @@ export class DuetAudioEngine {
   }
 
   startVoiceBuffer(delaySeconds = 0, offsetSeconds = 0) {
+    return this.startVoiceBufferAt(this.context.currentTime + Math.max(0, delaySeconds || 0), offsetSeconds);
+  }
+
+  startVoiceBufferAt(absoluteTime: number, offsetSeconds = 0) {
     if (!this.voiceBuffer || !this.voiceTrack) return null;
     this.stopVoiceBuffer();
     const source = this.context.createBufferSource();
     source.buffer = this.voiceBuffer;
     source.connect(this.voiceTrack.gain);
-    const safeDelay = Math.max(0, delaySeconds || 0);
+    const safeTime = Math.max(this.context.currentTime, absoluteTime || this.context.currentTime);
     const safeOffset = Math.max(0, Math.min(this.voiceBuffer.duration - 0.01, offsetSeconds || 0));
-    source.start(this.context.currentTime + safeDelay, safeOffset);
+    source.start(safeTime, safeOffset);
     this.activeVoiceBufferSource = source;
     return source;
   }
 
   startReferenceBuffer(delaySeconds = 0, offsetSeconds = 0) {
+    return this.startReferenceBufferAt(this.context.currentTime + Math.max(0, delaySeconds || 0), offsetSeconds);
+  }
+
+  startReferenceBufferAt(absoluteTime: number, offsetSeconds = 0) {
     if (!this.referenceBuffer || !this.referenceTrack) return null;
     this.stopReferenceBuffer();
     const source = this.context.createBufferSource();
     source.buffer = this.referenceBuffer;
     source.connect(this.referenceTrack.gain);
-    const safeDelay = Math.max(0, delaySeconds || 0);
+    const safeTime = Math.max(this.context.currentTime, absoluteTime || this.context.currentTime);
     const safeOffset = Math.max(0, Math.min(this.referenceBuffer.duration - 0.01, offsetSeconds || 0));
-    source.start(this.context.currentTime + safeDelay, safeOffset);
+    source.start(safeTime, safeOffset);
     this.activeReferenceBufferSource = source;
     return source;
   }
@@ -278,7 +293,7 @@ export class DuetAudioEngine {
 
   private applyFaders() {
     if (this.voiceTrack) this.voiceTrack.gain.gain.value = toLinearGain(this.faders.voice, this.voicePreGain);
-    if (this.referenceTrack) this.referenceTrack.gain.gain.value = toLinearGain(this.faders.reference, this.referencePreGain);
+    if (this.referenceTrack) this.referenceTrack.gain.gain.value = toReferenceGain(this.faders.reference, this.referencePreGain);
   }
 
   private disconnectTrack(kind: DuetTrackKind) {
