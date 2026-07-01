@@ -33,9 +33,6 @@ type RecorderHandle = { recorder: MediaRecorder; chunks: Blob[]; mimeType: strin
 type CapturableCanvas = HTMLCanvasElement & { captureStream: (frameRate?: number) => MediaStream };
 type MediaAttachment = { destroy: () => void };
 
-const MARKER_BEEP_MS = 220;
-const MARKER_BEEP_FREQUENCY = 1760;
-
 function isSafariLike() {
   if (typeof navigator === 'undefined') return false;
   const ua = navigator.userAgent;
@@ -151,30 +148,6 @@ function startCanvasDraw(args: { canvas: HTMLCanvasElement; camera: HTMLVideoEle
   return () => cancelAnimationFrame(frame);
 }
 
-function playMarkerBeep() {
-  return new Promise<void>((resolve) => {
-    try {
-      const context = new AudioContext({ sampleRate: 48000 });
-      const oscillator = context.createOscillator();
-      const gain = context.createGain();
-      const now = context.currentTime;
-      oscillator.type = 'sine';
-      oscillator.frequency.setValueAtTime(MARKER_BEEP_FREQUENCY, now);
-      gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(0.22, now + 0.015);
-      gain.gain.setValueAtTime(0.22, now + MARKER_BEEP_MS / 1000 - 0.035);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + MARKER_BEEP_MS / 1000);
-      oscillator.connect(gain);
-      gain.connect(context.destination);
-      oscillator.start(now);
-      oscillator.stop(now + MARKER_BEEP_MS / 1000);
-      oscillator.onended = () => { context.close().catch(() => undefined); resolve(); };
-    } catch {
-      window.setTimeout(resolve, MARKER_BEEP_MS);
-    }
-  });
-}
-
 export class DuetRecorderEngine {
   private refs: DuetRecorderEngineRefs;
   private options: Required<Pick<DuetRecorderEngineOptions, 'width' | 'height' | 'frameRate'>> & DuetRecorderEngineOptions;
@@ -188,7 +161,6 @@ export class DuetRecorderEngine {
   private referenceAttachment: MediaAttachment | null = null;
   private stopDrawing: (() => void) | null = null;
   private startedAt = 0;
-  private markerOffsetMs = MARKER_BEEP_MS;
   private posterDataUrl: string | null = null;
 
   constructor(refs: DuetRecorderEngineRefs, options: DuetRecorderEngineOptions) {
@@ -241,14 +213,10 @@ export class DuetRecorderEngine {
     this.voiceRecorder = createRecorder(this.microphoneStream, 'audio');
     this.safePublishRecorder = createRecorder(new MediaStream([...canvasVideoTracks, ...micAudioTracks]), 'video');
     this.startedAt = Date.now();
-    this.markerOffsetMs = MARKER_BEEP_MS;
     this.cameraRecorder?.start();
     this.canvasRecorder?.start();
     this.voiceRecorder?.start();
     this.safePublishRecorder?.start();
-    await playMarkerBeep();
-    try { referenceVideo.currentTime = 0; } catch {}
-    this.markerOffsetMs = Math.max(MARKER_BEEP_MS, Date.now() - this.startedAt);
     await referenceVideo.play().catch(() => undefined);
   }
 
@@ -274,7 +242,7 @@ export class DuetRecorderEngine {
       stoppedAt,
       durationMs: Math.max(0, stoppedAt - this.startedAt),
       posterDataUrl: this.posterDataUrl,
-      markerOffsetMs: this.markerOffsetMs,
+      markerOffsetMs: 0,
       mimeTypes: { camera: this.cameraRecorder?.mimeType, canvas: this.canvasRecorder?.mimeType, voice: this.voiceRecorder?.mimeType, safePublish: this.safePublishRecorder?.mimeType },
       diagnostics: { cameraChunks: this.cameraRecorder?.chunks.length || 0, canvasChunks: this.canvasRecorder?.chunks.length || 0, voiceChunks: this.voiceRecorder?.chunks.length || 0, safePublishChunks: this.safePublishRecorder?.chunks.length || 0, hasMicrophoneTrack: Boolean(this.microphoneStream?.getAudioTracks().length), hasCanvasVideoTrack: Boolean(this.canvasStream?.getVideoTracks().length) },
     };
