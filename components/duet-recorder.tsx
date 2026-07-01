@@ -3,11 +3,9 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { CheckCircle2, Headphones, Mic, Music2, Pause, Play, RefreshCcw, Send, SlidersHorizontal, Square, Video } from 'lucide-react';
 import { proxiedVideoUrl } from '@/lib/audio/duet-recording-utils';
-import { DuetAudioEngine } from '@/lib/audio-engine/duet-audio-engine';
 import { DuetPreviewEngine } from '@/lib/audio-engine/duet-preview-engine';
 import { DuetRecorderEngine, type DuetRecorderEngineResult } from '@/lib/audio-engine/duet-recorder-engine';
 import { DuetRendererEngine } from '@/lib/audio-engine/duet-renderer-engine';
-import { attachMediaSource } from '@/lib/media/hls-client';
 
 type Props = { lessonTitle: string; lessonSlug: string; referenceUrl?: string | null; referenceEmbedUrl?: string | null; canSendForReview?: boolean };
 type Step = 'intro' | 'countdown' | 'recording' | 'review' | 'posting' | 'posted';
@@ -21,29 +19,6 @@ function isSafariLike() {
 }
 function errorText(error: unknown) { return error instanceof Error ? `${error.name}: ${error.message}` : String(error || 'erro_desconhecido'); }
 function sleep(ms: number) { return new Promise((resolve) => window.setTimeout(resolve, ms)); }
-function waitMediaReady(media: HTMLMediaElement, timeoutMs = 12000) {
-  return new Promise<void>((resolve, reject) => {
-    if (media.readyState >= 2) return resolve();
-    let done = false;
-    const cleanup = (fn: () => void) => {
-      if (done) return;
-      done = true;
-      window.clearTimeout(timer);
-      media.removeEventListener('loadedmetadata', ok);
-      media.removeEventListener('loadeddata', ok);
-      media.removeEventListener('canplay', ok);
-      media.removeEventListener('error', fail);
-      fn();
-    };
-    const ok = () => cleanup(resolve);
-    const fail = () => cleanup(() => reject(new Error('media_load_failed')));
-    const timer = window.setTimeout(() => cleanup(() => reject(new Error('media_load_timeout'))), timeoutMs);
-    media.addEventListener('loadedmetadata', ok, { once: true });
-    media.addEventListener('loadeddata', ok, { once: true });
-    media.addEventListener('canplay', ok, { once: true });
-    media.addEventListener('error', fail, { once: true });
-  });
-}
 
 const presets: Record<Preset, { title: string; text: string; voice: number; reference: number }> = {
   natural: { title: 'Natural', text: 'Limpo e direto.', voice: 100, reference: 70 },
@@ -62,9 +37,6 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl, canSendFor
   const previewReferenceRef = useRef<HTMLAudioElement | null>(null);
   const recorderEngineRef = useRef<DuetRecorderEngine | null>(null);
   const previewEngineRef = useRef<DuetPreviewEngine | null>(null);
-  const monitorEngineRef = useRef<DuetAudioEngine | null>(null);
-  const monitorMediaRef = useRef<HTMLVideoElement | null>(null);
-  const monitorAttachmentRef = useRef<{ destroy: () => void } | null>(null);
 
   const [step, setStep] = useState<Step>('intro');
   const [error, setError] = useState('');
@@ -89,7 +61,6 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl, canSendFor
   useEffect(() => () => {
     try { recorderEngineRef.current?.cleanup(); } catch {}
     previewEngineRef.current?.close().catch(() => undefined);
-    stopReferenceMonitor().catch(() => undefined);
   }, []);
 
   async function mapAudioDevices() {
@@ -106,47 +77,6 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl, canSendFor
     }
   }
 
-  async function startReferenceMonitor(options: { audible?: boolean } = {}) {
-    if (!referenceSource) return;
-    await stopReferenceMonitor();
-    const media = document.createElement('video');
-    media.preload = 'auto';
-    media.playsInline = true;
-    media.volume = 0;
-    media.muted = false;
-    monitorMediaRef.current = media;
-    monitorAttachmentRef.current = await attachMediaSource(media, referenceSource);
-    await waitMediaReady(media);
-    const engine = new DuetAudioEngine({ latencyHint: 'interactive', sampleRate: 48000 });
-    engine.setPreGains({ reference: 0.35, voice: 0 });
-    engine.setFaders({ reference: options.audible === false ? 0 : 100, voice: 0 });
-    engine.connectReferenceElement(media);
-    monitorEngineRef.current = engine;
-    await engine.resume();
-    media.currentTime = 0;
-    await media.play().catch(() => undefined);
-  }
-
-  async function playReferenceMonitorAudibleFromStart() {
-    const media = monitorMediaRef.current;
-    const engine = monitorEngineRef.current;
-    if (!media || !engine) return;
-    try { media.currentTime = 0; } catch {}
-    engine.setFaders({ reference: 100, voice: 0 });
-    await engine.resume();
-    await media.play().catch(() => undefined);
-  }
-
-  async function stopReferenceMonitor() {
-    try { monitorMediaRef.current?.pause(); } catch {}
-    try { monitorAttachmentRef.current?.destroy(); } catch {}
-    try { monitorMediaRef.current?.removeAttribute('src'); monitorMediaRef.current?.load(); } catch {}
-    await monitorEngineRef.current?.close().catch(() => undefined);
-    monitorEngineRef.current = null;
-    monitorMediaRef.current = null;
-    monitorAttachmentRef.current = null;
-  }
-
   async function startRecording() {
     setError(''); setStatus(''); setPostedHref(''); setResult(null); setPostingProgress(0); setPlaying(false); setShowMicChoices(false);
     if (!referenceSource) return setError('Essa atividade ainda não tem vídeo de referência vinculado.');
@@ -161,20 +91,17 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl, canSendFor
       recorderEngineRef.current = engine;
       setStatus('Preparando câmera e referência...');
       await engine.prepare();
-      await startReferenceMonitor({ audible: false });
       setStep('countdown');
       for (let value = 4; value >= 1; value -= 1) {
         setCountdown(value);
         await sleep(1000);
       }
       setCountdown(0);
-      await playReferenceMonitorAudibleFromStart();
       await engine.start();
       setStep('recording');
       setStatus('Gravando agora. Cante junto com a referência e finalize quando terminar.');
     } catch (err) {
       setCountdown(0);
-      await stopReferenceMonitor();
       try { recorderEngineRef.current?.cleanup(); } catch {}
       recorderEngineRef.current = null;
       setStep('intro');
@@ -189,12 +116,10 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl, canSendFor
     try {
       const recording = await engine.stop();
       recorderEngineRef.current = null;
-      await stopReferenceMonitor();
       setResult(recording);
       setStep('review');
       setStatus('Gravação pronta. Ajuste a mixagem antes de enviar.');
     } catch (err) {
-      await stopReferenceMonitor();
       setStep('intro');
       setError(`Não consegui finalizar a gravação: ${errorText(err)}`);
     }
@@ -325,12 +250,13 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl, canSendFor
       <p style={{ margin: 0, color: 'rgba(255,255,255,.68)', fontSize: 17, position: 'relative' }}>Aula: {lessonTitle}</p>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 8, position: 'relative' }}><span style={{ display: 'inline-flex', gap: 7, alignItems: 'center', color: '#f6d28a', fontWeight: 800, fontSize: 13 }}><Headphones size={16} /> Use fone para melhor resultado</span><span style={{ display: 'inline-flex', gap: 7, alignItems: 'center', color: 'rgba(255,255,255,.62)', fontWeight: 700, fontSize: 13 }}><Music2 size={16} /> Mixagem em tempo real</span></div>
     </header>
+
     {error ? <div style={{ ...glass, padding: 16, borderColor: 'rgba(255,80,80,.45)', color: '#ffb4b4' }}>{error}</div> : null}
     {status && step !== 'posting' && !isPre ? <div style={{ ...glass, padding: 16, color: '#f5c76b', whiteSpace: 'pre-wrap' }}>{status}</div> : null}
 
     {isPre ? <section style={{ ...glass, padding: 16, display: 'grid', gap: 12 }}><p style={{ ...label, margin: 0 }}>Preparação</p><div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 10 }}><button type="button" onClick={() => setFacingMode((mode) => mode === 'user' ? 'environment' : 'user')} style={{ ...cardOption(false), textAlign: 'left' }}><Video size={21} color="#f5c76b" /><span><strong>Câmera</strong><br/><small style={{ color: 'rgba(255,255,255,.58)' }}>{facingMode === 'user' ? 'Frontal' : 'Traseira'} • tocar para virar</small></span></button><button type="button" onClick={mapAudioDevices} style={{ ...cardOption(showMicChoices), textAlign: 'left' }}><Mic size={21} color="#f5c76b" /><span><strong>Microfone</strong><br/><small style={{ color: 'rgba(255,255,255,.58)' }}>{selectedMicLabel}</small></span></button></div>{showMicChoices ? <div style={{ display: 'grid', gap: 8 }}>{audioDevices.length ? audioDevices.map((device) => <button key={device.deviceId} type="button" onClick={() => { setSelectedAudioDeviceId(device.deviceId); setShowMicChoices(false); }} style={{ ...cardOption(device.deviceId === selectedAudioDeviceId), justifyContent: 'space-between', textAlign: 'left' }}><span>{device.label}</span><span>{device.deviceId === selectedAudioDeviceId ? '✓' : ''}</span></button>) : <small style={{ color: 'rgba(255,255,255,.6)' }}>Nenhum microfone listado pelo navegador.</small>}</div> : null}</section> : null}
 
-    <section style={{ ...glass, overflow: 'hidden', padding: 0, borderColor: isPre ? 'rgba(245,199,107,.32)' : 'rgba(255,255,255,.12)' }}><div style={{ position: 'relative', aspectRatio: isPre ? '16/10' : '16/9', minHeight: isPre ? 250 : undefined, background: '#000', display: 'grid', placeItems: 'center' }}><video ref={referenceVideoRef} playsInline muted style={{ display: 'none' }} /><video ref={cameraRef} playsInline muted autoPlay style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: step === 'countdown' ? 'block' : 'none' }} /><audio ref={previewVoiceRef} preload="auto" style={{ display: 'none' }} /><audio ref={previewReferenceRef} preload="auto" style={{ display: 'none' }} />{result?.canvasBlob && step !== 'recording' && step !== 'countdown' ? <video ref={previewVisualRef} playsInline muted style={{ width: '100%', height: '100%', objectFit: 'contain' }} onEnded={pausePreview} /> : <canvas ref={canvasRef} width={1280} height={720} style={{ width: '100%', height: '100%', objectFit: 'cover', display: step === 'countdown' ? 'none' : 'block' }} />}{step === 'intro' ? <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', textAlign: 'center', padding: 24, background: 'radial-gradient(circle,rgba(0,0,0,.18),rgba(0,0,0,.55))' }}><div style={{ display: 'grid', placeItems: 'center', gap: 12 }}><span style={{ width: 78, height: 78, borderRadius: 999, display: 'grid', placeItems: 'center', background: 'rgba(245,199,107,.16)', border: '1px solid rgba(245,199,107,.45)', color: '#f5c76b' }}><Video size={34} /></span><strong style={{ fontSize: 18 }}>Toque para iniciar câmera e referência</strong><small style={{ color: 'rgba(255,255,255,.62)' }}>A contagem aparece aqui antes de gravar.</small></div></div> : null}{step === 'countdown' ? <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', background: 'linear-gradient(180deg,rgba(0,0,0,.28),rgba(0,0,0,.62))' }}><div style={{ textAlign: 'center' }}><small style={{ color: 'rgba(255,255,255,.76)', fontWeight: 900 }}>A gravação começa em</small><div style={{ width: 118, height: 118, borderRadius: 999, border: '2px solid rgba(245,199,107,.72)', display: 'grid', placeItems: 'center', color: '#f5c76b', fontSize: 58, fontWeight: 950, margin: '12px auto', boxShadow: '0 0 40px rgba(245,199,107,.22)' }}>{countdown}</div><strong>Prepare-se</strong></div></div> : null}{step === 'recording' ? <div style={{ position: 'absolute', top: 14, left: 14, background: '#e11d48', borderRadius: 999, padding: '8px 13px', fontWeight: 950, boxShadow: '0 0 24px rgba(225,29,72,.5)' }}>● Gravando</div> : null}{step === 'review' ? <button type="button" onClick={playing ? pausePreview : playPreview} style={{ position: 'absolute', inset: 0, margin: 'auto', width: 86, height: 86, borderRadius: 999, border: '1px solid rgba(245,199,107,.45)', background: 'rgba(0,0,0,.5)', color: '#f5c76b', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>{playing ? <Pause size={36} /> : <Play size={36} />}</button> : null}</div></section>
+    <section style={{ ...glass, overflow: 'hidden', padding: 0, borderColor: isPre ? 'rgba(245,199,107,.32)' : 'rgba(255,255,255,.12)' }}><div style={{ position: 'relative', aspectRatio: isPre ? '16/10' : '16/9', minHeight: isPre ? 250 : undefined, background: '#000', display: 'grid', placeItems: 'center' }}><video ref={referenceVideoRef} playsInline muted style={{ display: 'none' }} /><video ref={cameraRef} playsInline muted autoPlay style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: step === 'countdown' ? 'block' : 'none' }} /><audio ref={previewVoiceRef} preload="auto" style={{ display: 'none' }} /><audio ref={previewReferenceRef} preload="auto" style={{ display: 'none' }} />{result?.canvasBlob && step !== 'recording' && step !== 'countdown' ? <video ref={previewVisualRef} playsInline muted poster={result.posterDataUrl || undefined} style={{ width: '100%', height: '100%', objectFit: 'contain', background: result.posterDataUrl ? `center / contain no-repeat url(${result.posterDataUrl})` : '#000' }} onEnded={pausePreview} /> : <canvas ref={canvasRef} width={1280} height={720} style={{ width: '100%', height: '100%', objectFit: 'cover', display: step === 'countdown' ? 'none' : 'block' }} />}{step === 'intro' ? <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', textAlign: 'center', padding: 24, background: 'radial-gradient(circle,rgba(0,0,0,.18),rgba(0,0,0,.55))' }}><div style={{ display: 'grid', placeItems: 'center', gap: 12 }}><span style={{ width: 78, height: 78, borderRadius: 999, display: 'grid', placeItems: 'center', background: 'rgba(245,199,107,.16)', border: '1px solid rgba(245,199,107,.45)', color: '#f5c76b' }}><Video size={34} /></span><strong style={{ fontSize: 18 }}>Toque para iniciar câmera e referência</strong><small style={{ color: 'rgba(255,255,255,.62)' }}>A contagem aparece aqui antes de gravar.</small></div></div> : null}{step === 'countdown' ? <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', background: 'linear-gradient(180deg,rgba(0,0,0,.28),rgba(0,0,0,.62))' }}><div style={{ textAlign: 'center' }}><small style={{ color: 'rgba(255,255,255,.76)', fontWeight: 900 }}>A gravação começa em</small><div style={{ width: 118, height: 118, borderRadius: 999, border: '2px solid rgba(245,199,107,.72)', display: 'grid', placeItems: 'center', color: '#f5c76b', fontSize: 58, fontWeight: 950, margin: '12px auto', boxShadow: '0 0 40px rgba(245,199,107,.22)' }}>{countdown}</div><strong>Prepare-se</strong></div></div> : null}{step === 'recording' ? <div style={{ position: 'absolute', top: 14, left: 14, background: '#e11d48', borderRadius: 999, padding: '8px 13px', fontWeight: 950, boxShadow: '0 0 24px rgba(225,29,72,.5)' }}>● Gravando</div> : null}{step === 'review' ? <button type="button" onClick={playing ? pausePreview : playPreview} style={{ position: 'absolute', inset: 0, margin: 'auto', width: 86, height: 86, borderRadius: 999, border: '1px solid rgba(245,199,107,.45)', background: 'rgba(0,0,0,.5)', color: '#f5c76b', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>{playing ? <Pause size={36} /> : <Play size={36} />}</button> : null}</div></section>
 
     {isPre ? <section style={{ ...glass, padding: 16, display: 'grid', gap: 12 }}><p style={{ ...label, margin: 0 }}>Orientações rápidas</p><div style={{ display: 'grid', gap: 10 }}><div style={{ display: 'flex', gap: 10, alignItems: 'start' }}><Headphones size={19} color="#f5c76b" /><span><strong>Use fone de ouvido.</strong><br/><small style={{ color: 'rgba(255,255,255,.58)' }}>Isso evita que a referência vaze no microfone.</small></span></div><div style={{ display: 'flex', gap: 10, alignItems: 'start' }}><span style={{ color: '#f5c76b', fontWeight: 950 }}>!</span><span><strong>Bluetooth pode gerar atraso.</strong><br/><small style={{ color: 'rgba(255,255,255,.58)' }}>Para mais precisão, prefira fone com fio.</small></span></div></div></section> : null}
 
