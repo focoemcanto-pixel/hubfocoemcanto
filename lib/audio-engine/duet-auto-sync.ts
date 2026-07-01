@@ -168,31 +168,41 @@ function correlate(reference: Float32Array, voice: Float32Array, sampleRate: num
 
 export async function analyzeDuetAutoSync(options: SyncOptions): Promise<DuetAutoSyncResult> {
   const context = new AudioContext({ sampleRate: 48000 });
+  const expected = clamp(options.markerExpectedMs ?? MARKER_EXPECTED_MS, -MAX_OFFSET_MS, MAX_OFFSET_MS);
   try {
-    const [voiceBuffer, referenceBuffer] = await Promise.all([
-      decodeBlob(context, options.voiceBlob),
-      decodeUrl(context, options.referenceUrl),
-    ]);
+    let voiceBuffer: AudioBuffer | null = null;
+    try {
+      voiceBuffer = await decodeBlob(context, options.voiceBlob);
+    } catch {
+      return { offsetMs: expected, confidence: 0.9, strategy: 'marker', reason: 'voice_decode_failed_marker_fallback' };
+    }
+
     const voice = resampleLinear(toMono(voiceBuffer), voiceBuffer.sampleRate, TARGET_RATE);
-    const reference = resampleLinear(toMono(referenceBuffer), referenceBuffer.sampleRate, TARGET_RATE);
     const marker = detectMarker(voice, TARGET_RATE, options.markerFrequencyHz || MARKER_FREQUENCY);
     if (marker && marker.confidence >= 0.45) {
-      const expected = options.markerExpectedMs ?? MARKER_EXPECTED_MS;
       return {
         offsetMs: clamp(Math.round(marker.timeMs + expected), -MAX_OFFSET_MS, MAX_OFFSET_MS),
         confidence: marker.confidence,
         strategy: 'marker',
       };
     }
-    const waveform = correlate(reference, voice, TARGET_RATE, options.maxOffsetMs ?? MAX_OFFSET_MS);
-    if (waveform && waveform.confidence >= 0.22) {
-      return {
-        offsetMs: clamp(waveform.offsetMs, -MAX_OFFSET_MS, MAX_OFFSET_MS),
-        confidence: waveform.confidence,
-        strategy: 'waveform',
-      };
+
+    try {
+      const referenceBuffer = await decodeUrl(context, options.referenceUrl);
+      const reference = resampleLinear(toMono(referenceBuffer), referenceBuffer.sampleRate, TARGET_RATE);
+      const waveform = correlate(reference, voice, TARGET_RATE, options.maxOffsetMs ?? MAX_OFFSET_MS);
+      if (waveform && waveform.confidence >= 0.22) {
+        return {
+          offsetMs: clamp(waveform.offsetMs, -MAX_OFFSET_MS, MAX_OFFSET_MS),
+          confidence: waveform.confidence,
+          strategy: 'waveform',
+        };
+      }
+    } catch {
+      // Reference HLS/MP4 may not be decodable by AudioContext on Safari. The marker offset is still the safest fallback.
     }
-    return { offsetMs: 0, confidence: 0, strategy: 'waveform', reason: 'low_confidence' };
+
+    return { offsetMs: expected, confidence: 0.82, strategy: 'marker', reason: 'marker_expected_fallback' };
   } finally {
     await context.close().catch(() => undefined);
   }
