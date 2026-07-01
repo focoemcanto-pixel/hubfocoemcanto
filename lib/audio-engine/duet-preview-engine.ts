@@ -52,6 +52,22 @@ function waitForMediaReady(media: HTMLMediaElement, timeoutMs = 15000) {
   });
 }
 
+function waitForSeek(media: HTMLMediaElement, timeoutMs = 1200) {
+  return new Promise<void>((resolve) => {
+    if (!media.seeking) return resolve();
+    let done = false;
+    const cleanup = () => {
+      if (done) return;
+      done = true;
+      window.clearTimeout(timer);
+      media.removeEventListener('seeked', cleanup);
+      resolve();
+    };
+    const timer = window.setTimeout(cleanup, timeoutMs);
+    media.addEventListener('seeked', cleanup, { once: true });
+  });
+}
+
 function withFullMedia(url: string) {
   if (!url) return url;
   const separator = url.includes('?') ? '&' : '?';
@@ -87,6 +103,7 @@ export class DuetPreviewEngine {
   private playing = false;
   private referenceOffsetMs = 0;
   private delayedStartTimer: number | null = null;
+  private driftFrame: number | null = null;
   private referenceStartedAt = 0;
   private referenceMode: 'buffer' | 'media-element' = 'buffer';
 
@@ -138,12 +155,18 @@ export class DuetPreviewEngine {
 
   async play() {
     await this.prepare();
-    this.clearDelayedStart();
+    this.pause();
+    await this.audio.resume();
+
     const { visual, voice, reference } = this.refs;
+    const faders = this.audio.getFaders();
     const offsetSeconds = this.referenceOffsetMs / 1000;
-    visual.currentTime = 0;
-    voice.currentTime = 0;
+
+    try { visual.currentTime = 0; } catch {}
+    try { voice.currentTime = 0; } catch {}
     try { reference.currentTime = 0; } catch {}
+    await Promise.all([waitForSeek(visual), waitForSeek(voice), waitForSeek(reference)]);
+
     visual.muted = true;
     visual.volume = 0;
     voice.volume = 1;
@@ -151,9 +174,7 @@ export class DuetPreviewEngine {
     reference.volume = 1;
     reference.muted = false;
     this.playing = true;
-    await this.audio.resume();
     this.audio.stopReferenceBuffer();
-    const faders = this.audio.getFaders();
 
     if (this.referenceMode === 'buffer') {
       if (offsetSeconds < 0 && faders.reference > 0) {
@@ -161,52 +182,55 @@ export class DuetPreviewEngine {
         this.audio.startReferenceBuffer(0, 0);
         this.delayedStartTimer = window.setTimeout(() => {
           if (!this.playing) return;
-          this.refs.visual.play().catch(() => undefined);
-          if (this.audio.getFaders().voice > 0) this.refs.voice.play().catch(() => undefined);
+          void this.startVisualAndVoice();
         }, Math.abs(this.referenceOffsetMs));
+        this.startDriftGuard();
         return;
       }
-      const jobs: Promise<unknown>[] = [visual.play()];
-      if (faders.voice > 0) jobs.push(voice.play().catch(() => undefined));
+
+      await this.startVisualAndVoice();
       if (faders.reference > 0) {
         const delay = Math.max(0, offsetSeconds);
         this.referenceStartedAt = this.audio.context.currentTime + delay;
         this.audio.startReferenceBuffer(delay, 0);
       }
-      await Promise.all(jobs);
+      this.startDriftGuard();
       return;
     }
 
     if (offsetSeconds < 0 && faders.reference > 0) {
-      await reference.play().catch(() => undefined);
       this.referenceStartedAt = this.audio.context.currentTime;
+      await reference.play().catch(() => undefined);
       this.delayedStartTimer = window.setTimeout(() => {
         if (!this.playing) return;
-        this.refs.visual.play().catch(() => undefined);
-        if (this.audio.getFaders().voice > 0) this.refs.voice.play().catch(() => undefined);
+        void this.startVisualAndVoice();
       }, Math.abs(this.referenceOffsetMs));
+      this.startDriftGuard();
       return;
     }
 
-    const jobs: Promise<unknown>[] = [visual.play()];
-    if (faders.voice > 0) jobs.push(voice.play().catch(() => undefined));
+    await this.startVisualAndVoice();
     if (faders.reference > 0) {
       if (offsetSeconds > 0) {
         this.referenceStartedAt = this.audio.context.currentTime + offsetSeconds;
         this.delayedStartTimer = window.setTimeout(() => {
-          if (this.playing && !this.refs.visual.paused) this.refs.reference.play().catch(() => undefined);
+          if (!this.playing) return;
+          try { this.refs.reference.currentTime = this.refs.visual.currentTime || 0; } catch {}
+          this.refs.reference.play().catch(() => undefined);
         }, this.referenceOffsetMs);
       } else {
+        try { reference.currentTime = visual.currentTime || 0; } catch {}
         this.referenceStartedAt = this.audio.context.currentTime;
-        jobs.push(reference.play().catch(() => undefined));
+        await reference.play().catch(() => undefined);
       }
     }
-    await Promise.all(jobs);
+    this.startDriftGuard();
   }
 
   pause() {
     this.playing = false;
     this.clearDelayedStart();
+    this.stopDriftGuard();
     this.audio.stopReferenceBuffer();
     try { this.refs.visual.pause(); } catch {}
     try { this.refs.voice.pause(); } catch {}
@@ -264,6 +288,47 @@ export class DuetPreviewEngine {
     this.visualUrl = '';
     this.voiceUrl = '';
     this.prepared = false;
+  }
+
+  private async startVisualAndVoice() {
+    const faders = this.audio.getFaders();
+    const jobs: Promise<unknown>[] = [this.refs.visual.play().catch(() => undefined)];
+    if (faders.voice > 0) jobs.push(this.refs.voice.play().catch(() => undefined));
+    await Promise.all(jobs);
+    this.alignVoiceToVisual();
+  }
+
+  private alignVoiceToVisual() {
+    if (!this.playing) return;
+    const visualTime = this.refs.visual.currentTime || 0;
+    if (this.audio.getFaders().voice > 0) {
+      const voiceDrift = Math.abs((this.refs.voice.currentTime || 0) - visualTime);
+      if (voiceDrift > 0.035) {
+        try { this.refs.voice.currentTime = visualTime; } catch {}
+      }
+    }
+    if (this.referenceMode === 'media-element' && this.audio.getFaders().reference > 0) {
+      const target = Math.max(0, visualTime - this.referenceOffsetMs / 1000);
+      const referenceDrift = Math.abs((this.refs.reference.currentTime || 0) - target);
+      if (referenceDrift > 0.045) {
+        try { this.refs.reference.currentTime = target; } catch {}
+      }
+    }
+  }
+
+  private startDriftGuard() {
+    this.stopDriftGuard();
+    const tick = () => {
+      if (!this.playing) return;
+      this.alignVoiceToVisual();
+      this.driftFrame = requestAnimationFrame(tick);
+    };
+    this.driftFrame = requestAnimationFrame(tick);
+  }
+
+  private stopDriftGuard() {
+    if (this.driftFrame) cancelAnimationFrame(this.driftFrame);
+    this.driftFrame = null;
   }
 
   private syncTrackPlaybackState(media: HTMLMediaElement, faderValue: number) {
