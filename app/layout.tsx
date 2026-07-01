@@ -49,6 +49,7 @@ import './vocal-result-final-polish.css';
 import './vocal-intro-premium.css';
 import './vocal-emergency-layout-fix.css';
 import './guided-training-polish.css';
+import './training-progress-mobile-fix.css';
 import './ear-training-reference.css';
 import './ear-piano-no-hint.css';
 import './ear6-premium-final-spacing.css';
