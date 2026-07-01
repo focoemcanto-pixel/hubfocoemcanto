@@ -12,6 +12,7 @@ export type DuetRecorderEngineOptions = {
   height?: number;
   frameRate?: number;
   audioDeviceId?: string | null;
+  facingMode?: 'user' | 'environment';
 };
 
 export type DuetRecorderEngineResult = {
@@ -174,7 +175,7 @@ export class DuetRecorderEngine {
     await waitForMediaReady(referenceVideo);
     const audio: MediaTrackConstraints = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1, sampleRate: 48000 };
     if (this.options.audioDeviceId) audio.deviceId = { exact: this.options.audioDeviceId };
-    this.cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: this.options.width }, height: { ideal: this.options.height }, frameRate: { ideal: this.options.frameRate, max: this.options.frameRate } }, audio });
+    this.cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: this.options.facingMode || 'user', width: { ideal: this.options.width }, height: { ideal: this.options.height }, frameRate: { ideal: this.options.frameRate, max: this.options.frameRate } }, audio });
     camera.srcObject = this.cameraStream;
     camera.muted = true;
     camera.playsInline = true;
