@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { TrainingExercise, TrainingNote } from '@/lib/training-center';
-import { autoCorrelate, midiToBrazilianNoteName, noteNameToMidi } from '@/lib/audio/pitch';
+import { detectPitch, midiToBrazilianNoteName, noteNameToMidi } from '@/lib/audio/pitch';
 import { playPianoSample, preloadPianoSamples, stopPianoSamples } from '@/lib/audio/piano-sample-engine';
 
 const MIN_MIDI = 26;
@@ -25,7 +25,6 @@ type Vars = CSSProperties & { '--voice-y': string; '--voice-visible': string; '-
 
 function clamp(value: number, min: number, max: number) { return Math.max(min, Math.min(max, value)); }
 function yFromMidi(midi: number | null) { if (midi == null) return 50; const safe = clamp(midi, MIN_MIDI, MAX_MIDI); return 100 - ((safe - MIN_MIDI) / (MAX_MIDI - MIN_MIDI)) * 100; }
-function floatMidiFromFrequency(frequency: number) { return 69 + 12 * Math.log2(frequency / 440); }
 function formatTime(seconds: number) { const safe = Math.max(0, Math.floor(seconds)); return `${Math.floor(safe / 60)}:${String(safe % 60).padStart(2, '0')}`; }
 function buildBeatNotes(exercise: TrainingExercise): BeatNote[] { const originalBeatSeconds = 60 / exercise.bpm; return exercise.notes.map((note) => { const startBeat = note.start / originalBeatSeconds; const durationBeats = note.duration / originalBeatSeconds; return { ...note, startBeat, durationBeats, endBeat: startBeat + durationBeats, midi: noteNameToMidi(note.pitch) }; }); }
 function registerYFromMidi(midi: number | null) { if (midi == null) return 58; if (midi < 52) return 70; if (midi < 60) return 58; if (midi < 67) return 43; return 27; }
@@ -147,9 +146,9 @@ export function GuidedTrainingPlayer({ exercise, autoStart = false }: { exercise
     if (micCtxRef.current || typeof window === 'undefined' || !navigator.mediaDevices?.getUserMedia) return;
     try {
       const Ctor = (window as WinAudio).AudioContext || (window as WinAudio).webkitAudioContext; if (!Ctor) return;
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: true, autoGainControl: false } });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } });
       const context = new Ctor({ latencyHint: 'interactive' }); await context.resume().catch(() => null);
-      const source = context.createMediaStreamSource(stream); const analyser = context.createAnalyser(); analyser.fftSize = 1024; analyser.smoothingTimeConstant = 0; source.connect(analyser);
+      const source = context.createMediaStreamSource(stream); const analyser = context.createAnalyser(); analyser.fftSize = 4096; analyser.smoothingTimeConstant = 0; source.connect(analyser);
       micCtxRef.current = context; streamRef.current = stream; setMicReady(true); listen(analyser, context);
     } catch { setTuner((old) => ({ ...old, feedback: 'Permita o microfone' })); }
   }
@@ -159,9 +158,9 @@ export function GuidedTrainingPlayer({ exercise, autoStart = false }: { exercise
   function listen(analyser: AnalyserNode, context: AudioContext) {
     const buffer = new Float32Array(analyser.fftSize); let lastUi = 0;
     const loopPitch = () => {
-      analyser.getFloatTimeDomainData(buffer); const frequency = autoCorrelate(buffer, context.sampleRate); const now = performance.now();
-      if (!frequency) { silenceRef.current += 1; if (silenceRef.current > 5) { moveBrush(null); moveRegisterGlow(activeMidi, false); if (now - lastUi > 80) { lastUi = now; setTuner((old) => ({ ...old, midi: null, cents: null, feedback: micReady ? 'Cante próximo ao microfone' : 'Aguardando voz' })); setVoiceTrail((old) => old.slice(-3)); } } }
-      else { silenceRef.current = 0; const liveMidi = floatMidiFromFrequency(frequency); const target = targetMidiRef.current; const cents = target == null ? null : (liveMidi - target) * 100; const y = yFromMidi(liveMidi); moveBrush(y); moveRegisterGlow(liveMidi, true); trailTickRef.current += 1; if (now - lastUi > 38) { lastUi = now; setVoiceTrail((old) => [...old.slice(-5), { id: Date.now(), y, wobble: (trailTickRef.current % 7) - 3 }]); setTuner({ midi: liveMidi, cents, feedback: cents == null ? 'Aguardando nota' : Math.abs(cents) <= 28 ? 'Perfeito' : cents < 0 ? 'Suba um pouco' : 'Desça um pouco' }); } }
+      analyser.getFloatTimeDomainData(buffer); const pitch = detectPitch(buffer, context.sampleRate); const now = performance.now();
+      if (!pitch) { silenceRef.current += 1; if (silenceRef.current > 5) { moveBrush(null); moveRegisterGlow(activeMidi, false); if (now - lastUi > 80) { lastUi = now; setTuner((old) => ({ ...old, midi: null, cents: null, feedback: micReady ? 'Cante próximo ao microfone' : 'Aguardando voz' })); setVoiceTrail((old) => old.slice(-3)); } } }
+      else { silenceRef.current = 0; const liveMidi = pitch.midiFloat; const target = targetMidiRef.current; const cents = target == null ? null : (liveMidi - target) * 100; const y = yFromMidi(liveMidi); moveBrush(y); moveRegisterGlow(liveMidi, true); trailTickRef.current += 1; if (now - lastUi > 38) { lastUi = now; setVoiceTrail((old) => [...old.slice(-5), { id: Date.now(), y, wobble: (trailTickRef.current % 7) - 3 }]); setTuner({ midi: liveMidi, cents, feedback: cents == null ? 'Aguardando nota' : Math.abs(cents) <= 28 ? 'Perfeito' : cents < 0 ? 'Suba um pouco' : 'Desça um pouco' }); } }
       micRafRef.current = requestAnimationFrame(loopPitch);
     };
     loopPitch();
