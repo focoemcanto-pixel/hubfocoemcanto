@@ -41,11 +41,15 @@ function isMissingTable(error: unknown) {
 
 async function ensureConfigBucket() {
   const supabase = createAdminClient();
-  const { data: buckets } = await supabase.storage.listBuckets();
-  const exists = buckets?.some((bucket) => bucket.id === STORAGE_BUCKET || bucket.name === STORAGE_BUCKET);
-  if (exists) return true;
-  const { error } = await supabase.storage.createBucket(STORAGE_BUCKET, { public: false });
-  return !error;
+  try {
+    const { data: buckets } = await supabase.storage.listBuckets();
+    const exists = buckets?.some((bucket) => bucket.id === STORAGE_BUCKET || bucket.name === STORAGE_BUCKET);
+    if (exists) return true;
+    const { error } = await supabase.storage.createBucket(STORAGE_BUCKET, { public: false });
+    return !error;
+  } catch {
+    return false;
+  }
 }
 
 async function getRowsFromStorage(): Promise<CentralAccessRule[] | null> {
@@ -74,16 +78,28 @@ export async function saveCentralAccessRule(key: string, level: CentralAccessLev
   const map = new Map((current || defaultRules).map((row) => [row.key, row]));
   map.set(key, nextRow);
   const rows = Array.from(map.values());
+  let saved = false;
 
   try {
     const { error } = await supabase.from('central_access_rules').upsert(nextRow, { onConflict: 'key' });
+    if (!error) saved = true;
     if (error && !isMissingTable(error)) console.error('Falha ao salvar regra da Central no banco', error.message);
   } catch (error) {
     if (!isMissingTable(error)) console.error('Falha ao salvar regra da Central no banco', error);
   }
 
-  await ensureConfigBucket();
-  await supabase.storage.from(STORAGE_BUCKET).upload(STORAGE_PATH, JSON.stringify({ rules: rows }, null, 2), { contentType: 'application/json; charset=utf-8', upsert: true });
+  try {
+    const bucketOk = await ensureConfigBucket();
+    if (bucketOk) {
+      const { error } = await supabase.storage.from(STORAGE_BUCKET).upload(STORAGE_PATH, JSON.stringify({ rules: rows }, null, 2), { contentType: 'application/json; charset=utf-8', upsert: true });
+      if (!error) saved = true;
+      if (error) console.error('Falha ao salvar regras da Central no storage', error.message);
+    }
+  } catch (error) {
+    console.error('Falha ao salvar regras da Central no storage', error);
+  }
+
+  return saved;
 }
 
 export async function getCentralAccessRows(): Promise<CentralAccessRule[]> {
