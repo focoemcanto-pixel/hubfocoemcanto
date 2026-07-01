@@ -103,7 +103,6 @@ export class DuetPreviewEngine {
   private playing = false;
   private referenceOffsetMs = 0;
   private delayedStartTimer: number | null = null;
-  private driftFrame: number | null = null;
   private referenceStartedAt = 0;
   private referenceMode: 'buffer' | 'media-element' = 'buffer';
 
@@ -184,7 +183,6 @@ export class DuetPreviewEngine {
           if (!this.playing) return;
           void this.startVisualAndVoice();
         }, Math.abs(this.referenceOffsetMs));
-        this.startDriftGuard();
         return;
       }
 
@@ -194,7 +192,6 @@ export class DuetPreviewEngine {
         this.referenceStartedAt = this.audio.context.currentTime + delay;
         this.audio.startReferenceBuffer(delay, 0);
       }
-      this.startDriftGuard();
       return;
     }
 
@@ -205,7 +202,6 @@ export class DuetPreviewEngine {
         if (!this.playing) return;
         void this.startVisualAndVoice();
       }, Math.abs(this.referenceOffsetMs));
-      this.startDriftGuard();
       return;
     }
 
@@ -215,7 +211,7 @@ export class DuetPreviewEngine {
         this.referenceStartedAt = this.audio.context.currentTime + offsetSeconds;
         this.delayedStartTimer = window.setTimeout(() => {
           if (!this.playing) return;
-          try { this.refs.reference.currentTime = this.refs.visual.currentTime || 0; } catch {}
+          try { this.refs.reference.currentTime = Math.max(0, this.refs.visual.currentTime || 0); } catch {}
           this.refs.reference.play().catch(() => undefined);
         }, this.referenceOffsetMs);
       } else {
@@ -224,13 +220,11 @@ export class DuetPreviewEngine {
         await reference.play().catch(() => undefined);
       }
     }
-    this.startDriftGuard();
   }
 
   pause() {
     this.playing = false;
     this.clearDelayedStart();
-    this.stopDriftGuard();
     this.audio.stopReferenceBuffer();
     try { this.refs.visual.pause(); } catch {}
     try { this.refs.voice.pause(); } catch {}
@@ -292,43 +286,10 @@ export class DuetPreviewEngine {
 
   private async startVisualAndVoice() {
     const faders = this.audio.getFaders();
+    try { this.refs.voice.currentTime = this.refs.visual.currentTime || 0; } catch {}
     const jobs: Promise<unknown>[] = [this.refs.visual.play().catch(() => undefined)];
     if (faders.voice > 0) jobs.push(this.refs.voice.play().catch(() => undefined));
     await Promise.all(jobs);
-    this.alignVoiceToVisual();
-  }
-
-  private alignVoiceToVisual() {
-    if (!this.playing) return;
-    const visualTime = this.refs.visual.currentTime || 0;
-    if (this.audio.getFaders().voice > 0) {
-      const voiceDrift = Math.abs((this.refs.voice.currentTime || 0) - visualTime);
-      if (voiceDrift > 0.035) {
-        try { this.refs.voice.currentTime = visualTime; } catch {}
-      }
-    }
-    if (this.referenceMode === 'media-element' && this.audio.getFaders().reference > 0) {
-      const target = Math.max(0, visualTime - this.referenceOffsetMs / 1000);
-      const referenceDrift = Math.abs((this.refs.reference.currentTime || 0) - target);
-      if (referenceDrift > 0.045) {
-        try { this.refs.reference.currentTime = target; } catch {}
-      }
-    }
-  }
-
-  private startDriftGuard() {
-    this.stopDriftGuard();
-    const tick = () => {
-      if (!this.playing) return;
-      this.alignVoiceToVisual();
-      this.driftFrame = requestAnimationFrame(tick);
-    };
-    this.driftFrame = requestAnimationFrame(tick);
-  }
-
-  private stopDriftGuard() {
-    if (this.driftFrame) cancelAnimationFrame(this.driftFrame);
-    this.driftFrame = null;
   }
 
   private syncTrackPlaybackState(media: HTMLMediaElement, faderValue: number) {
