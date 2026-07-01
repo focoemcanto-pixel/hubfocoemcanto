@@ -45,11 +45,22 @@ function toLinearGain(percent: number, preGain: number) {
   return Math.max(0, Math.min(6, (percent / 100) * preGain));
 }
 
-function toReferenceGain(percent: number, preGain: number) {
+function normalizeFader(percent: number) {
   if (!Number.isFinite(percent) || percent <= 0) return 0;
-  const normalized = Math.max(0, Math.min(1.4, percent / 100));
-  const db = -48 + normalized * 48;
-  return Math.max(0, Math.min(6, Math.pow(10, db / 20) * preGain));
+  return Math.max(0, Math.min(2, percent / 100));
+}
+
+function toReferenceGain(percent: number, preGain: number) {
+  const normalized = normalizeFader(percent);
+  if (normalized <= 0) return 0;
+  const attenuation = normalized <= 1 ? normalized * normalized : normalized;
+  return Math.max(0, Math.min(6, attenuation * preGain));
+}
+
+function toElementVolume(percent: number) {
+  const normalized = normalizeFader(percent);
+  if (normalized <= 0) return 0;
+  return Math.max(0, Math.min(1, normalized));
 }
 
 function configureAnalyser(analyser: AnalyserNode) {
@@ -293,7 +304,10 @@ export class DuetAudioEngine {
 
   private applyFaders() {
     if (this.voiceTrack) this.voiceTrack.gain.gain.value = toLinearGain(this.faders.voice, this.voicePreGain);
-    if (this.referenceTrack) this.referenceTrack.gain.gain.value = toReferenceGain(this.faders.reference, this.referencePreGain);
+    if (this.referenceTrack) {
+      this.referenceTrack.gain.gain.value = toReferenceGain(this.faders.reference, this.referencePreGain);
+      if (this.referenceTrack.element) this.referenceTrack.element.volume = toElementVolume(this.faders.reference);
+    }
   }
 
   private disconnectTrack(kind: DuetTrackKind) {
