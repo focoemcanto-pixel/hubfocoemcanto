@@ -36,8 +36,20 @@ function debug(label: string, data?: Record<string, unknown>) {
 }
 
 function linearGain(percent: number, preGain: number) {
-  if (!Number.isFinite(percent)) return 0;
+  if (!Number.isFinite(percent) || percent <= 0) return 0;
   return Math.max(0, Math.min(6, (percent / 100) * preGain));
+}
+
+function normalizeFader(percent: number) {
+  if (!Number.isFinite(percent) || percent <= 0) return 0;
+  return Math.max(0, Math.min(2, percent / 100));
+}
+
+function referenceGain(percent: number, preGain: number) {
+  const normalized = normalizeFader(percent);
+  if (normalized <= 0) return 0;
+  const attenuation = normalized <= 1 ? normalized * normalized : normalized;
+  return Math.max(0, Math.min(6, attenuation * preGain));
 }
 
 function clampReferenceOffsetMs(value?: number) {
@@ -194,7 +206,7 @@ export class DuetRendererEngine {
   async renderAudio(): Promise<DuetRenderedAudio> {
     const sampleRate = this.options.sampleRate || DEFAULT_SAMPLE_RATE;
     const voiceBuffer = await blobToAudioBuffer(this.options.voiceBlob, sampleRate);
-    const referenceGainValue = linearGain(this.options.faders.reference, this.options.preGains?.reference ?? DEFAULT_REFERENCE_PRE_GAIN);
+    const referenceGainValue = referenceGain(this.options.faders.reference, this.options.preGains?.reference ?? DEFAULT_REFERENCE_PRE_GAIN);
     const shouldIncludeReference = referenceGainValue > 0.000001;
     const referenceBuffer = shouldIncludeReference ? await urlToAudioBuffer(this.options.referenceUrl, sampleRate).catch((error) => {
       debug('reference-decode-failed', { message: error instanceof Error ? error.message : String(error) });
@@ -220,10 +232,10 @@ export class DuetRendererEngine {
     voiceSource.connect(compressor).connect(voiceGain).connect(limiter);
     if (referenceBuffer) {
       const referenceSource = context.createBufferSource();
-      const referenceGain = context.createGain();
+      const referenceGainNode = context.createGain();
       referenceSource.buffer = referenceBuffer;
-      referenceGain.gain.value = referenceGainValue;
-      referenceSource.connect(referenceGain).connect(limiter);
+      referenceGainNode.gain.value = referenceGainValue;
+      referenceSource.connect(referenceGainNode).connect(limiter);
       referenceSource.start(delayReferenceSeconds);
     }
     limiter.connect(context.destination);
@@ -235,7 +247,7 @@ export class DuetRendererEngine {
 
   async renderVideo(): Promise<DuetRenderedVideo> {
     if (typeof MediaRecorder === 'undefined') throw new Error('media_recorder_missing');
-    const referenceGainValue = linearGain(this.options.faders.reference, this.options.preGains?.reference ?? DEFAULT_REFERENCE_PRE_GAIN);
+    const referenceGainValue = referenceGain(this.options.faders.reference, this.options.preGains?.reference ?? DEFAULT_REFERENCE_PRE_GAIN);
     const wantsReference = referenceGainValue > 0.000001;
     const renderedAudio = await this.renderAudio();
     if (wantsReference && !renderedAudio.referenceIncluded) {
