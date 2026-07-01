@@ -1,4 +1,5 @@
 import { attachMediaSource } from '@/lib/media/hls-client';
+import { analyzeDuetAutoSync } from './duet-auto-sync';
 
 export type DuetRecorderEngineRefs = {
   camera: HTMLVideoElement;
@@ -33,6 +34,13 @@ type RecorderHandle = { recorder: MediaRecorder; chunks: Blob[]; mimeType: strin
 type CapturableCanvas = HTMLCanvasElement & { captureStream: (frameRate?: number) => MediaStream };
 type MediaAttachment = { destroy: () => void };
 
+// Minimum confidence from analyzeDuetAutoSync required to apply the computed
+// offset. Below this threshold we leave markerOffsetMs as 0 so the user
+// can adjust manually rather than applying a potentially wrong value.
+const MIN_SYNC_CONFIDENCE = 0.35;
+// Maximum time (ms) we wait for the auto-sync analysis before giving up.
+const AUTO_SYNC_TIMEOUT_MS = 10000;
+
 function isSafariLike() {
   if (typeof navigator === 'undefined') return false;
   const ua = navigator.userAgent;
@@ -57,7 +65,7 @@ function createRecorder(stream: MediaStream, kind: 'video' | 'audio'): RecorderH
   if (typeof MediaRecorder === 'undefined') throw new Error('media_recorder_missing');
   if (!stream.getTracks().length) return null;
   const mimeType = kind === 'audio' ? audioMimeType() : videoMimeType();
-  const recorder = new MediaRecorder(stream, { ...(mimeType ? { mimeType } : {}), ...(kind === 'video' ? { videoBitsPerSecond: isSafariLike() ? 2500000 : 5200000, audioBitsPerSecond: 192000 } : { audioBitsPerSecond: 192000 }) });
+  const recorder = new MediaRecorder(stream, { ...(mimeType ? { mimeType } : {}), ...(kind === 'video' ? { videoBitsPerSecond: isSafariLike() ? 2500000 : 5200000, audioBitsPerSecond: 192000 } : { audioBitsPerSecond: 128000 }) });
   const chunks: Blob[] = [];
   recorder.ondataavailable = (event) => { if (event.data?.size) chunks.push(event.data); };
   return {
@@ -148,6 +156,30 @@ function startCanvasDraw(args: { canvas: HTMLCanvasElement; camera: HTMLVideoEle
   return () => cancelAnimationFrame(frame);
 }
 
+/**
+ * Run auto-sync analysis with a hard timeout so it never blocks the UI.
+ * Returns 0 if analysis fails, times out, or produces a low-confidence result.
+ */
+async function runAutoSync(voiceBlob: Blob, referenceUrl: string): Promise<number> {
+  try {
+    const result = await Promise.race([
+      analyzeDuetAutoSync({ voiceBlob, referenceUrl }),
+      new Promise<null>((resolve) => window.setTimeout(() => resolve(null), AUTO_SYNC_TIMEOUT_MS)),
+    ]);
+    if (!result) {
+      console.info('[duet-sync] analysis timed out');
+      return 0;
+    }
+    console.info('[duet-sync] analysis result', result);
+    if (result.confidence >= MIN_SYNC_CONFIDENCE) return result.offsetMs;
+    console.info('[duet-sync] confidence too low, keeping 0ms offset', result);
+    return 0;
+  } catch (err) {
+    console.warn('[duet-sync] analysis error, keeping 0ms offset', err);
+    return 0;
+  }
+}
+
 export class DuetRecorderEngine {
   private refs: DuetRecorderEngineRefs;
   private options: Required<Pick<DuetRecorderEngineOptions, 'width' | 'height' | 'frameRate'>> & DuetRecorderEngineOptions;
@@ -227,12 +259,22 @@ export class DuetRecorderEngine {
     try { this.posterDataUrl = canvas.toDataURL('image/jpeg', 0.82); } catch { this.posterDataUrl = null; }
     try { referenceVideo.pause(); } catch {}
     try { this.stopDrawing?.(); } catch {}
+
+    // Collect blobs and run auto-sync analysis in parallel.
+    // The analysis uses the raw voiceBlob to find the waveform offset — it
+    // must not block the UI, so it runs with a hard timeout inside runAutoSync.
     const [cameraBlob, canvasBlob, voiceBlob, safePublishBlob] = await Promise.all([
       this.cameraRecorder?.stop() ?? Promise.resolve(null),
       this.canvasRecorder?.stop() ?? Promise.resolve(null),
       this.voiceRecorder?.stop() ?? Promise.resolve(null),
       this.safePublishRecorder?.stop() ?? Promise.resolve(null),
     ]);
+
+    // Run auto-sync only when we have a voice recording to analyse.
+    const markerOffsetMs = voiceBlob
+      ? await runAutoSync(voiceBlob, this.options.referenceUrl)
+      : 0;
+
     const result: DuetRecorderEngineResult = {
       cameraBlob,
       canvasBlob,
@@ -242,7 +284,7 @@ export class DuetRecorderEngine {
       stoppedAt,
       durationMs: Math.max(0, stoppedAt - this.startedAt),
       posterDataUrl: this.posterDataUrl,
-      markerOffsetMs: 0,
+      markerOffsetMs,
       mimeTypes: { camera: this.cameraRecorder?.mimeType, canvas: this.canvasRecorder?.mimeType, voice: this.voiceRecorder?.mimeType, safePublish: this.safePublishRecorder?.mimeType },
       diagnostics: { cameraChunks: this.cameraRecorder?.chunks.length || 0, canvasChunks: this.canvasRecorder?.chunks.length || 0, voiceChunks: this.voiceRecorder?.chunks.length || 0, safePublishChunks: this.safePublishRecorder?.chunks.length || 0, hasMicrophoneTrack: Boolean(this.microphoneStream?.getAudioTracks().length), hasCanvasVideoTrack: Boolean(this.canvasStream?.getVideoTracks().length) },
     };
