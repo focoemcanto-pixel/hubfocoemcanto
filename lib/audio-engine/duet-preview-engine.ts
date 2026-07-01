@@ -89,7 +89,7 @@ function prepareGraphMedia(media: HTMLMediaElement) {
 }
 
 function clampOffset(value: number) {
-  return Math.max(-300, Math.min(300, Number.isFinite(value) ? value : 0));
+  return Math.max(-900, Math.min(900, Number.isFinite(value) ? value : 0));
 }
 
 export class DuetPreviewEngine {
@@ -178,7 +178,7 @@ export class DuetPreviewEngine {
     if (this.referenceMode === 'buffer') {
       if (offsetSeconds < 0 && faders.reference > 0) {
         this.referenceStartedAt = this.audio.context.currentTime;
-        this.audio.startReferenceBuffer(0, 0);
+        this.audio.startReferenceBuffer(0, Math.abs(offsetSeconds));
         this.delayedStartTimer = window.setTimeout(() => {
           if (!this.playing) return;
           void this.startVisualAndVoice();
@@ -196,6 +196,7 @@ export class DuetPreviewEngine {
     }
 
     if (offsetSeconds < 0 && faders.reference > 0) {
+      try { reference.currentTime = Math.abs(offsetSeconds); } catch {}
       this.referenceStartedAt = this.audio.context.currentTime;
       await reference.play().catch(() => undefined);
       this.delayedStartTimer = window.setTimeout(() => {
