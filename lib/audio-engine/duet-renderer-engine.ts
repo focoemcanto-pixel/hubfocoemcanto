@@ -1,4 +1,5 @@
 import type { DuetFaderValues } from './duet-audio-engine';
+import { toReferenceGain } from './duet-audio-engine';
 import { renderLiveDuetVideo } from './duet-live-renderer';
 
 export type DuetRendererEngineOptions = {
@@ -29,7 +30,7 @@ export type DuetRenderedVideo = {
 
 const DEFAULT_SAMPLE_RATE = 48000;
 const DEFAULT_VOICE_PRE_GAIN = 3.2;
-const DEFAULT_REFERENCE_PRE_GAIN = 0.08;
+const DEFAULT_REFERENCE_PRE_GAIN = 10;
 
 function debug(label: string, data?: Record<string, unknown>) {
   try { console.info(`[duet-render] ${label}`, data || {}); } catch {}
@@ -194,7 +195,7 @@ export class DuetRendererEngine {
   async renderAudio(): Promise<DuetRenderedAudio> {
     const sampleRate = this.options.sampleRate || DEFAULT_SAMPLE_RATE;
     const voiceBuffer = await blobToAudioBuffer(this.options.voiceBlob, sampleRate);
-    const referenceGainValue = linearGain(this.options.faders.reference, this.options.preGains?.reference ?? DEFAULT_REFERENCE_PRE_GAIN);
+    const referenceGainValue = toReferenceGain(this.options.faders.reference, this.options.preGains?.reference ?? DEFAULT_REFERENCE_PRE_GAIN);
     const shouldIncludeReference = referenceGainValue > 0.000001;
     const referenceBuffer = shouldIncludeReference ? await urlToAudioBuffer(this.options.referenceUrl, sampleRate).catch((error) => {
       debug('reference-decode-failed', { message: error instanceof Error ? error.message : String(error) });
@@ -235,7 +236,7 @@ export class DuetRendererEngine {
 
   async renderVideo(): Promise<DuetRenderedVideo> {
     if (typeof MediaRecorder === 'undefined') throw new Error('media_recorder_missing');
-    const referenceGainValue = linearGain(this.options.faders.reference, this.options.preGains?.reference ?? DEFAULT_REFERENCE_PRE_GAIN);
+    const referenceGainValue = toReferenceGain(this.options.faders.reference, this.options.preGains?.reference ?? DEFAULT_REFERENCE_PRE_GAIN);
     const wantsReference = referenceGainValue > 0.000001;
     const renderedAudio = await this.renderAudio();
     if (wantsReference && !renderedAudio.referenceIncluded) {

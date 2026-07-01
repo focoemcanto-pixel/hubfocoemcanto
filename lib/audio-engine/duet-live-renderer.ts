@@ -1,5 +1,6 @@
 import { attachMediaSource } from '@/lib/media/hls-client';
 import type { DuetFaderValues } from './duet-audio-engine';
+import { toReferenceGain } from './duet-audio-engine';
 
 type LiveDuetRenderOptions = {
   visualBlob: Blob;
@@ -13,7 +14,7 @@ type LiveDuetRenderOptions = {
 
 const DEFAULT_SAMPLE_RATE = 48000;
 const DEFAULT_VOICE_PRE_GAIN = 3.2;
-const DEFAULT_REFERENCE_PRE_GAIN = 0.08;
+const DEFAULT_REFERENCE_PRE_GAIN = 10;
 
 function debug(label: string, data?: Record<string, unknown>) { try { console.info(`[duet-live-render] ${label}`, data || {}); } catch {} }
 function linearGain(percent: number, preGain: number) { if (!Number.isFinite(percent)) return 0; return Math.max(0, Math.min(6, (percent / 100) * preGain)); }
@@ -141,7 +142,7 @@ export async function renderLiveDuetVideo(options: LiveDuetRenderOptions) {
   audioContext.createMediaElementSource(voice).connect(voiceCompressor).connect(voiceGain).connect(limiter);
 
   const referenceGain = audioContext.createGain();
-  referenceGain.gain.value = linearGain(options.faders.reference, options.preGains?.reference ?? DEFAULT_REFERENCE_PRE_GAIN);
+  referenceGain.gain.value = toReferenceGain(options.faders.reference, options.preGains?.reference ?? DEFAULT_REFERENCE_PRE_GAIN);
   audioContext.createMediaElementSource(reference).connect(referenceGain).connect(limiter);
 
   const audioTrack = destination.stream.getAudioTracks()[0];
