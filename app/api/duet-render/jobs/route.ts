@@ -5,6 +5,26 @@ import { parseBoolean, parseInteger, pathPart, resolveExerciseAndProfile, upload
 
 export const dynamic = 'force-dynamic';
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForQueuedRender(supabase: ReturnType<typeof createAdminClient>, jobId: string) {
+  for (let attempt = 1; attempt <= 18; attempt += 1) {
+    await sleep(3000);
+    const { data, error } = await supabase
+      .from('duet_render_jobs')
+      .select('id,status,output_url,error_message,created_at')
+      .eq('id', jobId)
+      .maybeSingle();
+
+    if (error) throw new Error(error.message);
+    if (data?.status === 'completed' && data.output_url) return data;
+    if (data?.status === 'failed') return data;
+  }
+  return null;
+}
+
 async function renderWithWorker(params: {
   video: File;
   voice: File;
@@ -120,6 +140,14 @@ export async function POST(request: Request) {
       const message = workerError instanceof Error ? workerError.message : String(workerError);
       await supabase.from('duet_render_jobs').update({ status: 'failed', error_message: message }).eq('id', job.id);
       return NextResponse.json({ ok: true, job_id: job.id, status: 'failed', error_message: message, created_at: job.created_at });
+    }
+
+    const queuedResult = await waitForQueuedRender(supabase, job.id);
+    if (queuedResult?.status === 'completed' && queuedResult.output_url) {
+      return NextResponse.json({ ok: true, job_id: job.id, status: 'completed', output_url: queuedResult.output_url, created_at: job.created_at });
+    }
+    if (queuedResult?.status === 'failed') {
+      return NextResponse.json({ ok: true, job_id: job.id, status: 'failed', error_message: queuedResult.error_message || 'Renderização no servidor falhou.', created_at: job.created_at });
     }
 
     return NextResponse.json({ ok: true, job_id: job.id, status: job.status, created_at: job.created_at });
