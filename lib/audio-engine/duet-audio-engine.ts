@@ -45,10 +45,23 @@ function toLinearGain(percent: number, preGain: number) {
   return Math.max(0, Math.min(6, (percent / 100) * preGain));
 }
 
-function toReferenceGain(percent: number, preGain: number) {
+/**
+ * Unified reference gain mapping — shared by preview, offline render and live render.
+ *
+ * Curve: logarithmic/dB over the full slider range 0..200.
+ *   percent=0   → silence (0)
+ *   percent=200 → 0 dB headroom (× preGain)
+ *
+ * The slider range [0..200] maps linearly to [−60 dB .. 0 dB], then the dB value is
+ * converted to a linear amplitude multiplied by preGain.
+ * This produces a perceptually proportional response across the entire range
+ * with no saturation clamp — every position on the slider sounds meaningfully
+ * different from its neighbours.
+ */
+export function toReferenceGain(percent: number, preGain: number): number {
   if (!Number.isFinite(percent) || percent <= 0) return 0;
-  const normalized = Math.max(0, Math.min(1.4, percent / 100));
-  const db = -48 + normalized * 48;
+  // Map [0..200] → [−60..0] dB; values above 200 are allowed to go slightly positive
+  const db = -60 + Math.max(0, percent) / 200 * 60;
   return Math.max(0, Math.min(6, Math.pow(10, db / 20) * preGain));
 }
 
