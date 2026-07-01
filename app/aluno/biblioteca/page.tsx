@@ -20,7 +20,7 @@ function progressFor(index: number) { return [75, 40, 12, 10, 0, 0][index % 6]; 
 function isRealModule(module: any) { const description = String(module.description || '').toLowerCase(); return !description.startsWith('conteudos importados da pasta') && !description.startsWith('conteúdos importados da pasta'); }
 function hasCourse(subscriptions: any[], courseKey: string) { return subscriptions.some((sub) => sub.course_key === courseKey && isAccessActive(sub.status)); }
 function styleForCover(cover: string) { return cover.startsWith('radial-gradient') ? { background: cover } : { backgroundImage: `url(${cover})` }; }
-function productLink(product: any, fallback: string) { return product?.member_url || product?.checkout_url || product?.sales_url || product?.external_url || product?.kiwify_url || fallback; }
+function productLink(product: any, fallback: string) { return product?.member_url || product?.course_url || product?.internal_url || product?.redirect_url || product?.checkout_url || product?.sales_url || product?.external_url || product?.kiwify_url || fallback; }
 function productCover(product: any, fallback: string) { return product?.cover_url || product?.image_url || product?.thumbnail_url || product?.cover_image_url || product?.banner_url || product?.card_cover_url || fallback; }
 function productOrder(product: any, index: number) { return Number(product?.courses?.[0]?.sort_order ?? index + 100); }
 function productKey(product: any) { const slug = String(product?.slug || '').toLowerCase(); return slug.includes('ebook') ? 'ebooks' : slug; }
@@ -58,9 +58,10 @@ export default async function StudentLibraryPage() {
   const courseCards = productList.map((product, index) => {
     const vip = isVip(product);
     const subscribed = hasCourse(activeSubs, productKey(product));
-    const unlocked = vip ? hasVip : subscribed || hasVip;
+    const published = product.status === 'published';
+    const unlocked = vip ? hasVip : published || subscribed || hasVip;
     const title = vip ? 'Sala de Atividades VIP' : product.name;
-    const description = vip ? (hasVip ? 'Atividades, duetos e comunidade.' : 'Bloqueado para assinantes VIP. Garanta seu acesso para começar.') : (unlocked ? (product.description || 'Acesso liberado.') : 'Bloqueado. Entre no Grupo VIP para liberar.');
+    const description = vip ? (hasVip ? 'Atividades, duetos e comunidade.' : 'Bloqueado para assinantes VIP. Garanta seu acesso para começar.') : (unlocked ? (product.description || 'Acesso liberado.') : 'Bloqueado. Entre no Grupo VIP ou aguarde a liberação.');
     const href = unlocked ? (vip ? '#sala-vip' : productLink(product, `/aluno/biblioteca/${product.slug}`)) : VIP_CHECKOUT_URL;
     const action = unlocked ? (vip ? 'Abrir módulos' : 'Acessar curso') : 'Liberar no VIP';
     return { title, description, unlocked, href, cover: productCover(product, covers[index % covers.length]), action };
