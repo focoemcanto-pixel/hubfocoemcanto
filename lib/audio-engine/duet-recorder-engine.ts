@@ -23,6 +23,7 @@ export type DuetRecorderEngineResult = {
   startedAt: number;
   stoppedAt: number;
   durationMs: number;
+  posterDataUrl?: string | null;
   mimeTypes: { camera?: string; canvas?: string; voice?: string; safePublish?: string };
   diagnostics: { cameraChunks: number; canvasChunks: number; voiceChunks: number; safePublishChunks: number; hasMicrophoneTrack: boolean; hasCanvasVideoTrack: boolean };
 };
@@ -115,27 +116,30 @@ function drawSelfie(ctx: CanvasRenderingContext2D, camera: HTMLVideoElement, x: 
   ctx.restore();
 }
 
-function startCanvasDraw(args: { canvas: HTMLCanvasElement; camera: HTMLVideoElement; reference: HTMLVideoElement; frameRate: number }) {
-  const ctx = args.canvas.getContext('2d');
-  if (!ctx) return () => undefined;
-  let frame = 0;
-  let timer: number | null = null;
-  const draw = () => {
-    const width = args.canvas.width;
-    const height = args.canvas.height;
-    const half = width / 2;
-    ctx.fillStyle = '#050507';
-    ctx.fillRect(0, 0, width, height);
-    if (args.reference.readyState >= 2 && args.reference.videoWidth > 0) {
-      try { drawCover(ctx, args.reference, 0, 0, half, height); } catch {}
-    }
-    if (args.camera.readyState >= 2 && args.camera.videoWidth > 0) drawSelfie(ctx, args.camera, half, 0, half, height);
-  };
-  if (isSafariLike()) {
-    timer = window.setInterval(draw, Math.max(30, Math.round(1000 / args.frameRate)));
-    draw();
-    return () => { if (timer) window.clearInterval(timer); };
+function drawDuetFrame(canvas: HTMLCanvasElement, camera: HTMLVideoElement, reference: HTMLVideoElement) {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  const width = canvas.width;
+  const height = canvas.height;
+  const half = width / 2;
+  ctx.fillStyle = '#050507';
+  ctx.fillRect(0, 0, width, height);
+  if (reference.readyState >= 2 && reference.videoWidth > 0) {
+    try { drawCover(ctx, reference, 0, 0, half, height); } catch {}
   }
+  if (camera.readyState >= 2 && camera.videoWidth > 0) {
+    try { drawSelfie(ctx, camera, half, 0, half, height); } catch {}
+  }
+}
+
+function startCanvasDraw(args: { canvas: HTMLCanvasElement; camera: HTMLVideoElement; reference: HTMLVideoElement; frameRate: number }) {
+  const draw = () => drawDuetFrame(args.canvas, args.camera, args.reference);
+  if (isSafariLike()) {
+    const timer = window.setInterval(draw, Math.max(30, Math.round(1000 / args.frameRate)));
+    draw();
+    return () => window.clearInterval(timer);
+  }
+  let frame = 0;
   let last = 0;
   const interval = 1000 / args.frameRate;
   const loop = (now = 0) => { if (now - last >= interval) { draw(); last = now; } frame = requestAnimationFrame(loop); };
@@ -156,6 +160,7 @@ export class DuetRecorderEngine {
   private referenceAttachment: MediaAttachment | null = null;
   private stopDrawing: (() => void) | null = null;
   private startedAt = 0;
+  private posterDataUrl: string | null = null;
 
   constructor(refs: DuetRecorderEngineRefs, options: DuetRecorderEngineOptions) {
     if (!options.referenceUrl) throw new Error('missing_reference_url');
@@ -171,6 +176,7 @@ export class DuetRecorderEngine {
     referenceVideo.crossOrigin = 'anonymous';
     referenceVideo.muted = true;
     referenceVideo.volume = 0;
+    referenceVideo.playsInline = true;
     this.referenceAttachment = await attachMediaSource(referenceVideo, this.options.referenceUrl);
     await waitForMediaReady(referenceVideo);
     const audio: MediaTrackConstraints = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1, sampleRate: 48000 };
@@ -183,13 +189,20 @@ export class DuetRecorderEngine {
     await camera.play().catch(() => undefined);
     this.microphoneStream = new MediaStream(this.cameraStream.getAudioTracks());
     referenceVideo.currentTime = 0;
+    drawDuetFrame(canvas, camera, referenceVideo);
   }
 
   async start() {
     const { camera, referenceVideo, canvas } = this.refs;
     if (!this.cameraStream || !this.microphoneStream) await this.prepare();
     if (!this.cameraStream || !this.microphoneStream) throw new Error('recorder_not_prepared');
-    await referenceVideo.play();
+
+    try { referenceVideo.pause(); } catch {}
+    try { referenceVideo.currentTime = 0; } catch {}
+    referenceVideo.muted = false;
+    referenceVideo.volume = 1;
+    referenceVideo.playsInline = true;
+
     this.stopDrawing = startCanvasDraw({ canvas, camera, reference: referenceVideo, frameRate: this.options.frameRate });
     this.canvasStream = (canvas as CapturableCanvas).captureStream(this.options.frameRate);
     const canvasVideoTracks = this.canvasStream.getVideoTracks();
@@ -203,11 +216,14 @@ export class DuetRecorderEngine {
     this.canvasRecorder?.start();
     this.voiceRecorder?.start();
     this.safePublishRecorder?.start();
+    await referenceVideo.play().catch(() => undefined);
   }
 
   async stop(): Promise<DuetRecorderEngineResult> {
     const stoppedAt = Date.now();
-    const { referenceVideo } = this.refs;
+    const { camera, referenceVideo, canvas } = this.refs;
+    try { drawDuetFrame(canvas, camera, referenceVideo); } catch {}
+    try { this.posterDataUrl = canvas.toDataURL('image/jpeg', 0.82); } catch { this.posterDataUrl = null; }
     try { referenceVideo.pause(); } catch {}
     try { this.stopDrawing?.(); } catch {}
     const [cameraBlob, canvasBlob, voiceBlob, safePublishBlob] = await Promise.all([
@@ -224,17 +240,18 @@ export class DuetRecorderEngine {
       startedAt: this.startedAt,
       stoppedAt,
       durationMs: Math.max(0, stoppedAt - this.startedAt),
+      posterDataUrl: this.posterDataUrl,
       mimeTypes: { camera: this.cameraRecorder?.mimeType, canvas: this.canvasRecorder?.mimeType, voice: this.voiceRecorder?.mimeType, safePublish: this.safePublishRecorder?.mimeType },
       diagnostics: { cameraChunks: this.cameraRecorder?.chunks.length || 0, canvasChunks: this.canvasRecorder?.chunks.length || 0, voiceChunks: this.voiceRecorder?.chunks.length || 0, safePublishChunks: this.safePublishRecorder?.chunks.length || 0, hasMicrophoneTrack: Boolean(this.microphoneStream?.getAudioTracks().length), hasCanvasVideoTrack: Boolean(this.canvasStream?.getVideoTracks().length) },
     };
-    this.cleanup();
+    this.cleanup({ preserveCanvas: true });
     return result;
   }
 
   getMicrophoneStream() { return this.microphoneStream; }
   getCanvasStream() { return this.canvasStream; }
 
-  cleanup() {
+  cleanup(options: { preserveCanvas?: boolean } = {}) {
     try { this.refs.referenceVideo.pause(); } catch {}
     try { this.referenceAttachment?.destroy(); } catch {}
     try { this.refs.referenceVideo.removeAttribute('src'); this.refs.referenceVideo.load(); } catch {}
@@ -250,5 +267,6 @@ export class DuetRecorderEngine {
     this.safePublishRecorder = null;
     this.referenceAttachment = null;
     this.stopDrawing = null;
+    if (!options.preserveCanvas) this.posterDataUrl = null;
   }
 }
