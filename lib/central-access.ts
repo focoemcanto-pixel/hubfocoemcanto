@@ -1,11 +1,13 @@
 import { cookies } from 'next/headers';
 import { createAdminClient } from '@/lib/supabase/admin';
 
-export type CentralAccessLevel = 'open' | 'subscriber' | 'vip' | 'locked';
+export type CentralAccessLevel = 'open' | 'vip';
 export type CentralAccessRule = { key: string; level: CentralAccessLevel; note?: string | null; updated_at?: string | null };
 export type StudentAccessContext = { email: string; profile: Record<string, any> | null; isSubscriber: boolean; isVip: boolean; isAdmin: boolean };
 
-const allowedLevels: CentralAccessLevel[] = ['open', 'subscriber', 'vip', 'locked'];
+const STORAGE_BUCKET = 'hub-config';
+const STORAGE_PATH = 'settings/central-access-rules.json';
+
 const defaultRules: CentralAccessRule[] = [
   { key: 'central', level: 'open', note: 'Acesso geral à Central de Treinamento.' },
   { key: 'daily', level: 'open', note: 'Exercícios diários.' },
@@ -14,24 +16,86 @@ const defaultRules: CentralAccessRule[] = [
 ];
 
 export function accessLabel(level?: CentralAccessLevel | string | null) {
-  if (level === 'subscriber') return 'Assinantes';
-  if (level === 'vip') return 'VIP';
-  if (level === 'locked') return 'Bloqueado';
-  return 'Aberto';
+  return normalizeLevel(level) === 'vip' ? 'Grupo VIP' : 'Aberto';
 }
 
 function normalizeLevel(value: unknown): CentralAccessLevel {
-  return allowedLevels.includes(value as CentralAccessLevel) ? value as CentralAccessLevel : 'open';
+  const text = String(value || '').toLowerCase();
+  return text === 'vip' || text === 'subscriber' || text === 'locked' || text === 'coming_soon' ? 'vip' : 'open';
+}
+
+function normalizeRows(rows: any[] | null | undefined): CentralAccessRule[] {
+  const map = new Map(defaultRules.map((rule) => [rule.key, rule]));
+  (rows || []).forEach((row) => {
+    const key = String(row?.key || '').trim();
+    if (!key) return;
+    map.set(key, { key, level: normalizeLevel(row?.level), note: row?.note ?? null, updated_at: row?.updated_at ?? null });
+  });
+  return Array.from(map.values());
+}
+
+function isMissingTable(error: unknown) {
+  const message = String((error as any)?.message || error || '').toLowerCase();
+  return message.includes('central_access_rules') || message.includes('schema cache') || message.includes('does not exist') || message.includes('could not find');
+}
+
+async function ensureConfigBucket() {
+  const supabase = createAdminClient();
+  const { data: buckets } = await supabase.storage.listBuckets();
+  const exists = buckets?.some((bucket) => bucket.id === STORAGE_BUCKET || bucket.name === STORAGE_BUCKET);
+  if (exists) return true;
+  const { error } = await supabase.storage.createBucket(STORAGE_BUCKET, { public: false });
+  return !error;
+}
+
+async function getRowsFromStorage(): Promise<CentralAccessRule[] | null> {
+  const supabase = createAdminClient();
+  try {
+    const { data, error } = await supabase.storage.from(STORAGE_BUCKET).download(STORAGE_PATH);
+    if (error || !data) return null;
+    const parsed = JSON.parse(await data.text());
+    return normalizeRows(Array.isArray(parsed) ? parsed : parsed?.rules);
+  } catch {
+    return null;
+  }
+}
+
+export async function saveCentralAccessRule(key: string, level: CentralAccessLevel | string, note?: string | null) {
+  const nextLevel = normalizeLevel(level);
+  const nextRow = { key, level: nextLevel, note: note || null, updated_at: new Date().toISOString() };
+  const supabase = createAdminClient();
+
+  let current = await getRowsFromStorage();
+  try {
+    const { data } = await supabase.from('central_access_rules').select('key,level,note,updated_at');
+    current = normalizeRows(data || current || defaultRules);
+  } catch {}
+
+  const map = new Map((current || defaultRules).map((row) => [row.key, row]));
+  map.set(key, nextRow);
+  const rows = Array.from(map.values());
+
+  try {
+    const { error } = await supabase.from('central_access_rules').upsert(nextRow, { onConflict: 'key' });
+    if (error && !isMissingTable(error)) console.error('Falha ao salvar regra da Central no banco', error.message);
+  } catch (error) {
+    if (!isMissingTable(error)) console.error('Falha ao salvar regra da Central no banco', error);
+  }
+
+  await ensureConfigBucket();
+  await supabase.storage.from(STORAGE_BUCKET).upload(STORAGE_PATH, JSON.stringify({ rules: rows }, null, 2), { contentType: 'application/json; charset=utf-8', upsert: true });
 }
 
 export async function getCentralAccessRows(): Promise<CentralAccessRule[]> {
   const supabase = createAdminClient();
-  const { data, error } = await supabase.from('central_access_rules').select('key,level,note,updated_at');
-  if (error || !data) return defaultRules;
-  const rows = data.map((row: any) => ({ key: String(row.key), level: normalizeLevel(row.level), note: row.note ?? null, updated_at: row.updated_at ?? null }));
-  const map = new Map(defaultRules.map((rule) => [rule.key, rule]));
-  rows.forEach((row) => map.set(row.key, row));
-  return Array.from(map.values());
+  try {
+    const { data, error } = await supabase.from('central_access_rules').select('key,level,note,updated_at');
+    if (!error && data) return normalizeRows(data);
+    if (error && !isMissingTable(error)) console.error('Falha ao carregar regras da Central', error.message);
+  } catch (error) {
+    if (!isMissingTable(error)) console.error('Falha ao carregar regras da Central', error);
+  }
+  return (await getRowsFromStorage()) ?? defaultRules;
 }
 
 export async function getCentralAccessRules(): Promise<Record<string, CentralAccessLevel>> {
@@ -45,11 +109,7 @@ export function levelFor(rules: Record<string, CentralAccessLevel> | CentralAcce
 }
 
 export function getEffectiveLevel(rules: Record<string, CentralAccessLevel> | CentralAccessRule[], keys: Array<string | null | undefined>): CentralAccessLevel {
-  const priority: Record<CentralAccessLevel, number> = { open: 0, subscriber: 1, vip: 2, locked: 3 };
-  return keys.filter(Boolean).reduce<CentralAccessLevel>((current, key) => {
-    const next = levelFor(rules, String(key));
-    return priority[next] > priority[current] ? next : current;
-  }, 'open');
+  return keys.filter(Boolean).some((key) => levelFor(rules, String(key)) === 'vip') ? 'vip' : 'open';
 }
 
 function truthy(value: unknown) {
@@ -75,10 +135,6 @@ export async function getStudentAccessContext(): Promise<StudentAccessContext> {
 }
 
 export function canAccessLevel(level: CentralAccessLevel | string, ctx: StudentAccessContext) {
-  const normalized = normalizeLevel(level);
   if (ctx.isAdmin) return true;
-  if (normalized === 'open') return true;
-  if (normalized === 'subscriber') return ctx.isSubscriber || ctx.isVip;
-  if (normalized === 'vip') return ctx.isVip;
-  return false;
+  return normalizeLevel(level) === 'open' || ctx.isVip || ctx.isSubscriber;
 }
