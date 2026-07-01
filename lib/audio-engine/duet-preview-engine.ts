@@ -23,10 +23,11 @@ async function decodeReferenceBuffer(context: AudioContext, url: string) { const
 function prepareGraphMedia(media: HTMLMediaElement) { media.preload = 'auto'; media.volume = 1; media.muted = false; if ('playsInline' in media) (media as HTMLVideoElement).playsInline = true; }
 function clampOffset(value: number) { return Math.max(-900, Math.min(900, Number.isFinite(value) ? value : 0)); }
 
-// How far in the future (seconds) we schedule AudioBufferSourceNode.start()
-// relative to AudioContext.currentTime measured AFTER the seek completes.
-// 80ms is enough for the browser scheduler without being perceptible.
-const START_DELAY_SECONDS = 0.08;
+// Minimum gap (seconds) between AudioContext.currentTime and the scheduled
+// source start. Gives the Web Audio scheduler enough runway without being
+// perceptible. Must be > one render quantum (~2.9 ms at 48 kHz) but small
+// enough that the video starts in sync.
+const SCHEDULE_AHEAD_SECONDS = 0.04;
 
 export class DuetPreviewEngine {
   readonly audio: DuetAudioEngine;
@@ -44,10 +45,7 @@ export class DuetPreviewEngine {
   private fallbackReference: HTMLAudioElement | null = null;
   private timelineDuration = 0;
   private timelineStartAt = 0;
-  private voiceStartedAt = 0;
-  private referenceStartedAt = 0;
   private driftFrame: number | null = null;
-  private delayedStartTimer: number | null = null;
 
   constructor(refs: DuetPreviewEngineRefs, options: DuetPreviewEngineOptions) {
     this.refs = refs;
@@ -92,7 +90,6 @@ export class DuetPreviewEngine {
 
   async play() {
     await this.prepare();
-    // Stop any ongoing playback — this also cancels the delayed visual start timer.
     this.pause();
     await this.audio.resume();
 
@@ -102,51 +99,50 @@ export class DuetPreviewEngine {
     const faders = this.audio.getFaders();
     const offsetSeconds = this.referenceOffsetMs / 1000;
 
-    // Reset the visual to frame 0 and wait for the seek to settle BEFORE
-    // sampling AudioContext.currentTime. This is the key fix: if we sample
-    // currentTime before the seek, the browser seek latency pushes the video
-    // start past our scheduled audio start, causing the drift on 2nd+ plays.
-    try { visual.pause(); visual.currentTime = 0; } catch {}
-    await waitForSeek(visual);
+    // ── Step 1: seek the visual back to frame 0 and wait for the seek to
+    //    complete BEFORE touching the AudioContext clock. This is critical:
+    //    sampling currentTime before the seek means the seek latency eats
+    //    into our schedule window, causing drift on every play after the first.
     visual.muted = true;
     visual.volume = 0;
+    try { visual.pause(); visual.currentTime = 0; } catch {}
+    await waitForSeek(visual);
 
-    // Sample the clock AFTER the seek so the remaining delay budget is accurate.
-    const startAt = this.audio.context.currentTime + START_DELAY_SECONDS;
+    // ── Step 2: sample the clock NOW (after seek) and schedule both audio
+    //    buffers a fixed small amount ahead. SCHEDULE_AHEAD_SECONDS is the
+    //    only async gap that matters — the seek is already done.
+    const startAt = this.audio.context.currentTime + SCHEDULE_AHEAD_SECONDS;
 
     this.audio.stopVoiceBuffer();
     this.audio.stopReferenceBuffer();
     this.playing = true;
     this.timelineStartAt = startAt;
-    this.voiceStartedAt = startAt;
 
     if (faders.voice > 0) this.audio.startVoiceBufferAt(startAt, 0);
 
     if (faders.reference > 0) {
       if (offsetSeconds >= 0) {
-        this.referenceStartedAt = startAt + offsetSeconds;
         this.audio.startReferenceBufferAt(startAt + offsetSeconds, 0);
       } else {
-        this.referenceStartedAt = startAt;
         this.audio.startReferenceBufferAt(startAt, -offsetSeconds);
       }
     }
 
-    // Launch the video exactly when audio starts.
-    this.delayedStartTimer = window.setTimeout(() => {
-      if (!this.playing) return;
-      visual.play().catch(() => undefined);
-      this.startVisualClockGuard();
-    }, Math.round(START_DELAY_SECONDS * 1000));
+    // ── Step 3: start the video immediately (no setTimeout).
+    //    The visual clock guard will correct any sub-frame drift within the
+    //    first animation frame. Using setTimeout here is what caused the
+    //    "different start times on 2nd play" bug — the timer fires after
+    //    a variable delay that is no longer aligned with the audio schedule.
+    visual.play().catch(() => undefined);
+    this.startVisualClockGuard();
   }
 
   pause() {
     this.playing = false;
-    this.clearDelayedStart();
     this.stopVisualClockGuard();
+    try { this.refs.visual.pause(); } catch {}
     this.audio.stopVoiceBuffer();
     this.audio.stopReferenceBuffer();
-    try { this.refs.visual.pause(); } catch {}
     if (this.fallbackVoice) try { this.fallbackVoice.pause(); } catch {}
     if (this.fallbackReference) try { this.fallbackReference.pause(); } catch {}
   }
@@ -198,30 +194,32 @@ export class DuetPreviewEngine {
     const voice = this.fallbackVoice || this.refs.voice;
     const reference = this.fallbackReference || this.refs.reference;
     const faders = this.audio.getFaders();
+    // Reset all elements to frame 0 and wait for all seeks before starting
+    // anything — this is the only way to guarantee they start at the same time.
     try { visual.currentTime = 0; voice.currentTime = 0; reference.currentTime = 0; } catch {}
     await Promise.all([waitForSeek(visual), waitForSeek(voice), waitForSeek(reference)]);
     this.playing = true;
-    // In fallback mode start everything at the same real-time moment.
-    const plays: Promise<void>[] = [];
-    plays.push(visual.play().catch(() => undefined));
     this.syncTrackPlaybackState(voice, faders.voice);
     this.syncTrackPlaybackState(reference, faders.reference);
-    if (!voice.paused) plays.push(voice.play().catch(() => undefined));
-    if (!reference.paused) plays.push(reference.play().catch(() => undefined));
-    await Promise.all(plays);
+    // Start all three at once after all seeks have completed.
+    await Promise.all([
+      visual.play().catch(() => undefined),
+      faders.voice > 0 ? voice.play().catch(() => undefined) : Promise.resolve(),
+      faders.reference > 0 ? reference.play().catch(() => undefined) : Promise.resolve(),
+    ]);
   }
 
   private startVisualClockGuard() {
     this.stopVisualClockGuard();
     const tick = () => {
       if (!this.playing) return;
+      // How far the audio timeline has advanced since we called startAt.
       const elapsed = Math.max(0, this.audio.context.currentTime - this.timelineStartAt);
-      const visualExpected = elapsed;
       const visualActual = this.refs.visual.currentTime || 0;
-      const drift = Math.abs(visualActual - visualExpected);
-      // Only correct if drift exceeds 80ms to avoid jitter.
+      const drift = Math.abs(visualActual - elapsed);
+      // Correct only if drift > 80ms to avoid jitter from sub-frame floating point.
       if (drift > 0.08 && !this.refs.visual.paused) {
-        try { this.refs.visual.currentTime = visualExpected; } catch {}
+        try { this.refs.visual.currentTime = elapsed; } catch {}
       }
       this.driftFrame = requestAnimationFrame(tick);
     };
@@ -235,6 +233,4 @@ export class DuetPreviewEngine {
     if (faderValue <= 0) { try { media.pause(); } catch {}; return; }
     if (media.paused) { media.play().catch(() => undefined); }
   }
-
-  private clearDelayedStart() { if (this.delayedStartTimer) window.clearTimeout(this.delayedStartTimer); this.delayedStartTimer = null; }
 }
