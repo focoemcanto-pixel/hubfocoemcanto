@@ -29,7 +29,7 @@ export type DuetAudioEngineSnapshot = {
 
 const DEFAULT_SAMPLE_RATE = 48000;
 const DEFAULT_VOICE_PRE_GAIN = 3.2;
-const DEFAULT_REFERENCE_PRE_GAIN = 0.08;
+const DEFAULT_REFERENCE_PRE_GAIN = 10;
 
 function createAudioContext(options?: DuetAudioEngineOptions) {
   const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
