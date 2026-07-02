@@ -6,6 +6,8 @@ import { isAccessActive } from '@/lib/access/products';
 export const dynamic = 'force-dynamic';
 
 const VIP_CHECKOUT_URL = process.env.NEXT_PUBLIC_VIP_CHECKOUT_URL || '/assinar/vip';
+const FOCO_EM_CANTO_URL = process.env.NEXT_PUBLIC_FOCO_EM_CANTO_URL || 'https://focoemcanto.com';
+const FOCO_EM_HARMONIA_URL = process.env.NEXT_PUBLIC_FOCO_EM_HARMONIA_URL || 'https://harmonia.focoemcanto.com';
 
 const covers = [
   'radial-gradient(circle at 60% 18%,rgba(245,199,107,.34),transparent 35%),linear-gradient(145deg,#342414,#07070b)',
@@ -24,7 +26,12 @@ function productLink(product: any, fallback: string) { return product?.member_ur
 function productCover(product: any, fallback: string) { return product?.cover_url || product?.image_url || product?.thumbnail_url || product?.cover_image_url || product?.banner_url || product?.card_cover_url || fallback; }
 function productOrder(product: any, index: number) { return Number(product?.courses?.[0]?.sort_order ?? index + 100); }
 function productKey(product: any) { const slug = String(product?.slug || '').toLowerCase(); return slug.includes('ebook') ? 'ebooks' : slug; }
-function isVip(product: any) { return `${product?.name || ''} ${product?.slug || ''}`.toLowerCase().includes('vip'); }
+function productIdentity(product: any) { return `${product?.name || ''} ${product?.slug || ''}`.toLowerCase(); }
+function isVip(product: any) { return productIdentity(product).includes('vip'); }
+function isFocoEmCanto(product: any) { const value = productIdentity(product); return value.includes('foco-em-canto') || value.includes('foco em canto'); }
+function isFocoEmHarmonia(product: any) { const value = productIdentity(product); return value.includes('foco-em-harmonia') || value.includes('foco em harmonia') || value.includes('harmonia'); }
+function lockedProductLink(product: any) { if (isFocoEmCanto(product)) return FOCO_EM_CANTO_URL; if (isFocoEmHarmonia(product)) return FOCO_EM_HARMONIA_URL; return productLink(product, VIP_CHECKOUT_URL); }
+function lockedAction(product: any) { if (isFocoEmCanto(product) || isFocoEmHarmonia(product)) return 'Conhecer curso'; return 'Liberar acesso'; }
 
 function ModuleCard({ module, index, hasVip }: { module: any; index: number; hasVip: boolean }) {
   const progress = progressFor(index);
@@ -58,11 +65,11 @@ export default async function StudentLibraryPage() {
   const courseCards = productList.map((product, index) => {
     const vip = isVip(product);
     const subscribed = hasCourse(activeSubs, productKey(product));
-    const unlocked = vip ? true : subscribed || hasVip;
+    const unlocked = vip ? true : subscribed;
     const title = vip ? 'Sala de Atividades VIP' : product.name;
-    const description = vip ? (hasVip ? 'Atividades, duetos e comunidade.' : 'Módulo 1 aberto para começar grátis. Os demais ficam liberados no VIP.') : (unlocked ? (product.description || 'Acesso liberado.') : 'Bloqueado. Entre no Grupo VIP ou aguarde a liberação.');
-    const href = unlocked ? (vip ? '#sala-vip' : productLink(product, `/aluno/biblioteca/${product.slug}`)) : VIP_CHECKOUT_URL;
-    const action = unlocked ? (vip ? 'Abrir sala' : 'Acessar curso') : 'Liberar no VIP';
+    const description = vip ? (hasVip ? 'Atividades, duetos e comunidade.' : 'Módulo 1 aberto para começar grátis. Os demais ficam liberados no VIP.') : (unlocked ? (product.description || 'Acesso liberado.') : 'Bloqueado. Acesse a página do curso para liberar sua matrícula.');
+    const href = unlocked ? (vip ? '#sala-vip' : productLink(product, `/aluno/biblioteca/${product.slug}`)) : lockedProductLink(product);
+    const action = unlocked ? (vip ? 'Abrir sala' : 'Acessar curso') : lockedAction(product);
     return { title, description, unlocked, href, cover: productCover(product, covers[index % covers.length]), action };
   });
 
