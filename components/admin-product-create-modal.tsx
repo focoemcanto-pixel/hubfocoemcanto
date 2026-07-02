@@ -95,9 +95,9 @@ export function AdminProductCreateModal({ action }: Props) {
                 <p>{previewDescription}</p>
               </div>
             </div>
-            <p>Recomendado: imagem vertical 1080×1350 ou 4:5, igual aos cards exibidos na home do aluno.</p>
-            <label className="product-cover-upload">Enviar capa
-              <input name="cover_file" type="file" accept="image/*" onChange={handleFileChange} />
+            <p>Para salvar a capa agora, cole uma URL pública no campo “URL da capa”. O envio por arquivo fica apenas como prévia local para evitar erro de upload no servidor.</p>
+            <label className="product-cover-upload">Pré-visualizar arquivo
+              <input type="file" accept="image/*" onChange={handleFileChange} />
             </label>
           </aside>
         </form>
