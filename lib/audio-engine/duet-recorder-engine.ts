@@ -237,14 +237,14 @@ export class DuetRecorderEngine {
       cameraBlob,
       canvasBlob,
       voiceBlob,
-      safePublishBlob,
+      safePublishBlob: null,
       startedAt: this.startedAt,
       stoppedAt,
       durationMs: Math.max(0, stoppedAt - this.startedAt),
       posterDataUrl: this.posterDataUrl,
       markerOffsetMs: 0,
       mimeTypes: { camera: this.cameraRecorder?.mimeType, canvas: this.canvasRecorder?.mimeType, voice: this.voiceRecorder?.mimeType, safePublish: this.safePublishRecorder?.mimeType },
-      diagnostics: { cameraChunks: this.cameraRecorder?.chunks.length || 0, canvasChunks: this.canvasRecorder?.chunks.length || 0, voiceChunks: this.voiceRecorder?.chunks.length || 0, safePublishChunks: this.safePublishRecorder?.chunks.length || 0, hasMicrophoneTrack: Boolean(this.microphoneStream?.getAudioTracks().length), hasCanvasVideoTrack: Boolean(this.canvasStream?.getVideoTracks().length) },
+      diagnostics: { cameraChunks: this.cameraRecorder?.chunks.length || 0, canvasChunks: this.canvasRecorder?.chunks.length || 0, voiceChunks: this.voiceRecorder?.chunks.length || 0, safePublishChunks: safePublishBlob ? 1 : 0, hasMicrophoneTrack: Boolean(this.microphoneStream?.getAudioTracks().length), hasCanvasVideoTrack: Boolean(this.canvasStream?.getVideoTracks().length) },
     };
     this.cleanup({ preserveCanvas: true });
     return result;
@@ -258,7 +258,12 @@ export class DuetRecorderEngine {
     try { this.referenceAttachment?.destroy(); } catch {}
     try { this.refs.referenceVideo.removeAttribute('src'); this.refs.referenceVideo.load(); } catch {}
     try { this.stopDrawing?.(); } catch {}
+    try { this.cameraRecorder?.recorder.state === 'recording' && this.cameraRecorder.recorder.stop(); } catch {}
+    try { this.canvasRecorder?.recorder.state === 'recording' && this.canvasRecorder.recorder.stop(); } catch {}
+    try { this.voiceRecorder?.recorder.state === 'recording' && this.voiceRecorder.recorder.stop(); } catch {}
+    try { this.safePublishRecorder?.recorder.state === 'recording' && this.safePublishRecorder.recorder.stop(); } catch {}
     stopTracks(this.cameraStream);
+    if (this.microphoneStream !== this.cameraStream) stopTracks(this.microphoneStream);
     stopTracks(this.canvasStream);
     this.cameraStream = null;
     this.microphoneStream = null;
@@ -269,6 +274,9 @@ export class DuetRecorderEngine {
     this.safePublishRecorder = null;
     this.referenceAttachment = null;
     this.stopDrawing = null;
-    if (!options.preserveCanvas) this.posterDataUrl = null;
+    if (!options.preserveCanvas) {
+      const ctx = this.refs.canvas.getContext('2d');
+      if (ctx) ctx.clearRect(0, 0, this.refs.canvas.width, this.refs.canvas.height);
+    }
   }
 }
