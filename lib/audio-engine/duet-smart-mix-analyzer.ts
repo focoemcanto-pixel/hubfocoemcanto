@@ -119,8 +119,8 @@ function bestLeakScore(voice: Float32Array, reference: Float32Array, sampleRate:
 
 function classifyLeak(score: number): DuetLeakMode {
   if (!Number.isFinite(score)) return 'unknown';
-  if (score >= 0.35) return 'speaker-leak';
-  if (score >= 0.16) return 'light-leak';
+  if (score >= 0.28) return 'speaker-leak';
+  if (score >= 0.10) return 'light-leak';
   return 'headphones';
 }
 
@@ -130,14 +130,14 @@ function suggestMix(mode: DuetLeakMode, voiceRms: number): Pick<DuetSmartMixAnal
     return {
       suggestedFaders: { voice: lowVoiceBoost, reference: 0 },
       suggestedPreset: 'natural',
-      summary: 'Detectei vazamento da referência no microfone. Para evitar eco, deixei a referência externa mutada.',
+      summary: 'Detectei que a referência vazou no microfone. Ajustei a referência para 0% para evitar eco e duplicação.',
     };
   }
   if (mode === 'light-leak') {
     return {
-      suggestedFaders: { voice: lowVoiceBoost, reference: 12 },
+      suggestedFaders: { voice: lowVoiceBoost, reference: 0 },
       suggestedPreset: 'natural',
-      summary: 'Detectei um vazamento leve da referência. Mantive só um pouco da referência para evitar reverberação.',
+      summary: 'Detectei sinal de gravação sem fone. Ajustei a referência para 0% para preservar a voz limpa.',
     };
   }
   return {
