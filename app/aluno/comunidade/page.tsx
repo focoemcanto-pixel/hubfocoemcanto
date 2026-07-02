@@ -28,7 +28,18 @@ export default async function CommunityPage({ searchParams }: { searchParams?: P
     supabase.from('community_posts').select(COMMUNITY_POST_SELECT).order('created_at', { ascending: false }).limit(FEED_LIMIT),
     profile?.id ? supabase.from('subscriptions').select('course_key,status').eq('profile_id', profile.id) : Promise.resolve({ data: [] }),
   ]);
-  const feedPosts = (posts || []).map((p: any) => ({
+  const rawPosts = posts || [];
+  const postIds = rawPosts.map((post: any) => post.id).filter(Boolean);
+  const authorIds = Array.from(new Set(rawPosts.map((post: any) => post.profile_id).filter(Boolean)));
+  const [likesResult, savesResult, followsResult] = profile?.id ? await Promise.all([
+    postIds.length ? supabase.from('community_likes').select('post_id').eq('profile_id', profile.id).in('post_id', postIds) : Promise.resolve({ data: [] }),
+    postIds.length ? supabase.from('community_saves').select('post_id').eq('profile_id', profile.id).in('post_id', postIds) : Promise.resolve({ data: [] }),
+    authorIds.length ? supabase.from('community_follows').select('following_id').eq('follower_id', profile.id).in('following_id', authorIds) : Promise.resolve({ data: [] }),
+  ]) : [{ data: [] }, { data: [] }, { data: [] }];
+  const likedIds = new Set((likesResult.data || []).map((row: any) => row.post_id));
+  const savedIds = new Set((savesResult.data || []).map((row: any) => row.post_id));
+  const followingIds = new Set((followsResult.data || []).map((row: any) => row.following_id));
+  const feedPosts = rawPosts.map((p: any) => ({
     id: p.id,
     authorId: p.profile_id,
     authorName: p.profiles?.name || 'Aluno',
@@ -41,6 +52,9 @@ export default async function CommunityPage({ searchParams }: { searchParams?: P
     commentsCount: p.comments_count || 0,
     createdAt: p.created_at,
     canDelete: Boolean(profile?.id && p.profile_id === profile.id),
+    isLiked: likedIds.has(p.id),
+    isSaved: savedIds.has(p.id),
+    isFollowing: followingIds.has(p.profile_id),
   }));
   const hasVipAccess = hasVipSubscription(subscriptions || []);
   const firstName = firstNameOf(profile?.name);
