@@ -6,7 +6,7 @@ type Props = {
   action: string | ((formData: FormData) => void | Promise<void>);
 };
 
-export function AdminProductCreateModal({ action }: Props) {
+export function AdminProductCreateModal({ action: _action }: Props) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [coverUrl, setCoverUrl] = useState('');
@@ -40,7 +40,7 @@ export function AdminProductCreateModal({ action }: Props) {
           <label className="product-modal-close" htmlFor="create-product-toggle">×</label>
         </div>
 
-        <form className="product-create-grid" action={action} method="post" encType="multipart/form-data">
+        <form className="product-create-grid" action="/admin/produtos/criar" method="post" encType="multipart/form-data">
           <div className="product-create-form">
             <label>Nome do produto
               <input name="name" placeholder="Ex: Workshop de Afinação" required value={name} onChange={(event) => setName(event.target.value)} />
