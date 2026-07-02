@@ -1,14 +1,14 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { CheckCircle2, Headphones, Mic, Music2, Pause, Play, RefreshCcw, Send, SlidersHorizontal, Square, Video } from 'lucide-react';
+import { CheckCircle2, Headphones, Lock, Mic, Music2, Pause, Play, RefreshCcw, Send, SlidersHorizontal, Square, Video, X } from 'lucide-react';
 import { proxiedVideoUrl } from '@/lib/audio/duet-recording-utils';
 import { DuetPreviewEngine } from '@/lib/audio-engine/duet-preview-engine';
 import { DuetRecorderEngine, type DuetRecorderEngineResult } from '@/lib/audio-engine/duet-recorder-engine';
 import { DuetRendererEngine } from '@/lib/audio-engine/duet-renderer-engine';
 import { analyzeDuetSmartMix } from '@/lib/audio-engine/duet-smart-mix-analyzer';
 
-type Props = { lessonTitle: string; lessonSlug: string; referenceUrl?: string | null; referenceEmbedUrl?: string | null; canSendForReview?: boolean };
+type Props = { lessonTitle: string; lessonSlug: string; referenceUrl?: string | null; referenceEmbedUrl?: string | null; canSendForReview?: boolean; vipCheckoutUrl?: string };
 type Step = 'intro' | 'countdown' | 'recording' | 'review' | 'posting' | 'posted';
 type Preset = 'natural' | 'studio' | 'worship' | 'coral';
 type AudioDevice = { deviceId: string; label: string };
@@ -20,6 +20,8 @@ const presets: Record<Preset, { title: string; text: string; voice: number; refe
   coral: { title: 'Coral', text: 'Espaço para segunda voz.', voice: 96, reference: 92 },
 };
 
+const DEFAULT_VIP_CHECKOUT = 'https://pay.kiwify.com.br/HHr4eyM';
+
 function isSafariLike() {
   if (typeof navigator === 'undefined') return false;
   const ua = navigator.userAgent;
@@ -28,7 +30,7 @@ function isSafariLike() {
 function errorText(error: unknown) { return error instanceof Error ? `${error.name}: ${error.message}` : String(error || 'erro_desconhecido'); }
 function sleep(ms: number) { return new Promise((resolve) => window.setTimeout(resolve, ms)); }
 
-export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl, canSendForReview = true }: Props) {
+export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl, canSendForReview = true, vipCheckoutUrl = DEFAULT_VIP_CHECKOUT }: Props) {
   const referenceSource = useMemo(() => proxiedVideoUrl(referenceUrl), [referenceUrl]);
   const cameraRef = useRef<HTMLVideoElement | null>(null);
   const referenceVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -45,6 +47,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl, canSendFor
   const [caption, setCaption] = useState('Minha prática do dueto.');
   const [postCommunity, setPostCommunity] = useState(!canSendForReview);
   const [sendForReview, setSendForReview] = useState(canSendForReview);
+  const [showVipModal, setShowVipModal] = useState(false);
   const [postedHref, setPostedHref] = useState('');
   const [status, setStatus] = useState('');
   const [postingProgress, setPostingProgress] = useState(0);
@@ -85,16 +88,10 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl, canSendFor
       const analysis = await analyzeDuetSmartMix({ voiceBlob: recording.voiceBlob, referenceUrl: referenceSource, seconds: 3 });
       const voice = analysis.suggestedFaders.voice;
       const reference = analysis.suggestedFaders.reference;
-      setPreset(analysis.suggestedPreset);
-      setVoiceVolume(voice);
-      setReferenceVolume(reference);
+      setPreset(analysis.suggestedPreset); setVoiceVolume(voice); setReferenceVolume(reference);
       previewEngineRef.current?.setFaders({ voice, reference });
-      const score = Math.round(analysis.leakScore * 100);
-      setStatus(`${analysis.summary}\nMixagem automática: voz ${voice}% · referência ${reference}% · vazamento ${score}%.`);
-    } catch (err) {
-      console.warn('[duet-smart-mix] failed', err);
-      setVoice(110); setReference(70); setPreset('studio'); setStatus('Auto Mix padrão aplicado.');
-    }
+      setStatus(`${analysis.summary}\nMixagem automática: voz ${voice}% · referência ${reference}% · vazamento ${Math.round(analysis.leakScore * 100)}%.`);
+    } catch (err) { console.warn('[duet-smart-mix] failed', err); setVoice(110); setReference(70); setPreset('studio'); setStatus('Auto Mix padrão aplicado.'); }
   }
 
   async function startRecording() {
@@ -114,8 +111,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl, canSendFor
     setError(''); const engine = recorderEngineRef.current; if (!engine) return;
     try {
       const recording = await engine.stop(); recorderEngineRef.current = null; setResult(recording); setStep('review');
-      const markerOffset = recording.markerOffsetMs || 0;
-      if (markerOffset) applyReferenceOffset(markerOffset, `Sincronização automática aplicada: referência atrasada em ${markerOffset}ms.`);
+      if (recording.markerOffsetMs) applyReferenceOffset(recording.markerOffsetMs, `Sincronização automática aplicada: referência atrasada em ${recording.markerOffsetMs}ms.`);
       await applySmartMix(recording);
     } catch (err) { setStep('intro'); setError(`Não consegui finalizar a gravação: ${errorText(err)}`); }
   }
@@ -193,7 +189,8 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl, canSendFor
     <section style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 12 }}>{isPre ? <button style={{ ...goldPill, gridColumn: '1 / -1', minHeight: 62 }} onClick={startRecording} disabled={step === 'countdown'}><Mic size={20} /> {step === 'countdown' ? 'Preparando...' : 'Iniciar gravação'}</button> : null}{step === 'recording' ? <button style={{ ...pill, gridColumn: '1 / -1', background: '#e11d48', color: '#fff' }} onClick={stopRecording}><Square size={20} /> Finalizar gravação</button> : null}{step === 'review' ? <><button style={mutedPill} onClick={reset}><RefreshCcw size={19} /> Regravar</button><button style={goldPill} onClick={playing ? pausePreview : playPreview}>{playing ? <Pause size={18} /> : <Play size={18} />}{playing ? 'Pausar' : 'Ouvir gravação'}</button></> : null}</section>
     {step === 'posting' ? <section style={{ ...glass, padding: 22, display: 'grid', gap: 14 }}><strong style={{ fontSize: 22 }}>Publicando seu dueto</strong><p style={{ margin: 0, color: 'rgba(255,255,255,.62)' }}>{status || 'Preparando sua publicação...'}</p><div style={{ height: 10, borderRadius: 999, background: 'rgba(255,255,255,.10)', overflow: 'hidden' }}><div style={{ width: `${Math.max(8, postingProgress)}%`, height: '100%', borderRadius: 999, background: 'linear-gradient(90deg,#f8d47b,#f3bd49)', transition: 'width .45s ease' }} /></div><small style={{ color: 'rgba(255,255,255,.48)' }}>Mantenha esta tela aberta até concluir.</small></section> : null}
     {step === 'review' ? <section style={{ ...glass, padding: 18, display: 'grid', gap: 16 }}><div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}><div><h2 style={{ margin: 0, fontSize: 24 }}>Mixagem</h2><p style={{ margin: '4px 0 0', color: 'rgba(255,255,255,.62)' }}>Ajuste sua voz e a referência antes de publicar.</p></div><SlidersHorizontal color="#f5c76b" /></div><button style={{ ...cardOption(true), width: '100%' }} onClick={() => applySmartMix()}>✨ Melhorar automaticamente</button><label style={{ display: 'grid', gap: 8 }}><span style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800 }}><span>Minha voz</span><span>{voiceVolume}%</span></span><input type="range" min="0" max="200" value={voiceVolume} onChange={(event) => setVoice(Number(event.target.value))} /></label><label style={{ display: 'grid', gap: 8 }}><span style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800 }}><span>Referência</span><span>{referenceVolume}%</span></span><input type="range" min="0" max="200" value={referenceVolume} onChange={(event) => setReference(Number(event.target.value))} /></label><div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 10 }}>{(Object.keys(presets) as Preset[]).map((key) => <button key={key} type="button" onClick={() => applyPreset(key)} style={{ ...cardOption(preset === key), textAlign: 'left', minHeight: 76 }}><span><strong>{presets[key].title}</strong><br/><small style={{ color: 'rgba(255,255,255,.58)' }}>{presets[key].text}</small></span></button>)}</div><details><summary style={{ cursor: 'pointer', color: '#f5c76b', fontWeight: 900 }}>Ajustar sincronia</summary><label style={{ display: 'grid', gap: 8, marginTop: 12 }}><span style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800 }}><span>Sincronia</span><span>{referenceOffsetMs > 0 ? `+${referenceOffsetMs}` : referenceOffsetMs}ms</span></span><input type="range" min="-900" max="900" step="10" value={referenceOffsetMs} onChange={(event) => setReferenceOffset(Number(event.target.value))} /></label></details></section> : null}
-    {step === 'review' ? <section style={{ ...glass, padding: 18, display: 'grid', gap: 12 }}><h2 style={{ margin: 0, fontSize: 24 }}>Publicação</h2><label style={cardOption(postCommunity)}><input type="checkbox" checked={postCommunity} onChange={(event) => setPostCommunity(event.target.checked)} /> Postar na comunidade</label>{canSendForReview ? <label style={cardOption(sendForReview)}><input type="checkbox" checked={sendForReview} onChange={(event) => setSendForReview(event.target.checked)} /> Enviar para avaliação</label> : null}<textarea value={caption} onChange={(event) => setCaption(event.target.value)} style={{ minHeight: 92, border: '1px solid rgba(255,255,255,.12)', borderRadius: 18, background: 'rgba(0,0,0,.26)', color: '#fff', padding: 14 }} /><button style={{ ...goldPill, minHeight: 60 }} onClick={submit}><Send size={19} /> Publicar dueto</button></section> : null}
+    {step === 'review' ? <section style={{ ...glass, padding: 18, display: 'grid', gap: 12 }}><h2 style={{ margin: 0, fontSize: 24 }}>Publicação</h2><label style={cardOption(postCommunity)}><input type="checkbox" checked={postCommunity} onChange={(event) => setPostCommunity(event.target.checked)} /> Postar na comunidade</label>{canSendForReview ? <label style={cardOption(sendForReview)}><input type="checkbox" checked={sendForReview} onChange={(event) => setSendForReview(event.target.checked)} /> Enviar para avaliação</label> : <button type="button" onClick={() => setShowVipModal(true)} style={{ ...cardOption(false), width: '100%', textAlign: 'left', opacity: .95 }}><Lock size={18} color="#f5c76b" /><span><strong>Enviar para avaliação</strong><br/><small style={{ color: 'rgba(255,255,255,.58)' }}>Exclusivo para assinantes VIP.</small></span></button>}<textarea value={caption} onChange={(event) => setCaption(event.target.value)} style={{ minHeight: 92, border: '1px solid rgba(255,255,255,.12)', borderRadius: 18, background: 'rgba(0,0,0,.26)', color: '#fff', padding: 14 }} /><button style={{ ...goldPill, minHeight: 60 }} onClick={submit}><Send size={19} /> Publicar dueto</button></section> : null}
     {step === 'posted' ? <section style={{ ...glass, padding: 22, textAlign: 'center', display: 'grid', gap: 12 }}><CheckCircle2 size={54} color="#f5c76b" style={{ margin: '0 auto' }} /><h2 style={{ margin: 0 }}>Atividade enviada!</h2>{postedHref ? <a style={goldPill} href={postedHref}>Ver na comunidade</a> : <a style={goldPill} href="/aluno/perfil">Ver perfil</a>}<button style={mutedPill} onClick={reset}>Gravar novamente</button></section> : null}
+    {showVipModal ? <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'grid', placeItems: 'center', padding: 18, background: 'rgba(0,0,0,.72)', backdropFilter: 'blur(12px)' }} onClick={() => setShowVipModal(false)}><section style={{ ...glass, width: 'min(460px,100%)', padding: 24, display: 'grid', gap: 14, textAlign: 'center' }} onClick={(event) => event.stopPropagation()}><button type="button" onClick={() => setShowVipModal(false)} style={{ ...mutedPill, justifySelf: 'end', width: 42, height: 42, padding: 0 }}><X size={18} /></button><span style={{ width: 64, height: 64, borderRadius: 999, display: 'grid', placeItems: 'center', margin: '0 auto', background: 'rgba(245,199,107,.15)', color: '#f5c76b', border: '1px solid rgba(245,199,107,.42)' }}><Lock size={28} /></span><h2 style={{ margin: 0, fontSize: 28 }}>Avaliação do professor é VIP</h2><p style={{ margin: 0, color: 'rgba(255,255,255,.68)', lineHeight: 1.45 }}>Para enviar seu dueto para avaliação individual, assine a Sala de Atividades VIP.</p><strong style={{ color: '#f5c76b', fontSize: 20 }}>Acesse hoje por apenas R$ 19,90</strong><a href={vipCheckoutUrl} style={{ ...goldPill, minHeight: 58 }}>Assinar Sala de Atividades VIP</a><button type="button" onClick={() => setShowVipModal(false)} style={mutedPill}>Agora não</button></section></div> : null}
   </section></main>;
 }
