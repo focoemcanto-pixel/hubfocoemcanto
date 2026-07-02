@@ -29,7 +29,7 @@ export type DuetAudioEngineSnapshot = {
 
 const DEFAULT_SAMPLE_RATE = 48000;
 const DEFAULT_VOICE_PRE_GAIN = 3.2;
-const DEFAULT_REFERENCE_PRE_GAIN = 0.08;
+const DEFAULT_REFERENCE_PRE_GAIN = 0.95;
 
 function createAudioContext(options?: DuetAudioEngineOptions) {
   const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -54,7 +54,7 @@ function toReferenceGain(percent: number, preGain: number) {
   const normalized = normalizeFader(percent);
   if (normalized <= 0) return 0;
   const attenuation = normalized <= 1 ? normalized * normalized : normalized;
-  return Math.max(0, Math.min(6, attenuation * preGain));
+  return Math.max(0, Math.min(6, attenuation * Math.max(0.85, preGain)));
 }
 
 function toElementVolume(percent: number) {
@@ -127,7 +127,7 @@ export class DuetAudioEngine {
 
   setPreGains(values: Partial<{ voice: number; reference: number }>) {
     if (typeof values.voice === 'number') this.voicePreGain = Math.max(0, values.voice);
-    if (typeof values.reference === 'number') this.referencePreGain = Math.max(0, values.reference);
+    if (typeof values.reference === 'number') this.referencePreGain = Math.max(0.85, values.reference);
     this.applyFaders();
   }
 
