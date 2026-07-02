@@ -44,6 +44,17 @@ export default async function StudentPage() {
     profile?.id ? supabase.from('subscriptions').select('course_key,status').eq('profile_id', profile.id) : Promise.resolve({ data: [] as Subscription[] }),
     supabase.from('modules').select('cover_url').eq('is_active', true).order('sort_order').limit(1),
   ]);
+  const rawPosts = postsResult.data || [];
+  const postIds = rawPosts.map((post: any) => post.id).filter(Boolean);
+  const authorIds = Array.from(new Set(rawPosts.map((post: any) => post.profile_id).filter(Boolean)));
+  const [likesResult, savesResult, followsResult] = profile?.id ? await Promise.all([
+    postIds.length ? supabase.from('community_likes').select('post_id').eq('profile_id', profile.id).in('post_id', postIds) : Promise.resolve({ data: [] }),
+    postIds.length ? supabase.from('community_saves').select('post_id').eq('profile_id', profile.id).in('post_id', postIds) : Promise.resolve({ data: [] }),
+    authorIds.length ? supabase.from('community_follows').select('following_id').eq('follower_id', profile.id).in('following_id', authorIds) : Promise.resolve({ data: [] }),
+  ]) : [{ data: [] }, { data: [] }, { data: [] }];
+  const likedIds = new Set((likesResult.data || []).map((row: any) => row.post_id));
+  const savedIds = new Set((savesResult.data || []).map((row: any) => row.post_id));
+  const followingIds = new Set((followsResult.data || []).map((row: any) => row.following_id));
   const firstName = profile?.name ? String(profile.name).split(' ')[0] : 'Aluno';
   const subscriptions = (subscriptionsResult.data || []) as Subscription[];
   const hasVip = hasCourse(subscriptions, 'grupo-vip');
@@ -56,7 +67,7 @@ export default async function StudentPage() {
     const unlocked = vip ? true : published || subscribed || hasVip;
     return { title: productTitle(product), description: vip ? (hasVip ? 'Todos os módulos, duetos, downloads e avaliações.' : 'Módulo 1 aberto grátis. Demais módulos no VIP.') : (product.description || 'Treinamento premium da escola.'), unlocked, href: productHref(product, unlocked), cover: productCover(product, vip ? freeCover : covers[index % covers.length]), action: vip ? 'Abrir sala' : unlocked ? 'Acessar curso' : 'Ver oferta' };
   });
-  const feedPosts = (postsResult.data || []).map((post: any) => ({
+  const feedPosts = rawPosts.map((post: any) => ({
     id: post.id,
     authorId: post.profile_id,
     authorName: post.profiles?.name || 'Aluno VIP',
@@ -69,6 +80,9 @@ export default async function StudentPage() {
     likesCount: post.likes_count || 0,
     commentsCount: post.comments_count || 0,
     canDelete: Boolean(profile?.id && post.profile_id === profile.id),
+    isLiked: likedIds.has(post.id),
+    isSaved: savedIds.has(post.id),
+    isFollowing: followingIds.has(post.profile_id),
   }));
 
   return (
