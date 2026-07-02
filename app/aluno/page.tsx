@@ -13,6 +13,8 @@ type Subscription = Record<string, any>;
 
 const studentHeroImage = process.env.NEXT_PUBLIC_STUDENT_HERO_IMAGE || '/images/aluno-hero.jpg';
 const HOME_POST_LIMIT = 4;
+const VIP_CHECKOUT_URL = process.env.NEXT_PUBLIC_VIP_CHECKOUT_URL || 'https://pay.kiwify.com.br/HHr4eyM';
+const KIWIFY_LOGIN_URL = process.env.NEXT_PUBLIC_KIWIFY_LOGIN_URL || 'https://kiwify.com.br';
 const covers = [
   'radial-gradient(circle at 60% 18%,rgba(245,199,107,.34),transparent 35%),linear-gradient(145deg,#342414,#07070b)',
   'radial-gradient(circle at 64% 18%,rgba(142,92,255,.34),transparent 36%),linear-gradient(145deg,#211334,#07070b)',
@@ -30,7 +32,19 @@ function productKey(product: Product) { const slug = String(product?.slug || '')
 function normalizedProductText(product: Product) { return `${product?.name || ''} ${product?.slug || ''}`.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
 function isVipProduct(product: Product) { return normalizedProductText(product).includes('vip'); }
 function productTitle(product: Product) { return isVipProduct(product) ? 'Sala de Atividades VIP' : String(product?.name || 'Produto'); }
-function productHref(product: Product, unlocked: boolean) { return isVipProduct(product) ? '/aluno/biblioteca#sala-vip' : unlocked ? `/aluno/biblioteca/${product.slug}` : (product?.sales_url || product?.checkout_url || product?.redirect_url || '/aluno/biblioteca'); }
+function productDestination(product: Product) { return product?.redirect_url || product?.sales_page_url || product?.sales_url || product?.external_url || product?.kiwify_url || product?.checkout_url || ''; }
+function hasHubModule(product: Product) { return isVipProduct(product) || Boolean(product?.hub_enabled || product?.has_hub_module || product?.internal_url); }
+function productHref(product: Product, unlocked: boolean) {
+  if (isVipProduct(product)) return '/aluno/biblioteca#sala-vip';
+  const destination = productDestination(product);
+  if (!hasHubModule(product)) return destination || (unlocked ? KIWIFY_LOGIN_URL : VIP_CHECKOUT_URL);
+  return unlocked ? `/aluno/biblioteca/${product.slug}` : (destination || VIP_CHECKOUT_URL);
+}
+function productAction(product: Product, unlocked: boolean) {
+  if (isVipProduct(product)) return 'Abrir sala';
+  if (!hasHubModule(product)) return unlocked ? 'Acessar curso' : 'Ver oferta';
+  return unlocked ? 'Acessar curso' : 'Ver oferta';
+}
 
 export default async function StudentPage() {
   const cookieStore = await cookies();
@@ -62,10 +76,9 @@ export default async function StudentPage() {
   const products = ((productsResult.data || []) as Product[]).sort((a, b) => productOrder(a, 0) - productOrder(b, 0));
   const courseCards = products.map((product, index) => {
     const vip = isVipProduct(product);
-    const published = String(product.status || '').toLowerCase() === 'published';
     const subscribed = hasCourse(subscriptions, productKey(product));
-    const unlocked = vip ? true : published || subscribed || hasVip;
-    return { title: productTitle(product), description: vip ? (hasVip ? 'Todos os módulos, duetos, downloads e avaliações.' : 'Módulo 1 aberto grátis. Demais módulos no VIP.') : (product.description || 'Treinamento premium da escola.'), unlocked, href: productHref(product, unlocked), cover: productCover(product, vip ? freeCover : covers[index % covers.length]), action: vip ? 'Abrir sala' : unlocked ? 'Acessar curso' : 'Ver oferta' };
+    const unlocked = vip ? true : subscribed;
+    return { title: productTitle(product), description: vip ? (hasVip ? 'Todos os módulos, duetos, downloads e avaliações.' : 'Módulo 1 aberto grátis. Demais módulos no VIP.') : (product.description || 'Treinamento premium da escola.'), unlocked, href: productHref(product, unlocked), cover: productCover(product, vip ? freeCover : covers[index % covers.length]), action: productAction(product, unlocked) };
   });
   const feedPosts = rawPosts.map((post: any) => ({
     id: post.id,
