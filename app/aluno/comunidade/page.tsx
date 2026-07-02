@@ -10,6 +10,8 @@ function hasVipSubscription(rows: any[]) { return rows.some((sub) => sub.course_
 function feedModeLabel(mode: string) { if (mode === 'recentes') return 'Recentes'; if (mode === 'seguindo') return 'Seguindo'; return 'Para você'; }
 function firstNameOf(name?: string | null) { return String(name || 'Aluno').trim().split(' ')[0] || 'Aluno'; }
 function initials(name?: string | null) { return String(name || 'Aluno').trim().split(' ').slice(0, 2).map((part) => part[0]).join('').toUpperCase(); }
+const SYSTEM_DUET_CAPTIONS = new Set(['minha prática do dueto.', 'minha pratica do dueto.', 'compartilhou uma prática.', 'compartilhou uma pratica.']);
+function cleanCaption(value?: string | null) { const text = String(value || '').trim(); return SYSTEM_DUET_CAPTIONS.has(text.toLowerCase()) ? '' : text; }
 
 export const dynamic = 'force-dynamic';
 const VIP_CHECKOUT_URL = process.env.NEXT_PUBLIC_VIP_CHECKOUT_URL || '/assinar/vip';
@@ -47,7 +49,7 @@ export default async function CommunityPage({ searchParams }: { searchParams?: P
     mediaUrl: p.media_url || p.submissions?.file_url || null,
     exerciseTitle: p.exercises?.title || null,
     exerciseSlug: p.exercises?.slug || null,
-    caption: p.caption || 'Minha prática do dueto.',
+    caption: cleanCaption(p.caption),
     likesCount: p.likes_count || 0,
     commentsCount: p.comments_count || 0,
     createdAt: p.created_at,
