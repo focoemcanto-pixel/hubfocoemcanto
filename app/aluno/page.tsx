@@ -68,6 +68,7 @@ export default async function StudentPage() {
     mediaUrl: post.media_url || post.submissions?.file_url || null,
     likesCount: post.likes_count || 0,
     commentsCount: post.comments_count || 0,
+    canDelete: Boolean(profile?.id && post.profile_id === profile.id),
   }));
 
   return (
@@ -76,7 +77,7 @@ export default async function StudentPage() {
         <style dangerouslySetInnerHTML={{ __html: css }} />
         <section className="premium-hero"><div className="premium-hero-copy"><p className="eyebrow">Escola Foco em Canto ★</p><h1>Olá, {firstName}.<br />Escolha seu treino de hoje.</h1><p>Sua escola vocal organizada por cursos, acessos e progresso real.</p><div className="hero-actions"><Link className="premium-button gold" href="/aluno/biblioteca" prefetch>▶ Abrir biblioteca</Link><Link className="premium-button dark" href="/aluno/perfil" prefetch>Ver avaliações</Link></div></div><div className="premium-hero-photo" aria-hidden="true" style={{ '--student-hero-image': `url(${studentHeroImage})` } as CSSProperties} /></section>
         <section className="student-course-section"><div className="premium-section-heading"><h2>Meus cursos</h2><Link href="/aluno/biblioteca" prefetch>Ver biblioteca →</Link></div><div className="student-products-grid">{courseCards.map((course) => <a className={`student-product-card ${course.unlocked ? 'unlocked' : 'locked'}`} key={course.title} href={course.href}><span className="student-product-badge">{course.unlocked ? 'Liberado' : 'Bloqueado'}</span><div className="student-product-bg" style={styleForCover(course.cover)} /><div className="student-product-body"><h3>{course.title}</h3><p>{course.description}</p><span className="student-product-button">{course.action}</span></div></a>)}</div></section>
-        <section className="feed-layout premium-community-feed"><div className="section-heading"><div><p className="eyebrow">Comunidade VIP</p><h2>Atividades recentes</h2></div><Link href="/aluno/comunidade" prefetch>Abrir comunidade</Link></div><HomeCommunityFeed initialPosts={feedPosts} hasVipAccess={hasVip} /></section>
+        <section className="feed-layout premium-community-feed"><div className="section-heading"><div><p className="eyebrow">Comunidade VIP</p><h2>Atividades recentes</h2></div><Link href="/aluno/comunidade" prefetch>Abrir comunidade</Link></div><HomeCommunityFeed initialPosts={feedPosts} hasVipAccess={hasVip} currentProfileId={profile?.id || null} /></section>
       </main>
     </AppShell>
   );
