@@ -24,6 +24,7 @@ function isRealModule(module: any) { const description = String(module.descripti
 function hasCourse(subscriptions: any[], courseKey: string) { return subscriptions.some((sub) => sub.course_key === courseKey && isAccessActive(sub.status)); }
 function styleForCover(cover: string) { return cover.startsWith('radial-gradient') ? { background: cover } : { backgroundImage: `url(${cover})` }; }
 function productLink(product: any, fallback: string) { return product?.member_url || product?.course_url || product?.internal_url || product?.redirect_url || product?.checkout_url || product?.sales_url || product?.external_url || product?.kiwify_url || fallback; }
+function productDestination(product: any) { return product?.redirect_url || product?.sales_page_url || product?.sales_url || product?.external_url || product?.kiwify_url || ''; }
 function productCover(product: any, fallback: string) { return product?.cover_url || product?.image_url || product?.thumbnail_url || product?.cover_image_url || product?.banner_url || product?.card_cover_url || fallback; }
 function productOrder(product: any, index: number) { return Number(product?.courses?.[0]?.sort_order ?? index + 100); }
 function productKey(product: any) { const slug = String(product?.slug || '').toLowerCase(); return slug.includes('ebook') ? 'ebooks' : slug; }
@@ -32,8 +33,8 @@ function isVip(product: any) { return productIdentity(product).includes('vip'); 
 function isFocoEmCanto(product: any) { const value = productIdentity(product); return value.includes('foco-em-canto') || value.includes('foco em canto'); }
 function isFocoEmHarmonia(product: any) { const value = productIdentity(product); return value.includes('foco-em-harmonia') || value.includes('foco em harmonia') || value.includes('harmonia'); }
 function isExternalKiwifyCourse(product: any) { return isFocoEmCanto(product) || isFocoEmHarmonia(product); }
-function unlockedProductLink(product: any) { return isExternalKiwifyCourse(product) ? KIWIFY_LOGIN_URL : productLink(product, `/aluno/biblioteca/${product.slug}`); }
-function lockedProductLink(product: any) { if (isFocoEmCanto(product)) return FOCO_EM_CANTO_URL; if (isFocoEmHarmonia(product)) return FOCO_EM_HARMONIA_URL; return VIP_CHECKOUT_URL; }
+function unlockedProductLink(product: any) { if (isExternalKiwifyCourse(product)) return KIWIFY_LOGIN_URL; return productDestination(product) || productLink(product, `/aluno/biblioteca/${product.slug}`); }
+function lockedProductLink(product: any) { if (isFocoEmCanto(product)) return productDestination(product) || FOCO_EM_CANTO_URL; if (isFocoEmHarmonia(product)) return productDestination(product) || FOCO_EM_HARMONIA_URL; return productDestination(product) || VIP_CHECKOUT_URL; }
 function productUnlocked(product: any, subscribed: boolean, hasVip: boolean) { if (isVip(product)) return true; if (isExternalKiwifyCourse(product)) return subscribed; return subscribed || hasVip; }
 
 function ModuleCard({ module, index, hasVip }: { module: any; index: number; hasVip: boolean }) {
@@ -70,9 +71,10 @@ export default async function StudentLibraryPage() {
     const subscribed = hasCourse(activeSubs, productKey(product));
     const unlocked = productUnlocked(product, subscribed, hasVip);
     const title = vip ? 'Sala de Atividades VIP' : product.name;
+    const destination = productDestination(product);
     const description = vip ? (hasVip ? 'Atividades, duetos e comunidade.' : 'Módulo 1 aberto para começar grátis. Os demais ficam liberados no VIP.') : (unlocked ? (isExternalKiwifyCourse(product) ? 'Liberado. Acesse pela área de membros da Kiwify.' : product.description || 'Acesso liberado.') : 'Bloqueado. Acesse a página do curso para liberar sua matrícula.');
     const href = unlocked ? (vip ? '#sala-vip' : unlockedProductLink(product)) : lockedProductLink(product);
-    const action = unlocked ? (vip ? 'Abrir sala' : isExternalKiwifyCourse(product) ? 'Acessar na Kiwify' : 'Acessar curso') : (isExternalKiwifyCourse(product) ? 'Conhecer curso' : 'Liberar no VIP');
+    const action = unlocked ? (vip ? 'Abrir sala' : isExternalKiwifyCourse(product) ? 'Acessar na Kiwify' : destination ? 'Acessar destino' : 'Acessar curso') : (destination || isExternalKiwifyCourse(product) ? 'Conhecer curso' : 'Liberar no VIP');
     return { title, description, unlocked, href, cover: productCover(product, covers[index % covers.length]), action };
   });
 
