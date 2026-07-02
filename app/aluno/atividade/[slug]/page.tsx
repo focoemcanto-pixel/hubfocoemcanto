@@ -2,7 +2,7 @@ import { cookies } from 'next/headers';
 import Link from 'next/link';
 import type { ReactElement } from 'react';
 import { Lock, Sparkles } from 'lucide-react';
-import { DuetRecorder } from '@/components/duet-recorder';
+import { DuetRecorder } from '@/components/duet-recorder-caption-clean';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { isAccessActive } from '@/lib/access/products';
 import { cloudflareStreamEmbed, cloudflareStreamSource } from '@/lib/media/stream';
