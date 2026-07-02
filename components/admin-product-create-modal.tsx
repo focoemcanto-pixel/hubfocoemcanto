@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 type Props = {
-  action: (formData: FormData) => void | Promise<void>;
+  action: string;
 };
 
 export function AdminProductCreateModal({ action }: Props) {
@@ -40,7 +40,7 @@ export function AdminProductCreateModal({ action }: Props) {
           <label className="product-modal-close" htmlFor="create-product-toggle">×</label>
         </div>
 
-        <form className="product-create-grid" action={action}>
+        <form className="product-create-grid" action={action} method="post" encType="multipart/form-data">
           <div className="product-create-form">
             <label>Nome do produto
               <input name="name" placeholder="Ex: Workshop de Afinação" required value={name} onChange={(event) => setName(event.target.value)} />
@@ -95,9 +95,9 @@ export function AdminProductCreateModal({ action }: Props) {
                 <p>{previewDescription}</p>
               </div>
             </div>
-            <p>Para salvar a capa agora, cole uma URL pública no campo “URL da capa”. O envio por arquivo fica apenas como prévia local para evitar erro de upload no servidor.</p>
-            <label className="product-cover-upload">Pré-visualizar arquivo
-              <input type="file" accept="image/*" onChange={handleFileChange} />
+            <p>Recomendado: imagem vertical 1080×1350 ou 4:5. A imagem será enviada para o mesmo Storage usado pelos demais produtos.</p>
+            <label className="product-cover-upload">Enviar capa
+              <input name="cover_file" type="file" accept="image/*" onChange={handleFileChange} />
             </label>
           </aside>
         </form>
