@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 type Props = {
-  action: string;
+  action: string | ((formData: FormData) => void | Promise<void>);
 };
 
 export function AdminProductCreateModal({ action }: Props) {
