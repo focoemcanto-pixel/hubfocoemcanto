@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 
 const BUCKET = 'submission-media';
 let bucketReady = false;
-const SYSTEM_DUET_CAPTIONS = new Set(['minha prática do dueto.', 'minha pratica do dueto.', 'compartilhou uma prática.', 'compartilhou uma pratica.']);
+const SYSTEM_DUET_CAPTIONS = new Set(['minha prática do dueto.', 'minha pratica do dueto.', 'compartilhou uma prática.', 'compartilhou uma pratica.', 'prática vocal.', 'pratica vocal.', 'novo dueto.']);
 
 type ResolvedSubmissionContext = { exercise: { id: string }; profile: { id: string; email?: string | null }; canRequestReview: boolean };
 type PersistSubmissionParams = { caption: string; visibility: string; reviewRequested: boolean; fileUrl: string; posterUrl?: string | null };
@@ -67,12 +67,12 @@ async function persistSubmission(supabase: ReturnType<typeof createAdminClient>,
   let submissionId: string | null = null;
   let communityPostId: string | null = null;
   if (shouldReview) {
-    const { data: submission, error: submissionError } = await supabase.from('submissions').insert({ profile_id: context.profile.id, exercise_id: context.exercise.id, file_url: params.fileUrl, file_type: 'duet_video', note: cleanCaption, visibility: shouldPostCommunity ? 'community' : 'private', status: 'pending_review' }).select('id').single();
+    const { data: submission, error: submissionError } = await supabase.from('submissions').insert({ profile_id: context.profile.id, exercise_id: context.exercise.id, file_url: params.fileUrl, file_type: 'duet_video', note: cleanCaption || null, visibility: shouldPostCommunity ? 'community' : 'private', status: 'pending_review' }).select('id').single();
     if (submissionError || !submission) return NextResponse.json({ error: 'submission_failed', detail: submissionError?.message }, { status: 500 });
     submissionId = submission.id;
   }
   if (shouldPostCommunity) {
-    const { data: post, error: postError } = await insertCommunityPost(supabase, { profile_id: context.profile.id, exercise_id: context.exercise.id, submission_id: submissionId, media_url: params.fileUrl, poster_url: params.posterUrl || null, caption: cleanCaption, category: 'dueto' });
+    const { data: post, error: postError } = await insertCommunityPost(supabase, { profile_id: context.profile.id, exercise_id: context.exercise.id, submission_id: submissionId, media_url: params.fileUrl, poster_url: params.posterUrl || null, caption: cleanCaption || null, category: 'dueto' });
     if (postError) return NextResponse.json({ error: 'community_post_failed', detail: postError.message }, { status: 500 });
     communityPostId = post?.id || null;
   }
