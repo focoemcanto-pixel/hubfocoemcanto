@@ -56,6 +56,20 @@ export default async function StudentPage() {
     const unlocked = vip ? true : published || subscribed || hasVip;
     return { title: productTitle(product), description: vip ? (hasVip ? 'Todos os módulos, duetos, downloads e avaliações.' : 'Módulo 1 aberto grátis. Demais módulos no VIP.') : (product.description || 'Treinamento premium da escola.'), unlocked, href: productHref(product, unlocked), cover: productCover(product, vip ? freeCover : covers[index % covers.length]), action: vip ? 'Abrir sala' : unlocked ? 'Acessar curso' : 'Ver oferta' };
   });
+  const feedPosts = (postsResult.data || []).map((post: any) => ({
+    id: post.id,
+    authorId: post.profile_id,
+    authorName: post.profiles?.name || 'Aluno VIP',
+    authorAvatarUrl: post.profiles?.avatar_url || null,
+    createdAt: post.created_at,
+    exerciseTitle: post.exercises?.title || 'Atividade da comunidade',
+    exerciseSlug: post.exercises?.slug || null,
+    caption: post.caption || 'Compartilhou uma prática.',
+    mediaUrl: post.media_url || post.submissions?.file_url || null,
+    likesCount: post.likes_count || 0,
+    commentsCount: post.comments_count || 0,
+  }));
+
   return (
     <AppShell>
       <main className="page app-home premium-student-home">
