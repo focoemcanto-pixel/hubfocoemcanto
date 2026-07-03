@@ -30,12 +30,14 @@ export type DuetRenderedVideo = {
 const DEFAULT_SAMPLE_RATE = 48000;
 const DEFAULT_VOICE_PRE_GAIN = 3.2;
 const DEFAULT_REFERENCE_PRE_GAIN = 0.95;
+const VOICE_CAPTURE_COMPENSATION_MS = 35;
 
 function debug(label: string, data?: Record<string, unknown>) { try { console.info(`[duet-render] ${label}`, data || {}); } catch {} }
 function linearGain(percent: number, preGain: number) { if (!Number.isFinite(percent) || percent <= 0) return 0; return Math.max(0, Math.min(6, (percent / 100) * preGain)); }
 function normalizeFader(percent: number) { if (!Number.isFinite(percent) || percent <= 0) return 0; return Math.max(0, Math.min(2, percent / 100)); }
 function referenceGain(percent: number, preGain: number) { const normalized = normalizeFader(percent); if (normalized <= 0) return 0; const attenuation = normalized <= 1 ? normalized * normalized : normalized; return Math.max(0, Math.min(6, attenuation * Math.max(0.85, preGain))); }
 function clampReferenceOffsetMs(value?: number) { return Math.max(-300, Math.min(300, Number.isFinite(value || 0) ? value || 0 : 0)); }
+function compensatedReferenceOffsetMs(value?: number) { return clampReferenceOffsetMs((value || 0) + VOICE_CAPTURE_COMPENSATION_MS); }
 function withFullMedia(url: string) { if (!url) return url; const separator = url.includes('?') ? '&' : '?'; return `${url}${separator}full=1`; }
 function isSafariLike() { if (typeof navigator === 'undefined') return false; const ua = navigator.userAgent; return /iPad|iPhone|iPod/.test(ua) || (/Safari/.test(ua) && !/Chrome|Chromium|Android/.test(ua)); }
 function recorderMimeType() {
@@ -105,7 +107,7 @@ export class DuetRendererEngine {
     const referenceGainValue = referenceGain(this.options.faders.reference, this.options.preGains?.reference ?? DEFAULT_REFERENCE_PRE_GAIN);
     const shouldIncludeReference = referenceGainValue > 0.000001;
     const referenceBuffer = shouldIncludeReference ? await urlToAudioBuffer(this.options.referenceUrl, sampleRate).catch((error) => { debug('reference-decode-failed', { message: error instanceof Error ? error.message : String(error) }); return null; }) : null;
-    const referenceOffsetMs = referenceBuffer ? clampReferenceOffsetMs(this.options.referenceOffsetMs) : 0;
+    const referenceOffsetMs = referenceBuffer ? compensatedReferenceOffsetMs(this.options.referenceOffsetMs) : 0;
     const referenceOffsetSeconds = referenceOffsetMs / 1000;
     const delayVoiceSeconds = Math.max(0, -referenceOffsetSeconds);
     const delayReferenceSeconds = Math.max(0, referenceOffsetSeconds);
@@ -119,7 +121,7 @@ export class DuetRendererEngine {
     limiter.connect(context.destination);
     voiceSource.start(Math.max(0, Math.min(0.45, (this.options.latencyMs || 0) / 1000)) + delayVoiceSeconds);
     const audioBuffer = await context.startRendering();
-    debug('offline-render-done', { duration: audioBuffer.duration, referenceIncluded: Boolean(referenceBuffer), referenceGainValue });
+    debug('offline-render-done', { duration: audioBuffer.duration, referenceIncluded: Boolean(referenceBuffer), referenceGainValue, referenceOffsetMs });
     return { audioBuffer, wavBlob: audioBufferToWav(audioBuffer), durationSeconds: audioBuffer.duration, sampleRate, referenceIncluded: Boolean(referenceBuffer) };
   }
 
@@ -128,7 +130,7 @@ export class DuetRendererEngine {
     const referenceGainValue = referenceGain(this.options.faders.reference, this.options.preGains?.reference ?? DEFAULT_REFERENCE_PRE_GAIN);
     const wantsReference = referenceGainValue > 0.000001;
     const renderedAudio = await this.renderAudio();
-    if (wantsReference && !renderedAudio.referenceIncluded) return renderLiveDuetVideo({ ...this.options, preGains: { ...this.options.preGains, reference: this.options.preGains?.reference ?? DEFAULT_REFERENCE_PRE_GAIN } });
+    if (wantsReference && !renderedAudio.referenceIncluded) return renderLiveDuetVideo({ ...this.options, referenceOffsetMs: compensatedReferenceOffsetMs(this.options.referenceOffsetMs), preGains: { ...this.options.preGains, reference: this.options.preGains?.reference ?? DEFAULT_REFERENCE_PRE_GAIN } });
     const visualUrl = URL.createObjectURL(this.options.visualBlob);
     const visual = document.createElement('video'); visual.src = visualUrl; visual.preload = 'auto'; visual.playsInline = true; visual.muted = true; visual.volume = 0;
     await waitForMediaReady(visual);
