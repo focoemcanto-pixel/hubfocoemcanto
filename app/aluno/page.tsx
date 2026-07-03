@@ -12,7 +12,7 @@ type Product = Record<string, any>;
 type Subscription = Record<string, any>;
 
 const studentHeroImage = process.env.NEXT_PUBLIC_STUDENT_HERO_IMAGE || '/images/aluno-hero.jpg';
-const HOME_POST_LIMIT = 50;
+const HOME_POST_LIMIT = 12;
 const VIP_CHECKOUT_URL = process.env.NEXT_PUBLIC_VIP_CHECKOUT_URL || 'https://pay.kiwify.com.br/HHr4eyM';
 const KIWIFY_LOGIN_URL = process.env.NEXT_PUBLIC_KIWIFY_LOGIN_URL || 'https://kiwify.com.br';
 const SYSTEM_DUET_CAPTIONS = new Set(['minha prática do dueto.', 'minha pratica do dueto.', 'compartilhou uma prática.', 'compartilhou uma pratica.']);
