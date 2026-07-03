@@ -77,7 +77,6 @@ export class DuetPreviewEngine {
       this.fallbackReference.crossOrigin = 'anonymous';
       this.fallbackReferenceAttachment = await attachMediaSource(this.fallbackReference as HTMLVideoElement, this.options.referenceUrl);
       await Promise.all([waitForMediaReady(this.fallbackVoice), waitForMediaReady(this.fallbackReference)]);
-      this.audio.disconnectReference?.();
       this.audio.connectVoiceElement(this.fallbackVoice);
       this.audio.connectReferenceElement(this.fallbackReference);
       this.referenceMode = 'media-element';
