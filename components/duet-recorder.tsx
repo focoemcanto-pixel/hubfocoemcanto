@@ -31,6 +31,12 @@ function isSafariLike() {
 }
 function errorText(error: unknown) { return error instanceof Error ? `${error.name}: ${error.message}` : String(error || 'erro_desconhecido'); }
 function sleep(ms: number) { return new Promise((resolve) => window.setTimeout(resolve, ms)); }
+async function posterDataUrlToFile(dataUrl?: string | null) {
+  if (!dataUrl || !dataUrl.startsWith('data:image/')) return null;
+  const blob = await (await fetch(dataUrl)).blob();
+  if (blob.size < 300) return null;
+  return new File([blob], `dueto-poster.${blob.type.includes('png') ? 'png' : 'jpg'}`, { type: blob.type || 'image/jpeg' });
+}
 
 export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl, canSendForReview = true, vipCheckoutUrl = DEFAULT_VIP_CHECKOUT }: Props) {
   const referenceSource = useMemo(() => proxiedVideoUrl(referenceUrl), [referenceUrl]);
@@ -145,7 +151,7 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl, canSendFor
   }
 
   async function saveRenderedUrl(fileUrl: string) {
-    const response = await fetch('/api/submissions/duet', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ lesson_slug: lessonSlug, caption: caption || 'Minha prática do dueto.', visibility: postCommunity ? 'community' : 'private', review_requested: canSendForReview && sendForReview, file_url: fileUrl }) });
+    const response = await fetch('/api/submissions/duet', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ lesson_slug: lessonSlug, caption: caption || 'Minha prática do dueto.', visibility: postCommunity ? 'community' : 'private', review_requested: canSendForReview && sendForReview, file_url: fileUrl, poster_data_url: result?.posterDataUrl || null }) });
     if (!response.ok) { const json = await response.json().catch(() => null); throw new Error(json?.detail || json?.message || 'Não consegui salvar sua publicação.'); }
     return response.json().catch(() => null);
   }
@@ -164,6 +170,8 @@ export function DuetRecorder({ lessonTitle, lessonSlug, referenceUrl, canSendFor
       if (isSafariLike()) { const renderedUrl = await createServerRenderJob().catch((err) => { console.warn('[duet-render] queue failed; falling back', err); return null; }); if (renderedUrl) { setStatus('Salvando publicação...'); setPostingProgress(92); const json = await saveRenderedUrl(renderedUrl); const communityPostId = String(json?.community_post_id || ''); setPostedHref(postCommunity ? `/aluno/comunidade${communityPostId ? `#post-${communityPostId}` : ''}` : ''); setPostingProgress(100); setStep('posted'); return; } }
       const uploadBlob = await buildUploadBlob(); const fileType = uploadBlob.type || 'video/webm'; const data = new FormData();
       data.set('lesson_slug', lessonSlug); data.set('caption', caption || 'Minha prática do dueto.'); data.set('visibility', visibility); data.set('review_requested', String(reviewRequested)); data.set('voice_volume', String(voiceVolume)); data.set('reference_volume', String(referenceVolume)); data.set('voice_preset', preset); data.set('noise_reduction', 'false'); data.set('file', new File([uploadBlob], `${lessonSlug}-dueto-final.${fileType.includes('mp4') ? 'mp4' : 'webm'}`, { type: fileType }));
+      const posterFile = await posterDataUrlToFile(result.posterDataUrl);
+      if (posterFile) data.set('poster', posterFile);
       const response = await fetch('/api/submissions/duet', { method: 'POST', body: data }); if (!response.ok) { const json = await response.json().catch(() => null); throw new Error(json?.detail || json?.message || 'Não consegui enviar sua atividade.'); }
       const json = await response.json().catch(() => null); const communityPostId = String(json?.community_post_id || ''); setPostedHref(postCommunity ? `/aluno/comunidade${communityPostId ? `#post-${communityPostId}` : ''}` : ''); setPostingProgress(100); setStep('posted');
     } catch (err) { setError(`Não consegui enviar sua atividade: ${errorText(err)}`); setStep('review'); setPostingProgress(0); }
