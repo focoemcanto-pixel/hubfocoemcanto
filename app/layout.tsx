@@ -56,6 +56,7 @@ import './ear6-premium-final-spacing.css';
 import './feed-desktop-restore.css';
 import { EarPianoDragOnlyGuard } from '@/components/ear-piano-drag-only-guard';
 import { OnboardingReturnGuard } from '@/components/onboarding-return-guard';
+import { AnalyticsPageTracker } from '@/components/analytics-page-tracker';
 
 export default function RootLayout(props: { children: React.ReactNode }) {
   return (
@@ -64,6 +65,7 @@ export default function RootLayout(props: { children: React.ReactNode }) {
         <EarPianoDragOnlyGuard />
         <Suspense fallback={null}>
           <OnboardingReturnGuard />
+          <AnalyticsPageTracker />
         </Suspense>
         {props.children}
       </body>
