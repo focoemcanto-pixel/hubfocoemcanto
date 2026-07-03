@@ -12,7 +12,7 @@ type Product = Record<string, any>;
 type Subscription = Record<string, any>;
 
 const studentHeroImage = process.env.NEXT_PUBLIC_STUDENT_HERO_IMAGE || '/images/aluno-hero.jpg';
-const HOME_POST_LIMIT = 4;
+const HOME_POST_LIMIT = 50;
 const VIP_CHECKOUT_URL = process.env.NEXT_PUBLIC_VIP_CHECKOUT_URL || 'https://pay.kiwify.com.br/HHr4eyM';
 const KIWIFY_LOGIN_URL = process.env.NEXT_PUBLIC_KIWIFY_LOGIN_URL || 'https://kiwify.com.br';
 const SYSTEM_DUET_CAPTIONS = new Set(['minha prática do dueto.', 'minha pratica do dueto.', 'compartilhou uma prática.', 'compartilhou uma pratica.']);
@@ -26,6 +26,7 @@ const covers = [
 const css = `.premium-student-home{max-width:1180px}.premium-hero{position:relative;overflow:hidden;border:1px solid rgba(255,255,255,.16);border-radius:32px;background:linear-gradient(90deg,rgba(0,0,0,.9),rgba(28,20,13,.52));box-shadow:0 34px 110px rgba(0,0,0,.48);padding:42px 44px;min-height:300px}.premium-hero:before{content:'';position:absolute;inset:0;background:linear-gradient(90deg,rgba(0,0,0,.86),rgba(0,0,0,.16) 58%,rgba(0,0,0,.64));pointer-events:none}.premium-hero-copy{position:relative;z-index:2}.premium-hero h1{font-family:Georgia,'Times New Roman',serif;font-size:clamp(44px,6.2vw,66px);line-height:.92;margin:12px 0 14px;letter-spacing:-.045em}.premium-hero p:not(.eyebrow){max-width:430px;color:#b9b9c3;line-height:1.45}.premium-hero-photo{position:absolute;right:0;top:0;bottom:0;width:52%;background:var(--student-hero-image);background-size:cover;background-position:center right;opacity:.72}.premium-button{display:inline-flex;gap:8px;padding:13px 22px;border-radius:18px;font-weight:900;text-decoration:none}.premium-button.gold{background:linear-gradient(180deg,#ffe39b,#e9b348);color:#160f07}.premium-button.dark{background:rgba(255,255,255,.08);color:#fff}.hero-actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:22px}.student-course-section{margin-top:22px;border:1px solid rgba(255,255,255,.12);border-radius:26px;background:rgba(255,255,255,.035);padding:18px}.premium-section-heading{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:14px}.premium-section-heading h2{margin:0;font-size:25px}.premium-section-heading a{color:#f5c76b;font-weight:900;text-decoration:none}.student-products-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:16px}.student-product-card{position:relative;min-height:360px;border:1px solid rgba(255,255,255,.12);border-radius:22px;overflow:hidden;background:#111;text-decoration:none;color:#fff;display:grid;align-content:end;box-shadow:0 22px 70px rgba(0,0,0,.24)}.student-product-bg{position:absolute;inset:0;background-size:cover!important;background-position:center!important}.student-product-bg:after{content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.04),rgba(0,0,0,.46) 42%,rgba(0,0,0,.94))}.student-product-card.locked .student-product-bg{filter:saturate(.85) brightness(.55)}.student-product-badge{position:absolute;top:14px;left:14px;z-index:3;border-radius:999px;padding:7px 10px;background:linear-gradient(180deg,#ffe39b,#e9b348);color:#130d05;text-transform:uppercase;font-weight:950;font-size:10px;letter-spacing:.08em}.student-product-card.locked .student-product-badge{background:rgba(0,0,0,.65);border:1px solid rgba(245,199,107,.34);color:#f5c76b}.student-product-body{position:relative;z-index:2;padding:16px;display:grid;gap:10px}.student-product-body h3{font-family:Georgia,'Times New Roman',serif;text-transform:uppercase;line-height:.95;margin:0;letter-spacing:-.035em;text-shadow:0 4px 22px #000;font-size:26px}.student-product-body p{margin:0;color:rgba(255,255,255,.72);font-size:13px;line-height:1.35}.student-product-button{margin-top:8px;border-radius:14px;padding:11px 12px;text-align:center;font-weight:950;background:linear-gradient(180deg,#ffe39b,#e9b348);color:#160f07}.premium-community-feed{margin-top:30px}@media(max-width:1100px){.student-products-grid{grid-template-columns:repeat(3,1fr)}}@media(max-width:620px){.premium-hero{padding:28px 22px;min-height:auto}.premium-hero h1{font-size:42px}.premium-hero-photo{display:none}.student-products-grid{display:flex;gap:14px;overflow-x:auto}.student-product-card{flex:0 0 min(78vw,310px);min-height:410px}}`;
 
 function cleanCaption(value?: string | null) { const text = String(value || '').trim(); return SYSTEM_DUET_CAPTIONS.has(text.toLowerCase()) ? '' : text; }
+function submissionUrlFromJoin(value: any) { if (!value) return null; const item = Array.isArray(value) ? value[0] : value; return item?.file_url || null; }
 function hasCourse(subscriptions: Subscription[], courseKey: string) { return subscriptions.some((sub) => sub.course_key === courseKey && isAccessActive(sub.status)); }
 function styleForCover(cover: string) { return cover.startsWith('radial-gradient') ? { background: cover } : { backgroundImage: `url(${cover})` }; }
 function productCover(product: Product | undefined, fallback: string) { return product?.cover_url || product?.image_url || product?.thumbnail_url || product?.cover_image_url || product?.banner_url || product?.card_cover_url || fallback; }
@@ -46,7 +47,7 @@ export default async function StudentPage() {
   const profileResult = email ? await supabase.from('profiles').select('id,name,email').eq('email', email).maybeSingle() : { data: null };
   const profile = profileResult.data || null;
   const [postsResult, productsResult, subscriptionsResult, modulesResult] = await Promise.all([
-    supabase.from('community_posts').select('id,profile_id,exercise_id,caption,media_url,likes_count,comments_count,created_at,profiles(name,avatar_url),exercises(title,slug),submissions(file_url)').order('created_at', { ascending: false }).limit(HOME_POST_LIMIT),
+    supabase.from('community_posts').select('id,profile_id,exercise_id,submission_id,caption,media_url,likes_count,comments_count,created_at,profiles(name,avatar_url),exercises(title,slug),submissions(file_url)').order('created_at', { ascending: false }).limit(HOME_POST_LIMIT),
     supabase.from('products').select('*,courses(id,sort_order)').neq('status', 'archived').order('created_at', { ascending: true }),
     profile?.id ? supabase.from('subscriptions').select('course_key,status').eq('profile_id', profile.id) : Promise.resolve({ data: [] as Subscription[] }),
     supabase.from('modules').select('cover_url').eq('is_active', true).order('sort_order').limit(1),
@@ -54,14 +55,17 @@ export default async function StudentPage() {
   const rawPosts = postsResult.data || [];
   const postIds = rawPosts.map((post: any) => post.id).filter(Boolean);
   const authorIds = Array.from(new Set(rawPosts.map((post: any) => post.profile_id).filter(Boolean)));
-  const [likesResult, savesResult, followsResult] = profile?.id ? await Promise.all([
+  const submissionIds = Array.from(new Set(rawPosts.map((post: any) => post.submission_id).filter(Boolean)));
+  const [likesResult, savesResult, followsResult, submissionsLookupResult] = profile?.id ? await Promise.all([
     postIds.length ? supabase.from('community_likes').select('post_id').eq('profile_id', profile.id).in('post_id', postIds) : Promise.resolve({ data: [] }),
     postIds.length ? supabase.from('community_saves').select('post_id').eq('profile_id', profile.id).in('post_id', postIds) : Promise.resolve({ data: [] }),
     authorIds.length ? supabase.from('community_follows').select('following_id').eq('follower_id', profile.id).in('following_id', authorIds) : Promise.resolve({ data: [] }),
-  ]) : [{ data: [] }, { data: [] }, { data: [] }];
+    submissionIds.length ? supabase.from('submissions').select('id,file_url').in('id', submissionIds) : Promise.resolve({ data: [] }),
+  ]) : [{ data: [] }, { data: [] }, { data: [] }, submissionIds.length ? await supabase.from('submissions').select('id,file_url').in('id', submissionIds) : { data: [] }];
   const likedIds = new Set((likesResult.data || []).map((row: any) => row.post_id));
   const savedIds = new Set((savesResult.data || []).map((row: any) => row.post_id));
   const followingIds = new Set((followsResult.data || []).map((row: any) => row.following_id));
+  const submissionUrlById = new Map((submissionsLookupResult.data || []).map((row: any) => [row.id, row.file_url]));
   const firstName = profile?.name ? String(profile.name).split(' ')[0] : 'Aluno';
   const subscriptions = (subscriptionsResult.data || []) as Subscription[];
   const hasVip = hasCourse(subscriptions, 'grupo-vip');
@@ -77,7 +81,7 @@ export default async function StudentPage() {
     exerciseTitle: post.exercises?.title || 'Atividade da comunidade',
     exerciseSlug: post.exercises?.slug || null,
     caption: cleanCaption(post.caption),
-    mediaUrl: post.media_url || post.submissions?.file_url || null,
+    mediaUrl: post.media_url || submissionUrlFromJoin(post.submissions) || submissionUrlById.get(post.submission_id) || null,
     likesCount: post.likes_count || 0,
     commentsCount: post.comments_count || 0,
     canDelete: Boolean(profile?.id && post.profile_id === profile.id),
