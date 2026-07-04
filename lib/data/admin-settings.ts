@@ -26,7 +26,7 @@ const SETTINGS_KEY = 'admin_settings_global';
 const STORAGE_BUCKET = 'hub-config';
 const STORAGE_PATH = 'settings/admin-settings.json';
 
-const DEFAULT_SETTINGS: AdminSettings = {
+export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
   branding: {
     appName: 'Foco em Canto Academy',
     logoUrl: '',
@@ -42,6 +42,12 @@ const DEFAULT_SETTINGS: AdminSettings = {
     ogImageSize: { width: 1200, height: 630 },
   },
 };
+
+const DEFAULT_SETTINGS = DEFAULT_ADMIN_SETTINGS;
+
+function hasSupabaseEnv() {
+  return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+}
 
 function safeSize(value: unknown, fallback: BrandingAssetSize): BrandingAssetSize {
   const source = value && typeof value === 'object' ? value as Partial<BrandingAssetSize> : {};
@@ -79,10 +85,11 @@ function parsePayload(raw: unknown): Partial<AdminSettings> | null {
 
 function isMissingSettingsTable(error: unknown) {
   const message = error instanceof Error ? error.message : String((error as any)?.message || error || '');
-  return message.includes('hub_settings') || message.includes('schema cache') || message.includes('does not exist') || message.includes('Could not find');
+  return message.includes('hub_settings') || message.includes('schema cache') || message.includes('does not exist') || message.includes('Could not find') || message.includes('supabaseUrl is required') || message.includes('supabaseKey is required');
 }
 
 async function ensureConfigBucket() {
+  if (!hasSupabaseEnv()) return false;
   const supabase = createAdminClient();
   const { data: buckets } = await supabase.storage.listBuckets();
   const exists = buckets?.some((bucket) => bucket.id === STORAGE_BUCKET || bucket.name === STORAGE_BUCKET);
@@ -92,6 +99,7 @@ async function ensureConfigBucket() {
 }
 
 async function getSettingsFromStorage(): Promise<AdminSettings | null> {
+  if (!hasSupabaseEnv()) return null;
   const supabase = createAdminClient();
   try {
     const { data, error } = await supabase.storage.from(STORAGE_BUCKET).download(STORAGE_PATH);
@@ -103,6 +111,7 @@ async function getSettingsFromStorage(): Promise<AdminSettings | null> {
 }
 
 async function saveSettingsToStorage(payload: AdminSettings) {
+  if (!hasSupabaseEnv()) return;
   const supabase = createAdminClient();
   await ensureConfigBucket();
   const body = JSON.stringify(mergeSettings(payload), null, 2);
@@ -113,6 +122,7 @@ async function saveSettingsToStorage(payload: AdminSettings) {
 }
 
 async function getSettingsFromDatabase(): Promise<AdminSettings | null> {
+  if (!hasSupabaseEnv()) return null;
   const supabase = createAdminClient() as any;
   const { data, error } = await supabase
     .from('hub_settings')
@@ -125,6 +135,7 @@ async function getSettingsFromDatabase(): Promise<AdminSettings | null> {
 }
 
 async function saveSettingsToDatabase(payload: AdminSettings) {
+  if (!hasSupabaseEnv()) return;
   const supabase = createAdminClient() as any;
   const row = {
     key: SETTINGS_KEY,
@@ -137,6 +148,7 @@ async function saveSettingsToDatabase(payload: AdminSettings) {
 }
 
 export async function getAdminSettings(): Promise<AdminSettings> {
+  if (!hasSupabaseEnv()) return DEFAULT_SETTINGS;
   try {
     return (await getSettingsFromDatabase()) ?? (await getSettingsFromStorage()) ?? DEFAULT_SETTINGS;
   } catch (error) {
@@ -148,6 +160,7 @@ export async function getAdminSettings(): Promise<AdminSettings> {
 
 export async function saveAdminSettings(payload: AdminSettings): Promise<void> {
   const next = mergeSettings(payload);
+  if (!hasSupabaseEnv()) return;
   try {
     await saveSettingsToDatabase(next);
   } catch (error) {
