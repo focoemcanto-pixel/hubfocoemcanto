@@ -24,6 +24,15 @@ function buildPostUrl(postId: string) {
   return `${window.location.origin}/aluno/comunidade#post-${postId}`;
 }
 
+function shareText(button: HTMLButtonElement, url: string) {
+  const article = button.closest<HTMLElement>('article[id^="post-"]');
+  const exercise = article?.querySelector('.instagram-music-chip')?.textContent?.replace(/^♪\s*/, '').trim();
+  const caption = article?.querySelector('.community-text-main')?.textContent?.trim();
+  const base = exercise ? `Olha essa prática vocal na Comunidade VIP: ${exercise}` : 'Olha essa publicação da Comunidade VIP Foco em Canto';
+  const preview = caption ? `\n\n${caption.slice(0, 120)}${caption.length > 120 ? '...' : ''}` : '';
+  return `${base}${preview}\n\n${url}`;
+}
+
 export function CommunityShareBridge() {
   const [toast, setToast] = useState('');
 
@@ -36,28 +45,29 @@ export function CommunityShareBridge() {
       timeout = window.setTimeout(() => setToast(''), 2200);
     }
 
-    async function copyPostLink(url: string) {
+    async function copyPostLink(text: string) {
       if (!navigator.clipboard?.writeText) throw new Error('Clipboard indisponível.');
-      await navigator.clipboard.writeText(url);
-      showToast('Link copiado.');
+      await navigator.clipboard.writeText(text);
+      showToast('Mensagem copiada.');
     }
 
-    async function sharePost(postId: string) {
+    async function sharePost(postId: string, button: HTMLButtonElement) {
       const url = buildPostUrl(postId);
-      const title = 'Publicação da Comunidade VIP';
+      const title = 'Comunidade VIP Foco em Canto';
+      const text = shareText(button, url);
 
       try {
         if (navigator.share) {
-          await navigator.share({ title, url });
+          await navigator.share({ title, text });
           return;
         }
 
-        await copyPostLink(url);
+        await copyPostLink(text);
       } catch {
         try {
-          await copyPostLink(url);
+          await copyPostLink(text);
         } catch {
-          showToast('Não foi possível compartilhar. Copie o link pela barra do navegador.');
+          showToast('Não foi possível compartilhar.');
         }
       }
     }
@@ -73,7 +83,7 @@ export function CommunityShareBridge() {
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
-      void sharePost(postId);
+      void sharePost(postId, button);
     }
 
     document.addEventListener('click', handleClick, true);
