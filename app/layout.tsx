@@ -57,6 +57,11 @@ import './feed-desktop-restore.css';
 import { EarPianoDragOnlyGuard } from '@/components/ear-piano-drag-only-guard';
 import { OnboardingReturnGuard } from '@/components/onboarding-return-guard';
 import { AnalyticsPageTracker } from '@/components/analytics-page-tracker';
+import { getBrandingMetadata } from '@/lib/seo/branding-metadata';
+
+export async function generateMetadata() {
+  return getBrandingMetadata();
+}
 
 export default function RootLayout(props: { children: React.ReactNode }) {
   return (
