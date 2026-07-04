@@ -35,17 +35,28 @@ export default async function CommunityPage({ searchParams }: { searchParams?: P
   const postIds = rawPosts.map((post: any) => post.id).filter(Boolean);
   const authorIds = Array.from(new Set(rawPosts.map((post: any) => post.profile_id).filter(Boolean)));
   const submissionIds = Array.from(new Set(rawPosts.map((post: any) => post.submission_id).filter(Boolean)));
-  const [likesResult, savesResult, followsResult, submissionsResult] = profile?.id ? await Promise.all([
+  const [likesResult, savesResult, followsResult, submissionsResult, postPosterResult, submissionPosterResult] = profile?.id ? await Promise.all([
     postIds.length ? supabase.from('community_likes').select('post_id').eq('profile_id', profile.id).in('post_id', postIds) : Promise.resolve({ data: [] }),
     postIds.length ? supabase.from('community_saves').select('post_id').eq('profile_id', profile.id).in('post_id', postIds) : Promise.resolve({ data: [] }),
     authorIds.length ? supabase.from('community_follows').select('following_id').eq('follower_id', profile.id).in('following_id', authorIds) : Promise.resolve({ data: [] }),
     submissionIds.length ? supabase.from('submissions').select('id,file_url').in('id', submissionIds) : Promise.resolve({ data: [] }),
-  ]) : [{ data: [] }, { data: [] }, { data: [] }, submissionIds.length ? await supabase.from('submissions').select('id,file_url').in('id', submissionIds) : { data: [] }];
+    postIds.length ? supabase.from('community_posts').select('id,poster_url').in('id', postIds) : Promise.resolve({ data: [] }),
+    submissionIds.length ? supabase.from('submissions').select('id,poster_url').in('id', submissionIds) : Promise.resolve({ data: [] }),
+  ]) : [
+    { data: [] },
+    { data: [] },
+    { data: [] },
+    submissionIds.length ? await supabase.from('submissions').select('id,file_url').in('id', submissionIds) : { data: [] },
+    postIds.length ? await supabase.from('community_posts').select('id,poster_url').in('id', postIds) : { data: [] },
+    submissionIds.length ? await supabase.from('submissions').select('id,poster_url').in('id', submissionIds) : { data: [] },
+  ];
   const likedIds = new Set((likesResult.data || []).map((row: any) => row.post_id));
   const savedIds = new Set((savesResult.data || []).map((row: any) => row.post_id));
   const followingIds = new Set((followsResult.data || []).map((row: any) => row.following_id));
   const submissionUrlById = new Map((submissionsResult.data || []).map((row: any) => [row.id, row.file_url]));
-  const feedPosts = rawPosts.map((p: any) => ({ id: p.id, authorId: p.profile_id, authorName: p.profiles?.name || 'Aluno', authorAvatarUrl: p.profiles?.avatar_url || null, mediaUrl: p.media_url || submissionUrlFromJoin(p.submissions) || submissionUrlById.get(p.submission_id) || null, posterUrl: null, exerciseTitle: p.exercises?.title || null, exerciseSlug: p.exercises?.slug || null, caption: cleanCaption(p.caption), likesCount: p.likes_count || 0, commentsCount: p.comments_count || 0, createdAt: p.created_at, canDelete: Boolean(profile?.id && p.profile_id === profile.id), isLiked: likedIds.has(p.id), isSaved: savedIds.has(p.id), isFollowing: followingIds.has(p.profile_id) }));
+  const postPosterById = new Map((postPosterResult.data || []).map((row: any) => [row.id, row.poster_url]));
+  const submissionPosterById = new Map((submissionPosterResult.data || []).map((row: any) => [row.id, row.poster_url]));
+  const feedPosts = rawPosts.map((p: any) => ({ id: p.id, authorId: p.profile_id, authorName: p.profiles?.name || 'Aluno', authorAvatarUrl: p.profiles?.avatar_url || null, mediaUrl: p.media_url || submissionUrlFromJoin(p.submissions) || submissionUrlById.get(p.submission_id) || null, posterUrl: postPosterById.get(p.id) || submissionPosterById.get(p.submission_id) || null, exerciseTitle: p.exercises?.title || null, exerciseSlug: p.exercises?.slug || null, caption: cleanCaption(p.caption), likesCount: p.likes_count || 0, commentsCount: p.comments_count || 0, createdAt: p.created_at, canDelete: Boolean(profile?.id && p.profile_id === profile.id), isLiked: likedIds.has(p.id), isSaved: savedIds.has(p.id), isFollowing: followingIds.has(p.profile_id) }));
   const hasVipAccess = hasVipSubscription(subscriptions || []);
   const firstName = firstNameOf(profile?.name);
 
