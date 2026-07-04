@@ -45,7 +45,6 @@ import './vocal-capture-mobile-polish.css';
 import './vocal-capture-final-tune.css';
 import './vocal-tessitura-stage.css';
 import './vocal-tessitura-live.css';
-import './vocal-result-final-polish.css';
 import './vocal-intro-premium.css';
 import './vocal-emergency-layout-fix.css';
 import './guided-training-polish.css';
@@ -57,6 +56,7 @@ import './feed-desktop-restore.css';
 import { EarPianoDragOnlyGuard } from '@/components/ear-piano-drag-only-guard';
 import { OnboardingReturnGuard } from '@/components/onboarding-return-guard';
 import { AnalyticsPageTracker } from '@/components/analytics-page-tracker';
+import { LoginRecoveryLinkInjector } from '@/components/login-recovery-link-injector';
 import { getBrandingMetadata } from '@/lib/seo/branding-metadata';
 
 export async function generateMetadata() {
@@ -71,6 +71,7 @@ export default function RootLayout(props: { children: React.ReactNode }) {
         <Suspense fallback={null}>
           <OnboardingReturnGuard />
           <AnalyticsPageTracker />
+          <LoginRecoveryLinkInjector />
         </Suspense>
         {props.children}
       </body>
