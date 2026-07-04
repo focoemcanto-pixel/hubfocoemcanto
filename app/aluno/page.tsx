@@ -27,7 +27,6 @@ const css = `.premium-student-home{max-width:1180px}.premium-hero{position:relat
 
 function cleanCaption(value?: string | null) { const text = String(value || '').trim(); return SYSTEM_DUET_CAPTIONS.has(text.toLowerCase()) ? '' : text; }
 function submissionUrlFromJoin(value: any) { if (!value) return null; const item = Array.isArray(value) ? value[0] : value; return item?.file_url || null; }
-function submissionPosterFromJoin(value: any) { if (!value) return null; const item = Array.isArray(value) ? value[0] : value; return item?.poster_url || null; }
 function hasCourse(subscriptions: Subscription[], courseKey: string) { return subscriptions.some((sub) => sub.course_key === courseKey && isAccessActive(sub.status)); }
 function styleForCover(cover: string) { return cover.startsWith('radial-gradient') ? { background: cover } : { backgroundImage: `url(${cover})` }; }
 function productCover(product: Product | undefined, fallback: string) { return product?.cover_url || product?.image_url || product?.thumbnail_url || product?.cover_image_url || product?.banner_url || product?.card_cover_url || fallback; }
@@ -48,7 +47,7 @@ export default async function StudentPage() {
   const profileResult = email ? await supabase.from('profiles').select('id,name,email').eq('email', email).maybeSingle() : { data: null };
   const profile = profileResult.data || null;
   const [postsResult, productsResult, subscriptionsResult, modulesResult] = await Promise.all([
-    supabase.from('community_posts').select('id,profile_id,exercise_id,submission_id,caption,media_url,poster_url,likes_count,comments_count,created_at,profiles(name,avatar_url),exercises(title,slug),submissions(file_url,poster_url)').order('created_at', { ascending: false }).limit(HOME_POST_LIMIT),
+    supabase.from('community_posts').select('id,profile_id,exercise_id,submission_id,caption,media_url,likes_count,comments_count,created_at,profiles(name,avatar_url),exercises(title,slug),submissions(file_url)').order('created_at', { ascending: false }).limit(HOME_POST_LIMIT),
     supabase.from('products').select('*,courses(id,sort_order)').neq('status', 'archived').order('created_at', { ascending: true }),
     profile?.id ? supabase.from('subscriptions').select('course_key,status').eq('profile_id', profile.id) : Promise.resolve({ data: [] as Subscription[] }),
     supabase.from('modules').select('cover_url').eq('is_active', true).order('sort_order').limit(1),
@@ -61,13 +60,12 @@ export default async function StudentPage() {
     postIds.length ? supabase.from('community_likes').select('post_id').eq('profile_id', profile.id).in('post_id', postIds) : Promise.resolve({ data: [] }),
     postIds.length ? supabase.from('community_saves').select('post_id').eq('profile_id', profile.id).in('post_id', postIds) : Promise.resolve({ data: [] }),
     authorIds.length ? supabase.from('community_follows').select('following_id').eq('follower_id', profile.id).in('following_id', authorIds) : Promise.resolve({ data: [] }),
-    submissionIds.length ? supabase.from('submissions').select('id,file_url,poster_url').in('id', submissionIds) : Promise.resolve({ data: [] }),
-  ]) : [{ data: [] }, { data: [] }, { data: [] }, submissionIds.length ? await supabase.from('submissions').select('id,file_url,poster_url').in('id', submissionIds) : { data: [] }];
+    submissionIds.length ? supabase.from('submissions').select('id,file_url').in('id', submissionIds) : Promise.resolve({ data: [] }),
+  ]) : [{ data: [] }, { data: [] }, { data: [] }, submissionIds.length ? await supabase.from('submissions').select('id,file_url').in('id', submissionIds) : { data: [] }];
   const likedIds = new Set((likesResult.data || []).map((row: any) => row.post_id));
   const savedIds = new Set((savesResult.data || []).map((row: any) => row.post_id));
   const followingIds = new Set((followsResult.data || []).map((row: any) => row.following_id));
   const submissionUrlById = new Map((submissionsLookupResult.data || []).map((row: any) => [row.id, row.file_url]));
-  const submissionPosterById = new Map((submissionsLookupResult.data || []).map((row: any) => [row.id, row.poster_url]));
   const firstName = profile?.name ? String(profile.name).split(' ')[0] : 'Aluno';
   const subscriptions = (subscriptionsResult.data || []) as Subscription[];
   const hasVip = hasCourse(subscriptions, 'grupo-vip');
@@ -84,7 +82,7 @@ export default async function StudentPage() {
     exerciseSlug: post.exercises?.slug || null,
     caption: cleanCaption(post.caption),
     mediaUrl: post.media_url || submissionUrlFromJoin(post.submissions) || submissionUrlById.get(post.submission_id) || null,
-    posterUrl: post.poster_url || submissionPosterFromJoin(post.submissions) || submissionPosterById.get(post.submission_id) || null,
+    posterUrl: null,
     likesCount: post.likes_count || 0,
     commentsCount: post.comments_count || 0,
     canDelete: Boolean(profile?.id && post.profile_id === profile.id),
