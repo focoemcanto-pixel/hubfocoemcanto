@@ -70,6 +70,13 @@ async function insertCommunityPost(supabase: ReturnType<typeof createAdminClient
   return supabase.from('community_posts').insert(fallbackPayload).select('id').single();
 }
 
+async function insertSubmission(supabase: ReturnType<typeof createAdminClient>, payload: Record<string, any>) {
+  const withPoster = await supabase.from('submissions').insert(payload).select('id').single();
+  if (!withPoster.error || !payload.poster_url || !isMissingColumn(withPoster.error)) return withPoster;
+  const { poster_url: _posterUrl, ...fallbackPayload } = payload;
+  return supabase.from('submissions').insert(fallbackPayload).select('id').single();
+}
+
 async function persistSubmission(supabase: ReturnType<typeof createAdminClient>, context: ResolvedSubmissionContext, params: PersistSubmissionParams) {
   const shouldPostCommunity = params.visibility === 'community';
   const shouldReview = context.canRequestReview && params.reviewRequested;
@@ -83,7 +90,7 @@ async function persistSubmission(supabase: ReturnType<typeof createAdminClient>,
   if (shouldReview) {
     const submissionPayload: Record<string, any> = { profile_id: context.profile.id, exercise_id: context.exercise.id, file_url: params.fileUrl, file_type: 'duet_video', note: cleanCaption || null, visibility: shouldPostCommunity ? 'community' : 'private', status: 'pending_review' };
     if (params.posterUrl) submissionPayload.poster_url = params.posterUrl;
-    const { data: submission, error: submissionError } = await supabase.from('submissions').insert(submissionPayload).select('id').single();
+    const { data: submission, error: submissionError } = await insertSubmission(supabase, submissionPayload);
     if (submissionError || !submission) return NextResponse.json({ error: 'submission_failed', detail: submissionError?.message }, { status: 500 });
     submissionId = submission.id;
   }
