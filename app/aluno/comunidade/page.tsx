@@ -13,6 +13,8 @@ function initials(name?: string | null) { return String(name || 'Aluno').trim().
 const SYSTEM_DUET_CAPTIONS = new Set(['minha prática do dueto.', 'minha pratica do dueto.', 'compartilhou uma prática.', 'compartilhou uma pratica.']);
 function cleanCaption(value?: string | null) { const text = String(value || '').trim(); return SYSTEM_DUET_CAPTIONS.has(text.toLowerCase()) ? '' : text; }
 function submissionUrlFromJoin(value: any) { if (!value) return null; const item = Array.isArray(value) ? value[0] : value; return item?.file_url || null; }
+const ADMIN_EMAILS = new Set(['markuezemarquinhos@hotmail.com']);
+function isCommunityAdmin(profile?: any) { return ADMIN_EMAILS.has(String(profile?.email || '').trim().toLowerCase()); }
 
 export const dynamic = 'force-dynamic';
 const VIP_CHECKOUT_URL = process.env.NEXT_PUBLIC_VIP_CHECKOUT_URL || '/assinar/vip';
@@ -27,6 +29,7 @@ export default async function CommunityPage({ searchParams }: { searchParams?: P
   const email = cookieStore.get('hub_access_email')?.value;
   const supabase = createAdminClient();
   const { data: profile } = email ? await supabase.from('profiles').select('id,name,email').eq('email', email).maybeSingle() : { data: null };
+  const isAdmin = isCommunityAdmin(profile);
   const [{ data: posts }, { data: subscriptions }] = await Promise.all([
     supabase.from('community_posts').select(COMMUNITY_POST_SELECT).order('created_at', { ascending: false }).limit(FEED_LIMIT),
     profile?.id ? supabase.from('subscriptions').select('course_key,status').eq('profile_id', profile.id) : Promise.resolve({ data: [] }),
@@ -56,7 +59,7 @@ export default async function CommunityPage({ searchParams }: { searchParams?: P
   const submissionUrlById = new Map((submissionsResult.data || []).map((row: any) => [row.id, row.file_url]));
   const postPosterById = new Map((postPosterResult.data || []).map((row: any) => [row.id, row.poster_url]));
   const submissionPosterById = new Map((submissionPosterResult.data || []).map((row: any) => [row.id, row.poster_url]));
-  const feedPosts = rawPosts.map((p: any) => ({ id: p.id, authorId: p.profile_id, authorName: p.profiles?.name || 'Aluno', authorAvatarUrl: p.profiles?.avatar_url || null, mediaUrl: p.media_url || submissionUrlFromJoin(p.submissions) || submissionUrlById.get(p.submission_id) || null, posterUrl: postPosterById.get(p.id) || submissionPosterById.get(p.submission_id) || null, exerciseTitle: p.exercises?.title || null, exerciseSlug: p.exercises?.slug || null, caption: cleanCaption(p.caption), likesCount: p.likes_count || 0, commentsCount: p.comments_count || 0, createdAt: p.created_at, canDelete: Boolean(profile?.id && p.profile_id === profile.id), isLiked: likedIds.has(p.id), isSaved: savedIds.has(p.id), isFollowing: followingIds.has(p.profile_id) }));
+  const feedPosts = rawPosts.map((p: any) => ({ id: p.id, authorId: p.profile_id, authorName: p.profiles?.name || 'Aluno', authorAvatarUrl: p.profiles?.avatar_url || null, mediaUrl: p.media_url || submissionUrlFromJoin(p.submissions) || submissionUrlById.get(p.submission_id) || null, posterUrl: postPosterById.get(p.id) || submissionPosterById.get(p.submission_id) || null, exerciseTitle: p.exercises?.title || null, exerciseSlug: p.exercises?.slug || null, caption: cleanCaption(p.caption), likesCount: p.likes_count || 0, commentsCount: p.comments_count || 0, createdAt: p.created_at, canDelete: Boolean(profile?.id && (p.profile_id === profile.id || isAdmin)), isLiked: likedIds.has(p.id), isSaved: savedIds.has(p.id), isFollowing: followingIds.has(p.profile_id) }));
   const hasVipAccess = hasVipSubscription(subscriptions || []);
   const firstName = firstNameOf(profile?.name);
 
