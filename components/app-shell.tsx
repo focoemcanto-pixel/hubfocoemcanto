@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { StudentRoutePrefetcher } from '@/components/student-route-prefetcher';
 import { FeedVideoFrameNudge } from '@/components/feed-video-frame-nudge';
 import { OnboardingProfileShortcut } from '@/components/onboarding-profile-shortcut';
+import { CommunityShareBridge } from '@/components/community-share-bridge';
 
 const navItems = [
   { href: '/aluno', label: 'Feed' },
@@ -16,6 +17,7 @@ export function AppShell({ children, hideNav = false }: { children: React.ReactN
     <div className={`app-shell ${hideNav ? 'hide-bottom-nav' : ''}`}>
       <StudentRoutePrefetcher />
       <FeedVideoFrameNudge />
+      <CommunityShareBridge />
       <main className="app-content route-surface">{children}</main>
       {!hideNav ? <OnboardingProfileShortcut /> : null}
       {!hideNav ? (
