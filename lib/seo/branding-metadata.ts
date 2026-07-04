@@ -5,6 +5,22 @@ const DEFAULT_URL = 'https://escola.focoemcanto.com';
 const DEFAULT_DESCRIPTION = 'Plataforma premium de treinamento vocal, comunidade, duetos, exercícios e evolução para cantores.';
 const DEFAULT_KEYWORDS = ['canto', 'técnica vocal', 'aula de canto', 'treinamento vocal', 'Foco em Canto', 'duetos', 'harmonia vocal'];
 
+type BrandingMetadataFields = {
+  appName?: string;
+  siteName?: string;
+  siteUrl?: string;
+  seoTitle?: string;
+  seoDescription?: string;
+  seoKeywords?: string;
+  logoUrl?: string;
+  faviconUrl?: string;
+  loginImageUrl?: string;
+  heroImageUrl?: string;
+  ogImageUrl?: string;
+  primaryColor?: string;
+  ogImageSize?: { width?: number; height?: number };
+};
+
 function absoluteUrl(value?: string | null, base = DEFAULT_URL) {
   const raw = String(value || '').trim();
   if (!raw) return '';
@@ -18,7 +34,7 @@ function splitKeywords(value?: string | null) {
 
 export async function getBrandingMetadata(): Promise<Metadata> {
   const settings = await getAdminSettings();
-  const branding = settings.branding;
+  const branding = settings.branding as BrandingMetadataFields;
   const siteUrl = absoluteUrl(branding.siteUrl || process.env.NEXT_PUBLIC_SITE_URL || DEFAULT_URL) || DEFAULT_URL;
   const siteName = branding.siteName || branding.appName || 'Foco em Canto Academy';
   const title = branding.seoTitle || siteName;
