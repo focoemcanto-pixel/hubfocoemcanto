@@ -17,7 +17,7 @@ function message(code?: string) {
     schema_celular: 'Falta ativar a coluna de celular no banco. Rode a migração de captação de leads.',
     senha: 'Não consegui salvar sua senha. Tente novamente.',
     senha_obrigatoria: 'Digite sua senha para entrar.',
-    senha_incorreta: 'Senha incorreta. Tente novamente.',
+    senha_incorreta: 'Senha incorreta. Tente novamente ou use “Esqueci minha senha”.',
   };
   return map[code] || 'Não foi possível continuar. Tente novamente.';
 }
@@ -31,6 +31,7 @@ export default async function HomePage({ searchParams }: { searchParams?: Promis
   const setup = params.setup === '1';
   const passwordMode = params.password === '1';
   const error = message(params.erro);
+  const recoveryHref = `/recuperar-senha${email ? `?email=${encodeURIComponent(email)}` : ''}`;
 
   return (
     <main className="academy-login-page hub-login-page">
@@ -79,6 +80,7 @@ export default async function HomePage({ searchParams }: { searchParams?: Promis
                 <label><span>E-mail</span><div><Mail size={20} /><input name="email" type="email" required defaultValue={email} placeholder="seu@email.com" /></div></label>
                 <label><span>Senha <a href="/">Usar outro e-mail</a></span><div><Lock size={20} /><input name="password" type="password" required placeholder="sua senha" /></div></label>
                 <button className="academy-outline-button" type="submit">Entrar <span>→</span></button>
+                <p className="academy-security"><a href={recoveryHref}>Esqueci minha senha</a></p>
               </form>
             ) : (
               <form className="academy-login-form" action="/auth/login" method="post">
@@ -88,6 +90,7 @@ export default async function HomePage({ searchParams }: { searchParams?: Promis
               </form>
             )}
 
+            {!passwordMode ? <p className="academy-security"><a href={recoveryHref}>Esqueci minha senha</a></p> : null}
             <div className="academy-first-access"><ShieldCheck size={48} /><div><strong>Primeiro acesso?</strong><p>Informe seu e-mail, crie sua senha e entre na escola.</p></div></div>
             <p className="academy-security"><Lock size={16} /> Seu acesso fica protegido por senha.</p>
           </div>
