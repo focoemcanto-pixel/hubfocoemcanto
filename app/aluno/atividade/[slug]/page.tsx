@@ -4,7 +4,7 @@ import type { ReactElement } from 'react';
 import { Lock, Sparkles } from 'lucide-react';
 import { DuetRecorder } from '@/components/duet-recorder-caption-clean';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { isAccessActive } from '@/lib/access/products';
+import { hasVipAccess } from '@/lib/access/user-permissions';
 import { cloudflareStreamEmbed, cloudflareStreamSource } from '@/lib/media/stream';
 
 export const dynamic = 'force-dynamic';
@@ -32,10 +32,6 @@ function drivePreview(url?: string | null) {
 function isFreeTuningModule(module: any) {
   const value = `${module?.title || ''} ${module?.slug || ''}`.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   return value.includes('firm') && value.includes('afin');
-}
-
-function hasVipSubscription(rows: any[]) {
-  return rows.some((sub) => sub.course_key === 'grupo-vip' && isAccessActive(sub.status));
 }
 
 function LockedActivity() {
@@ -66,9 +62,9 @@ export default async function ActivityPage({ params }: { params: Promise<{ slug:
     .single();
 
   const module = Array.isArray(lesson?.modules) ? lesson?.modules[0] : lesson?.modules;
-  const { data: profile } = email ? await supabase.from('profiles').select('id').eq('email', email).maybeSingle() : { data: null };
-  const { data: subscriptions } = profile?.id ? await supabase.from('subscriptions').select('course_key,status').eq('profile_id', profile.id) : { data: [] };
-  const hasVip = hasVipSubscription(subscriptions || []);
+  const { data: profile } = email ? await supabase.from('profiles').select('id,email,role').eq('email', email).maybeSingle() : { data: null };
+  const { data: subscriptions } = profile?.id ? await supabase.from('subscriptions').select('course_key,product_name,status').eq('profile_id', profile.id) : { data: [] };
+  const hasVip = hasVipAccess(profile, subscriptions || []);
   if (!hasVip && !isFreeTuningModule(module)) return <LockedActivity />;
 
   const streamUrl = cloudflareStreamSource(lesson?.stream_uid);
