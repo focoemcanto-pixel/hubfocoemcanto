@@ -25,7 +25,7 @@ import { focoAcademyLogoCss } from '@/components/foco-academy-logo';
 import { LessonProgressButton } from '@/components/lesson-progress-button';
 import { getAdminSettings } from '@/lib/data/admin-settings';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { isAccessActive } from '@/lib/access/products';
+import { hasVipAccess } from '@/lib/access/user-permissions';
 
 export const dynamic = 'force-dynamic';
 
@@ -42,10 +42,6 @@ function cleanDescription(text?: string | null) {
   if (!value) return '';
   if (value.toLowerCase().includes('material importado do google drive')) return '';
   return value;
-}
-
-function hasVipSubscription(rows: any[]) {
-  return rows.some((sub) => sub.course_key === 'grupo-vip' && isAccessActive(sub.status));
 }
 
 function isFreeTuningModule(module: any) {
@@ -138,7 +134,7 @@ export default async function StudentLessonPage({ params }: { params: Promise<{ 
       .select('id,title,slug,description,objective,media_type,difficulty,drive_url,media_url,audio_url,stream_uid,module_id,trim_start_seconds,trim_end_seconds,modules(title,slug,description)')
       .eq('slug', slug)
       .single(),
-    email ? supabase.from('profiles').select('id,name,email,avatar_url').eq('email', email).maybeSingle() : Promise.resolve({ data: null } as any),
+    email ? supabase.from('profiles').select('id,name,email,role,avatar_url').eq('email', email).maybeSingle() : Promise.resolve({ data: null } as any),
   ]);
 
   const lesson = lessonResult.data;
@@ -146,13 +142,13 @@ export default async function StudentLessonPage({ params }: { params: Promise<{ 
   const module = Array.isArray(lesson?.modules) ? lesson?.modules[0] : lesson?.modules;
 
   const [{ data: subscriptions }, { data: rawModules }, { data: currentModuleLessons }, progressRow] = await Promise.all([
-    profile?.id ? supabase.from('subscriptions').select('course_key,status').eq('profile_id', profile.id) : Promise.resolve({ data: [] as any[] }),
+    profile?.id ? supabase.from('subscriptions').select('course_key,product_name,status').eq('profile_id', profile.id) : Promise.resolve({ data: [] as any[] }),
     supabase.from('modules').select('id,title,slug,description,sort_order,exercises(id,title,slug,sort_order)').eq('is_active', true).order('sort_order'),
     lesson?.module_id ? supabase.from('exercises').select('id,title,slug,sort_order').eq('module_id', lesson.module_id).order('sort_order') : Promise.resolve({ data: [] as any[] }),
     getProgress(supabase, profile?.id, lesson?.id),
   ]);
 
-  const hasVip = hasVipSubscription(subscriptions || []);
+  const hasVip = hasVipAccess(profile, subscriptions || []);
   if (!hasVip && !isFreeTuningModule(module)) return <VipLessonLocked />;
 
   const modules = (rawModules || []).filter(isRealModule);
