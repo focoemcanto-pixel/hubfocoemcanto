@@ -5,6 +5,7 @@ import { AppShell } from '@/components/app-shell';
 import { HomeCommunityFeed } from '@/components/home-community-feed';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { isAccessActive } from '@/lib/access/products';
+import { hasVipAccess } from '@/lib/access/user-permissions';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,12 +45,12 @@ export default async function StudentPage() {
   const cookieStore = await cookies();
   const email = cookieStore.get('hub_access_email')?.value;
   const supabase = createAdminClient();
-  const profileResult = email ? await supabase.from('profiles').select('id,name,email').eq('email', email).maybeSingle() : { data: null };
+  const profileResult = email ? await supabase.from('profiles').select('id,name,email,role').eq('email', email).maybeSingle() : { data: null };
   const profile = profileResult.data || null;
   const [postsResult, productsResult, subscriptionsResult, modulesResult] = await Promise.all([
     supabase.from('community_posts').select('id,profile_id,exercise_id,submission_id,caption,media_url,likes_count,comments_count,created_at,profiles(name,avatar_url),exercises(title,slug),submissions(file_url)').order('created_at', { ascending: false }).limit(HOME_POST_LIMIT),
     supabase.from('products').select('*,courses(id,sort_order)').neq('status', 'archived').order('created_at', { ascending: true }),
-    profile?.id ? supabase.from('subscriptions').select('course_key,status').eq('profile_id', profile.id) : Promise.resolve({ data: [] as Subscription[] }),
+    profile?.id ? supabase.from('subscriptions').select('course_key,product_name,status').eq('profile_id', profile.id) : Promise.resolve({ data: [] as Subscription[] }),
     supabase.from('modules').select('cover_url').eq('is_active', true).order('sort_order').limit(1),
   ]);
   const rawPosts = postsResult.data || [];
@@ -68,10 +69,10 @@ export default async function StudentPage() {
   const submissionUrlById = new Map((submissionsLookupResult.data || []).map((row: any) => [row.id, row.file_url]));
   const firstName = profile?.name ? String(profile.name).split(' ')[0] : 'Aluno';
   const subscriptions = (subscriptionsResult.data || []) as Subscription[];
-  const hasVip = hasCourse(subscriptions, 'grupo-vip');
+  const hasVip = hasVipAccess(profile, subscriptions);
   const freeCover = modulesResult.data?.[0]?.cover_url || covers[0];
   const products = ((productsResult.data || []) as Product[]).sort((a, b) => productOrder(a, 0) - productOrder(b, 0));
-  const courseCards = products.map((product, index) => { const vip = isVipProduct(product); const subscribed = hasCourse(subscriptions, productKey(product)); const unlocked = vip ? true : subscribed; return { title: productTitle(product), description: vip ? (hasVip ? 'Todos os módulos, duetos, downloads e avaliações.' : 'Módulo 1 aberto grátis. Demais módulos no VIP.') : (product.description || 'Treinamento premium da escola.'), unlocked, href: productHref(product, unlocked), cover: productCover(product, vip ? freeCover : covers[index % covers.length]), action: productAction(product, unlocked) }; });
+  const courseCards = products.map((product, index) => { const vip = isVipProduct(product); const subscribed = hasCourse(subscriptions, productKey(product)); const unlocked = vip ? true : subscribed || hasVip; return { title: productTitle(product), description: vip ? (hasVip ? 'Todos os módulos, duetos, downloads e avaliações.' : 'Módulo 1 aberto grátis. Demais módulos no VIP.') : (product.description || 'Treinamento premium da escola.'), unlocked, href: productHref(product, unlocked), cover: productCover(product, vip ? freeCover : covers[index % covers.length]), action: productAction(product, unlocked) }; });
   const feedPosts = rawPosts.map((post: any) => ({
     id: post.id,
     authorId: post.profile_id,
