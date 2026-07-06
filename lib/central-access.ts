@@ -1,5 +1,7 @@
 import { cookies } from 'next/headers';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { hasFullSchoolAccess, hasVipAccess, isAdminProfile } from '@/lib/access/user-permissions';
+import { isAccessActive } from '@/lib/access/products';
 
 export type CentralAccessLevel = 'open' | 'vip';
 export type CentralAccessRule = { key: string; level: CentralAccessLevel; note?: string | null; updated_at?: string | null };
@@ -141,12 +143,17 @@ export async function getStudentAccessContext(): Promise<StudentAccessContext> {
   const supabase = createAdminClient();
   const { data: profile } = email ? await supabase.from('profiles').select('*').eq('email', email).maybeSingle() : { data: null };
   const source = (profile || {}) as Record<string, any>;
+  const { data: subscriptions } = profile?.id
+    ? await supabase.from('subscriptions').select('course_key,product_name,status').eq('profile_id', profile.id)
+    : { data: [] };
+
   const role = String(source.role || source.user_role || source.access_role || '').toLowerCase();
   const plan = String(source.plan || source.access_level || source.subscription_tier || source.tier || '').toLowerCase();
   const status = String(source.status || source.subscription_status || source.access_status || '').toLowerCase();
-  const isAdmin = ['admin', 'owner', 'professor'].includes(role) || truthy(source.is_admin);
-  const isVip = isAdmin || plan.includes('vip') || truthy(source.vip) || truthy(source.is_vip);
-  const isSubscriber = isVip || plan.includes('subscriber') || plan.includes('assinante') || status === 'active' || status === 'ativo' || truthy(source.is_subscriber) || truthy(source.subscriber);
+  const activeSubscriptions = (subscriptions || []).filter((sub: any) => isAccessActive(sub.status));
+  const isAdmin = isAdminProfile(profile as any) || ['admin', 'owner', 'professor'].includes(role) || truthy(source.is_admin);
+  const isVip = isAdmin || hasVipAccess(profile as any, subscriptions || []) || plan.includes('vip') || truthy(source.vip) || truthy(source.is_vip);
+  const isSubscriber = isVip || hasFullSchoolAccess(profile as any, subscriptions || []) || activeSubscriptions.length > 0 || plan.includes('subscriber') || plan.includes('assinante') || status === 'active' || status === 'ativo' || truthy(source.is_subscriber) || truthy(source.subscriber);
   return { email, profile: profile as any, isSubscriber, isVip, isAdmin };
 }
 
