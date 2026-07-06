@@ -2,6 +2,7 @@ import { cookies } from 'next/headers';
 import { AppShell } from '@/components/app-shell';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { isAccessActive } from '@/lib/access/products';
+import { hasVipAccess } from '@/lib/access/user-permissions';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,7 +33,7 @@ function isVip(product: any) { return productIdentity(product).includes('vip'); 
 function isFocoEmCanto(product: any) { const value = productIdentity(product); return value.includes('foco-em-canto') || value.includes('foco em canto'); }
 function isFocoEmHarmonia(product: any) { const value = productIdentity(product); return value.includes('foco-em-harmonia') || value.includes('foco em harmonia') || value.includes('harmonia'); }
 function isExternalKiwifyCourse(product: any) { return isFocoEmCanto(product) || isFocoEmHarmonia(product); }
-function productUnlocked(product: any, subscribed: boolean, hasVip: boolean) { if (isVip(product)) return true; if (isExternalKiwifyCourse(product)) return subscribed; return subscribed || hasVip; }
+function productUnlocked(product: any, subscribed: boolean, hasVip: boolean) { if (isVip(product)) return true; if (isExternalKiwifyCourse(product)) return subscribed || hasVip; return subscribed || hasVip; }
 function productHref(product: any, unlocked: boolean, vip: boolean) {
   const destination = productDestination(product);
   if (vip) return '#sala-vip';
@@ -72,16 +73,16 @@ export default async function StudentLibraryPage() {
   const cookieStore = await cookies();
   const email = cookieStore.get('hub_access_email')?.value;
   const supabase = createAdminClient();
-  const { data: profile } = email ? await supabase.from('profiles').select('id').eq('email', email).maybeSingle() : { data: null as any };
+  const { data: profile } = email ? await supabase.from('profiles').select('id,email,role').eq('email', email).maybeSingle() : { data: null as any };
   const [{ data }, { data: products }, { data: subscriptions }] = await Promise.all([
     supabase.from('modules').select('id,title,slug,description,cover_url,sort_order,exercises(id)').eq('is_active', true).order('sort_order'),
     supabase.from('products').select('*,courses(id,sort_order)').neq('status', 'archived').order('created_at', { ascending: true }),
-    profile?.id ? supabase.from('subscriptions').select('course_key,status').eq('profile_id', profile.id) : Promise.resolve({ data: [] }),
+    profile?.id ? supabase.from('subscriptions').select('course_key,product_name,status').eq('profile_id', profile.id) : Promise.resolve({ data: [] }),
   ]);
   const modules = (data || []).filter(isRealModule);
   const activeSubs = (subscriptions || []).filter((sub: any) => isAccessActive(sub.status));
   const productList = ((products || []) as any[]).sort((a, b) => productOrder(a, 0) - productOrder(b, 0));
-  const hasVip = hasCourse(activeSubs, 'grupo-vip');
+  const hasVip = hasVipAccess(profile, subscriptions || []);
   const courseCards = productList.map((product, index) => {
     const vip = isVip(product);
     const subscribed = hasCourse(activeSubs, productKey(product));
