@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { isAccessActive } from '@/lib/access/products';
+import { hasVipAccess } from '@/lib/access/user-permissions';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,13 +9,12 @@ const BUCKET = 'submission-media';
 let bucketReady = false;
 const SYSTEM_DUET_CAPTIONS = new Set(['minha prática do dueto.', 'minha pratica do dueto.', 'compartilhou uma prática.', 'compartilhou uma pratica.', 'prática vocal.', 'pratica vocal.', 'novo dueto.']);
 
-type ResolvedSubmissionContext = { exercise: { id: string }; profile: { id: string; email?: string | null }; canRequestReview: boolean };
+type ResolvedSubmissionContext = { exercise: { id: string }; profile: { id: string; email?: string | null; role?: string | null }; canRequestReview: boolean };
 type PersistSubmissionParams = { caption: string; visibility: string; reviewRequested: boolean; fileUrl: string; posterUrl?: string | null };
 
 function normalizeCaption(value: unknown) { const text = String(value || '').trim(); return SYSTEM_DUET_CAPTIONS.has(text.toLowerCase()) ? '' : text; }
 function pathPart(value: string) { return value.toLowerCase().replace(/[^a-z0-9._-]+/g, '-'); }
 function parseBoolean(value: unknown, fallback = true) { if (value === undefined || value === null || value === '') return fallback; return ['1', 'true', 'yes', 'on'].includes(String(value).toLowerCase()); }
-function hasVipSubscription(rows: any[]) { return rows.some((sub) => sub.course_key === 'grupo-vip' && isAccessActive(sub.status)); }
 function isMissingColumn(error: any) { const text = String(error?.message || '').toLowerCase(); return text.includes('poster_url') || text.includes('schema cache') || text.includes('column'); }
 function decodeDataUrl(value: string) {
   const match = value.match(/^data:([^;]+);base64,(.+)$/);
@@ -37,19 +36,19 @@ async function uploadSubmissionFile(supabase: ReturnType<typeof createAdminClien
 async function resolveExerciseAndProfile(supabase: ReturnType<typeof createAdminClient>, lessonSlug: string, email: string) {
   const [{ data: exercise, error: exerciseError }, { data: profile, error: profileQueryError }] = await Promise.all([
     supabase.from('exercises').select('id').eq('slug', lessonSlug).maybeSingle(),
-    supabase.from('profiles').select('id,email').eq('email', email).maybeSingle(),
+    supabase.from('profiles').select('id,email,role').eq('email', email).maybeSingle(),
   ]);
   if (exerciseError) return { error: NextResponse.json({ error: 'exercise_query_failed', detail: exerciseError.message }, { status: 500 }) };
   if (!exercise?.id) return { error: NextResponse.json({ error: 'exercise_not_found' }, { status: 404 }) };
   if (profileQueryError) return { error: NextResponse.json({ error: 'profile_query_failed', detail: profileQueryError.message }, { status: 500 }) };
   let currentProfile = profile;
   if (!currentProfile?.id) {
-    const { data: created, error: profileError } = await supabase.from('profiles').insert({ email, name: email.split('@')[0], role: 'student' }).select('id,email').single();
+    const { data: created, error: profileError } = await supabase.from('profiles').insert({ email, name: email.split('@')[0], role: 'student' }).select('id,email,role').single();
     if (profileError || !created) return { error: NextResponse.json({ error: 'profile_failed', detail: profileError?.message }, { status: 500 }) };
     currentProfile = created;
   }
-  const { data: subscriptions } = await supabase.from('subscriptions').select('course_key,status').eq('profile_id', currentProfile.id);
-  return { exercise, profile: currentProfile, canRequestReview: hasVipSubscription(subscriptions || []) };
+  const { data: subscriptions } = await supabase.from('subscriptions').select('course_key,product_name,status').eq('profile_id', currentProfile.id);
+  return { exercise, profile: currentProfile, canRequestReview: hasVipAccess(currentProfile, subscriptions || []) };
 }
 
 async function uploadPosterDataUrl(supabase: ReturnType<typeof createAdminClient>, email: string, exerciseId: string, posterDataUrl?: string | null) {
