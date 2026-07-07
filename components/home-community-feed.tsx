@@ -23,31 +23,51 @@ function VerifiedBadge() { return <span className="vip-verified-badge" title="As
 
 function VideoSurface({ post, index, soundOn, onToggleSound }: { post: FeedPost; index: number; soundOn: boolean; onToggleSound: () => void }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const loadStartedRef = useRef(false);
   const [shouldLoad, setShouldLoad] = useState(index < PRIORITY_VIDEO_COUNT);
   const [ready, setReady] = useState(false);
   const [visible, setVisible] = useState(index === 0);
   const title = post.exerciseTitle || 'Atividade vocal';
 
-  const playIfReady = useCallback(() => {
+  const playIfVisible = useCallback((forceMuted = false) => {
     const video = videoRef.current;
-    if (!video || !visible || !shouldLoad) return;
-    video.muted = !soundOn;
+    if (!video || !visible || !post.mediaUrl) return;
+    if (!video.currentSrc && !video.src) video.src = post.mediaUrl;
+    video.playsInline = true;
+    video.muted = forceMuted || !soundOn;
+    if (video.muted) video.setAttribute('muted', ''); else video.removeAttribute('muted');
     const promise = video.play();
-    if (promise?.catch) promise.catch(() => undefined);
-  }, [visible, shouldLoad, soundOn]);
+    if (promise?.catch) promise.catch(() => {
+      video.muted = true;
+      video.setAttribute('muted', '');
+      video.play().catch(() => undefined);
+    });
+  }, [visible, soundOn, post.mediaUrl]);
 
   useEffect(() => { if (index < PRIORITY_VIDEO_COUNT) setShouldLoad(true); }, [index]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !shouldLoad || !post.mediaUrl) return;
+    video.playsInline = true;
+    video.muted = true;
+    video.setAttribute('muted', '');
+    if (!loadStartedRef.current || video.currentSrc !== post.mediaUrl) {
+      loadStartedRef.current = true;
+      video.src = post.mediaUrl;
+      video.preload = 'auto';
+      try { video.load(); } catch {}
+    }
+    window.requestAnimationFrame(() => playIfVisible(true));
+  }, [shouldLoad, post.mediaUrl, playIfVisible]);
+
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
     video.muted = !soundOn;
-    if (shouldLoad && post.mediaUrl && !video.src) video.src = post.mediaUrl;
-    if (shouldLoad) {
-      video.preload = 'auto';
-      try { video.load(); } catch {}
-    }
-    playIfReady();
-  }, [shouldLoad, soundOn, post.mediaUrl, playIfReady]);
+    if (video.muted) video.setAttribute('muted', ''); else video.removeAttribute('muted');
+    playIfVisible(!soundOn);
+  }, [soundOn, playIfVisible]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -55,29 +75,33 @@ function VideoSurface({ post, index, soundOn, onToggleSound }: { post: FeedPost;
     const observer = new IntersectionObserver(([entry]) => {
       const nearViewport = entry.isIntersecting || entry.boundingClientRect.top < window.innerHeight * 2.6;
       if (nearViewport) setShouldLoad(true);
-      const active = entry.isIntersecting && entry.intersectionRatio >= 0.36;
+      const active = entry.isIntersecting && entry.intersectionRatio >= 0.28;
       setVisible(active);
       if (active) {
         document.querySelectorAll<HTMLVideoElement>('.community-feed-video').forEach((other) => { if (other !== video) other.pause(); });
-      } else if (!entry.isIntersecting || entry.intersectionRatio < 0.16) {
+        video.muted = true;
+        video.setAttribute('muted', '');
+        if (post.mediaUrl && !video.currentSrc && !video.src) video.src = post.mediaUrl;
+        video.play().catch(() => undefined);
+      } else if (!entry.isIntersecting || entry.intersectionRatio < 0.12) {
         video.pause();
       }
-    }, { rootMargin: '1200px 0px 1200px 0px', threshold: [0, 0.16, 0.36, 0.72] });
+    }, { rootMargin: '1400px 0px 1400px 0px', threshold: [0, 0.12, 0.28, 0.6] });
     observer.observe(video);
     return () => observer.disconnect();
-  }, []);
+  }, [post.mediaUrl]);
 
-  useEffect(() => { playIfReady(); }, [playIfReady, ready, visible, shouldLoad]);
+  useEffect(() => { playIfVisible(true); }, [playIfVisible, ready, visible, shouldLoad]);
 
   function markReady() {
     setReady(true);
-    window.requestAnimationFrame(playIfReady);
+    window.requestAnimationFrame(() => playIfVisible(true));
   }
 
   const showPoster = !ready;
   return <>
     {post.posterUrl ? <img className={`feed-poster ${showPoster ? '' : 'is-hidden'}`} src={post.posterUrl} alt="" loading={index < PRIORITY_VIDEO_COUNT ? 'eager' : 'lazy'} /> : <div className={`feed-fallback-poster ${showPoster ? '' : 'is-hidden'}`}><span className="fallback-play">▶</span><div className="fallback-copy"><small>Prévia do dueto</small><strong>{title}</strong></div></div>}
-    <video ref={videoRef} data-post-id={post.id} className={`community-feed-video ${ready ? 'is-ready' : ''}`} src={shouldLoad ? post.mediaUrl || undefined : undefined} poster={post.posterUrl || undefined} muted={!soundOn} autoPlay loop playsInline preload={index < PRIORITY_VIDEO_COUNT ? 'auto' : shouldLoad ? 'auto' : 'metadata'} controls={false} onLoadedData={markReady} onCanPlay={markReady} />
+    <video ref={videoRef} data-post-id={post.id} className={`community-feed-video ${ready ? 'is-ready' : ''}`} src={shouldLoad ? post.mediaUrl || undefined : undefined} poster={post.posterUrl || undefined} muted autoPlay loop playsInline preload={index < PRIORITY_VIDEO_COUNT ? 'auto' : shouldLoad ? 'auto' : 'metadata'} controls={false} onLoadedMetadata={markReady} onLoadedData={markReady} onCanPlay={markReady} />
     <button className="home-sound-toggle" type="button" onClick={onToggleSound}>{soundOn ? <Volume2 size={20} /> : <VolumeX size={20} />}</button>
     {post.exerciseTitle ? <div className="instagram-music-chip">♪ {post.exerciseTitle}</div> : null}
   </>;
@@ -111,7 +135,7 @@ export function HomeCommunityFeed({ initialPosts, hasVipAccess = false, vipCheck
   const [commentSending, setCommentSending] = useState(false);
   useEffect(() => setPosts(normalizedPosts), [normalizedPosts]);
   useEffect(() => { if (currentProfileId) return; fetch('/api/community/session', { headers: { accept: 'application/json' } }).then((r) => r.ok ? r.json() : null).then((data) => { if (!data?.profile?.id) return; setSessionProfileId(String(data.profile.id)); const next: Record<string, boolean> = {}; (data.followingIds || []).forEach((id: string) => { next[String(id)] = true; }); setFollowing((value) => ({ ...value, ...next })); }).catch(() => null); }, [currentProfileId]);
-  useEffect(() => { const links = posts.filter((p) => p.mediaUrl).slice(0, PRIORITY_VIDEO_COUNT).flatMap((post) => { const created: HTMLLinkElement[] = []; if (post.posterUrl) { const img = document.createElement('link'); img.rel = 'preload'; img.as = 'image'; img.href = post.posterUrl; document.head.appendChild(img); created.push(img); } if (post.mediaUrl) { const video = document.createElement('link'); video.rel = 'prefetch'; video.as = 'video'; video.href = post.mediaUrl; document.head.appendChild(video); created.push(video); } return created; }); return () => links.forEach((link) => link.remove()); }, [posts]);
+  useEffect(() => { const links = posts.filter((p) => p.mediaUrl).slice(0, PRIORITY_VIDEO_COUNT).flatMap((post, index) => { const created: HTMLLinkElement[] = []; if (post.posterUrl) { const img = document.createElement('link'); img.rel = 'preload'; img.as = 'image'; img.href = post.posterUrl; document.head.appendChild(img); created.push(img); } if (post.mediaUrl) { const video = document.createElement('link'); video.rel = index < 2 ? 'preload' : 'prefetch'; video.as = 'video'; video.href = post.mediaUrl; document.head.appendChild(video); created.push(video); } return created; }); return () => links.forEach((link) => link.remove()); }, [posts]);
   function notice(text: string) { setToast(text); window.setTimeout(() => setToast(''), 1800); }
   function closeComments() { setCommentPost(null); setCommentText(''); setCommentsLoading(false); setCommentSending(false); }
   async function postForm(url: string, data: Record<string, string>) { const form = new FormData(); Object.entries(data).forEach(([k, v]) => form.set(k, v)); return fetch(url, { method: 'POST', body: form, headers: { accept: 'application/json' } }); }
