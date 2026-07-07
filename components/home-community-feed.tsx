@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Bookmark, CheckCircle2, Heart, Lock, MessageCircle, MoreHorizontal, Send, Sparkles, Trash2, Volume2, VolumeX, X } from 'lucide-react';
 
@@ -12,6 +12,7 @@ type Props = { initialPosts: FeedPost[]; hasVipAccess?: boolean; vipCheckoutUrl?
 const DEFAULT_VIP_CHECKOUT = 'https://pay.kiwify.com.br/HHr4eyM';
 const PRIORITY_VIDEO_COUNT = 5;
 const SYSTEM_DUET_CAPTIONS = new Set(['minha prática do dueto.', 'minha pratica do dueto.', 'compartilhou uma prática.', 'compartilhou uma pratica.', 'prática vocal.', 'pratica vocal.', 'novo dueto.']);
+
 const css = `.home-insta-feed{display:grid;gap:24px;width:100%;max-width:720px;margin:0 auto}.instagram-post-card{overflow:hidden;border:1px solid rgba(255,255,255,.12);border-radius:24px;background:#09090d;color:#fff;box-shadow:0 20px 70px rgba(0,0,0,.34)}.instagram-post-head{display:flex;align-items:center;gap:10px;padding:12px 14px;min-height:70px}.instagram-author-avatar{width:45px;height:45px;min-width:45px;border-radius:50%;padding:2px;background:linear-gradient(45deg,#f9ce34,#ee2a7b,#6228d7);display:grid;place-items:center;overflow:hidden}.instagram-author-avatar img,.instagram-author-avatar span{width:100%;height:100%;border-radius:50%;display:grid;place-items:center;object-fit:cover;background:#15100a;border:2px solid #09090d;color:#f5c76b;font-weight:1000}.instagram-author-copy{min-width:0;flex:1}.instagram-author-copy-row{display:flex;align-items:center;gap:10px;min-width:0}.instagram-author-copy strong{display:flex;align-items:center;gap:4px;color:#fff;font-size:16px;line-height:1.05;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.instagram-author-copy span{display:block;margin-top:3px;color:rgba(255,255,255,.58);font-size:13px}.community-follow-button{border:0;background:transparent;color:#f5c76b;font-weight:950;font-size:13px;padding:0 2px;cursor:pointer}.community-follow-button.following{color:rgba(255,255,255,.62)}.home-post-options{position:relative}.home-post-menu{width:40px;height:40px;border:0;border-radius:50%;background:transparent;color:#fff;display:grid;place-items:center}.post-options-popover{position:absolute;right:0;top:42px;z-index:80;width:245px;border:1px solid rgba(255,255,255,.14);border-radius:20px;background:rgba(12,12,16,.98);box-shadow:0 18px 60px rgba(0,0,0,.42);overflow:hidden}.post-options-popover a,.post-options-popover button{width:100%;min-height:48px;padding:0 16px;border:0;border-bottom:1px solid rgba(255,255,255,.08);display:flex;align-items:center;gap:8px;background:transparent;color:#fff;font-size:14px;font-weight:850;text-align:left;text-decoration:none}.danger-option{color:#ff6b7a!important}.instagram-reel-media{position:relative;background:#000;border-top:1px solid rgba(255,255,255,.08);border-bottom:1px solid rgba(255,255,255,.08);overflow:hidden;min-height:360px}.text-post-media{min-height:auto;background:transparent;padding:18px}.community-feed-video{display:block;width:100%;height:auto;min-height:360px;object-fit:contain;background:#000;opacity:0;transition:opacity .18s ease}.community-feed-video.is-ready{opacity:1}.feed-poster,.feed-fallback-poster{position:absolute;inset:0;width:100%;height:100%;z-index:3;opacity:1;transition:opacity .18s ease}.feed-poster{object-fit:contain;background:#000}.feed-poster.is-hidden,.feed-fallback-poster.is-hidden{opacity:0;pointer-events:none}.feed-fallback-poster{display:grid;align-content:end;padding:18px;background:radial-gradient(circle at 50% 22%,rgba(245,199,107,.26),transparent 34%),linear-gradient(145deg,#161016,#050506 64%,#000);overflow:hidden}.feed-fallback-poster:before{content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.08),rgba(0,0,0,.18) 40%,rgba(0,0,0,.86))}.fallback-play{position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);width:78px;height:78px;border-radius:999px;display:grid;place-items:center;background:rgba(0,0,0,.38);border:1px solid rgba(255,255,255,.14);color:#fff;font-size:34px;z-index:1}.fallback-copy{position:relative;z-index:2;display:grid;gap:8px}.fallback-copy small{color:#f5c76b;text-transform:uppercase;font-size:11px;letter-spacing:.12em;font-weight:1000}.fallback-copy strong{font-size:clamp(24px,6vw,44px);line-height:.94;letter-spacing:-.04em;text-transform:uppercase;text-shadow:0 8px 30px #000}.home-sound-toggle{position:absolute;right:12px;bottom:12px;z-index:8;width:40px;height:40px;border:1px solid rgba(255,255,255,.18);border-radius:50%;background:rgba(0,0,0,.62);color:#fff;display:grid;place-items:center}.instagram-music-chip{position:absolute;left:12px;bottom:12px;max-width:calc(100% - 80px);border-radius:999px;background:rgba(0,0,0,.45);padding:8px 12px;color:#fff;font-size:12px;font-weight:850;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;z-index:7}.instagram-action-row{padding:11px 14px 6px;display:flex;align-items:center;justify-content:space-between}.instagram-action-left{display:flex;align-items:center;gap:18px}.instagram-action-row button{width:31px;height:31px;border:0;background:transparent;color:#fff;display:grid;place-items:center;padding:0}.instagram-action-row button.liked{color:#ff3040}.instagram-action-row .active-action{color:#f5c76b}.instagram-engagement-line{padding:0 14px 7px;color:#fff;font-size:14px}.instagram-bottom-caption{padding:0 14px 4px;margin:0;font-size:15px;line-height:1.45;color:rgba(255,255,255,.9)}.instagram-view-comments{display:block;border:0;background:transparent;color:rgba(255,255,255,.52);font-size:14px;padding:4px 14px 12px;text-align:left}.community-text-card{border:1px solid rgba(245,199,107,.18);border-radius:28px;background:linear-gradient(145deg,rgba(245,199,107,.13),rgba(255,255,255,.035),rgba(0,0,0,.32));padding:24px 22px}.community-text-type{display:inline-flex;border:1px solid rgba(245,199,107,.34);border-radius:999px;background:rgba(245,199,107,.10);color:#f5c76b;padding:8px 11px;text-transform:uppercase;font-size:11px;font-weight:1000;margin-bottom:16px}.community-text-main{margin:0;white-space:pre-line;color:#fff;line-height:1.35;font-weight:800;font-size:clamp(20px,4vw,36px)}.vip-verified-badge{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:999px;margin-left:5px;color:#130d05;background:linear-gradient(180deg,#ffe39b,#e9b348);vertical-align:-3px}.community-comment-sheet-backdrop{position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.58);backdrop-filter:blur(5px);display:grid;align-items:end}.community-comment-sheet{width:min(720px,100%);max-height:min(82dvh,720px);margin:0 auto;border:1px solid rgba(255,255,255,.14);border-radius:30px 30px 0 0;background:linear-gradient(180deg,rgba(19,19,25,.985),rgba(8,8,12,.985));box-shadow:0 -24px 90px rgba(0,0,0,.65);padding:18px 18px calc(18px + env(safe-area-inset-bottom));display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:14px}.comment-sheet-head{display:flex;align-items:center;justify-content:space-between}.comment-sheet-head h3{margin:0;font-size:clamp(26px,6vw,42px)}.comment-sheet-close{border:0;background:rgba(255,255,255,.08);color:#fff;border-radius:999px;width:52px;height:52px;display:grid;place-items:center}.comment-list{display:grid;align-content:start;gap:12px;overflow-y:auto;min-height:180px}.comment-row{display:grid;grid-template-columns:38px 1fr;gap:10px}.comment-avatar{width:38px;height:38px;border-radius:999px;display:grid;place-items:center;background:linear-gradient(180deg,#ffe39b,#e9b348);color:#130d05;font-weight:950;overflow:hidden}.comment-avatar img{width:100%;height:100%;object-fit:cover}.comment-bubble{border:1px solid rgba(255,255,255,.10);border-radius:18px;background:rgba(255,255,255,.055);padding:10px 12px}.comment-bubble strong{display:block;font-size:14px}.comment-bubble p{margin:4px 0 0;color:rgba(255,255,255,.84);line-height:1.35}.comment-row.pending{opacity:.72}.comment-form{display:grid;grid-template-columns:1fr auto;gap:10px}.comment-form input{height:50px;border:1px solid rgba(255,255,255,.14);border-radius:999px;background:rgba(255,255,255,.07);color:#fff;padding:0 16px;font:inherit}.comment-form button{height:50px;border:0;border-radius:999px;background:linear-gradient(180deg,#ffe39b,#e9b348);color:#130d05;font-weight:950;padding:0 18px}.comment-empty{color:rgba(255,255,255,.66);text-align:center;padding:30px 12px;font-size:18px}.instagram-toast{position:fixed;left:50%;bottom:92px;transform:translateX(-50%);z-index:2147483647;border:1px solid rgba(245,199,107,.28);border-radius:999px;background:rgba(14,14,18,.95);color:#fff;padding:12px 16px;display:flex;gap:8px}.vip-lock-backdrop{position:fixed;inset:0;z-index:2147483646;background:rgba(0,0,0,.68);display:grid;place-items:center;padding:18px}.vip-lock-modal{position:relative;max-width:420px;border:1px solid rgba(245,199,107,.28);border-radius:28px;background:linear-gradient(180deg,#17171d,#09090c);padding:28px;color:#fff}.vip-lock-close{position:absolute;right:12px;top:12px;border:0;background:rgba(255,255,255,.08);color:#fff;border-radius:999px;width:38px;height:38px}.vip-lock-cta{display:block;margin-top:18px;border-radius:16px;background:linear-gradient(180deg,#ffe39b,#e9b348);color:#130d05;text-align:center;text-decoration:none;font-weight:950;padding:14px}@media(max-width:768px){.home-insta-feed{gap:14px;margin-left:calc(50% - 50vw);margin-right:calc(50% - 50vw);width:100vw;max-width:100vw}.instagram-post-card{border-left:0;border-right:0;border-radius:0}.instagram-reel-media{min-height:58vh}.community-feed-video{min-height:58vh}.comment-form{grid-template-columns:1fr}.comment-form button{width:100%}}`;
 
 function initials(name?: string | null) { return String(name || 'Aluno').trim().split(' ').slice(0, 2).map((part) => part[0]).join('').toUpperCase(); }
@@ -24,22 +25,62 @@ function VideoSurface({ post, index, soundOn, onToggleSound }: { post: FeedPost;
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [shouldLoad, setShouldLoad] = useState(index < PRIORITY_VIDEO_COUNT);
   const [ready, setReady] = useState(false);
+  const [visible, setVisible] = useState(index === 0);
   const title = post.exerciseTitle || 'Atividade vocal';
+
+  const playIfReady = useCallback(() => {
+    const video = videoRef.current;
+    if (!video || !visible || !shouldLoad) return;
+    video.muted = !soundOn;
+    const promise = video.play();
+    if (promise?.catch) promise.catch(() => undefined);
+  }, [visible, shouldLoad, soundOn]);
+
   useEffect(() => { if (index < PRIORITY_VIDEO_COUNT) setShouldLoad(true); }, [index]);
-  useEffect(() => { const video = videoRef.current; if (!video) return; video.muted = !soundOn; if (shouldLoad) { video.preload = 'auto'; try { video.load(); } catch {} } }, [shouldLoad, soundOn]);
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.muted = !soundOn;
+    if (shouldLoad && post.mediaUrl && !video.src) video.src = post.mediaUrl;
+    if (shouldLoad) {
+      video.preload = 'auto';
+      try { video.load(); } catch {}
+    }
+    playIfReady();
+  }, [shouldLoad, soundOn, post.mediaUrl, playIfReady]);
+
   useEffect(() => {
     const video = videoRef.current;
     if (!video || typeof IntersectionObserver === 'undefined') return;
     const observer = new IntersectionObserver(([entry]) => {
-      if (entry.isIntersecting || entry.boundingClientRect.top < window.innerHeight * 2.6) setShouldLoad(true);
-      if (entry.isIntersecting && entry.intersectionRatio >= 0.36) { document.querySelectorAll<HTMLVideoElement>('.community-feed-video').forEach((other) => { if (other !== video) other.pause(); }); video.muted = !soundOn; video.play().catch(() => undefined); }
-      else if (!entry.isIntersecting || entry.intersectionRatio < 0.16) video.pause();
+      const nearViewport = entry.isIntersecting || entry.boundingClientRect.top < window.innerHeight * 2.6;
+      if (nearViewport) setShouldLoad(true);
+      const active = entry.isIntersecting && entry.intersectionRatio >= 0.36;
+      setVisible(active);
+      if (active) {
+        document.querySelectorAll<HTMLVideoElement>('.community-feed-video').forEach((other) => { if (other !== video) other.pause(); });
+      } else if (!entry.isIntersecting || entry.intersectionRatio < 0.16) {
+        video.pause();
+      }
     }, { rootMargin: '1200px 0px 1200px 0px', threshold: [0, 0.16, 0.36, 0.72] });
     observer.observe(video);
     return () => observer.disconnect();
-  }, [soundOn]);
+  }, []);
+
+  useEffect(() => { playIfReady(); }, [playIfReady, ready, visible, shouldLoad]);
+
+  function markReady() {
+    setReady(true);
+    window.requestAnimationFrame(playIfReady);
+  }
+
   const showPoster = !ready;
-  return <>{post.posterUrl ? <img className={`feed-poster ${showPoster ? '' : 'is-hidden'}`} src={post.posterUrl} alt="" loading={index < PRIORITY_VIDEO_COUNT ? 'eager' : 'lazy'} /> : <div className={`feed-fallback-poster ${showPoster ? '' : 'is-hidden'}`}><span className="fallback-play">▶</span><div className="fallback-copy"><small>Prévia do dueto</small><strong>{title}</strong></div></div>}<video ref={videoRef} data-post-id={post.id} className={`community-feed-video ${ready ? 'is-ready' : ''}`} src={shouldLoad ? post.mediaUrl || undefined : undefined} poster={post.posterUrl || undefined} muted={!soundOn} loop playsInline preload={index < PRIORITY_VIDEO_COUNT ? 'auto' : shouldLoad ? 'auto' : 'metadata'} controls={false} onLoadedData={() => setReady(true)} onCanPlay={() => setReady(true)} /><button className="home-sound-toggle" type="button" onClick={onToggleSound}>{soundOn ? <Volume2 size={20} /> : <VolumeX size={20} />}</button>{post.exerciseTitle ? <div className="instagram-music-chip">♪ {post.exerciseTitle}</div> : null}</>;
+  return <>
+    {post.posterUrl ? <img className={`feed-poster ${showPoster ? '' : 'is-hidden'}`} src={post.posterUrl} alt="" loading={index < PRIORITY_VIDEO_COUNT ? 'eager' : 'lazy'} /> : <div className={`feed-fallback-poster ${showPoster ? '' : 'is-hidden'}`}><span className="fallback-play">▶</span><div className="fallback-copy"><small>Prévia do dueto</small><strong>{title}</strong></div></div>}
+    <video ref={videoRef} data-post-id={post.id} className={`community-feed-video ${ready ? 'is-ready' : ''}`} src={shouldLoad ? post.mediaUrl || undefined : undefined} poster={post.posterUrl || undefined} muted={!soundOn} autoPlay loop playsInline preload={index < PRIORITY_VIDEO_COUNT ? 'auto' : shouldLoad ? 'auto' : 'metadata'} controls={false} onLoadedData={markReady} onCanPlay={markReady} />
+    <button className="home-sound-toggle" type="button" onClick={onToggleSound}>{soundOn ? <Volume2 size={20} /> : <VolumeX size={20} />}</button>
+    {post.exerciseTitle ? <div className="instagram-music-chip">♪ {post.exerciseTitle}</div> : null}
+  </>;
 }
 
 function CommentSheet(props: { post: FeedPost | null; comments: Comment[]; loading: boolean; text: string; sending: boolean; onClose: () => void; onTextChange: (value: string) => void; onSubmit: (event: FormEvent) => void }) {
