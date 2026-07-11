@@ -53,6 +53,7 @@ import './ear-training-reference.css';
 import './ear-piano-no-hint.css';
 import './ear6-premium-final-spacing.css';
 import './feed-desktop-restore.css';
+import './duet-review-mobile-restore.css';
 import { EarPianoDragOnlyGuard } from '@/components/ear-piano-drag-only-guard';
 import { OnboardingReturnGuard } from '@/components/onboarding-return-guard';
 import { AnalyticsPageTracker } from '@/components/analytics-page-tracker';
