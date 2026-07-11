@@ -23,9 +23,10 @@ function waitForSeek(media: HTMLMediaElement, timeoutMs = 1200) { return new Pro
 function withFullMedia(url: string) { if (!url) return url; const separator = url.includes('?') ? '&' : '?'; return `${url}${separator}full=1`; }
 async function decodeBlob(context: AudioContext, blob: Blob) { const arrayBuffer = await blob.arrayBuffer(); return context.decodeAudioData(arrayBuffer.slice(0)); }
 async function decodeReferenceBuffer(context: AudioContext, url: string) { const response = await fetch(withFullMedia(url), { cache: 'reload' }); if (!response.ok) throw new Error(`reference_decode_fetch_failed:${response.status}`); const arrayBuffer = await response.arrayBuffer(); return context.decodeAudioData(arrayBuffer.slice(0)); }
-function prepareGraphMedia(media: HTMLMediaElement) { media.preload = 'auto'; media.volume = 1; media.muted = false; if ('playsInline' in media) (media as HTMLVideoElement).playsInline = true; }
+function prepareGraphMedia(media: HTMLMediaElement) { media.preload = 'auto'; media.volume = 1; media.muted = false; media.playbackRate = 1; if ('playsInline' in media) (media as HTMLVideoElement).playsInline = true; }
 function clampOffset(value: number) { return Math.max(-900, Math.min(900, Number.isFinite(value) ? value : 0)); }
 function compensatedOffset(value: number) { return clampOffset(value + VOICE_CAPTURE_COMPENSATION_MS); }
+function resetPlaybackRate(media?: HTMLMediaElement | null) { if (!media) return; try { media.playbackRate = 1; } catch {} }
 
 export class DuetPreviewEngine {
   readonly audio: DuetAudioEngine;
@@ -38,6 +39,7 @@ export class DuetPreviewEngine {
   private referenceOffsetMs = 0;
   private delayedStartTimer: number | null = null;
   private driftFrame: number | null = null;
+  private mediaDriftFrame: number | null = null;
   private timelineStartAt = 0;
   private timelineDuration = 0;
   private referenceStartedAt = 0;
@@ -97,7 +99,21 @@ export class DuetPreviewEngine {
     if (faders.reference > 0) { if (offsetSeconds >= 0) { this.referenceStartedAt = startAt + offsetSeconds; this.audio.startReferenceBufferAt(startAt + offsetSeconds, 0); } else { this.referenceStartedAt = startAt; this.audio.startReferenceBufferAt(startAt, Math.abs(offsetSeconds)); } }
     this.delayedStartTimer = window.setTimeout(() => { if (!this.playing) return; visual.play().catch(() => undefined); this.startVisualClockGuard(); }, Math.round(startDelaySeconds * 1000));
   }
-  pause() { this.playing = false; this.clearDelayedStart(); this.stopVisualClockGuard(); this.audio.stopVoiceBuffer(); this.audio.stopReferenceBuffer(); try { this.refs.visual.pause(); } catch {}; try { this.refs.voice.pause(); } catch {}; try { this.refs.reference.pause(); } catch {}; try { this.fallbackVoice?.pause(); } catch {}; try { this.fallbackReference?.pause(); } catch {}; }
+  pause() {
+    this.playing = false;
+    this.clearDelayedStart();
+    this.stopVisualClockGuard();
+    this.stopMediaElementClockGuard();
+    this.audio.stopVoiceBuffer();
+    this.audio.stopReferenceBuffer();
+    try { this.refs.visual.pause(); } catch {}
+    try { this.refs.voice.pause(); } catch {}
+    try { this.refs.reference.pause(); } catch {}
+    try { this.fallbackVoice?.pause(); } catch {}
+    try { this.fallbackReference?.pause(); } catch {}
+    resetPlaybackRate(this.fallbackVoice);
+    resetPlaybackRate(this.fallbackReference);
+  }
   setReferenceOffsetMs(value: number) { this.referenceOffsetMs = clampOffset(value); }
   setFaders(values: Partial<DuetFaderValues>) { this.audio.setFaders(values); if (!this.playing || this.referenceMode !== 'media-element') return; const faders = this.audio.getFaders(); if (this.fallbackVoice) this.syncTrackPlaybackState(this.fallbackVoice, faders.voice); if (this.fallbackReference) this.syncTrackPlaybackState(this.fallbackReference, faders.reference); }
   autoMix() { this.setFaders({ voice: 110, reference: 70 }); }
@@ -107,15 +123,52 @@ export class DuetPreviewEngine {
   private async playMediaElementFallback() {
     const visual = this.refs.visual; const voice = this.fallbackVoice || this.refs.voice; const reference = this.fallbackReference || this.refs.reference; const faders = this.audio.getFaders(); const offsetSeconds = compensatedOffset(this.referenceOffsetMs) / 1000;
     try { visual.pause(); voice.pause(); reference.pause(); } catch {}; try { visual.currentTime = 0; } catch {}; try { voice.currentTime = 0; } catch {}; try { reference.currentTime = offsetSeconds < 0 ? Math.abs(offsetSeconds) : 0; } catch {};
+    resetPlaybackRate(voice); resetPlaybackRate(reference);
     await Promise.all([waitForSeek(visual), waitForSeek(voice), waitForSeek(reference)]);
     visual.muted = true; visual.volume = 0; voice.volume = 1; voice.muted = false; reference.volume = 1; reference.muted = false;
     this.playing = true; this.timelineStartAt = this.audio.context.currentTime + 0.08; this.voiceStartedAt = this.timelineStartAt; this.referenceStartedAt = offsetSeconds >= 0 ? this.timelineStartAt + offsetSeconds : this.timelineStartAt; this.audio.stopReferenceBuffer();
     const start = () => { if (!this.playing) return; void visual.play().catch(() => undefined); if (faders.voice > 0) void voice.play().catch(() => undefined); if (offsetSeconds <= 0 && faders.reference > 0) void reference.play().catch(() => undefined); this.startVisualClockGuard(); this.startMediaElementClockGuard(); };
     this.delayedStartTimer = window.setTimeout(() => { start(); if (offsetSeconds > 0 && faders.reference > 0) window.setTimeout(() => { if (!this.playing) return; reference.play().catch(() => undefined); }, Math.round(offsetSeconds * 1000)); }, 80);
   }
-  private startVisualClockGuard() { this.stopVisualClockGuard(); const tick = () => { if (!this.playing) return; const elapsed = Math.max(0, this.audio.context.currentTime - this.timelineStartAt); if (this.timelineDuration && elapsed > this.timelineDuration + 0.25) { this.pause(); return; } const drift = (this.refs.visual.currentTime || 0) - elapsed; if (Math.abs(drift) > 0.045 && elapsed < (this.refs.visual.duration || Number.POSITIVE_INFINITY)) { try { this.refs.visual.currentTime = elapsed; } catch {} } this.driftFrame = requestAnimationFrame(tick); }; this.driftFrame = requestAnimationFrame(tick); }
-  private startMediaElementClockGuard() { const tick = () => { if (!this.playing || this.referenceMode !== 'media-element') return; const elapsed = Math.max(0, this.audio.context.currentTime - this.timelineStartAt); const effectiveOffsetSeconds = compensatedOffset(this.referenceOffsetMs) / 1000; const targetVoice = elapsed; const targetReference = Math.max(0, elapsed - effectiveOffsetSeconds); const voice = this.fallbackVoice; const reference = this.fallbackReference; if (voice && Math.abs((voice.currentTime || 0) - targetVoice) > 0.055) { try { voice.currentTime = targetVoice; } catch {} } if (reference && Math.abs((reference.currentTime || 0) - targetReference) > 0.055) { try { reference.currentTime = targetReference; } catch {} } requestAnimationFrame(tick); }; requestAnimationFrame(tick); }
+  private startVisualClockGuard() { this.stopVisualClockGuard(); const tick = () => { if (!this.playing) return; const elapsed = Math.max(0, this.audio.context.currentTime - this.timelineStartAt); if (this.timelineDuration && elapsed > this.timelineDuration + 0.25) { this.pause(); return; } const drift = (this.refs.visual.currentTime || 0) - elapsed; if (Math.abs(drift) > 0.12 && elapsed < (this.refs.visual.duration || Number.POSITIVE_INFINITY)) { try { this.refs.visual.currentTime = elapsed; } catch {} } this.driftFrame = requestAnimationFrame(tick); }; this.driftFrame = requestAnimationFrame(tick); }
+  private startMediaElementClockGuard() {
+    this.stopMediaElementClockGuard();
+    let lastHardSyncAt = 0;
+    const tick = () => {
+      if (!this.playing || this.referenceMode !== 'media-element') return;
+      const elapsed = Math.max(0, this.audio.context.currentTime - this.timelineStartAt);
+      const effectiveOffsetSeconds = compensatedOffset(this.referenceOffsetMs) / 1000;
+      const targetVoice = elapsed;
+      const targetReference = Math.max(0, elapsed - effectiveOffsetSeconds);
+      const voice = this.fallbackVoice;
+      const reference = this.fallbackReference;
+      const now = performance.now();
+
+      const gentlyCorrect = (media: HTMLMediaElement | null, target: number) => {
+        if (!media || media.paused) return;
+        const drift = (media.currentTime || 0) - target;
+        const absoluteDrift = Math.abs(drift);
+        if (absoluteDrift > 0.42 && now - lastHardSyncAt > 1200) {
+          try { media.currentTime = target; } catch {}
+          resetPlaybackRate(media);
+          lastHardSyncAt = now;
+          return;
+        }
+        if (absoluteDrift > 0.09) {
+          try { media.playbackRate = drift > 0 ? 0.97 : 1.03; } catch {}
+        } else if (absoluteDrift < 0.035) {
+          resetPlaybackRate(media);
+        }
+      };
+
+      gentlyCorrect(voice, targetVoice);
+      gentlyCorrect(reference, targetReference);
+      this.mediaDriftFrame = requestAnimationFrame(tick);
+    };
+    this.mediaDriftFrame = requestAnimationFrame(tick);
+  }
   private stopVisualClockGuard() { if (this.driftFrame) cancelAnimationFrame(this.driftFrame); this.driftFrame = null; }
-  private syncTrackPlaybackState(media: HTMLMediaElement, faderValue: number) { media.volume = 1; media.muted = false; if (faderValue <= 0) { try { media.pause(); } catch {}; return; } if (media.paused && !this.refs.visual.paused) { try { media.currentTime = this.refs.visual.currentTime || 0; } catch {}; media.play().catch(() => undefined); } }
+  private stopMediaElementClockGuard() { if (this.mediaDriftFrame) cancelAnimationFrame(this.mediaDriftFrame); this.mediaDriftFrame = null; resetPlaybackRate(this.fallbackVoice); resetPlaybackRate(this.fallbackReference); }
+  private syncTrackPlaybackState(media: HTMLMediaElement, faderValue: number) { media.volume = 1; media.muted = false; if (faderValue <= 0) { try { media.pause(); } catch {}; return; } if (media.paused && !this.refs.visual.paused) { try { media.currentTime = this.refs.visual.currentTime || 0; } catch {}; resetPlaybackRate(media); media.play().catch(() => undefined); } }
   private clearDelayedStart() { if (this.delayedStartTimer) window.clearTimeout(this.delayedStartTimer); this.delayedStartTimer = null; }
 }
