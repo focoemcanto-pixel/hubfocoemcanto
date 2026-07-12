@@ -92,7 +92,7 @@ function createRecorder(stream: MediaStream, kind: 'video' | 'audio'): RecorderH
     chunks,
     mimeType: recorder.mimeType || mimeType,
     start: () => {
-      if (kind === 'audio' && isSafariLike()) recorder.start();
+      if (isSafariLike()) recorder.start();
       else recorder.start(kind === 'audio' ? 1000 : 500);
     },
     stop: () => new Promise((resolve) => {
@@ -105,7 +105,7 @@ function createRecorder(stream: MediaStream, kind: 'video' | 'audio'): RecorderH
         resolve(chunks.length ? new Blob(chunks, { type: recorder.mimeType || mimeType || undefined }) : null);
       };
 
-      if (!(kind === 'audio' && isSafariLike())) {
+      if (!isSafariLike()) {
         try { recorder.requestData(); } catch {}
       }
 
@@ -115,7 +115,7 @@ function createRecorder(stream: MediaStream, kind: 'video' | 'audio'): RecorderH
         } catch {
           resolve(null);
         }
-      }, kind === 'audio' && isSafariLike() ? 220 : 100);
+      }, isSafariLike() ? 220 : 100);
     }),
   };
 }
@@ -288,10 +288,19 @@ export class DuetRecorderEngine {
     this.stopDrawing = startCanvasDraw({ canvas, camera, reference: referenceVideo, frameRate: this.options.frameRate });
     this.canvasStream = (canvas as CapturableCanvas).captureStream(this.options.frameRate);
     const canvasVideoTracks = this.canvasStream.getVideoTracks();
+    const cameraVideoTracks = this.cameraStream.getVideoTracks();
+    const micAudioTracks = this.microphoneStream.getAudioTracks();
 
-    this.cameraRecorder = createRecorder(new MediaStream(this.cameraStream.getVideoTracks()), 'video');
+    // Safari/iPhone is considerably more reliable when AAC is recorded inside
+    // a normal MP4 video container. Audio-only MediaRecorder files can contain
+    // intermittent silent sections even when the live microphone track is fine.
+    const cameraRecordingStream = isSafariLike()
+      ? new MediaStream([...cameraVideoTracks, ...micAudioTracks])
+      : new MediaStream(cameraVideoTracks);
+
+    this.cameraRecorder = createRecorder(cameraRecordingStream, 'video');
     this.canvasRecorder = createRecorder(new MediaStream(canvasVideoTracks), 'video');
-    this.voiceRecorder = createRecorder(this.microphoneStream, 'audio');
+    this.voiceRecorder = isSafariLike() ? null : createRecorder(this.microphoneStream, 'audio');
 
     this.startedAt = Date.now();
     this.cameraRecorder?.start();
@@ -308,11 +317,13 @@ export class DuetRecorderEngine {
     try { referenceVideo.pause(); } catch {}
     try { this.stopDrawing?.(); } catch {}
 
-    const [cameraBlob, canvasBlob, voiceBlob] = await Promise.all([
+    const [cameraBlob, canvasBlob, recordedVoiceBlob] = await Promise.all([
       this.cameraRecorder?.stop() ?? Promise.resolve(null),
       this.canvasRecorder?.stop() ?? Promise.resolve(null),
       this.voiceRecorder?.stop() ?? Promise.resolve(null),
     ]);
+
+    const voiceBlob = recordedVoiceBlob || (isSafariLike() ? cameraBlob : null);
 
     const result: DuetRecorderEngineResult = {
       cameraBlob,
@@ -327,13 +338,13 @@ export class DuetRecorderEngine {
       mimeTypes: {
         camera: this.cameraRecorder?.mimeType,
         canvas: this.canvasRecorder?.mimeType,
-        voice: this.voiceRecorder?.mimeType,
+        voice: this.voiceRecorder?.mimeType || (isSafariLike() ? this.cameraRecorder?.mimeType : undefined),
         safePublish: undefined,
       },
       diagnostics: {
         cameraChunks: this.cameraRecorder?.chunks.length || 0,
         canvasChunks: this.canvasRecorder?.chunks.length || 0,
-        voiceChunks: this.voiceRecorder?.chunks.length || 0,
+        voiceChunks: this.voiceRecorder?.chunks.length || (isSafariLike() ? this.cameraRecorder?.chunks.length || 0 : 0),
         safePublishChunks: 0,
         hasMicrophoneTrack: Boolean(this.microphoneStream?.getAudioTracks().length),
         hasCanvasVideoTrack: Boolean(this.canvasStream?.getVideoTracks().length),
