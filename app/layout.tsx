@@ -58,6 +58,7 @@ import { EarPianoDragOnlyGuard } from '@/components/ear-piano-drag-only-guard';
 import { OnboardingReturnGuard } from '@/components/onboarding-return-guard';
 import { AnalyticsPageTracker } from '@/components/analytics-page-tracker';
 import { LoginRecoveryLinkInjector } from '@/components/login-recovery-link-injector';
+import { CommunityFeedAudioGuard } from '@/components/community-feed-audio-guard';
 import { getBrandingMetadata } from '@/lib/seo/branding-metadata';
 
 export async function generateMetadata() {
@@ -69,6 +70,7 @@ export default function RootLayout(props: { children: React.ReactNode }) {
     <html lang="pt-BR">
       <body>
         <EarPianoDragOnlyGuard />
+        <CommunityFeedAudioGuard />
         <Suspense fallback={null}>
           <OnboardingReturnGuard />
           <AnalyticsPageTracker />
