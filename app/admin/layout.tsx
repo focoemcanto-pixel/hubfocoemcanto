@@ -4,10 +4,12 @@ import './admin-redesign.css';
 import './module-settings-overrides.css';
 import './dashboard-premium.css';
 import './admin-extras.css';
+import './foco-live/foco-live.css';
 import '../app-premium.css';
 
 const navItems = [
   { href: '/admin', label: 'Dashboard', icon: 'D' },
+  { href: '/admin/foco-live', label: 'Foco Live', icon: 'L' },
   { href: '/admin/produtos', label: 'Produtos', icon: 'P' },
   { href: '/admin/alunos', label: 'Alunos', icon: 'A' },
   { href: '/admin/premium', label: 'Assinaturas', icon: 'S' },
