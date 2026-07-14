@@ -26,16 +26,15 @@ export async function POST(request: NextRequest, context: { params: Promise<{ sl
     if (error || !live) return NextResponse.json({ error: 'Live não encontrada.' }, { status: 404 });
 
     const accessEmail = request.cookies.get('hub_access_email')?.value;
-    const isHost = input.mode === 'host';
-    if (isHost && !accessEmail) {
-      return NextResponse.json({ error: 'Acesso de host não autorizado.' }, { status: 401 });
-    }
+    const requestedHost = input.mode === 'host';
+    const isHost = requestedHost && Boolean(accessEmail);
+    const effectiveMode = isHost ? 'host' : accessEmail && input.mode === 'student' ? 'student' : 'guest';
 
     if (!isHost && live.status !== 'live') {
       const message = live.status === 'ended'
         ? 'Esta transmissão já foi encerrada.'
         : 'A transmissão ainda não começou.';
-      return NextResponse.json({ error: message }, { status: 403 });
+      return NextResponse.json({ error: message, fallbackMode: requestedHost ? 'guest' : undefined }, { status: 403 });
     }
 
     if (isHost && !['draft', 'scheduled', 'live', 'ended'].includes(live.status)) {
@@ -45,10 +44,10 @@ export async function POST(request: NextRequest, context: { params: Promise<{ sl
     if (!live.daily_room_name || !live.daily_room_url) {
       return NextResponse.json({ error: 'Sala de vídeo ainda não configurada.' }, { status: 409 });
     }
-    if (!isHost && input.mode === 'guest' && !live.guest_access_enabled) {
+    if (!isHost && effectiveMode === 'guest' && !live.guest_access_enabled) {
       return NextResponse.json({ error: 'A entrada como convidado não está habilitada.' }, { status: 403 });
     }
-    if (!isHost && live.access_type === 'restricted' && input.mode === 'guest') {
+    if (!isHost && live.access_type === 'restricted' && effectiveMode === 'guest') {
       return NextResponse.json({ error: 'Esta live é exclusiva para alunos autorizados.' }, { status: 403 });
     }
 
@@ -91,6 +90,8 @@ export async function POST(request: NextRequest, context: { params: Promise<{ sl
       roomUrl: live.daily_room_url,
       token: token.token,
       isHost,
+      effectiveMode,
+      hostFallback: requestedHost && !isHost,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Não foi possível entrar na live.';
