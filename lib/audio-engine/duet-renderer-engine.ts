@@ -147,7 +147,10 @@ export class DuetRendererEngine {
     let stopped = false;
     const stop = () => { if (stopped) return; stopped = true; try { recorder.requestData(); } catch {} try { visual.pause(); } catch {} try { audioSource.stop(); } catch {} window.setTimeout(() => { try { if (recorder.state === 'recording') recorder.stop(); } catch {} }, 240); };
     recorder.start(500); await audioContext.resume().catch(() => undefined); visual.currentTime = 0; audioSource.start(audioContext.currentTime); await visual.play();
-    visual.onended = () => window.setTimeout(stop, 350); window.setTimeout(stop, Math.max(renderedAudio.durationSeconds, visual.duration || 0, 1) * 1000 + 1200);
+    // Do not stop when the visual track reports `ended`: some browser-recorded
+    // blobs expose an incorrect duration near one second even though the mixed
+    // audio is complete. Keep exporting until the longest known media duration.
+    window.setTimeout(stop, Math.max(renderedAudio.durationSeconds, visual.duration || 0, 1) * 1000 + 1200);
     const blob = await done; videoCapture.stop(); await audioContext.close().catch(() => undefined); URL.revokeObjectURL(visualUrl);
     if (blob.size < 1000) throw new Error(`rendered_video_empty:${blob.size}`);
     return { blob, mimeType: blob.type || recorder.mimeType || mimeType || 'video/webm', durationSeconds: renderedAudio.durationSeconds, referenceIncluded: renderedAudio.referenceIncluded };
