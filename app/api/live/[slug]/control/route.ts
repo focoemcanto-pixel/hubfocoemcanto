@@ -4,6 +4,22 @@ import { createAdminClient } from '@/lib/supabase/admin';
 
 export const dynamic = 'force-dynamic';
 
+function normalizeUrl(value: unknown) {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  if (!trimmed) return trimmed;
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
+
+const normalizedUrl = z.preprocess(normalizeUrl, z.string().url());
+const optionalNormalizedUrl = z.preprocess(
+  (value) => {
+    if (value === null || value === undefined || value === '') return null;
+    return normalizeUrl(value);
+  },
+  z.string().url().nullable(),
+);
+
 const offerPayload = z.object({
   id: z.string().uuid(),
   name: z.string(),
@@ -11,9 +27,9 @@ const offerPayload = z.object({
   description: z.string().nullable().optional(),
   price: z.string().nullable().optional(),
   old_price: z.string().nullable().optional(),
-  checkout_url: z.string().url(),
+  checkout_url: normalizedUrl,
   cta_label: z.string().nullable().optional(),
-  image_url: z.string().nullable().optional(),
+  image_url: optionalNormalizedUrl.optional(),
   badge: z.string().nullable().optional(),
 });
 
@@ -91,6 +107,12 @@ export async function POST(request: NextRequest, context: { params: Promise<{ sl
     if (updateError) throw updateError;
     return NextResponse.json({ live: updated });
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'O link da oferta é inválido. Edite a oferta e informe um endereço válido.' },
+        { status: 400 },
+      );
+    }
     const message = error instanceof Error ? error.message : 'Não foi possível controlar a live.';
     return NextResponse.json({ error: message }, { status: 400 });
   }
