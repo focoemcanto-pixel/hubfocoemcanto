@@ -4,10 +4,29 @@ import { createAdminClient } from '@/lib/supabase/admin';
 
 export const dynamic = 'force-dynamic';
 
+const offerPayload = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  headline: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
+  price: z.string().nullable().optional(),
+  old_price: z.string().nullable().optional(),
+  checkout_url: z.string().url(),
+  cta_label: z.string().nullable().optional(),
+  image_url: z.string().nullable().optional(),
+  badge: z.string().nullable().optional(),
+});
+
 const schema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('start') }),
   z.object({ action: z.literal('end') }),
-  z.object({ action: z.literal('scene'), scene: z.enum(['waiting', 'class', 'screen', 'offer', 'notice']), offer: z.record(z.string(), z.any()).optional() }),
+  z.object({ action: z.literal('scene'), scene: z.enum(['waiting', 'class', 'screen', 'offer', 'notice']) }),
+  z.object({
+    action: z.literal('offer'),
+    mode: z.enum(['split', 'banner', 'floating', 'hidden']),
+    offer: offerPayload.nullable(),
+    participantCount: z.number().int().min(0).max(10000).optional(),
+  }),
 ]);
 
 export async function POST(request: NextRequest, context: { params: Promise<{ slug: string }> }) {
@@ -28,17 +47,38 @@ export async function POST(request: NextRequest, context: { params: Promise<{ sl
     if (error || !live) return NextResponse.json({ error: 'Live não encontrada.' }, { status: 404 });
 
     const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+
     if (input.action === 'start') {
       patch.status = 'live';
       patch.current_scene = 'class';
     }
+
     if (input.action === 'end') {
       patch.status = 'ended';
       patch.ends_at = new Date().toISOString();
     }
+
     if (input.action === 'scene') {
       patch.current_scene = input.scene;
-      if (input.offer) patch.offer_config = input.offer;
+    }
+
+    if (input.action === 'offer') {
+      const visible = input.mode !== 'hidden' && Boolean(input.offer);
+      patch.offer_config = visible
+        ? { offer: input.offer, mode: input.mode, displayed_at: new Date().toISOString() }
+        : {};
+      patch.current_scene = input.mode === 'split' ? 'offer' : live.current_scene === 'offer' ? 'class' : live.current_scene;
+
+      const { error: eventError } = await supabase.from('live_offer_events').insert({
+        live_session_id: live.id,
+        offer_id: input.offer?.id || null,
+        event_type: visible ? 'display' : 'hide',
+        display_mode: input.mode,
+        participant_count: input.participantCount ?? null,
+        metadata: { controlled_by: accessEmail },
+      });
+
+      if (eventError && eventError.code !== '42P01') throw eventError;
     }
 
     const { data: updated, error: updateError } = await supabase
