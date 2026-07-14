@@ -4,6 +4,7 @@ import FocoLiveRoom from './room';
 import OfferRuntimeFix from './offer-runtime-fix';
 import './room.css';
 import './host-studio.css';
+import './split-offer-fix.css';
 
 export const dynamic = 'force-dynamic';
 
