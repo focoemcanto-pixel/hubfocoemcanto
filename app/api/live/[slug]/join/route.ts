@@ -32,11 +32,16 @@ export async function POST(request: NextRequest, context: { params: Promise<{ sl
     }
 
     if (!isHost && live.status !== 'live') {
-      return NextResponse.json({ error: 'A transmissão ainda não começou.' }, { status: 403 });
+      const message = live.status === 'ended'
+        ? 'Esta transmissão já foi encerrada.'
+        : 'A transmissão ainda não começou.';
+      return NextResponse.json({ error: message }, { status: 403 });
     }
-    if (isHost && !['draft', 'scheduled', 'live'].includes(live.status)) {
-      return NextResponse.json({ error: 'Esta transmissão não pode mais ser iniciada.' }, { status: 403 });
+
+    if (isHost && !['draft', 'scheduled', 'live', 'ended'].includes(live.status)) {
+      return NextResponse.json({ error: 'Esta transmissão não pode ser aberta no estúdio.' }, { status: 403 });
     }
+
     if (!live.daily_room_name || !live.daily_room_url) {
       return NextResponse.json({ error: 'Sala de vídeo ainda não configurada.' }, { status: 409 });
     }
