@@ -51,7 +51,10 @@ export default async function FocoLiveDetailPage({ params }: { params: Promise<{
           <h1>{live.title}</h1>
           <p>{live.description || 'Configure, teste e compartilhe sua transmissão pelo Foco Live.'}</p>
         </div>
-        <a className="foco-live-secondary" href="/admin/foco-live">← Voltar para as lives</a>
+        <div className="foco-live-actions">
+          <a className="foco-live-secondary" href={`/admin/foco-live/${live.id}/analytics`}>Ver analytics</a>
+          <a className="foco-live-secondary" href="/admin/foco-live">← Voltar para as lives</a>
+        </div>
       </section>
 
       <section className="foco-live-stats">
@@ -84,7 +87,7 @@ export default async function FocoLiveDetailPage({ params }: { params: Promise<{
             <button type="button"><b>01</b><span><strong>Link para convidados</strong><small>/live/{live.slug}</small></span></button>
             <button type="button"><b>02</b><span><strong>Entrada como host</strong><small>/live/{live.slug}?host=1</small></span></button>
             <button type="button"><b>03</b><span><strong>Tipo de acesso</strong><small>{accessLabel(live.access_type)}</small></span></button>
-            <button type="button"><b>04</b><span><strong>Sala Daily</strong><small>{live.daily_room_url ? 'Criada e vinculada' : 'Não encontrada'}</small></span></button>
+            <a href={`/admin/foco-live/${live.id}/analytics`}><b>04</b><span><strong>Analytics de ofertas</strong><small>Exibições, alcance, cliques e CTR</small></span></a>
           </div>
         </article>
       </section>
