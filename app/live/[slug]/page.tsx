@@ -23,6 +23,31 @@ export default async function LivePage({ params }: { params: Promise<{ slug: str
     .eq('live_session_id', live.id)
     .order('sort_order');
 
-  const offers = (linked || []).map((item: any) => item.offer).filter(Boolean);
-  return <FocoLiveRoom slug={slug} initialLive={{ ...live, offers }} />;
+  const offers = (linked || [])
+    .map((item: any) => item.offer)
+    .filter(Boolean)
+    .map((offer: any) => ({
+      ...offer,
+      checkout_url: `/api/live/${slug}/offer-click/${offer.id}`,
+    }));
+
+  const persistedOffer = live.offer_config?.offer
+    ? {
+        ...live.offer_config.offer,
+        checkout_url: `/api/live/${slug}/offer-click/${live.offer_config.offer.id}`,
+      }
+    : null;
+
+  return (
+    <FocoLiveRoom
+      slug={slug}
+      initialLive={{
+        ...live,
+        offer_config: live.offer_config
+          ? { ...live.offer_config, offer: persistedOffer }
+          : {},
+        offers,
+      }}
+    />
+  );
 }
