@@ -40,7 +40,10 @@ export default async function FocoLiveAdminPage() {
           <h1>Sua central de transmissões, aulas e conversão.</h1>
           <p>Crie salas próprias, receba alunos ou convidados e controle ofertas, QR Codes, avisos e cenas em tempo real.</p>
         </div>
-        <a className="foco-live-primary" href="/admin/foco-live/nova">+ Criar nova live</a>
+        <div className="foco-live-actions">
+          <a className="foco-live-secondary" href="/admin/foco-live/ofertas">Biblioteca de ofertas</a>
+          <a className="foco-live-primary" href="/admin/foco-live/nova">+ Criar nova live</a>
+        </div>
       </section>
 
       <section className="foco-live-stats">
@@ -69,7 +72,7 @@ export default async function FocoLiveAdminPage() {
           <div className="foco-live-scene-list">
             <button><b>01</b><span><strong>Modo aula</strong><small>Vídeo + chat</small></span></button>
             <button><b>02</b><span><strong>Compartilhar tela</strong><small>Apresentação em destaque</small></span></button>
-            <button><b>03</b><span><strong>Exibir oferta</strong><small>CTA + QR Code + contador</small></span></button>
+            <a href="/admin/foco-live/ofertas"><b>03</b><span><strong>Biblioteca de ofertas</strong><small>Produtos, links e CTAs reutilizáveis</small></span></a>
             <button><b>04</b><span><strong>Mostrar aviso</strong><small>Mensagem instantânea</small></span></button>
           </div>
         </article>
