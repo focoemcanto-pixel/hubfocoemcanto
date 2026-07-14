@@ -94,7 +94,6 @@ export default function FocoLiveRoom({ slug, initialLive }: Props) {
 
       const call = DailyIframe.createCallObject({
         subscribeToTracksAutomatically: true,
-        dailyConfig: { experimentalChromeVideoMuteLightOff: true },
       });
       callRef.current = call;
       const sync = () => setParticipants({ ...call.participants() });
