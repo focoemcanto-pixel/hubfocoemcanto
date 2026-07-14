@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import { createAdminClient } from '@/lib/supabase/admin';
 import FocoLiveRoom from './room';
 import './room.css';
+import './host-studio.css';
 
 export const dynamic = 'force-dynamic';
 
