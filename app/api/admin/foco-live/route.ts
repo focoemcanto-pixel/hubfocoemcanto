@@ -11,6 +11,7 @@ const liveSchema = z.object({
   guestAccessEnabled: z.boolean().default(true),
   startsAt: z.string().datetime().optional().nullable(),
   recordingEnabled: z.boolean().default(false),
+  offerIds: z.array(z.string().uuid()).max(30).optional().default([]),
 });
 
 export async function POST(request: NextRequest) {
@@ -58,6 +59,20 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (error) throw error;
+
+    if (input.offerIds.length > 0) {
+      const links = input.offerIds.map((offerId, index) => ({
+        live_session_id: data.id,
+        offer_id: offerId,
+        sort_order: index,
+      }));
+      const { error: linkError } = await supabase.from('live_session_offers').insert(links);
+      if (linkError) {
+        await supabase.from('live_sessions').delete().eq('id', data.id);
+        throw linkError;
+      }
+    }
+
     return NextResponse.json({ live: data }, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Não foi possível criar a live.';
