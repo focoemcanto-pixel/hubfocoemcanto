@@ -29,14 +29,13 @@ type Live = {
   guest_fields?: { name?: boolean; email?: boolean; whatsapp?: boolean };
   starts_at?: string | null;
   current_scene?: string;
-  offer_config?: Record<string, any>;
+  offer_config?: { offer?: Offer | null; mode?: OfferMode; displayed_at?: string };
   offers?: Offer[];
 };
 
 type ChatMessage = { id: string; name: string; body: string; mine?: boolean };
-type Props = { slug: string; initialLive: Live };
-
 type HandRequest = { raised: boolean; name: string; requestedAt: number };
+type Props = { slug: string; initialLive: Live };
 
 function VideoTile({ participant, featured = false }: { participant: any; featured?: boolean }) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -45,17 +44,15 @@ function VideoTile({ participant, featured = false }: { participant: any; featur
   const audioTrack = participant?.tracks?.audio?.persistentTrack || participant?.audioTrack;
 
   useEffect(() => {
-    if (videoRef.current) {
-      videoRef.current.srcObject = videoTrack ? new MediaStream([videoTrack]) : null;
-      videoRef.current.play().catch(() => undefined);
-    }
+    if (!videoRef.current) return;
+    videoRef.current.srcObject = videoTrack ? new MediaStream([videoTrack]) : null;
+    videoRef.current.play().catch(() => undefined);
   }, [videoTrack]);
 
   useEffect(() => {
-    if (!participant?.local && audioRef.current) {
-      audioRef.current.srcObject = audioTrack ? new MediaStream([audioTrack]) : null;
-      audioRef.current.play().catch(() => undefined);
-    }
+    if (participant?.local || !audioRef.current) return;
+    audioRef.current.srcObject = audioTrack ? new MediaStream([audioTrack]) : null;
+    audioRef.current.play().catch(() => undefined);
   }, [audioTrack, participant?.local]);
 
   const name = participant?.user_name || (participant?.local ? 'Você' : 'Participante');
@@ -87,6 +84,9 @@ function OfferContent({ offer, compact = false }: { offer: Offer; compact?: bool
 
 export default function FocoLiveRoom({ slug, initialLive }: Props) {
   const callRef = useRef<any>(null);
+  const persistedOffer = initialLive.offer_config?.offer || null;
+  const persistedMode = initialLive.offer_config?.mode || 'hidden';
+
   const [isHost, setIsHost] = useState(false);
   const [joined, setJoined] = useState(false);
   const [joining, setJoining] = useState(false);
@@ -108,8 +108,8 @@ export default function FocoLiveRoom({ slug, initialLive }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [chatText, setChatText] = useState('');
   const [scene, setScene] = useState(initialLive.current_scene || 'waiting');
-  const [activeOffer, setActiveOffer] = useState<Offer | null>(null);
-  const [offerMode, setOfferMode] = useState<OfferMode>('hidden');
+  const [activeOffer, setActiveOffer] = useState<Offer | null>(persistedOffer);
+  const [offerMode, setOfferMode] = useState<OfferMode>(persistedMode);
   const [online, setOnline] = useState(true);
 
   const offers = initialLive.offers || [];
@@ -140,7 +140,8 @@ export default function FocoLiveRoom({ slug, initialLive }: Props) {
     setError('');
     try {
       const response = await fetch(`/api/live/${slug}/join`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email, whatsapp, mode: isHost ? 'host' : 'guest' }),
       });
       const payload = await response.json();
@@ -154,10 +155,9 @@ export default function FocoLiveRoom({ slug, initialLive }: Props) {
       call.on('participant-left', (eventData: any) => {
         sync();
         const sessionId = eventData?.participant?.session_id;
-        if (sessionId) {
-          setHandRequests((current) => { const next = { ...current }; delete next[sessionId]; return next; });
-          setFeaturedSessionId((current) => current === sessionId ? null : current);
-        }
+        if (!sessionId) return;
+        setHandRequests((current) => { const next = { ...current }; delete next[sessionId]; return next; });
+        setFeaturedSessionId((current) => current === sessionId ? null : current);
       });
       call.on('joined-meeting', sync);
       call.on('app-message', async (eventData: any) => {
@@ -180,6 +180,7 @@ export default function FocoLiveRoom({ slug, initialLive }: Props) {
         }
         if (data?.type === 'live-ended') setLiveStatus('ended');
       });
+
       await call.join({ url: payload.roomUrl, token: payload.token, userName: name });
       await call.setLocalAudio(isHost);
       await call.setLocalVideo(isHost);
@@ -187,17 +188,23 @@ export default function FocoLiveRoom({ slug, initialLive }: Props) {
       setCameraOn(isHost);
       sync();
       setScene(payload.live.currentScene || scene);
+      const saved = payload.live.offerConfig || {};
+      setActiveOffer(saved.offer || null);
+      setOfferMode(saved.mode || 'hidden');
       setLiveStatus(payload.live.status);
       setJoined(true);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Erro ao entrar na live.');
-    } finally { setJoining(false); }
+    } finally {
+      setJoining(false);
+    }
   }
 
   async function control(action: 'start' | 'end' | 'scene', nextScene?: string) {
     setError('');
     const response = await fetch(`/api/live/${slug}/control`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(action === 'scene' ? { action, scene: nextScene } : { action }),
     });
     const payload = await response.json();
@@ -207,11 +214,22 @@ export default function FocoLiveRoom({ slug, initialLive }: Props) {
     if (action === 'scene' && nextScene) { setScene(nextScene); callRef.current?.sendAppMessage({ type: 'scene', scene: nextScene }, '*'); }
   }
 
-  function displayOffer(offer: Offer | null, mode: OfferMode) {
-    setActiveOffer(offer); setOfferMode(mode);
-    if (mode === 'split') setScene('offer'); else if (scene === 'offer') setScene('class');
+  async function displayOffer(offer: Offer | null, mode: OfferMode) {
+    setError('');
+    const response = await fetch(`/api/live/${slug}/control`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'offer', offer, mode, participantCount: participantList.length }),
+    });
+    const payload = await response.json();
+    if (!response.ok) return setError(payload.error || 'Não foi possível exibir a oferta.');
+
+    setActiveOffer(offer);
+    setOfferMode(mode);
+    const nextScene = mode === 'split' ? 'offer' : scene === 'offer' ? 'class' : scene;
+    setScene(nextScene);
     callRef.current?.sendAppMessage({ type: 'offer-display', offer, mode }, '*');
-    callRef.current?.sendAppMessage({ type: 'scene', scene: mode === 'split' ? 'offer' : 'class' }, '*');
+    callRef.current?.sendAppMessage({ type: 'scene', scene: nextScene }, '*');
   }
 
   function moderate(sessionId: string, command: 'grant-audio' | 'mute-audio' | 'grant-camera' | 'stop-camera' | 'leave') {
@@ -222,38 +240,52 @@ export default function FocoLiveRoom({ slug, initialLive }: Props) {
   function featureParticipant(sessionId: string | null) {
     setFeaturedSessionId(sessionId);
     callRef.current?.sendAppMessage({ type: 'stage-focus', sessionId }, '*');
-    if (sessionId) {
-      moderate(sessionId, 'grant-audio');
-      moderate(sessionId, 'grant-camera');
-    }
+    if (sessionId) { moderate(sessionId, 'grant-audio'); moderate(sessionId, 'grant-camera'); }
   }
 
   async function toggleMic() {
     if (!isHost && !canSpeak) { setError('Levante a mão para pedir autorização ao host.'); return; }
-    const next = !micOn; await callRef.current?.setLocalAudio(next); setMicOn(next);
+    const next = !micOn;
+    await callRef.current?.setLocalAudio(next);
+    setMicOn(next);
   }
+
   async function toggleCamera() {
     if (!isHost && !canUseCamera) { setError('O host precisa convidar você ao palco para liberar a câmera.'); return; }
-    const next = !cameraOn; await callRef.current?.setLocalVideo(next); setCameraOn(next);
+    const next = !cameraOn;
+    await callRef.current?.setLocalVideo(next);
+    setCameraOn(next);
   }
+
   async function toggleShare() {
     try {
       if (sharing) await callRef.current?.stopScreenShare(); else await callRef.current?.startScreenShare();
-      setSharing(!sharing); if (!sharing && isHost) await control('scene', 'screen');
+      setSharing(!sharing);
+      if (!sharing && isHost) await control('scene', 'screen');
     } catch { setError('Não foi possível compartilhar a tela neste dispositivo.'); }
   }
+
   function toggleHand() {
-    const next = !raised; setRaised(next);
-    const sessionId = localParticipant?.session_id;
-    callRef.current?.sendAppMessage({ type: 'hand', raised: next, name, sessionId }, '*');
+    const next = !raised;
+    setRaised(next);
+    callRef.current?.sendAppMessage({ type: 'hand', raised: next, name, sessionId: localParticipant?.session_id }, '*');
   }
+
   function sendMessage(event: FormEvent) {
-    event.preventDefault(); const body = chatText.trim(); if (!body) return;
+    event.preventDefault();
+    const body = chatText.trim();
+    if (!body) return;
     setMessages((current) => [...current, { id: crypto.randomUUID(), name: 'Você', body, mine: true }]);
-    callRef.current?.sendAppMessage({ type: 'chat', name, body }, '*'); setChatText('');
+    callRef.current?.sendAppMessage({ type: 'chat', name, body }, '*');
+    setChatText('');
   }
+
   async function leave() {
-    await callRef.current?.leave(); await callRef.current?.destroy(); callRef.current = null; setJoined(false); setParticipants({});
+    await callRef.current?.leave();
+    await callRef.current?.destroy();
+    callRef.current = null;
+    setJoined(false);
+    setParticipants({});
   }
 
   if (!joined) {
@@ -313,7 +345,11 @@ export default function FocoLiveRoom({ slug, initialLive }: Props) {
             <button className={sidePanel === 'people' ? 'active' : ''} onClick={() => setSidePanel('people')}><Users size={17} /> Pessoas {isHost && Object.values(handRequests).some((item) => item.raised) && <i className="fl-hand-count">{Object.values(handRequests).filter((item) => item.raised).length}</i>}</button>
             {isHost && <button className={sidePanel === 'director' ? 'active' : ''} onClick={() => setSidePanel('director')}><Layers size={17} /> Direção</button>}
           </div>
-          {sidePanel === 'chat' ? <><div className="fl-chat-list">{!messages.length && <div className="fl-chat-empty"><MessageCircle size={28} /><strong>O chat está aberto</strong><p>Envie uma mensagem para a turma.</p></div>}{messages.map((message) => <div key={message.id} className={`fl-message${message.mine ? ' mine' : ''}`}><b>{message.name}</b><p>{message.body}</p></div>)}</div><form className="fl-chat-form" onSubmit={sendMessage}><input value={chatText} onChange={(event) => setChatText(event.target.value)} placeholder="Escreva uma mensagem…" /><button><Send size={18} /></button></form></> : sidePanel === 'people' ? (
+
+          {sidePanel === 'chat' ? <>
+            <div className="fl-chat-list">{!messages.length && <div className="fl-chat-empty"><MessageCircle size={28} /><strong>O chat está aberto</strong><p>Envie uma mensagem para a turma.</p></div>}{messages.map((message) => <div key={message.id} className={`fl-message${message.mine ? ' mine' : ''}`}><b>{message.name}</b><p>{message.body}</p></div>)}</div>
+            <form className="fl-chat-form" onSubmit={sendMessage}><input value={chatText} onChange={(event) => setChatText(event.target.value)} placeholder="Escreva uma mensagem…" /><button><Send size={18} /></button></form>
+          </> : sidePanel === 'people' ? (
             <div className="fl-people-list">
               {participantList.map((participant: any) => {
                 const id = participant.session_id;
@@ -335,7 +371,11 @@ export default function FocoLiveRoom({ slug, initialLive }: Props) {
             <span>DIREÇÃO AO VIVO</span><h3>Controle o que todos veem</h3>
             <button onClick={() => { featureParticipant(null); control('scene', 'class'); }}><Layers size={18} /> Modo aula</button>
             <button onClick={() => control('scene', 'screen')}><MonitorUp size={18} /> Apresentação</button>
-            <div className="fl-director-offers"><strong>OFERTAS DESTA LIVE</strong>{offers.length === 0 ? <p>Nenhuma oferta vinculada. Configure no admin da live.</p> : offers.map((item) => <article key={item.id}><div><b>{item.name}</b><small>{item.price || item.headline}</small></div><button onClick={() => displayOffer(item, 'split')}>Tela dividida</button><button onClick={() => displayOffer(item, 'banner')}>CTA na tela</button><button onClick={() => displayOffer(item, 'floating')}>Botão</button></article>)}{activeOffer && <button className="danger" onClick={() => displayOffer(null, 'hidden')}><X size={17} /> Ocultar oferta</button>}</div>
+            <div className="fl-director-offers">
+              <strong>OFERTAS DESTA LIVE</strong>
+              {offers.length === 0 ? <p>Nenhuma oferta vinculada. Configure no admin da live.</p> : offers.map((item) => <article key={item.id}><div><b>{item.name}</b><small>{item.price || item.headline}</small></div><button onClick={() => displayOffer(item, 'split')}>Tela dividida</button><button onClick={() => displayOffer(item, 'banner')}>CTA na tela</button><button onClick={() => displayOffer(item, 'floating')}>Botão</button></article>)}
+              {activeOffer && <button className="danger" onClick={() => displayOffer(null, 'hidden')}><X size={17} /> Ocultar oferta</button>}
+            </div>
             {liveStatus === 'live' ? <button className="danger" onClick={() => control('end')}><Square size={18} /> Encerrar transmissão</button> : <button onClick={() => control('start')}><Play size={18} /> Iniciar transmissão</button>}
           </div>}
         </aside>
