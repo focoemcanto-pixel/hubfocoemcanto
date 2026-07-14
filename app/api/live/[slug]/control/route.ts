@@ -4,20 +4,15 @@ import { createAdminClient } from '@/lib/supabase/admin';
 
 export const dynamic = 'force-dynamic';
 
-function normalizeUrl(value: unknown) {
-  if (typeof value !== 'string') return value;
+function normalizeUrl(value: string) {
   const trimmed = value.trim();
   if (!trimmed) return trimmed;
   return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
 }
 
-const normalizedUrl = z.preprocess(normalizeUrl, z.string().url());
-const optionalNormalizedUrl = z.preprocess(
-  (value) => {
-    if (value === null || value === undefined || value === '') return null;
-    return normalizeUrl(value);
-  },
-  z.string().url().nullable(),
+const optionalUrl = z.preprocess(
+  (value) => typeof value === 'string' && value.trim() ? normalizeUrl(value) : value,
+  z.string().url().nullable().optional(),
 );
 
 const offerPayload = z.object({
@@ -27,9 +22,9 @@ const offerPayload = z.object({
   description: z.string().nullable().optional(),
   price: z.string().nullable().optional(),
   old_price: z.string().nullable().optional(),
-  checkout_url: normalizedUrl,
+  checkout_url: z.preprocess((value) => typeof value === 'string' ? normalizeUrl(value) : value, z.string().url()),
   cta_label: z.string().nullable().optional(),
-  image_url: optionalNormalizedUrl.optional(),
+  image_url: optionalUrl,
   badge: z.string().nullable().optional(),
 });
 
@@ -65,20 +60,37 @@ export async function POST(request: NextRequest, context: { params: Promise<{ sl
     const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
 
     if (input.action === 'start') {
+      if (!['draft', 'scheduled', 'live', 'ended'].includes(live.status)) {
+        return NextResponse.json({ error: 'Esta transmissão não pode ser iniciada.' }, { status: 409 });
+      }
       patch.status = 'live';
       patch.current_scene = 'class';
+      patch.ends_at = null;
+      patch.offer_config = {};
     }
 
     if (input.action === 'end') {
+      if (live.status !== 'live') {
+        return NextResponse.json({ error: 'A transmissão não está ao vivo.' }, { status: 409 });
+      }
       patch.status = 'ended';
       patch.ends_at = new Date().toISOString();
+      patch.current_scene = 'waiting';
+      patch.offer_config = {};
     }
 
     if (input.action === 'scene') {
+      if (live.status !== 'live') {
+        return NextResponse.json({ error: 'Inicie a transmissão antes de trocar a cena.' }, { status: 409 });
+      }
       patch.current_scene = input.scene;
     }
 
     if (input.action === 'offer') {
+      if (live.status !== 'live') {
+        return NextResponse.json({ error: 'Inicie a transmissão antes de exibir uma oferta.' }, { status: 409 });
+      }
+
       const visible = input.mode !== 'hidden' && Boolean(input.offer);
       patch.offer_config = visible
         ? { offer: input.offer, mode: input.mode, displayed_at: new Date().toISOString() }
@@ -108,10 +120,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ sl
     return NextResponse.json({ live: updated });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'O link da oferta é inválido. Edite a oferta e informe um endereço válido.' },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: 'Confira os dados da oferta e tente novamente.' }, { status: 400 });
     }
     const message = error instanceof Error ? error.message : 'Não foi possível controlar a live.';
     return NextResponse.json({ error: message }, { status: 400 });
