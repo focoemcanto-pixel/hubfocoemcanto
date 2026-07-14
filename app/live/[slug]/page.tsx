@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import { createAdminClient } from '@/lib/supabase/admin';
 import FocoLiveRoom from './room';
+import OfferRuntimeFix from './offer-runtime-fix';
 import './room.css';
 import './host-studio.css';
 
@@ -39,15 +40,18 @@ export default async function LivePage({ params }: { params: Promise<{ slug: str
     : null;
 
   return (
-    <FocoLiveRoom
-      slug={slug}
-      initialLive={{
-        ...live,
-        offer_config: live.offer_config
-          ? { ...live.offer_config, offer: persistedOffer }
-          : {},
-        offers,
-      }}
-    />
+    <>
+      <OfferRuntimeFix slug={slug} />
+      <FocoLiveRoom
+        slug={slug}
+        initialLive={{
+          ...live,
+          offer_config: live.offer_config
+            ? { ...live.offer_config, offer: persistedOffer }
+            : {},
+          offers,
+        }}
+      />
+    </>
   );
 }
