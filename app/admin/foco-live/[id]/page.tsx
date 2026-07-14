@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation';
 import { createAdminClient } from '@/lib/supabase/admin';
+import OfferSelector from './offer-selector';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,12 +18,11 @@ type LiveRow = {
   current_scene: string;
 };
 
+type OfferRow = { id: string; name: string; headline: string | null; price: string | null };
+
 function dateLabel(value: string | null) {
   if (!value) return 'Data ainda não definida';
-  return new Date(value).toLocaleString('pt-BR', {
-    dateStyle: 'full',
-    timeStyle: 'short',
-  });
+  return new Date(value).toLocaleString('pt-BR', { dateStyle: 'full', timeStyle: 'short' });
 }
 
 function accessLabel(value: string) {
@@ -34,11 +34,11 @@ function accessLabel(value: string) {
 export default async function FocoLiveDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = createAdminClient();
-  const { data } = await supabase
-    .from('live_sessions')
-    .select('id,title,slug,description,status,access_type,guest_access_enabled,starts_at,daily_room_url,recording_enabled,current_scene')
-    .eq('id', id)
-    .maybeSingle();
+  const [{ data }, { data: offers }, { data: links }] = await Promise.all([
+    supabase.from('live_sessions').select('id,title,slug,description,status,access_type,guest_access_enabled,starts_at,daily_room_url,recording_enabled,current_scene').eq('id', id).maybeSingle(),
+    supabase.from('live_offers').select('id,name,headline,price').eq('is_active', true).order('created_at', { ascending: false }),
+    supabase.from('live_session_offers').select('offer_id').eq('live_session_id', id).order('sort_order'),
+  ]);
 
   if (!data) notFound();
   const live = data as LiveRow;
@@ -88,6 +88,12 @@ export default async function FocoLiveDetailPage({ params }: { params: Promise<{
           </div>
         </article>
       </section>
+
+      <OfferSelector
+        liveId={live.id}
+        offers={(offers || []) as OfferRow[]}
+        initialSelected={(links || []).map((item: any) => item.offer_id)}
+      />
     </main>
   );
 }

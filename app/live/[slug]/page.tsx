@@ -17,5 +17,12 @@ export default async function LivePage({ params }: { params: Promise<{ slug: str
 
   if (!live) notFound();
 
-  return <FocoLiveRoom slug={slug} initialLive={live} />;
+  const { data: linked } = await supabase
+    .from('live_session_offers')
+    .select('sort_order, offer:live_offers(id,name,headline,description,price,old_price,checkout_url,cta_label,image_url,badge)')
+    .eq('live_session_id', live.id)
+    .order('sort_order');
+
+  const offers = (linked || []).map((item: any) => item.offer).filter(Boolean);
+  return <FocoLiveRoom slug={slug} initialLive={{ ...live, offers }} />;
 }
