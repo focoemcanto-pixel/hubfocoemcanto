@@ -9,7 +9,7 @@ const schema = z.object({
   name: z.string().trim().min(2).max(80),
   email: z.string().trim().email().optional().or(z.literal('')),
   whatsapp: z.string().trim().max(30).optional().or(z.literal('')),
-  mode: z.enum(['guest', 'student']).default('guest'),
+  mode: z.enum(['guest', 'student', 'host']).default('guest'),
 });
 
 export async function POST(request: NextRequest, context: { params: Promise<{ slug: string }> }) {
@@ -24,23 +24,36 @@ export async function POST(request: NextRequest, context: { params: Promise<{ sl
       .single();
 
     if (error || !live) return NextResponse.json({ error: 'Live não encontrada.' }, { status: 404 });
-    if (!['scheduled', 'live'].includes(live.status)) {
-      return NextResponse.json({ error: 'Esta live ainda não está disponível.' }, { status: 403 });
+
+    const accessEmail = request.cookies.get('hub_access_email')?.value;
+    const isHost = input.mode === 'host';
+    if (isHost && !accessEmail) {
+      return NextResponse.json({ error: 'Acesso de host não autorizado.' }, { status: 401 });
+    }
+
+    if (!isHost && live.status !== 'live') {
+      return NextResponse.json({ error: 'A transmissão ainda não começou.' }, { status: 403 });
+    }
+    if (isHost && !['draft', 'scheduled', 'live'].includes(live.status)) {
+      return NextResponse.json({ error: 'Esta transmissão não pode mais ser iniciada.' }, { status: 403 });
     }
     if (!live.daily_room_name || !live.daily_room_url) {
       return NextResponse.json({ error: 'Sala de vídeo ainda não configurada.' }, { status: 409 });
     }
-    if (input.mode === 'guest' && !live.guest_access_enabled) {
+    if (!isHost && input.mode === 'guest' && !live.guest_access_enabled) {
       return NextResponse.json({ error: 'A entrada como convidado não está habilitada.' }, { status: 403 });
     }
-    if (live.access_type === 'restricted' && input.mode === 'guest') {
+    if (!isHost && live.access_type === 'restricted' && input.mode === 'guest') {
       return NextResponse.json({ error: 'Esta live é exclusiva para alunos autorizados.' }, { status: 403 });
     }
 
-    const accessEmail = request.cookies.get('hub_access_email')?.value;
     let profileId: string | null = null;
     if (accessEmail) {
-      const { data: profile } = await supabase.from('profiles').select('id,name,email').eq('email', accessEmail).maybeSingle();
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('id,name,email')
+        .eq('email', accessEmail)
+        .maybeSingle();
       profileId = profile?.id || null;
     }
 
@@ -52,14 +65,14 @@ export async function POST(request: NextRequest, context: { params: Promise<{ sl
         guest_name: input.name,
         guest_email: input.email || null,
         guest_whatsapp: input.whatsapp || null,
-        participant_type: profileId ? 'student' : 'guest',
+        participant_type: isHost ? 'host' : profileId ? 'student' : 'guest',
       })
       .select('id')
       .single();
 
     if (participantError) throw participantError;
 
-    const token = await createDailyMeetingToken(live.daily_room_name, false, input.name);
+    const token = await createDailyMeetingToken(live.daily_room_name, isHost, input.name);
     return NextResponse.json({
       live: {
         id: live.id,
@@ -72,6 +85,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ sl
       participantId: participant.id,
       roomUrl: live.daily_room_url,
       token: token.token,
+      isHost,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Não foi possível entrar na live.';
