@@ -12,6 +12,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@daily-co/daily-js": "latest",
     "@opennextjs/cloudflare": "latest",
     "@supabase/ssr": "latest",
     "@supabase/supabase-js": "latest",
