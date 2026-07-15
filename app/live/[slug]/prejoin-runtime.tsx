@@ -118,7 +118,7 @@ export default function PrejoinRuntime() {
       panel.innerHTML = `
         <div class="fl-prejoin-preview">
           <video data-prejoin-video muted playsinline></video>
-          <div class="fl-prejoin-placeholder"><b>Prévia da câmera</b><span>Clique em ativar prévia para testar</span></div>
+          <div class="fl-prejoin-placeholder"><b>Confirme sua câmera e microfone</b><span>Ative a prévia antes de entrar na sala</span></div>
           <div class="fl-preview-controls">
             <button type="button" data-preview-mic-toggle class="off"><span>🎙️</span><small data-preview-mic-label>Microfone desligado</small></button>
             <button type="button" data-preview-camera-toggle class="off"><span>📷</span><small data-preview-camera-label>Câmera desligada</small></button>
@@ -126,7 +126,7 @@ export default function PrejoinRuntime() {
           <div class="fl-prejoin-meter"><i data-prejoin-meter></i></div>
         </div>
         <div class="fl-prejoin-tools">
-          <div><strong>Configuração de áudio e vídeo</strong><small data-prejoin-status>Ative a prévia antes de entrar</small></div>
+          <div><strong>Configuração de áudio e vídeo</strong><small data-prejoin-status>Escolha os dispositivos e ative a prévia</small></div>
           <label>Microfone<select data-prejoin-mic><option value="">Microfone padrão</option></select></label>
           <label>Câmera<select data-prejoin-camera><option value="">Câmera padrão</option></select></label>
           <button type="button" data-prejoin-test>Ativar prévia</button>
@@ -150,14 +150,18 @@ export default function PrejoinRuntime() {
           if (previewStream) void startPreview(panel);
         });
       });
+
+      // Apenas libera o stream de teste. Não intercepta, cancela ou recria o submit.
       form.addEventListener('submit', stopPreview);
     }
 
     const observer = new MutationObserver(mount);
     observer.observe(document.body, { childList: true, subtree: true });
+    const mountTimer = window.setInterval(mount, 250);
     mount();
     return () => {
       observer.disconnect();
+      window.clearInterval(mountTimer);
       stopPreview();
       mountedPanel?.remove();
     };
