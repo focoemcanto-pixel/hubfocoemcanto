@@ -11,7 +11,7 @@ declare global {
 
 export default function LiveUxFix({ slug }: { slug: string }) {
   useEffect(() => {
-    const publicUrl = `${window.location.origin}/live/${slug}`;
+    const publicUrl = new URL(`/live/${encodeURIComponent(slug)}`, window.location.origin).toString();
 
     function isHostStudio() {
       return Boolean(document.querySelector('.host-studio, .host-entry'));
@@ -54,7 +54,8 @@ export default function LiveUxFix({ slug }: { slug: string }) {
       closeShareModal();
       const title = document.querySelector('.fl-brand.compact small')?.textContent?.trim() || 'Foco Live';
       const message = `🎙️ Você está convidado para a live “${title}” do Foco em Canto!\n\nEntre pelo link:\n${publicUrl}`;
-      const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
+      const whatsappUrl = new URL('https://wa.me/');
+      whatsappUrl.searchParams.set('text', message);
 
       const overlay = document.createElement('div');
       overlay.dataset.liveShareModal = 'true';
@@ -70,7 +71,7 @@ export default function LiveUxFix({ slug }: { slug: string }) {
             <button type="button" data-share-copy>Copiar</button>
           </div>
           <div class="fl-share-actions">
-            <a href="${whatsappUrl}" target="_blank" rel="noreferrer" data-share-whatsapp>Enviar pelo WhatsApp</a>
+            <button type="button" data-share-whatsapp>Enviar pelo WhatsApp</button>
             <button type="button" data-share-native>Mais opções</button>
           </div>
           <small>Link para convidados: sem <b>?host=1</b></small>
@@ -80,13 +81,20 @@ export default function LiveUxFix({ slug }: { slug: string }) {
         if (event.target === overlay || (event.target as HTMLElement).closest('[data-share-close]')) closeShareModal();
       });
       overlay.querySelector('[data-share-copy]')?.addEventListener('click', copyPublicLink);
-      overlay.querySelector('[data-share-native]')?.addEventListener('click', async () => {
+      overlay.querySelector('[data-share-whatsapp]')?.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        window.open(whatsappUrl.toString(), '_blank', 'noopener,noreferrer');
+      });
+      overlay.querySelector('[data-share-native]')?.addEventListener('click', async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
         if (!navigator.share) {
           await copyPublicLink();
           return;
         }
         try {
-          await navigator.share({ title, text: 'Você está convidado para esta live do Foco em Canto.', url: publicUrl });
+          await navigator.share({ title, text: `Você está convidado para a live “${title}” do Foco em Canto.`, url: publicUrl });
         } catch (error) {
           if ((error as Error)?.name !== 'AbortError') await copyPublicLink();
         }
