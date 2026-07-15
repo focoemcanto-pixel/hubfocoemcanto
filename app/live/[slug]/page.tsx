@@ -12,7 +12,6 @@ import HostSessionRuntime from './host-session-runtime';
 import MeetStageRuntime from './meet-stage-runtime';
 import PrejoinRuntime from './prejoin-runtime';
 import LivePolishRuntime from './live-polish-runtime';
-import MusicModeRuntime from './music-mode-runtime';
 import './room.css';
 import './host-studio.css';
 import './split-offer-fix.css';
@@ -24,7 +23,6 @@ import './meet-stage.css';
 import './prejoin-runtime.css';
 import './offer-stage-integration.css';
 import './live-polish.css';
-import './music-mode-runtime.css';
 
 export const dynamic = 'force-dynamic';
 
@@ -112,7 +110,6 @@ export default async function LivePage({ params }: PageProps) {
       <HostSessionRuntime slug={slug} />
       <MeetStageRuntime />
       <LivePolishRuntime />
-      <MusicModeRuntime />
       <FocoLiveRoom
         slug={slug}
         initialLive={{
