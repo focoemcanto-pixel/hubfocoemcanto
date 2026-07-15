@@ -1,6 +1,9 @@
-/* Integra ofertas diretamente ao palco nativo do FocoLiveRoom.
-   Não depende de runtimes paralelos nem de um segundo controlador Daily. */
-.fl-stage-wrap{overflow:hidden;min-width:0}
+/* Integra as ofertas ao palco nativo do FocoLiveRoom.
+   Este arquivo é somente visual: não acessa a Daily, não cria vídeos e não interfere no join. */
+.fl-stage-wrap{
+  overflow:hidden;
+  min-width:0;
+}
 
 /* Estado visual do modo escolhido. */
 .fl-room:has(.fl-offer-scene) .fl-director-offers article button:nth-of-type(1),
@@ -13,104 +16,228 @@
 }
 
 @media (min-width:981px){
-  /* Tela dividida real: vídeo à esquerda, oferta à direita. */
+  /*
+   * TELA DIVIDIDA
+   * Mantém o vídeo nativo visível à esquerda e o card à direita.
+   * Não reposiciona nem recria o stream do apresentador.
+   */
   .scene-offer .fl-stage-wrap{
     padding:14px;
     background:#09070d;
   }
+
   .scene-offer .fl-offer-scene{
     position:relative!important;
     inset:auto!important;
     width:100%!important;
     height:100%!important;
+    min-width:0!important;
     min-height:0!important;
     display:grid!important;
-    grid-template-columns:minmax(0,46%) minmax(420px,54%);
-    gap:16px;
-    overflow:hidden;
-    align-items:stretch;
-  }
-  .scene-offer .fl-offer-video{
-    display:block!important;
-    min-width:0;
-    min-height:0;
-    height:100%;
-    overflow:hidden;
-    border-radius:22px;
-    background:#050409;
-    border:1px solid rgba(168,85,247,.22);
-  }
-  .scene-offer .fl-offer-video>.fl-video-tile{
-    width:100%!important;
-    height:100%!important;
-    min-height:0!important;
-    border-radius:22px!important;
-  }
-  .scene-offer .fl-offer-video video{
-    width:100%!important;
-    height:100%!important;
-    object-fit:contain!important;
-    object-position:center!important;
-    background:#050409;
-  }
-  .scene-offer .fl-offer-card{
-    width:100%!important;
-    height:100%!important;
-    min-width:0;
-    min-height:0;
-    overflow:hidden;
-    border-radius:22px;
-  }
-  .scene-offer .fl-offer-card .fl-live-offer-content{
-    height:100%;
-    min-height:0;
-    align-content:center;
+    grid-template-columns:minmax(360px,46%) minmax(0,54%)!important;
+    grid-template-rows:minmax(0,1fr)!important;
+    gap:16px!important;
+    overflow:hidden!important;
+    align-items:stretch!important;
   }
 
-  /* CTA sobre o vídeo sem trocar o palco. */
+  .scene-offer .fl-offer-video{
+    position:relative!important;
+    z-index:1!important;
+    display:block!important;
+    width:100%!important;
+    height:100%!important;
+    min-width:0!important;
+    min-height:0!important;
+    overflow:hidden!important;
+    border:1px solid rgba(168,85,247,.22);
+    border-radius:22px!important;
+    background:#050409!important;
+  }
+
+  /* Garante que tanto o tile nativo quanto um tile já montado permaneçam visíveis. */
+  .scene-offer .fl-offer-video>.fl-video-tile,
+  .scene-offer .fl-offer-video>[data-host-stage-runtime]{
+    position:relative!important;
+    inset:auto!important;
+    display:grid!important;
+    width:100%!important;
+    height:100%!important;
+    min-width:0!important;
+    min-height:0!important;
+    max-width:none!important;
+    max-height:none!important;
+    opacity:1!important;
+    visibility:visible!important;
+    overflow:hidden!important;
+    border-radius:22px!important;
+    transform:none!important;
+  }
+
+  .scene-offer .fl-offer-video video{
+    display:block!important;
+    width:100%!important;
+    height:100%!important;
+    min-width:0!important;
+    min-height:0!important;
+    object-fit:contain!important;
+    object-position:center center!important;
+    background:#050409!important;
+    transform:none!important;
+  }
+
+  .scene-offer .fl-offer-card{
+    position:relative!important;
+    z-index:2!important;
+    width:100%!important;
+    height:100%!important;
+    min-width:0!important;
+    min-height:0!important;
+    overflow:hidden!important;
+    padding:clamp(24px,3vw,44px)!important;
+    border-radius:22px!important;
+  }
+
+  .scene-offer .fl-offer-card .fl-live-offer-content{
+    width:100%!important;
+    height:100%!important;
+    min-width:0!important;
+    min-height:0!important;
+    align-content:center!important;
+  }
+
+  /*
+   * CTA NA TELA
+   * Fica sobre o vídeo. Não reserva altura e não encurta o enquadramento.
+   */
   .fl-offer-banner{
-    z-index:30!important;
+    position:absolute!important;
+    z-index:60!important;
     left:50%!important;
     right:auto!important;
     bottom:22px!important;
-    width:min(850px,calc(100% - 56px));
-    transform:translateX(-50%);
+    width:min(850px,calc(100% - 56px))!important;
+    max-width:calc(100% - 56px)!important;
+    transform:translateX(-50%)!important;
+    pointer-events:none!important;
   }
-  .fl-offer-banner .fl-live-offer-content{width:100%!important}
+
+  .fl-offer-banner .fl-live-offer-content{
+    width:100%!important;
+    max-width:100%!important;
+    pointer-events:auto!important;
+  }
+
+  /* Botão flutuante também é sobreposição e não altera o palco. */
   .fl-offer-floating{
-    z-index:30!important;
+    position:absolute!important;
+    z-index:60!important;
     right:26px!important;
     bottom:24px!important;
+    pointer-events:auto!important;
   }
-  .fl-stage-wrap:has(.fl-offer-banner){padding-bottom:112px}
-  .fl-stage-wrap:has(.fl-offer-floating){padding-bottom:92px}
+
+  /* Remove as reservas antigas que comprimiam o vídeo. */
+  .fl-stage-wrap:has(.fl-offer-banner),
+  .fl-stage-wrap:has(.fl-offer-floating){
+    padding-bottom:18px!important;
+  }
+
+  .fl-stage-wrap:has(.fl-offer-banner) .fl-speaker-layout,
+  .fl-stage-wrap:has(.fl-offer-floating) .fl-speaker-layout,
+  .fl-stage-wrap:has(.fl-offer-banner) .fl-native-grid,
+  .fl-stage-wrap:has(.fl-offer-floating) .fl-native-grid{
+    height:100%!important;
+    min-height:0!important;
+  }
 }
 
 @media (max-width:1180px) and (min-width:981px){
   .scene-offer .fl-offer-scene{
-    grid-template-columns:minmax(0,42%) minmax(390px,58%);
-    gap:12px;
+    grid-template-columns:minmax(320px,43%) minmax(0,57%)!important;
+    gap:12px!important;
+  }
+
+  .scene-offer .fl-offer-card{
+    padding:clamp(22px,2.4vw,34px)!important;
   }
 }
 
 @media (max-width:980px){
-  .scene-offer .fl-stage-wrap{overflow:auto}
+  /* No celular, vídeo e oferta ficam empilhados sem cortar o stream. */
+  .scene-offer .fl-stage-wrap{
+    overflow:auto!important;
+  }
+
   .scene-offer .fl-offer-scene{
     position:static!important;
     width:auto!important;
     height:auto!important;
-    min-height:100%;
+    min-height:100%!important;
     display:flex!important;
-    flex-direction:column;
-    gap:14px;
-    padding:14px;
+    flex-direction:column!important;
+    gap:14px!important;
+    padding:14px!important;
   }
+
   .scene-offer .fl-offer-video{
     display:block!important;
-    min-height:260px;
-    border-radius:20px;
-    overflow:hidden;
+    flex:0 0 auto!important;
+    width:100%!important;
+    min-height:260px!important;
+    overflow:hidden!important;
+    border-radius:20px!important;
+    background:#050409!important;
   }
-  .scene-offer .fl-offer-video>.fl-video-tile{min-height:260px}
-  .scene-offer .fl-offer-card{min-height:520px;border-radius:20px}
+
+  .scene-offer .fl-offer-video>.fl-video-tile,
+  .scene-offer .fl-offer-video>[data-host-stage-runtime]{
+    display:grid!important;
+    width:100%!important;
+    min-height:260px!important;
+    opacity:1!important;
+    visibility:visible!important;
+    border-radius:20px!important;
+  }
+
+  .scene-offer .fl-offer-video video{
+    width:100%!important;
+    height:100%!important;
+    min-height:260px!important;
+    object-fit:contain!important;
+    object-position:center!important;
+    background:#050409!important;
+  }
+
+  .scene-offer .fl-offer-card{
+    min-height:520px!important;
+    overflow:visible!important;
+    border-radius:20px!important;
+  }
+
+  .fl-offer-banner{
+    left:12px!important;
+    right:12px!important;
+    bottom:10px!important;
+    width:auto!important;
+    transform:none!important;
+  }
+
+  .fl-stage-wrap:has(.fl-offer-banner),
+  .fl-stage-wrap:has(.fl-offer-floating){
+    padding-bottom:8px!important;
+  }
+}
+
+@media (max-width:680px){
+  .scene-offer .fl-offer-video,
+  .scene-offer .fl-offer-video>.fl-video-tile,
+  .scene-offer .fl-offer-video>[data-host-stage-runtime],
+  .scene-offer .fl-offer-video video{
+    min-height:230px!important;
+  }
+
+  .scene-offer .fl-offer-card{
+    min-height:auto!important;
+  }
 }
