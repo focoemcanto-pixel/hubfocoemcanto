@@ -28,8 +28,8 @@ export default function EndCleanupRuntime() {
       const label = button?.textContent?.trim() || '';
       if (!/Encerrar transmissão|Encerrar e sair/i.test(label)) return;
 
+      window.dispatchEvent(new Event('foco-live-ended'));
       window.clearTimeout(cleanupTimer);
-      // Dá tempo para a API registrar o encerramento e enviar live-ended aos convidados.
       cleanupTimer = window.setTimeout(() => { void closeActiveCall(); }, 900);
     };
 
