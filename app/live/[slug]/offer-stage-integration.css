@@ -1,133 +1,205 @@
-/* Oferta integrada ao palco nativo. Somente layout: não controla Daily nem mídia. */
-.fl-stage-wrap{position:relative;overflow:hidden;min-width:0;min-height:0}
+/* Layouts de oferta do FocoLiveRoom.
+   Este arquivo é somente visual: não acessa Daily nem interfere no join. */
+.fl-stage-wrap{overflow:hidden;min-width:0;min-height:0}
 .fl-stage-content{width:100%;height:100%;min-width:0;min-height:0}
 .fl-stage-video-area{width:100%;height:100%;min-width:0;min-height:0;overflow:hidden}
 .fl-stage-video-area>.fl-speaker-layout,
 .fl-stage-video-area>.fl-native-grid,
 .fl-stage-video-area>.fl-waiting-stage{width:100%;height:100%;min-height:0}
 
-.fl-room.offer-split-active .fl-director-offers article button:nth-of-type(1),
-.fl-room:has(.fl-offer-banner) .fl-director-offers article button:nth-of-type(2),
-.fl-room:has(.fl-offer-floating) .fl-director-offers article button:nth-of-type(3){
-  border-color:#8b3dff!important;background:rgba(139,61,255,.22)!important;color:#fff!important;
-  box-shadow:0 0 0 1px rgba(168,85,247,.24) inset!important
+/* O modo ativo pertence somente à oferta cujo id está em activeOffer. */
+.fl-director-offers article button.active-offer-mode{
+  border-color:#8b3dff!important;
+  background:rgba(139,61,255,.22)!important;
+  color:#fff!important;
+  box-shadow:0 0 0 1px rgba(168,85,247,.28) inset!important;
+}
+.fl-director-offers article button:not(.active-offer-mode){
+  box-shadow:none!important;
 }
 .fl-offer-preview-note{margin:0!important;padding:10px 11px;border:1px solid rgba(232,187,103,.18);border-radius:12px;background:rgba(232,187,103,.07);color:#cdb88d!important;font-size:11px!important;line-height:1.45!important}
 
-/* BANNER: faixa compacta dentro do palco, sempre acima da barra de comandos. */
+/* =========================
+   TELA DIVIDIDA
+   ========================= */
+.offer-split-active .fl-stage-wrap{padding:14px;background:#09070d}
+.offer-split-active .fl-stage-content{
+  display:grid;
+  grid-template-columns:minmax(300px,45%) minmax(340px,55%);
+  grid-template-rows:minmax(0,1fr);
+  gap:14px;
+  align-items:stretch;
+  overflow:hidden;
+}
+.offer-split-active .fl-stage-video-area{
+  position:relative;
+  min-height:0;
+  border:1px solid rgba(168,85,247,.22);
+  border-radius:20px;
+  background:#050409;
+}
+.offer-split-active .fl-stage-video-area .fl-speaker-layout,
+.offer-split-active .fl-stage-video-area .fl-native-grid{padding-top:0!important}
+.offer-split-active .fl-stage-video-area .fl-video-tile{
+  width:100%!important;height:100%!important;min-width:0!important;min-height:0!important;border-radius:20px!important
+}
+.offer-split-active .fl-stage-video-area .fl-video-tile video{
+  display:block!important;width:100%!important;height:100%!important;object-fit:contain!important;object-position:center!important;background:#050409!important
+}
+.offer-split-active .fl-speaker-thumbnails,
+.offer-split-active .fl-native-layout-switcher{display:none!important}
+
+.offer-split-active .fl-offer-card-split{
+  display:block!important;
+  width:100%!important;height:100%!important;min-width:0!important;min-height:0!important;
+  padding:clamp(20px,2.2vw,34px)!important;
+  overflow:hidden!important;
+  border-radius:20px!important;
+}
+.offer-split-active .fl-offer-card-split .fl-live-offer-content{
+  display:grid!important;
+  width:100%!important;height:100%!important;min-width:0!important;min-height:0!important;
+  grid-template-columns:minmax(0,1fr) 116px!important;
+  grid-template-rows:auto minmax(0,1fr) auto auto!important;
+  column-gap:20px!important;row-gap:10px!important;
+  align-items:center!important;align-content:stretch!important;
+}
+.offer-split-active .fl-offer-card-split .fl-live-offer-content>span{
+  grid-column:1/-1!important;grid-row:1!important;margin:0!important;align-self:start!important
+}
+.offer-split-active .fl-offer-card-split .fl-live-offer-content h2{
+  grid-column:1!important;grid-row:2!important;align-self:center!important;
+  margin:0!important;max-width:100%!important;
+  font-size:clamp(30px,4.1vw,58px)!important;line-height:.96!important;
+  display:-webkit-box!important;-webkit-line-clamp:4!important;-webkit-box-orient:vertical!important;overflow:hidden!important
+}
+.offer-split-active .fl-offer-card-split .fl-live-offer-content>p{
+  display:none!important
+}
+.offer-split-active .fl-offer-card-split .fl-live-offer-content>img{
+  grid-column:2!important;grid-row:2!important;width:112px!important;height:112px!important;max-width:100%!important;margin:0!important;align-self:center!important
+}
+.offer-split-active .fl-offer-card-split .fl-live-offer-price{
+  grid-column:1!important;grid-row:3!important;margin:0!important;align-self:end!important
+}
+.offer-split-active .fl-offer-card-split .fl-live-offer-price strong{font-size:clamp(27px,3vw,40px)!important}
+.offer-split-active .fl-offer-card-split .fl-live-offer-content>a{
+  grid-column:1/-1!important;grid-row:4!important;
+  display:flex!important;width:100%!important;min-width:0!important;min-height:50px!important;
+  padding:0 18px!important;margin:0!important;align-items:center!important;justify-content:center!important;
+  text-align:center!important;font-size:13px!important
+}
+
+/* =========================
+   CTA HORIZONTAL
+   ========================= */
 .fl-offer-banner{
-  position:absolute!important;z-index:70!important;left:50%!important;right:auto!important;bottom:16px!important;
-  width:min(860px,calc(100% - 44px))!important;max-width:calc(100% - 44px)!important;
-  transform:translateX(-50%)!important;pointer-events:none!important;margin:0!important;padding:0!important
+  position:absolute!important;z-index:60!important;
+  left:24px!important;right:24px!important;bottom:18px!important;
+  width:auto!important;max-width:none!important;height:auto!important;max-height:94px!important;
+  margin:0!important;padding:0!important;transform:none!important;
+  pointer-events:none!important;overflow:hidden!important
 }
 .fl-offer-banner .fl-live-offer-content{
-  pointer-events:auto!important;display:grid!important;grid-template-columns:minmax(0,1fr) auto auto!important;
-  grid-template-rows:auto auto!important;align-items:center!important;gap:3px 18px!important;
-  width:100%!important;min-height:78px!important;max-height:96px!important;padding:13px 16px!important;
-  overflow:hidden!important;border:1px solid rgba(224,177,91,.3)!important;border-radius:18px!important;
-  background:linear-gradient(135deg,rgba(25,16,10,.98),rgba(11,8,7,.98))!important;
-  box-shadow:0 18px 55px rgba(0,0,0,.52)!important
+  display:grid!important;
+  grid-template-columns:minmax(0,1fr) auto auto!important;
+  grid-template-rows:1fr!important;
+  align-items:center!important;gap:18px!important;
+  width:100%!important;min-height:76px!important;max-height:94px!important;
+  padding:12px 16px!important;margin:0!important;
+  border:1px solid rgba(232,187,103,.25)!important;border-radius:18px!important;
+  background:linear-gradient(135deg,rgba(27,18,12,.98),rgba(15,10,8,.98))!important;
+  box-shadow:0 18px 50px rgba(0,0,0,.48)!important;
+  pointer-events:auto!important;overflow:hidden!important
 }
-.fl-offer-banner .fl-live-offer-content>span{grid-column:1!important;grid-row:1!important;margin:0!important;color:#e8b85d!important;font-size:10px!important;line-height:1!important;letter-spacing:.14em!important}
-.fl-offer-banner .fl-live-offer-content h2{grid-column:1!important;grid-row:2!important;margin:0!important;max-width:100%!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;font-size:clamp(16px,1.55vw,23px)!important;line-height:1.1!important;letter-spacing:-.02em!important}
-.fl-offer-banner .fl-live-offer-price{grid-column:2!important;grid-row:1/3!important;display:flex!important;align-items:baseline!important;gap:9px!important;margin:0!important;white-space:nowrap!important}
-.fl-offer-banner .fl-live-offer-price del{font-size:13px!important;color:#918779!important}
-.fl-offer-banner .fl-live-offer-price strong{font-size:clamp(22px,2vw,31px)!important;color:#efc26e!important}
-.fl-offer-banner .fl-live-offer-content>a{grid-column:3!important;grid-row:1/3!important;display:inline-flex!important;width:auto!important;min-width:190px!important;max-width:260px!important;min-height:50px!important;margin:0!important;padding:0 20px!important;border-radius:13px!important;white-space:nowrap!important;font-size:13px!important;line-height:1!important}
-.fl-offer-banner .fl-live-offer-content>p,.fl-offer-banner .fl-live-offer-content>img{display:none!important}
+.fl-offer-banner .fl-live-offer-content>span,
+.fl-offer-banner .fl-live-offer-content>p,
+.fl-offer-banner .fl-live-offer-content>img{display:none!important}
+.fl-offer-banner .fl-live-offer-content h2{
+  grid-column:1!important;grid-row:1!important;margin:0!important;
+  min-width:0!important;font-size:clamp(17px,2vw,25px)!important;line-height:1.08!important;
+  white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important
+}
+.fl-offer-banner .fl-live-offer-price{
+  grid-column:2!important;grid-row:1!important;display:flex!important;align-items:baseline!important;gap:8px!important;margin:0!important;white-space:nowrap!important
+}
+.fl-offer-banner .fl-live-offer-price strong{font-size:clamp(23px,2.3vw,34px)!important}
+.fl-offer-banner .fl-live-offer-content>a{
+  grid-column:3!important;grid-row:1!important;
+  display:flex!important;width:auto!important;min-width:210px!important;min-height:48px!important;
+  padding:0 20px!important;margin:0!important;align-items:center!important;justify-content:center!important;
+  white-space:nowrap!important;font-size:13px!important
+}
 
-/* BOTÃO: chip flutuante discreto e clicável, sem tocar na barra inferior. */
+/* =========================
+   BOTÃO FLUTUANTE
+   ========================= */
 .fl-offer-floating{
-  position:absolute!important;z-index:72!important;right:22px!important;left:auto!important;top:auto!important;bottom:18px!important;
-  display:flex!important;align-items:center!important;gap:12px!important;width:auto!important;min-width:230px!important;max-width:min(360px,calc(100% - 44px))!important;
-  min-height:64px!important;margin:0!important;padding:11px 16px!important;border:1px solid rgba(225,177,89,.35)!important;
-  border-radius:17px!important;background:linear-gradient(135deg,#24180e,#100b08)!important;color:#fff!important;
-  text-decoration:none!important;box-shadow:0 18px 50px rgba(0,0,0,.52)!important;transform:none!important;pointer-events:auto!important
+  position:absolute!important;z-index:61!important;
+  right:24px!important;bottom:20px!important;left:auto!important;top:auto!important;
+  display:flex!important;align-items:center!important;gap:10px!important;
+  width:auto!important;min-width:220px!important;max-width:min(360px,calc(100% - 48px))!important;
+  min-height:58px!important;padding:10px 16px!important;margin:0!important;
+  border:1px solid rgba(232,187,103,.28)!important;border-radius:16px!important;
+  background:linear-gradient(135deg,#2a1a0d,#15100b)!important;
+  color:#fff!important;text-decoration:none!important;
+  box-shadow:0 18px 48px rgba(0,0,0,.5)!important;
+  overflow:hidden!important;pointer-events:auto!important
 }
-.fl-offer-floating>svg{flex:0 0 auto;color:#e9b85e!important}
 .fl-offer-floating>span{display:grid!important;min-width:0!important}
-.fl-offer-floating small{color:#d8a94f!important;font-size:9px!important;font-weight:900!important;letter-spacing:.13em!important;text-transform:uppercase!important}
-.fl-offer-floating strong{max-width:260px!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;font-size:14px!important}
+.fl-offer-floating small{color:#e8bb67!important;font-size:9px!important;letter-spacing:.12em!important;text-transform:uppercase!important}
+.fl-offer-floating strong{display:block!important;max-width:250px!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;font-size:13px!important}
 
-/* TELA DIVIDIDA: vídeo e oferta ficam dentro da área útil; CTA nunca sai da tela. */
-@media (min-width:981px){
-  .offer-split-active .fl-stage-wrap{padding:14px!important;background:#09070d!important}
-  .offer-split-active .fl-stage-content{
-    display:grid!important;grid-template-columns:minmax(320px,45%) minmax(360px,55%)!important;
-    grid-template-rows:minmax(0,1fr)!important;gap:14px!important;align-items:stretch!important;overflow:hidden!important
-  }
-  .offer-split-active .fl-stage-video-area{position:relative!important;min-height:0!important;overflow:hidden!important;border:1px solid rgba(168,85,247,.22)!important;border-radius:22px!important;background:#050409!important}
+@media(max-width:1180px) and (min-width:981px){
+  .offer-split-active .fl-stage-content{grid-template-columns:minmax(280px,42%) minmax(330px,58%);gap:10px}
+  .offer-split-active .fl-offer-card-split{padding:20px!important}
+  .offer-split-active .fl-offer-card-split .fl-live-offer-content{grid-template-columns:minmax(0,1fr) 96px!important;column-gap:14px!important}
+  .offer-split-active .fl-offer-card-split .fl-live-offer-content>img{width:94px!important;height:94px!important}
+  .fl-offer-banner .fl-live-offer-content>a{min-width:170px!important}
+}
+
+@media(max-height:720px) and (min-width:981px){
+  .offer-split-active .fl-offer-card-split{padding:16px!important}
+  .offer-split-active .fl-offer-card-split .fl-live-offer-content h2{font-size:clamp(27px,3.5vw,46px)!important;-webkit-line-clamp:3!important}
+  .offer-split-active .fl-offer-card-split .fl-live-offer-content>img{width:88px!important;height:88px!important}
+  .offer-split-active .fl-offer-card-split .fl-live-offer-content>a{min-height:44px!important}
+}
+
+@media(max-width:980px){
+  .offer-split-active .fl-stage-wrap{overflow:auto!important}
+  .offer-split-active .fl-stage-content{display:flex!important;flex-direction:column!important;gap:12px!important;height:auto!important;min-height:100%!important;padding:12px!important}
+  .offer-split-active .fl-stage-video-area{flex:0 0 auto!important;width:100%!important;height:min(38vh,340px)!important;min-height:220px!important;border-radius:18px!important}
   .offer-split-active .fl-stage-video-area .fl-speaker-layout,
   .offer-split-active .fl-stage-video-area .fl-native-grid{padding-top:0!important}
-  .offer-split-active .fl-stage-video-area .fl-video-tile{width:100%!important;height:100%!important;min-width:0!important;min-height:0!important;border-radius:22px!important}
-  .offer-split-active .fl-stage-video-area .fl-video-tile video{display:block!important;width:100%!important;height:100%!important;object-fit:contain!important;object-position:center!important;background:#050409!important}
-  .offer-split-active .fl-speaker-thumbnails{display:none!important}
-  .offer-split-active .fl-native-layout-switcher{display:none!important}
-
-  .offer-split-active .fl-offer-card-split{
-    display:flex!important;width:100%!important;height:100%!important;min-width:0!important;min-height:0!important;
-    align-items:center!important;justify-content:center!important;overflow:hidden!important;padding:clamp(20px,2.4vw,34px)!important;border-radius:22px!important
-  }
-  .offer-split-active .fl-offer-card-split .fl-live-offer-content{
-    display:grid!important;grid-template-columns:minmax(0,1fr) 126px!important;
-    grid-template-rows:auto auto auto auto!important;column-gap:22px!important;row-gap:12px!important;
-    width:100%!important;height:auto!important;max-height:100%!important;min-width:0!important;min-height:0!important;
-    align-content:center!important;align-items:center!important;overflow:hidden!important
-  }
-  .offer-split-active .fl-offer-card-split .fl-live-offer-content>span{grid-column:1/-1!important;grid-row:1!important;margin:0!important;font-size:10px!important}
-  .offer-split-active .fl-offer-card-split .fl-live-offer-content h2{
-    grid-column:1!important;grid-row:2!important;margin:0!important;max-width:100%!important;
-    font-size:clamp(30px,3.5vw,54px)!important;line-height:.98!important;letter-spacing:-.045em!important;overflow-wrap:anywhere!important
-  }
-  .offer-split-active .fl-offer-card-split .fl-live-offer-content>p{grid-column:1!important;grid-row:3!important;display:-webkit-box!important;-webkit-line-clamp:2!important;-webkit-box-orient:vertical!important;overflow:hidden!important;margin:0!important;font-size:13px!important;line-height:1.45!important}
-  .offer-split-active .fl-offer-card-split .fl-live-offer-price{grid-column:1!important;grid-row:4!important;display:flex!important;align-items:baseline!important;gap:10px!important;margin:0!important}
-  .offer-split-active .fl-offer-card-split .fl-live-offer-price strong{font-size:clamp(28px,2.8vw,40px)!important}
-  .offer-split-active .fl-offer-card-split .fl-live-offer-content>img{grid-column:2!important;grid-row:2/4!important;width:118px!important;max-width:100%!important;margin:0 auto!important;border-radius:14px!important}
-  .offer-split-active .fl-offer-card-split .fl-live-offer-content>a{
-    grid-column:2!important;grid-row:4!important;display:flex!important;width:100%!important;min-width:0!important;min-height:50px!important;
-    margin:0!important;padding:0 10px!important;text-align:center!important;font-size:12px!important;line-height:1.15!important
-  }
-}
-
-@media (max-width:1180px) and (min-width:981px){
-  .offer-split-active .fl-stage-content{grid-template-columns:minmax(290px,42%) minmax(340px,58%)!important;gap:11px!important}
-  .offer-split-active .fl-offer-card-split{padding:20px!important}
-  .offer-split-active .fl-offer-card-split .fl-live-offer-content{grid-template-columns:minmax(0,1fr) 106px!important;column-gap:15px!important}
-  .offer-split-active .fl-offer-card-split .fl-live-offer-content>img{width:100px!important}
-  .offer-split-active .fl-offer-card-split .fl-live-offer-content h2{font-size:clamp(28px,3vw,44px)!important}
-  .offer-split-active .fl-offer-card-split .fl-live-offer-content>a{font-size:11px!important;padding:0 7px!important}
-}
-
-@media (max-width:980px){
-  .offer-split-active .fl-stage-wrap{overflow:auto!important;padding:10px!important}
-  .offer-split-active .fl-stage-content{display:flex!important;flex-direction:column!important;gap:10px!important;height:auto!important;min-height:100%!important}
-  .offer-split-active .fl-stage-video-area{flex:0 0 auto!important;width:100%!important;height:min(38vh,350px)!important;min-height:220px!important;overflow:hidden!important;border-radius:18px!important;background:#050409!important}
-  .offer-split-active .fl-stage-video-area .fl-speaker-layout,.offer-split-active .fl-stage-video-area .fl-native-grid{padding-top:0!important}
   .offer-split-active .fl-stage-video-area .fl-video-tile{width:100%!important;height:100%!important;min-height:220px!important;border-radius:18px!important}
   .offer-split-active .fl-stage-video-area video{width:100%!important;height:100%!important;object-fit:contain!important;object-position:center!important;background:#050409!important}
-  .offer-split-active .fl-speaker-thumbnails,.offer-split-active .fl-native-layout-switcher{display:none!important}
-  .offer-split-active .fl-offer-card-split{flex:0 0 auto!important;min-height:330px!important;overflow:visible!important;padding:22px!important;border-radius:18px!important}
-  .offer-split-active .fl-offer-card-split .fl-live-offer-content{height:auto!important;max-height:none!important}
+  .offer-split-active .fl-offer-card-split{height:auto!important;min-height:330px!important;overflow:visible!important;border-radius:18px!important}
+  .offer-split-active .fl-offer-card-split .fl-live-offer-content{height:auto!important;min-height:290px!important}
 
-  .fl-offer-banner{left:10px!important;right:10px!important;bottom:10px!important;width:auto!important;max-width:none!important;transform:none!important}
-  .fl-offer-banner .fl-live-offer-content{grid-template-columns:minmax(0,1fr) auto!important;min-height:70px!important;max-height:82px!important;padding:11px 12px!important;gap:3px 10px!important}
-  .fl-offer-banner .fl-live-offer-price{display:none!important}
-  .fl-offer-banner .fl-live-offer-content>a{grid-column:2!important;min-width:140px!important;max-width:175px!important;min-height:46px!important;padding:0 11px!important;font-size:11px!important}
-  .fl-offer-floating{right:12px!important;bottom:12px!important;min-width:210px!important;max-width:calc(100% - 24px)!important}
+  .fl-offer-banner{left:10px!important;right:10px!important;bottom:10px!important;max-height:124px!important}
+  .fl-offer-banner .fl-live-offer-content{
+    grid-template-columns:minmax(0,1fr) auto!important;
+    grid-template-rows:auto auto!important;gap:6px 10px!important;
+    min-height:86px!important;max-height:124px!important;padding:10px 12px!important
+  }
+  .fl-offer-banner .fl-live-offer-content h2{grid-column:1!important;grid-row:1!important;font-size:16px!important}
+  .fl-offer-banner .fl-live-offer-price{grid-column:1!important;grid-row:2!important}
+  .fl-offer-banner .fl-live-offer-price strong{font-size:23px!important}
+  .fl-offer-banner .fl-live-offer-content>a{grid-column:2!important;grid-row:1/3!important;min-width:150px!important;min-height:44px!important;padding:0 12px!important}
+  .fl-offer-floating{right:10px!important;bottom:10px!important;min-width:200px!important;max-width:calc(100% - 20px)!important}
 }
 
-@media (max-width:680px){
-  .offer-split-active .fl-stage-video-area,.offer-split-active .fl-stage-video-area .fl-video-tile{height:210px!important;min-height:210px!important}
-  .offer-split-active .fl-offer-card-split{min-height:300px!important;padding:18px!important}
-  .offer-split-active .fl-offer-card-split .fl-live-offer-content{display:grid!important;grid-template-columns:minmax(0,1fr) 88px!important;column-gap:12px!important;row-gap:9px!important}
-  .offer-split-active .fl-offer-card-split .fl-live-offer-content h2{font-size:30px!important}
-  .offer-split-active .fl-offer-card-split .fl-live-offer-content>p{display:none!important}
-  .offer-split-active .fl-offer-card-split .fl-live-offer-content>img{display:block!important;width:82px!important;grid-row:2/4!important}
-  .offer-split-active .fl-offer-card-split .fl-live-offer-price{grid-row:3!important}
-  .offer-split-active .fl-offer-card-split .fl-live-offer-content>a{grid-column:1/-1!important;grid-row:4!important;min-height:48px!important}
+@media(max-width:620px){
+  .offer-split-active .fl-stage-video-area{height:220px!important;min-height:220px!important}
+  .offer-split-active .fl-offer-card-split{padding:18px!important;min-height:300px!important}
+  .offer-split-active .fl-offer-card-split .fl-live-offer-content{display:flex!important;flex-direction:column!important;align-items:stretch!important;justify-content:center!important;gap:10px!important;min-height:260px!important}
+  .offer-split-active .fl-offer-card-split .fl-live-offer-content h2{font-size:32px!important;-webkit-line-clamp:3!important}
+  .offer-split-active .fl-offer-card-split .fl-live-offer-content>img{display:none!important}
+  .offer-split-active .fl-offer-card-split .fl-live-offer-price{margin:0!important}
+  .offer-split-active .fl-offer-card-split .fl-live-offer-content>a{width:100%!important;min-height:48px!important}
 
   .fl-offer-banner .fl-live-offer-content{grid-template-columns:minmax(0,1fr) 118px!important}
   .fl-offer-banner .fl-live-offer-content h2{font-size:14px!important}
-  .fl-offer-banner .fl-live-offer-content>a{min-width:0!important;width:118px!important;padding:0 8px!important}
-  .fl-offer-floating{left:10px!important;right:10px!important;bottom:10px!important;width:auto!important;max-width:none!important;min-width:0!important}
+  .fl-offer-banner .fl-live-offer-content>a{min-width:118px!important;font-size:11px!important;padding:0 8px!important}
+  .fl-offer-floating{left:10px!important;right:10px!important;width:auto!important;min-width:0!important}
 }
