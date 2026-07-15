@@ -5,7 +5,6 @@ import { createPortal } from 'react-dom';
 import { Grid2X2, LayoutPanelTop, Sparkles } from 'lucide-react';
 
 type LayoutMode = 'class' | 'grid' | 'auto';
-
 type Participant = any;
 
 function ParticipantVideo({ participant, compact = false, active = false }: { participant: Participant; compact?: boolean; active?: boolean }) {
@@ -19,14 +18,22 @@ function ParticipantVideo({ participant, compact = false, active = false }: { pa
 
   useEffect(() => {
     if (!videoEl) return;
-    videoEl.srcObject = videoTrack ? new MediaStream([videoTrack]) : null;
-    videoEl.play().catch(() => undefined);
+    const stream = videoTrack ? new MediaStream([videoTrack]) : null;
+    videoEl.srcObject = stream;
+    if (stream) void videoEl.play().catch(() => undefined);
+    return () => {
+      if (videoEl.srcObject === stream) videoEl.srcObject = null;
+    };
   }, [videoEl, videoTrack]);
 
   useEffect(() => {
     if (!audioEl || participant?.local) return;
-    audioEl.srcObject = audioTrack ? new MediaStream([audioTrack]) : null;
-    audioEl.play().catch(() => undefined);
+    const stream = audioTrack ? new MediaStream([audioTrack]) : null;
+    audioEl.srcObject = stream;
+    if (stream) void audioEl.play().catch(() => undefined);
+    return () => {
+      if (audioEl.srcObject === stream) audioEl.srcObject = null;
+    };
   }, [audioEl, audioTrack, participant?.local]);
 
   return (
@@ -47,32 +54,58 @@ export default function MeetStageRuntime() {
   const [enabled, setEnabled] = useState(false);
 
   useEffect(() => {
-    const timer = window.setInterval(() => {
+    let call: any = null;
+    let discoveryTimer = 0;
+    let disposed = false;
+
+    const syncParticipants = () => {
+      if (!call || disposed) return;
+      try { setParticipants({ ...call.participants() }); } catch { /* chamada encerrando */ }
+    };
+
+    const onActiveSpeaker = (event: any) => {
+      setActiveSpeakerId(event?.activeSpeaker?.peerId || event?.activeSpeaker?.session_id || null);
+    };
+
+    const bindAfterJoin = () => {
       const stage = document.querySelector<HTMLElement>('.fl-stage-wrap');
-      const call = (window as any).__focoLiveCall;
-      const host = Boolean(document.querySelector('.host-studio'));
-      setIsHost(host);
-      if (stage && stage !== mount) setMount(stage);
-      if (!stage || !call) return;
+      const nextCall = (window as any).__focoLiveCall;
+      if (stage) setMount(stage);
+      setIsHost(new URLSearchParams(window.location.search).get('host') === '1');
+      if (!stage || !nextCall) return false;
 
-      const sync = () => {
-        try { setParticipants({ ...call.participants() }); } catch { /* conexão ainda iniciando */ }
-      };
+      // Fundamental: este runtime só observa a chamada depois que o FocoLiveRoom
+      // terminou o join. Assim ele não concorre com a abertura da sala.
+      if (nextCall.meetingState?.() !== 'joined-meeting') return false;
 
-      if (!(call as any).__meetStageBound) {
-        call.on('participant-joined', sync);
-        call.on('participant-updated', sync);
-        call.on('participant-left', sync);
-        call.on('joined-meeting', sync);
-        call.on('active-speaker-change', (event: any) => setActiveSpeakerId(event?.activeSpeaker?.peerId || event?.activeSpeaker?.session_id || null));
-        (call as any).__meetStageBound = true;
-      }
-      sync();
+      call = nextCall;
+      call.on('participant-joined', syncParticipants);
+      call.on('participant-updated', syncParticipants);
+      call.on('participant-left', syncParticipants);
+      call.on('active-speaker-change', onActiveSpeaker);
+      syncParticipants();
       setEnabled(true);
-    }, 500);
+      return true;
+    };
 
-    return () => window.clearInterval(timer);
-  }, [mount]);
+    if (!bindAfterJoin()) {
+      discoveryTimer = window.setInterval(() => {
+        if (bindAfterJoin()) window.clearInterval(discoveryTimer);
+      }, 350);
+    }
+
+    return () => {
+      disposed = true;
+      window.clearInterval(discoveryTimer);
+      if (call) {
+        call.off?.('participant-joined', syncParticipants);
+        call.off?.('participant-updated', syncParticipants);
+        call.off?.('participant-left', syncParticipants);
+        call.off?.('active-speaker-change', onActiveSpeaker);
+      }
+      setEnabled(false);
+    };
+  }, []);
 
   useEffect(() => {
     if (!mount) return;
@@ -85,11 +118,7 @@ export default function MeetStageRuntime() {
   const remote = list.filter((item: any) => !item.local);
   const hostParticipant = isHost ? local : remote.find((item: any) => item.owner) || remote[0];
   const activeSpeaker = list.find((item: any) => item.session_id === activeSpeakerId || item.user_id === activeSpeakerId);
-
-  const main = layout === 'auto' && activeSpeaker && !activeSpeaker.local
-    ? activeSpeaker
-    : hostParticipant || local || remote[0];
-
+  const main = layout === 'auto' && activeSpeaker && !activeSpeaker.local ? activeSpeaker : hostParticipant || local || remote[0];
   const thumbs = list.filter((item: any) => item.session_id !== main?.session_id);
 
   if (!mount || !enabled || !list.length) return null;
