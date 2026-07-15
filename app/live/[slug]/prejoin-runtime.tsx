@@ -23,14 +23,11 @@ export default function PrejoinRuntime() {
     let previewAudioOn = true;
     let previewVideoOn = true;
 
-    window.__focoPrejoin = window.__focoPrejoin || {
-      audioEnabled: false,
-      videoEnabled: false,
-    };
+    window.__focoPrejoin = window.__focoPrejoin || { audioEnabled: false, videoEnabled: false };
 
     function stopMeter() {
       window.cancelAnimationFrame(animationFrame);
-      audioContext?.close().catch(() => undefined);
+      if (audioContext) void audioContext.close().catch(() => undefined);
       audioContext = null;
     }
 
@@ -47,19 +44,16 @@ export default function PrejoinRuntime() {
       const micSelect = panel.querySelector<HTMLSelectElement>('[data-prejoin-mic]');
       const cameraSelect = panel.querySelector<HTMLSelectElement>('[data-prejoin-camera]');
       if (!micSelect || !cameraSelect) return;
-
       const currentMic = window.__focoPrejoin?.audioDeviceId;
       const currentCamera = window.__focoPrejoin?.videoDeviceId;
       const microphones = devices.filter((device) => device.kind === 'audioinput');
       const cameras = devices.filter((device) => device.kind === 'videoinput');
-
       micSelect.innerHTML = microphones.length
         ? microphones.map((device, index) => `<option value="${device.deviceId}">${device.label || `Microfone ${index + 1}`}</option>`).join('')
         : '<option value="">Microfone padrão</option>';
       cameraSelect.innerHTML = cameras.length
         ? cameras.map((device, index) => `<option value="${device.deviceId}">${device.label || `Câmera ${index + 1}`}</option>`).join('')
         : '<option value="">Câmera padrão</option>';
-
       if (currentMic) micSelect.value = currentMic;
       if (currentCamera) cameraSelect.value = currentCamera;
     }
@@ -89,9 +83,8 @@ export default function PrejoinRuntime() {
       source.connect(analyser);
       const values = new Uint8Array(analyser.frequencyBinCount);
       const draw = () => {
-        if (!previewAudioOn) {
-          meter.style.setProperty('--level', '0%');
-        } else {
+        if (!previewAudioOn) meter.style.setProperty('--level', '0%');
+        else {
           analyser.getByteFrequencyData(values);
           const average = values.reduce((sum, value) => sum + value, 0) / values.length;
           meter.style.setProperty('--level', `${Math.min(100, average * 1.7)}%`);
@@ -109,7 +102,6 @@ export default function PrejoinRuntime() {
       const micSelect = panel.querySelector<HTMLSelectElement>('[data-prejoin-mic]');
       const cameraSelect = panel.querySelector<HTMLSelectElement>('[data-prejoin-camera]');
       const testButton = panel.querySelector<HTMLButtonElement>('[data-prejoin-test]');
-
       try {
         if (status) status.textContent = 'Aguardando sua autorização para câmera e microfone…';
         if (testButton) testButton.textContent = 'Abrindo prévia…';
@@ -154,7 +146,6 @@ export default function PrejoinRuntime() {
       const card = document.querySelector<HTMLElement>('.fl-entry-card');
       const form = card?.querySelector<HTMLFormElement>('form');
       if (!card || !form || card.querySelector('[data-prejoin-panel]')) return;
-
       const panel = document.createElement('section');
       panel.dataset.prejoinPanel = 'true';
       panel.className = 'fl-prejoin-panel';
@@ -180,15 +171,14 @@ export default function PrejoinRuntime() {
         </div>`;
       form.insertAdjacentElement('beforebegin', panel);
       mountedPanel = panel;
-
       panel.querySelector('[data-prejoin-test]')?.addEventListener('click', () => startPreview(panel));
       panel.querySelector('[data-preview-mic-toggle]')?.addEventListener('click', () => {
-        if (!previewStream) return startPreview(panel);
+        if (!previewStream) return void startPreview(panel);
         previewAudioOn = !previewAudioOn;
         syncPreviewControls(panel);
       });
       panel.querySelector('[data-preview-camera-toggle]')?.addEventListener('click', () => {
-        if (!previewStream) return startPreview(panel);
+        if (!previewStream) return void startPreview(panel);
         previewVideoOn = !previewVideoOn;
         syncPreviewControls(panel);
       });
@@ -196,7 +186,7 @@ export default function PrejoinRuntime() {
         select.addEventListener('change', () => {
           if (select.matches('[data-prejoin-mic]')) window.__focoPrejoin!.audioDeviceId = select.value;
           if (select.matches('[data-prejoin-camera]')) window.__focoPrejoin!.videoDeviceId = select.value;
-          if (previewStream) startPreview(panel);
+          if (previewStream) void startPreview(panel);
         });
       });
       panel.querySelector<HTMLInputElement>('[data-prejoin-audio-toggle]')?.addEventListener('change', (event) => {
@@ -206,18 +196,18 @@ export default function PrejoinRuntime() {
         window.__focoPrejoin!.videoEnabled = (event.target as HTMLInputElement).checked;
       });
 
-      // A pré-sala apenas libera os dispositivos. Ela não chama nenhum método da
-      // Daily durante o processo de join, evitando concorrência com call.join().
-      form.addEventListener('submit', stopPreview);
+      // Não intercepta o submit. Apenas libera os dispositivos no gesto anterior
+      // ao clique, deixando o fluxo React/Daily completamente intacto.
+      const submitButton = form.querySelector<HTMLButtonElement>('button[type="submit"], button:not([type])');
+      submitButton?.addEventListener('pointerdown', stopPreview, { passive: true });
+      submitButton?.addEventListener('touchstart', stopPreview, { passive: true });
     }
 
     const observer = new MutationObserver(mount);
     observer.observe(document.body, { childList: true, subtree: true });
     mount();
-
     const deviceChange = () => mountedPanel && listDevices(mountedPanel).catch(() => undefined);
     navigator.mediaDevices?.addEventListener?.('devicechange', deviceChange);
-
     return () => {
       observer.disconnect();
       navigator.mediaDevices?.removeEventListener?.('devicechange', deviceChange);
@@ -225,6 +215,5 @@ export default function PrejoinRuntime() {
       mountedPanel?.remove();
     };
   }, []);
-
   return null;
 }
