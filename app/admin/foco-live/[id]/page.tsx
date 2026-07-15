@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import { createAdminClient } from '@/lib/supabase/admin';
 import OfferSelector from './offer-selector';
+import ShareLiveButton from './share-live-button';
 
 export const dynamic = 'force-dynamic';
 
@@ -78,6 +79,7 @@ export default async function FocoLiveDetailPage({ params }: { params: Promise<{
           <div className="foco-live-actions">
             <a className="foco-live-primary" href={`/live/${live.slug}?host=1`}>Entrar no estúdio</a>
             <a className="foco-live-secondary" href={`/live/${live.slug}`} target="_blank" rel="noreferrer">Abrir sala pública</a>
+            <ShareLiveButton title={live.title} description={live.description} slug={live.slug} startsAt={live.starts_at} />
           </div>
         </article>
 
