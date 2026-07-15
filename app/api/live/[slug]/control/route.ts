@@ -60,7 +60,10 @@ export async function POST(request: NextRequest, context: { params: Promise<{ sl
     const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
 
     if (input.action === 'start') {
-      if (!['draft', 'scheduled', 'live', 'ended'].includes(live.status)) {
+      if (live.status === 'ended') {
+        return NextResponse.json({ error: 'Esta aula já foi encerrada. Crie uma nova transmissão para iniciar outra aula.' }, { status: 409 });
+      }
+      if (!['draft', 'scheduled', 'live'].includes(live.status)) {
         return NextResponse.json({ error: 'Esta transmissão não pode ser iniciada.' }, { status: 409 });
       }
       patch.status = 'live';
@@ -77,6 +80,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ sl
       patch.ends_at = new Date().toISOString();
       patch.current_scene = 'waiting';
       patch.offer_config = {};
+      patch.waiting_room_locked = true;
     }
 
     if (input.action === 'scene') {
