@@ -2,24 +2,43 @@
 
 import { useEffect, useState } from 'react';
 
-export default function SessionEndGuard({ initialStatus, title }: { initialStatus: string; title: string }) {
+export default function SessionEndGuard({ initialStatus, title, slug }: { initialStatus: string; title: string; slug: string }) {
   const [ended, setEnded] = useState(initialStatus === 'ended');
 
   useEffect(() => {
-    const finish = () => setEnded(true);
+    if (ended) return;
+
+    let cancelled = false;
+    const finish = () => { if (!cancelled) setEnded(true); };
     window.addEventListener('foco-live-ended', finish);
 
     const observer = new MutationObserver(() => {
       const text = document.querySelector('.fl-top-status')?.textContent || '';
-      if (text.includes('ENCERRADA')) setEnded(true);
+      if (text.includes('ENCERRADA')) finish();
     });
     observer.observe(document.body, { childList: true, subtree: true, characterData: true });
 
+    const checkStatus = async () => {
+      try {
+        const response = await fetch(`/api/live/${encodeURIComponent(slug)}/control`, { cache: 'no-store' });
+        if (!response.ok) return;
+        const payload = await response.json();
+        if (payload?.ended || payload?.status === 'ended') finish();
+      } catch {
+        // A próxima consulta tenta novamente. A tela não deve quebrar por falha transitória.
+      }
+    };
+
+    void checkStatus();
+    const pollTimer = window.setInterval(() => { void checkStatus(); }, 1500);
+
     return () => {
+      cancelled = true;
       window.removeEventListener('foco-live-ended', finish);
       observer.disconnect();
+      window.clearInterval(pollTimer);
     };
-  }, []);
+  }, [ended, slug]);
 
   if (!ended) return null;
 
