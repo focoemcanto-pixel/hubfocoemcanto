@@ -22,6 +22,7 @@ export default function PrejoinRuntime() {
     let mountedPanel: HTMLElement | null = null;
     let previewAudioOn = true;
     let previewVideoOn = true;
+    let submitReleased = false;
 
     window.__focoPrejoin = window.__focoPrejoin || {
       audioEnabled: false,
@@ -38,6 +39,8 @@ export default function PrejoinRuntime() {
       stopMeter();
       previewStream?.getTracks().forEach((track) => track.stop());
       previewStream = null;
+      const video = mountedPanel?.querySelector<HTMLVideoElement>('[data-prejoin-video]');
+      if (video) video.srcObject = null;
     }
 
     async function listDevices(panel: HTMLElement) {
@@ -168,7 +171,7 @@ export default function PrejoinRuntime() {
 
     function mount() {
       const card = document.querySelector<HTMLElement>('.fl-entry-card');
-      const form = card?.querySelector('form');
+      const form = card?.querySelector<HTMLFormElement>('form');
       if (!card || !form || card.querySelector('[data-prejoin-panel]')) return;
 
       const panel = document.createElement('section');
@@ -221,11 +224,22 @@ export default function PrejoinRuntime() {
       panel.querySelector<HTMLInputElement>('[data-prejoin-video-toggle]')?.addEventListener('change', (event) => {
         window.__focoPrejoin!.videoEnabled = (event.target as HTMLInputElement).checked;
       });
-      form.addEventListener('submit', () => {
-        window.setTimeout(applyPreferencesToCall, 500);
-        window.setTimeout(applyPreferencesToCall, 1400);
-        stopPreview();
-      });
+
+      form.addEventListener('submit', (event) => {
+        if (!submitReleased && previewStream) {
+          event.preventDefault();
+          event.stopPropagation();
+          submitReleased = true;
+          stopPreview();
+          const submitButton = form.querySelector<HTMLButtonElement>('button[type="submit"], button:not([type])');
+          if (submitButton) submitButton.textContent = 'Liberando câmera e microfone…';
+          window.setTimeout(() => form.requestSubmit(), 350);
+          return;
+        }
+        submitReleased = false;
+        window.setTimeout(applyPreferencesToCall, 650);
+        window.setTimeout(applyPreferencesToCall, 1600);
+      }, true);
     }
 
     const observer = new MutationObserver(mount);
