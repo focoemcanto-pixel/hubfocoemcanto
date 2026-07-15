@@ -1,16 +1,38 @@
 'use client';
 
 import { useEffect } from 'react';
-import { Copy, Share2 } from 'lucide-react';
+
+declare global {
+  interface Window {
+    __focoLiveCall?: any;
+    __focoMediaLocks?: { audio: boolean; video: boolean };
+  }
+}
 
 export default function LiveUxFix({ slug }: { slug: string }) {
   useEffect(() => {
     const publicUrl = `${window.location.origin}/live/${slug}`;
 
+    function isHostStudio() {
+      return Boolean(document.querySelector('.host-studio, .host-entry'));
+    }
+
     function closeMobilePanel() {
       if (window.matchMedia('(max-width: 980px)').matches) {
         document.querySelector('.fl-sidepanel')?.classList.remove('open');
       }
+    }
+
+    function showToast(message: string) {
+      const stage = document.querySelector('.fl-stage-wrap') || document.body;
+      const existing = document.querySelector('[data-runtime-toast]');
+      existing?.remove();
+      const toast = document.createElement('div');
+      toast.dataset.runtimeToast = 'true';
+      toast.className = 'fl-toast';
+      toast.textContent = message;
+      stage.appendChild(toast);
+      window.setTimeout(() => toast.remove(), 2600);
     }
 
     function installShareButton() {
@@ -57,14 +79,73 @@ export default function LiveUxFix({ slug }: { slug: string }) {
 
     function normalizeGuestExperience() {
       const isHostUrl = new URLSearchParams(window.location.search).get('host') === '1';
-      const isHostStudio = Boolean(document.querySelector('.host-studio, .host-entry'));
-
-      if (!isHostUrl || !isHostStudio) closeMobilePanel();
+      if (!isHostUrl || !isHostStudio()) closeMobilePanel();
 
       document.querySelectorAll<HTMLAnchorElement>('a[href*="?host=1"]').forEach((anchor) => {
         if (anchor.closest('.host-studio')) return;
         anchor.href = publicUrl;
       });
+    }
+
+    function mediaButton(kind: 'audio' | 'video') {
+      const controls = document.querySelector('.fl-controls');
+      if (!controls) return null;
+      const buttons = Array.from(controls.querySelectorAll<HTMLButtonElement>(':scope > button'));
+      return kind === 'audio' ? buttons[0] || null : buttons[1] || null;
+    }
+
+    function syncMediaButton(kind: 'audio' | 'video', enabled: boolean) {
+      const button = mediaButton(kind);
+      if (!button) return;
+      button.classList.toggle('off', !enabled);
+      const label = button.querySelector('span');
+      if (label) label.textContent = kind === 'audio'
+        ? enabled ? 'Microfone' : 'Ativar mic'
+        : enabled ? 'Câmera' : 'Ativar câmera';
+      button.setAttribute('aria-pressed', String(enabled));
+    }
+
+    async function handleGuestMediaClick(event: MouseEvent) {
+      if (isHostStudio()) return;
+      const target = event.target as HTMLElement | null;
+      const button = target?.closest<HTMLButtonElement>('.fl-controls > button');
+      if (!button) return;
+
+      const audioButton = mediaButton('audio');
+      const videoButton = mediaButton('video');
+      const kind = button === audioButton ? 'audio' : button === videoButton ? 'video' : null;
+      if (!kind) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+
+      const call = window.__focoLiveCall;
+      if (!call) {
+        showToast('Aguarde a conexão da sala terminar.');
+        return;
+      }
+
+      const locked = Boolean(window.__focoMediaLocks?.[kind]);
+      if (locked) {
+        showToast(kind === 'audio'
+          ? 'O apresentador bloqueou seu microfone.'
+          : 'O apresentador bloqueou sua câmera.');
+        return;
+      }
+
+      try {
+        const local = call.participants?.()?.local;
+        const current = kind === 'audio' ? local?.audio !== false : local?.video !== false;
+        const next = !current;
+        if (kind === 'audio') await call.setLocalAudio(next);
+        else await call.setLocalVideo(next);
+        syncMediaButton(kind, next);
+      } catch {
+        showToast(kind === 'audio'
+          ? 'Não foi possível acessar o microfone. Confira a permissão do navegador.'
+          : 'Não foi possível acessar a câmera. Confira a permissão do navegador.');
+      }
     }
 
     const observer = new MutationObserver(() => {
@@ -73,6 +154,7 @@ export default function LiveUxFix({ slug }: { slug: string }) {
     });
 
     observer.observe(document.body, { childList: true, subtree: true });
+    document.addEventListener('click', handleGuestMediaClick, true);
     installShareButton();
     normalizeGuestExperience();
 
@@ -81,6 +163,7 @@ export default function LiveUxFix({ slug }: { slug: string }) {
 
     return () => {
       observer.disconnect();
+      document.removeEventListener('click', handleGuestMediaClick, true);
       window.removeEventListener('resize', onResize);
     };
   }, [slug]);
