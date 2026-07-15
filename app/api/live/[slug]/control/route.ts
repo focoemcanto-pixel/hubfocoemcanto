@@ -41,6 +41,27 @@ const schema = z.discriminatedUnion('action', [
   }),
 ]);
 
+export async function GET(_request: NextRequest, context: { params: Promise<{ slug: string }> }) {
+  try {
+    const { slug } = await context.params;
+    const { data: live, error } = await createAdminClient()
+      .from('live_sessions')
+      .select('status,ends_at')
+      .eq('slug', slug)
+      .maybeSingle();
+
+    if (error || !live) return NextResponse.json({ error: 'Live não encontrada.' }, { status: 404 });
+
+    return NextResponse.json(
+      { status: live.status, ended: live.status === 'ended', endsAt: live.ends_at },
+      { headers: { 'Cache-Control': 'no-store, max-age=0' } },
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Não foi possível consultar a live.';
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
+}
+
 export async function POST(request: NextRequest, context: { params: Promise<{ slug: string }> }) {
   try {
     const accessEmail = request.cookies.get('hub_access_email')?.value;
@@ -123,8 +144,6 @@ export async function POST(request: NextRequest, context: { params: Promise<{ sl
 
     if (updateError) throw updateError;
 
-    // Encerrar significa fechar a sala de verdade. A exclusão na Daily derruba
-    // imediatamente host e convidados, encerrando áudio, vídeo e compartilhamento.
     if (input.action === 'end' && live.daily_room_name) {
       try {
         await deleteDailyRoom(live.daily_room_name);
