@@ -1,11 +1,49 @@
 /* Integra as ofertas ao palco principal sem trocar para o layout antigo. */
+.fl-stage-wrap{overflow:hidden}
+
 @media (min-width:981px){
+  /* Estado normal: restaura completamente o palco depois de ocultar uma oferta. */
+  .fl-room:not(.scene-offer) .fl-meet-stage{
+    display:flex!important;
+    inset:0!important;
+    right:0!important;
+    width:auto!important;
+    height:auto!important;
+    max-height:100%!important;
+    padding:14px!important;
+    overflow:hidden!important;
+  }
+  .fl-room:not(.scene-offer) .fl-meet-main,
+  .fl-room:not(.scene-offer) .fl-meet-grid{
+    min-height:0!important;
+    height:100%!important;
+    max-height:100%!important;
+  }
+  .fl-room:not(.scene-offer) .fl-meet-main .fl-meet-tile{
+    width:100%!important;
+    height:100%!important;
+    min-height:0!important;
+    max-height:100%!important;
+  }
+  .fl-room:not(.scene-offer) .fl-meet-main .fl-meet-tile video{
+    width:100%!important;
+    height:100%!important;
+    object-fit:contain!important;
+    object-position:center center!important;
+  }
+
   .scene-offer .fl-stage-wrap.meet-stage-active>.fl-stage-grid{visibility:hidden!important;pointer-events:none!important}
   .scene-offer .fl-meet-stage{
     display:flex!important;
-    right:56%;
-    width:auto;
-    padding:14px 10px 14px 14px;
+    top:0!important;
+    bottom:0!important;
+    left:0!important;
+    right:56%!important;
+    width:auto!important;
+    height:auto!important;
+    max-height:100%!important;
+    padding:14px 10px 14px 14px!important;
+    overflow:hidden!important;
   }
   .scene-offer .fl-offer-scene{
     position:absolute;
@@ -40,20 +78,14 @@
     width:min(850px,calc(100% - 56px));
     transform:translateX(-50%);
   }
-  .fl-offer-banner .fl-live-offer-content{
-    width:100%!important;
-  }
+  .fl-offer-banner .fl-live-offer-content{width:100%!important}
   .fl-offer-floating{
     z-index:30!important;
     right:26px!important;
     bottom:24px!important;
   }
-  .fl-stage-wrap:has(.fl-offer-banner) .fl-meet-stage{
-    padding-bottom:112px;
-  }
-  .fl-stage-wrap:has(.fl-offer-floating) .fl-meet-stage{
-    padding-bottom:92px;
-  }
+  .fl-stage-wrap:has(.fl-offer-banner) .fl-meet-stage{padding-bottom:112px!important}
+  .fl-stage-wrap:has(.fl-offer-floating) .fl-meet-stage{padding-bottom:92px!important}
 }
 
 @media (max-width:980px){
