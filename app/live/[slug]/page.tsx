@@ -10,7 +10,6 @@ import WaitingRoomRuntime from './waiting-room-runtime';
 import SessionEndGuard from './session-end-guard';
 import HostSessionRuntime from './host-session-runtime';
 import MeetStageRuntime from './meet-stage-runtime';
-import PrejoinRuntime from './prejoin-runtime';
 import LivePolishRuntime from './live-polish-runtime';
 import './room.css';
 import './host-studio.css';
@@ -20,7 +19,6 @@ import './waiting-room.css';
 import './session-end.css';
 import './host-session-runtime.css';
 import './meet-stage.css';
-import './prejoin-runtime.css';
 import './offer-stage-integration.css';
 import './live-polish.css';
 
@@ -102,7 +100,6 @@ export default async function LivePage({ params }: PageProps) {
   return (
     <>
       <DailyCallBridge />
-      <PrejoinRuntime />
       <OfferRuntimeFix slug={slug} />
       <LiveUxFix slug={slug} />
       <WaitingRoomRuntime slug={slug} />
