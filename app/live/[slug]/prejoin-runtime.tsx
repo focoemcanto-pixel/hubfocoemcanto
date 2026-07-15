@@ -22,7 +22,6 @@ export default function PrejoinRuntime() {
     let mountedPanel: HTMLElement | null = null;
     let previewAudioOn = true;
     let previewVideoOn = true;
-    let submitReleased = false;
 
     window.__focoPrejoin = window.__focoPrejoin || {
       audioEnabled: false,
@@ -225,20 +224,13 @@ export default function PrejoinRuntime() {
         window.__focoPrejoin!.videoEnabled = (event.target as HTMLInputElement).checked;
       });
 
-      form.addEventListener('submit', (event) => {
-        if (!submitReleased && previewStream) {
-          event.preventDefault();
-          event.stopPropagation();
-          submitReleased = true;
-          stopPreview();
-          const submitButton = form.querySelector<HTMLButtonElement>('button[type="submit"], button:not([type])');
-          if (submitButton) submitButton.textContent = 'Liberando câmera e microfone…';
-          window.setTimeout(() => form.requestSubmit(), 350);
-          return;
-        }
-        submitReleased = false;
-        window.setTimeout(applyPreferencesToCall, 650);
-        window.setTimeout(applyPreferencesToCall, 1600);
+      // Importante: nunca bloqueie nem reprograme o submit original da sala.
+      // A prévia é encerrada sincronamente para liberar câmera/microfone e o fluxo
+      // nativo do FocoLiveRoom continua imediatamente no mesmo evento de submit.
+      form.addEventListener('submit', () => {
+        stopPreview();
+        window.setTimeout(applyPreferencesToCall, 500);
+        window.setTimeout(applyPreferencesToCall, 1400);
       }, true);
     }
 
