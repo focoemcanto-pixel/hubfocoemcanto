@@ -3,14 +3,12 @@ import { notFound } from 'next/navigation';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getBrandingMetadata } from '@/lib/seo/branding-metadata';
 import FocoLiveRoom from './room';
-import LiveUxFix from './live-ux-fix';
 import SessionEndGuard from './session-end-guard';
 import PrejoinRuntime from './prejoin-runtime';
 import LivePolishRuntime from './live-polish-runtime';
 import './room.css';
 import './host-studio.css';
 import './split-offer-fix.css';
-import './live-ux-fix.css';
 import './session-end.css';
 import './offer-stage-integration.css';
 import './prejoin-runtime.css';
@@ -93,8 +91,6 @@ export default async function LivePage({ params }: PageProps) {
 
   return (
     <>
-      {/* FocoLiveRoom continua sendo o único controlador da chamada Daily. */}
-      <LiveUxFix slug={slug} />
       <SessionEndGuard initialStatus={live.status} title={live.title} />
       <PrejoinRuntime />
       <LivePolishRuntime />
