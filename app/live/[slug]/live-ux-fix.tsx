@@ -35,15 +35,24 @@ export default function LiveUxFix({ slug }: { slug: string }) {
     }
 
     async function copyPublicLink() {
+      const button = document.querySelector<HTMLButtonElement>('[data-share-copy]');
+      const original = button?.textContent || 'Copiar';
       try {
         await navigator.clipboard.writeText(publicUrl);
-        showToast('Link da live copiado!');
       } catch {
         const input = document.querySelector<HTMLInputElement>('[data-share-link-input]');
         input?.select();
         if (input) document.execCommand('copy');
-        showToast('Link da live copiado!');
       }
+      if (button) {
+        button.textContent = '✓ Copiado!';
+        button.dataset.copied = 'true';
+        window.setTimeout(() => {
+          button.textContent = original;
+          delete button.dataset.copied;
+        }, 1800);
+      }
+      showToast('Link da live copiado!');
     }
 
     function closeShareModal() {
