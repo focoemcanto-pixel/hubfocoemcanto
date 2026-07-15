@@ -6,6 +6,7 @@ import FocoLiveRoom from './room';
 import SessionEndGuard from './session-end-guard';
 import PrejoinRuntime from './prejoin-runtime';
 import LivePolishRuntime from './live-polish-runtime';
+import ShareInvite from './share-invite';
 import './room.css';
 import './host-studio.css';
 import './split-offer-fix.css';
@@ -94,6 +95,12 @@ export default async function LivePage({ params }: PageProps) {
       <SessionEndGuard initialStatus={live.status} title={live.title} />
       <PrejoinRuntime />
       <LivePolishRuntime />
+      <ShareInvite
+        slug={slug}
+        title={live.title}
+        description={live.description}
+        startsAt={live.starts_at}
+      />
       <FocoLiveRoom
         slug={slug}
         initialLive={{
