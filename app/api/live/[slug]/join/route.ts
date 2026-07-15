@@ -31,12 +31,15 @@ export async function POST(request: NextRequest, context: { params: Promise<{ sl
     const isHost = requestedHost && Boolean(accessEmail);
     const effectiveMode = isHost ? 'host' : accessEmail && input.mode === 'student' ? 'student' : 'guest';
 
-    if (!isHost && live.status !== 'live') {
-      const message = live.status === 'ended' ? 'Esta transmissão já foi encerrada.' : 'A transmissão ainda não começou.';
-      return NextResponse.json({ error: message, fallbackMode: requestedHost ? 'guest' : undefined }, { status: 403 });
+    if (live.status === 'ended') {
+      return NextResponse.json({ error: 'Esta aula foi encerrada.', ended: true }, { status: 410 });
     }
 
-    if (isHost && !['draft', 'scheduled', 'live', 'ended'].includes(live.status)) {
+    if (!isHost && live.status !== 'live') {
+      return NextResponse.json({ error: 'A transmissão ainda não começou.', fallbackMode: requestedHost ? 'guest' : undefined }, { status: 403 });
+    }
+
+    if (isHost && !['draft', 'scheduled', 'live'].includes(live.status)) {
       return NextResponse.json({ error: 'Esta transmissão não pode ser aberta no estúdio.' }, { status: 403 });
     }
 
