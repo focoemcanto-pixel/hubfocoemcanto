@@ -20,18 +20,24 @@ export default function PrejoinRuntime() {
     let audioContext: AudioContext | null = null;
     let animationFrame = 0;
     let mountedPanel: HTMLElement | null = null;
+    let previewAudioOn = true;
+    let previewVideoOn = true;
 
     window.__focoPrejoin = window.__focoPrejoin || {
       audioEnabled: false,
       videoEnabled: false,
     };
 
-    function stopPreview() {
+    function stopMeter() {
       window.cancelAnimationFrame(animationFrame);
-      previewStream?.getTracks().forEach((track) => track.stop());
-      previewStream = null;
       audioContext?.close().catch(() => undefined);
       audioContext = null;
+    }
+
+    function stopPreview() {
+      stopMeter();
+      previewStream?.getTracks().forEach((track) => track.stop());
+      previewStream = null;
     }
 
     async function listDevices(panel: HTMLElement) {
@@ -42,19 +48,35 @@ export default function PrejoinRuntime() {
 
       const currentMic = window.__focoPrejoin?.audioDeviceId;
       const currentCamera = window.__focoPrejoin?.videoDeviceId;
-      micSelect.innerHTML = devices
-        .filter((device) => device.kind === 'audioinput')
-        .map((device, index) => `<option value="${device.deviceId}">${device.label || `Microfone ${index + 1}`}</option>`)
-        .join('');
-      cameraSelect.innerHTML = devices
-        .filter((device) => device.kind === 'videoinput')
-        .map((device, index) => `<option value="${device.deviceId}">${device.label || `Câmera ${index + 1}`}</option>`)
-        .join('');
+      const microphones = devices.filter((device) => device.kind === 'audioinput');
+      const cameras = devices.filter((device) => device.kind === 'videoinput');
+
+      micSelect.innerHTML = microphones.length
+        ? microphones.map((device, index) => `<option value="${device.deviceId}">${device.label || `Microfone ${index + 1}`}</option>`).join('')
+        : '<option value="">Microfone padrão</option>';
+      cameraSelect.innerHTML = cameras.length
+        ? cameras.map((device, index) => `<option value="${device.deviceId}">${device.label || `Câmera ${index + 1}`}</option>`).join('')
+        : '<option value="">Câmera padrão</option>';
+
       if (currentMic) micSelect.value = currentMic;
       if (currentCamera) cameraSelect.value = currentCamera;
     }
 
+    function syncPreviewControls(panel: HTMLElement) {
+      panel.querySelector('[data-preview-mic-toggle]')?.classList.toggle('off', !previewAudioOn);
+      panel.querySelector('[data-preview-camera-toggle]')?.classList.toggle('off', !previewVideoOn);
+      const micLabel = panel.querySelector<HTMLElement>('[data-preview-mic-label]');
+      const cameraLabel = panel.querySelector<HTMLElement>('[data-preview-camera-label]');
+      if (micLabel) micLabel.textContent = previewAudioOn ? 'Microfone ativo' : 'Microfone desligado';
+      if (cameraLabel) cameraLabel.textContent = previewVideoOn ? 'Câmera ativa' : 'Câmera desligada';
+      previewStream?.getAudioTracks().forEach((track) => { track.enabled = previewAudioOn; });
+      previewStream?.getVideoTracks().forEach((track) => { track.enabled = previewVideoOn; });
+      panel.classList.toggle('camera-off', !previewVideoOn);
+      panel.classList.toggle('mic-off', !previewAudioOn);
+    }
+
     function startMeter(panel: HTMLElement, stream: MediaStream) {
+      stopMeter();
       const audioTrack = stream.getAudioTracks()[0];
       const meter = panel.querySelector<HTMLElement>('[data-prejoin-meter]');
       if (!audioTrack || !meter) return;
@@ -65,9 +87,13 @@ export default function PrejoinRuntime() {
       source.connect(analyser);
       const values = new Uint8Array(analyser.frequencyBinCount);
       const draw = () => {
-        analyser.getByteFrequencyData(values);
-        const average = values.reduce((sum, value) => sum + value, 0) / values.length;
-        meter.style.setProperty('--level', `${Math.min(100, average * 1.7)}%`);
+        if (!previewAudioOn) {
+          meter.style.setProperty('--level', '0%');
+        } else {
+          analyser.getByteFrequencyData(values);
+          const average = values.reduce((sum, value) => sum + value, 0) / values.length;
+          meter.style.setProperty('--level', `${Math.min(100, average * 1.7)}%`);
+        }
         animationFrame = window.requestAnimationFrame(draw);
       };
       draw();
@@ -75,12 +101,16 @@ export default function PrejoinRuntime() {
 
     async function startPreview(panel: HTMLElement) {
       stopPreview();
+      panel.classList.remove('permission-error');
       const status = panel.querySelector<HTMLElement>('[data-prejoin-status]');
       const video = panel.querySelector<HTMLVideoElement>('[data-prejoin-video]');
       const micSelect = panel.querySelector<HTMLSelectElement>('[data-prejoin-mic]');
       const cameraSelect = panel.querySelector<HTMLSelectElement>('[data-prejoin-camera]');
+      const testButton = panel.querySelector<HTMLButtonElement>('[data-prejoin-test]');
+
       try {
-        if (status) status.textContent = 'Solicitando permissão…';
+        if (status) status.textContent = 'Aguardando sua autorização para câmera e microfone…';
+        if (testButton) testButton.textContent = 'Abrindo prévia…';
         previewStream = await navigator.mediaDevices.getUserMedia({
           audio: micSelect?.value ? { deviceId: { exact: micSelect.value } } : true,
           video: cameraSelect?.value ? { deviceId: { exact: cameraSelect.value } } : true,
@@ -100,12 +130,21 @@ export default function PrejoinRuntime() {
         };
         if (micSelect && audioDeviceId) micSelect.value = audioDeviceId;
         if (cameraSelect && videoDeviceId) cameraSelect.value = videoDeviceId;
+        previewAudioOn = true;
+        previewVideoOn = true;
+        syncPreviewControls(panel);
         startMeter(panel, previewStream);
         panel.classList.add('ready');
-        if (status) status.textContent = 'Câmera e microfone prontos';
-      } catch {
+        if (status) status.textContent = 'Prévia ativa — confirme sua imagem e o nível do microfone';
+        if (testButton) testButton.textContent = 'Reiniciar teste';
+      } catch (error) {
+        panel.classList.remove('ready');
         panel.classList.add('permission-error');
-        if (status) status.textContent = 'Permissão negada. Libere câmera e microfone no navegador.';
+        const denied = error instanceof DOMException && error.name === 'NotAllowedError';
+        if (status) status.textContent = denied
+          ? 'A câmera ou o microfone foram bloqueados. Clique em tentar novamente para autorizar.'
+          : 'Não foi possível abrir a prévia. Tente novamente.';
+        if (testButton) testButton.textContent = 'Tentar novamente';
       }
     }
 
@@ -123,7 +162,7 @@ export default function PrejoinRuntime() {
         await call.setLocalAudio(Boolean(preferences.audioEnabled));
         await call.setLocalVideo(Boolean(preferences.videoEnabled));
       } catch {
-        // A sala continuará usando os dispositivos padrão quando o navegador não permitir a troca.
+        // Mantém os dispositivos padrão caso o navegador não permita a troca.
       }
     }
 
@@ -138,23 +177,37 @@ export default function PrejoinRuntime() {
       panel.innerHTML = `
         <div class="fl-prejoin-preview">
           <video data-prejoin-video muted playsinline></video>
-          <div class="fl-prejoin-placeholder"><b>Prévia da câmera</b><span>Teste seus dispositivos antes de entrar</span></div>
+          <div class="fl-prejoin-placeholder"><b>Prévia da câmera</b><span>Clique em ativar prévia para testar</span></div>
+          <div class="fl-preview-controls">
+            <button type="button" data-preview-mic-toggle class="off" aria-label="Ligar ou desligar microfone"><span>🎙️</span><small data-preview-mic-label>Microfone desligado</small></button>
+            <button type="button" data-preview-camera-toggle class="off" aria-label="Ligar ou desligar câmera"><span>📷</span><small data-preview-camera-label>Câmera desligada</small></button>
+          </div>
           <div class="fl-prejoin-meter"><i data-prejoin-meter></i></div>
         </div>
         <div class="fl-prejoin-tools">
-          <div><strong>Configuração de áudio e vídeo</strong><small data-prejoin-status>Clique em testar para conferir seus dispositivos</small></div>
-          <label>Microfone<select data-prejoin-mic><option>Microfone padrão</option></select></label>
-          <label>Câmera<select data-prejoin-camera><option>Câmera padrão</option></select></label>
+          <div><strong>Configuração de áudio e vídeo</strong><small data-prejoin-status>Clique abaixo para ativar a prévia da câmera e do microfone</small></div>
+          <label>Microfone<select data-prejoin-mic><option value="">Microfone padrão</option></select></label>
+          <label>Câmera<select data-prejoin-camera><option value="">Câmera padrão</option></select></label>
           <div class="fl-prejoin-toggles">
             <label><input type="checkbox" data-prejoin-audio-toggle /> Entrar com microfone ligado</label>
             <label><input type="checkbox" data-prejoin-video-toggle /> Entrar com câmera ligada</label>
           </div>
-          <button type="button" data-prejoin-test>Testar câmera e microfone</button>
+          <button type="button" data-prejoin-test>Ativar prévia</button>
         </div>`;
       form.insertAdjacentElement('beforebegin', panel);
       mountedPanel = panel;
 
       panel.querySelector('[data-prejoin-test]')?.addEventListener('click', () => startPreview(panel));
+      panel.querySelector('[data-preview-mic-toggle]')?.addEventListener('click', () => {
+        if (!previewStream) return startPreview(panel);
+        previewAudioOn = !previewAudioOn;
+        syncPreviewControls(panel);
+      });
+      panel.querySelector('[data-preview-camera-toggle]')?.addEventListener('click', () => {
+        if (!previewStream) return startPreview(panel);
+        previewVideoOn = !previewVideoOn;
+        syncPreviewControls(panel);
+      });
       panel.querySelectorAll<HTMLSelectElement>('select').forEach((select) => {
         select.addEventListener('change', () => {
           if (select.matches('[data-prejoin-mic]')) window.__focoPrejoin!.audioDeviceId = select.value;
