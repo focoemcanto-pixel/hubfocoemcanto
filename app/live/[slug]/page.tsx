@@ -85,10 +85,18 @@ export default async function LivePage({ params }: PageProps) {
   const offers = (linked || [])
     .map((item: any) => item.offer)
     .filter(Boolean)
-    .map((offer: any) => ({ ...offer, checkout_url: `/api/live/${slug}/offer-click/${offer.id}` }));
+    .map((offer: any) => ({
+      ...offer,
+      direct_checkout_url: offer.checkout_url,
+      checkout_url: `/api/live/${slug}/offer-click/${offer.id}`,
+    }));
 
   const persistedOffer = live.offer_config?.offer
-    ? { ...live.offer_config.offer, checkout_url: `/api/live/${slug}/offer-click/${live.offer_config.offer.id}` }
+    ? {
+        ...live.offer_config.offer,
+        direct_checkout_url: live.offer_config.offer.direct_checkout_url || live.offer_config.offer.checkout_url,
+        checkout_url: `/api/live/${slug}/offer-click/${live.offer_config.offer.id}`,
+      }
     : null;
 
   return (

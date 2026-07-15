@@ -3,33 +3,13 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import DailyIframe from '@daily-co/daily-js';
 import {
-  Camera,
-  CameraOff,
-  Grid2X2,
-  Hand,
-  Layers,
-  LayoutPanelTop,
-  LogOut,
-  MessageCircle,
-  Mic,
-  Mic2,
-  MicOff,
-  MonitorUp,
-  Music2,
-  Play,
-  Send,
-  Share2,
-  ShoppingBag,
-  Sparkles,
-  Square,
-  Star,
-  UserMinus,
-  Users,
-  Video,
-  X,
+  Camera, CameraOff, Grid2X2, Hand, Layers, LayoutPanelTop, LogOut,
+  MessageCircle, Mic, Mic2, MicOff, MonitorUp, Music2, Play, Send,
+  Share2, ShoppingBag, Sparkles, Square, Star, UserMinus, Users, Video, X,
 } from 'lucide-react';
 import './room-layout.css';
 import './room-professional.css';
+import './meet-stage.css';
 
 type Offer = {
   id: string;
@@ -39,6 +19,7 @@ type Offer = {
   price?: string | null;
   old_price?: string | null;
   checkout_url: string;
+  direct_checkout_url?: string | null;
   cta_label?: string | null;
   image_url?: string | null;
   badge?: string | null;
@@ -66,18 +47,18 @@ type Props = { slug: string; initialLive: Live };
 
 function absoluteUrl(value: string) {
   const base = typeof window === 'undefined' ? 'https://escola.focoemcanto.com' : window.location.origin;
-  try {
-    return new URL(value, base).toString();
-  } catch {
-    return value;
-  }
+  try { return new URL(value, base).toString(); } catch { return value; }
 }
 
-function VideoTile({ participant, featured = false, compact = false, speaking = false }: { participant: any; featured?: boolean; compact?: boolean; speaking?: boolean }) {
+function mediaTrack(participant: any, kind: 'video' | 'audio' | 'screenVideo' | 'screenAudio') {
+  return participant?.tracks?.[kind]?.persistentTrack || participant?.tracks?.[kind]?.track || participant?.[`${kind}Track`] || null;
+}
+
+function VideoTile({ participant, compact = false, speaking = false }: { participant: any; compact?: boolean; speaking?: boolean }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
-  const videoTrack = participant?.tracks?.video?.persistentTrack || participant?.videoTrack;
-  const audioTrack = participant?.tracks?.audio?.persistentTrack || participant?.audioTrack;
+  const videoTrack = mediaTrack(participant, 'video');
+  const audioTrack = mediaTrack(participant, 'audio');
 
   useEffect(() => {
     const video = videoRef.current;
@@ -89,7 +70,7 @@ function VideoTile({ participant, featured = false, compact = false, speaking = 
 
   useEffect(() => {
     const audio = audioRef.current;
-    if (participant?.local || !audio) return;
+    if (!audio || participant?.local) return;
     audio.srcObject = audioTrack ? new MediaStream([audioTrack]) : null;
     void audio.play().catch(() => undefined);
     return () => { audio.srcObject = null; };
@@ -100,7 +81,7 @@ function VideoTile({ participant, featured = false, compact = false, speaking = 
   const micOn = participant?.audio !== false;
 
   return (
-    <article className={`fl-video-tile${featured ? ' featured' : ''}${compact ? ' compact' : ''}${speaking ? ' speaking' : ''}`}>
+    <article className={`fl-video-tile${compact ? ' compact' : ''}${speaking ? ' speaking' : ''}`}>
       {cameraOn ? <video ref={videoRef} autoPlay playsInline muted={Boolean(participant?.local)} /> : <div className="fl-avatar">{name.slice(0, 1).toUpperCase()}</div>}
       {!participant?.local && <audio ref={audioRef} autoPlay />}
       <div className="fl-video-meta"><span>{name}{participant?.local ? ' (você)' : ''}</span><i>{micOn ? <Mic size={14} /> : <MicOff size={14} />}</i></div>
@@ -108,19 +89,43 @@ function VideoTile({ participant, featured = false, compact = false, speaking = 
   );
 }
 
+function ScreenTile({ participant }: { participant: any }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const videoTrack = mediaTrack(participant, 'screenVideo');
+  const audioTrack = mediaTrack(participant, 'screenAudio');
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.srcObject = videoTrack ? new MediaStream([videoTrack]) : null;
+    void video.play().catch(() => undefined);
+    return () => { video.srcObject = null; };
+  }, [videoTrack]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || participant?.local) return;
+    audio.srcObject = audioTrack ? new MediaStream([audioTrack]) : null;
+    void audio.play().catch(() => undefined);
+    return () => { audio.srcObject = null; };
+  }, [audioTrack, participant?.local]);
+
+  return <div className="fl-screen-tile"><video ref={videoRef} autoPlay playsInline muted={Boolean(participant?.local)} />{!participant?.local && <audio ref={audioRef} autoPlay />}<span>{participant?.user_name || 'Apresentador'} está apresentando</span></div>;
+}
+
 function OfferContent({ offer, compact = false }: { offer: Offer; compact?: boolean }) {
-  const destination = absoluteUrl(offer.checkout_url);
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(destination)}`;
-  return (
-    <div className={`fl-live-offer-content${compact ? ' compact' : ''}`}>
-      <span>{offer.badge || 'Oferta especial'}</span>
-      <h2>{offer.headline || offer.name}</h2>
-      {!compact && offer.description && <p>{offer.description}</p>}
-      <div className="fl-live-offer-price">{offer.old_price && <del>{offer.old_price}</del>}{offer.price && <strong>{offer.price}</strong>}</div>
-      {!compact && <img src={qrUrl} alt={`QR Code para ${offer.name}`} />}
-      <a href={destination} target="_blank" rel="noreferrer">{offer.cta_label || 'Quero garantir minha vaga'}</a>
-    </div>
-  );
+  const trackedDestination = absoluteUrl(offer.checkout_url);
+  const qrDestination = absoluteUrl(offer.direct_checkout_url || offer.checkout_url);
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(qrDestination)}`;
+  return <div className={`fl-live-offer-content${compact ? ' compact' : ''}`}>
+    <span>{offer.badge || 'Oferta especial'}</span>
+    <h2>{offer.headline || offer.name}</h2>
+    {!compact && offer.description && <p>{offer.description}</p>}
+    <div className="fl-live-offer-price">{offer.old_price && <del>{offer.old_price}</del>}{offer.price && <strong>{offer.price}</strong>}</div>
+    {!compact && <img src={qrUrl} alt={`QR Code para ${offer.name}`} />}
+    <a href={trackedDestination} target="_blank" rel="noreferrer">{offer.cta_label || 'Quero garantir minha vaga'}</a>
+  </div>;
 }
 
 function timeout<T>(promise: Promise<T>, milliseconds: number, message: string): Promise<T> {
@@ -151,7 +156,6 @@ export default function FocoLiveRoom({ slug, initialLive }: Props) {
   const [sidePanel, setSidePanel] = useState<'chat' | 'people' | 'director' | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [chatText, setChatText] = useState('');
-  const [scene, setScene] = useState(initialLive.current_scene || 'waiting');
   const [activeOffer, setActiveOffer] = useState<Offer | null>(initialLive.offer_config?.offer || null);
   const [offerMode, setOfferMode] = useState<OfferMode>(initialLive.offer_config?.mode || 'hidden');
   const [online, setOnline] = useState(true);
@@ -170,6 +174,7 @@ export default function FocoLiveRoom({ slug, initialLive }: Props) {
   const activeSpeaker = activeSpeakerId ? participantList.find((item: any) => item.session_id === activeSpeakerId || item.user_id === activeSpeakerId) : null;
   const mainParticipant = featuredParticipant || (layout === 'auto' ? activeSpeaker : null) || hostParticipant || localParticipant || remoteParticipants[0];
   const thumbnailParticipants = participantList.filter((item: any) => item.session_id !== mainParticipant?.session_id);
+  const screenSharer = participantList.find((participant: any) => Boolean(mediaTrack(participant, 'screenVideo')));
   const splitOfferVisible = Boolean(activeOffer && offerMode === 'split');
   const publicUrl = typeof window === 'undefined' ? `/live/${slug}` : new URL(`/live/${encodeURIComponent(slug)}`, window.location.origin).toString();
 
@@ -177,19 +182,13 @@ export default function FocoLiveRoom({ slug, initialLive }: Props) {
     const hostMode = new URLSearchParams(window.location.search).get('host') === '1';
     const savedAudioMode = window.localStorage.getItem('foco-live-audio-mode');
     setIsHost(hostMode);
-    setCanSpeak(true);
-    setCanUseCamera(true);
     if (hostMode) setName('Marcos Cruz');
     if (savedAudioMode === 'music') setAudioMode('music');
     const goOnline = () => setOnline(true);
     const goOffline = () => setOnline(false);
     window.addEventListener('online', goOnline);
     window.addEventListener('offline', goOffline);
-    return () => {
-      window.removeEventListener('online', goOnline);
-      window.removeEventListener('offline', goOffline);
-      void callRef.current?.destroy?.();
-    };
+    return () => { window.removeEventListener('online', goOnline); window.removeEventListener('offline', goOffline); void callRef.current?.destroy?.(); };
   }, []);
 
   async function applyAudioMode(next: AudioMode, call = callRef.current) {
@@ -202,12 +201,8 @@ export default function FocoLiveRoom({ slug, initialLive }: Props) {
       if (typeof call.updateInputSettings === 'function') await call.updateInputSettings(settings);
       else if (typeof call.setInputSettingsAsync === 'function') await call.setInputSettingsAsync(settings);
       else setAudioModeSupported(false);
-    } catch {
-      setAudioModeSupported(false);
-      setError('O navegador manteve o processamento de áudio padrão.');
-    } finally {
-      setAudioModeBusy(false);
-    }
+    } catch { setAudioModeSupported(false); setError('O navegador manteve o processamento de áudio padrão.'); }
+    finally { setAudioModeBusy(false); }
   }
 
   async function cleanupCall(call: any) {
@@ -219,18 +214,12 @@ export default function FocoLiveRoom({ slug, initialLive }: Props) {
   async function enter(event: FormEvent) {
     event.preventDefault();
     if (joining) return;
-    setJoining(true);
-    setError('');
+    setJoining(true); setError('');
     let call: any = null;
     const controller = new AbortController();
     const abortTimer = window.setTimeout(() => controller.abort(), 20000);
     try {
-      const response = await fetch(`/api/live/${slug}/join`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal: controller.signal,
-        body: JSON.stringify({ name, email, whatsapp, mode: isHost ? 'host' : 'guest' }),
-      });
+      const response = await fetch(`/api/live/${slug}/join`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal, body: JSON.stringify({ name, email, whatsapp, mode: isHost ? 'host' : 'guest' }) });
       window.clearTimeout(abortTimer);
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || 'Não foi possível entrar.');
@@ -240,106 +229,66 @@ export default function FocoLiveRoom({ slug, initialLive }: Props) {
       const sync = () => setParticipants({ ...call.participants() });
       call.on('participant-joined', sync);
       call.on('participant-updated', sync);
+      call.on('participant-left', sync);
       call.on('joined-meeting', sync);
-      call.on('participant-left', (eventData: any) => {
-        sync();
-        const id = eventData?.participant?.session_id;
-        if (!id) return;
-        setHandRequests((current) => { const next = { ...current }; delete next[id]; return next; });
-        setFeaturedSessionId((current) => current === id ? null : current);
-      });
+      call.on('local-screen-share-started', () => { setScreenSharing(true); sync(); });
+      call.on('local-screen-share-stopped', () => { setScreenSharing(false); sync(); });
       call.on('active-speaker-change', (eventData: any) => setActiveSpeakerId(eventData?.activeSpeaker?.peerId || eventData?.activeSpeaker?.session_id || null));
-      call.on('network-connection', (eventData: any) => {
-        if (eventData?.event === 'interrupted') setOnline(false);
-        if (eventData?.event === 'connected') setOnline(true);
-      });
+      call.on('network-connection', (eventData: any) => { if (eventData?.event === 'interrupted') setOnline(false); if (eventData?.event === 'connected') setOnline(true); });
       call.on('app-message', async (eventData: any) => {
         const data = eventData?.data;
         const senderId = data?.sessionId || eventData?.fromId;
         if (data?.type === 'chat') setMessages((current) => [...current, { id: crypto.randomUUID(), name: data.name || 'Participante', body: data.body }]);
-        if (data?.type === 'scene') setScene(data.scene || 'class');
         if (data?.type === 'offer-display') { setActiveOffer(data.offer || null); setOfferMode(data.mode || 'hidden'); }
-        if (data?.type === 'hand' && isHost && senderId) {
-          setHandRequests((current) => ({ ...current, [senderId]: { raised: Boolean(data.raised), name: data.name || 'Participante', requestedAt: Date.now() } }));
-          if (data.raised) setSidePanel('people');
-        }
+        if (data?.type === 'hand' && isHost && senderId) { setHandRequests((current) => ({ ...current, [senderId]: { raised: Boolean(data.raised), name: data.name || 'Participante', requestedAt: Date.now() } })); if (data.raised) setSidePanel('people'); }
         if (data?.type === 'stage-focus') setFeaturedSessionId(data.sessionId || null);
         if (data?.type === 'moderation') {
-          if (data.command === 'grant-audio') { setCanSpeak(true); setRaised(false); await call.setLocalAudio(true); setMicOn(true); }
+          if (data.command === 'grant-audio') { setCanSpeak(true); setRaised(false); }
           if (data.command === 'mute-audio') { setCanSpeak(false); await call.setLocalAudio(false); setMicOn(false); }
-          if (data.command === 'grant-camera') { setCanUseCamera(true); await call.setLocalVideo(true); setCameraOn(true); }
+          if (data.command === 'grant-camera') setCanUseCamera(true);
           if (data.command === 'stop-camera') { setCanUseCamera(false); await call.setLocalVideo(false); setCameraOn(false); }
           if (data.command === 'leave') { await cleanupCall(call); setJoined(false); }
         }
-        if (data?.type === 'live-ended') {
-          setLiveStatus('ended');
-          window.setTimeout(() => { void cleanupCall(call); setJoined(false); setParticipants({}); }, 500);
-        }
+        if (data?.type === 'live-ended') { setLiveStatus('ended'); window.setTimeout(() => { void cleanupCall(call); setJoined(false); setParticipants({}); }, 500); }
       });
 
       await timeout(call.join({ url: payload.roomUrl, token: payload.token, userName: name }), 25000, 'A conexão com a sala demorou demais. Tente novamente.');
       await timeout(call.setLocalAudio(isHost), 10000, 'Não foi possível preparar o microfone.');
       await timeout(call.setLocalVideo(isHost), 10000, 'Não foi possível preparar a câmera.');
       await applyAudioMode(audioMode, call);
-      setMicOn(isHost);
-      setCameraOn(isHost);
-      setCanSpeak(true);
-      setCanUseCamera(true);
-      sync();
-      setScene(payload.live.currentScene || 'class');
+      setMicOn(isHost); setCameraOn(isHost); sync();
       const saved = payload.live.offerConfig || {};
-      setActiveOffer(saved.offer || null);
-      setOfferMode(saved.mode || 'hidden');
-      setLiveStatus(payload.live.status);
-      setJoined(true);
+      setActiveOffer(saved.offer || null); setOfferMode(saved.mode || 'hidden');
+      setLiveStatus(payload.live.status); setJoined(true);
     } catch (reason) {
-      window.clearTimeout(abortTimer);
-      await cleanupCall(call);
-      const message = reason instanceof DOMException && reason.name === 'AbortError'
-        ? 'A preparação da sala excedeu 20 segundos. Verifique a internet e tente novamente.'
-        : reason instanceof Error ? reason.message : 'Erro ao entrar na live.';
+      window.clearTimeout(abortTimer); await cleanupCall(call);
+      const message = reason instanceof DOMException && reason.name === 'AbortError' ? 'A preparação da sala excedeu 20 segundos. Verifique a internet e tente novamente.' : reason instanceof Error ? reason.message : 'Erro ao entrar na live.';
       setError(message);
-    } finally {
-      setJoining(false);
-    }
+    } finally { setJoining(false); }
   }
 
-  async function control(action: 'start' | 'end' | 'scene', nextScene?: string) {
+  async function control(action: 'start' | 'end') {
     setError('');
-    const response = await fetch(`/api/live/${slug}/control`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(action === 'scene' ? { action, scene: nextScene } : { action }),
-    });
+    const response = await fetch(`/api/live/${slug}/control`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action }) });
     const payload = await response.json();
     if (!response.ok) { setError(payload.error || 'Não foi possível executar este comando.'); return false; }
-    if (action === 'start') { setLiveStatus('live'); setScene('class'); callRef.current?.sendAppMessage({ type: 'scene', scene: 'class' }, '*'); }
+    if (action === 'start') setLiveStatus('live');
     if (action === 'end') { setLiveStatus('ended'); callRef.current?.sendAppMessage({ type: 'live-ended' }, '*'); }
-    if (action === 'scene' && nextScene) { setScene(nextScene); callRef.current?.sendAppMessage({ type: 'scene', scene: nextScene }, '*'); }
     return true;
   }
 
   async function displayOffer(offer: Offer | null, mode: OfferMode) {
     setError('');
-    const nextScene = mode === 'split' ? 'offer' : scene === 'offer' ? 'class' : scene;
-    if (liveStatus !== 'live') { setActiveOffer(offer); setOfferMode(mode); setScene(nextScene); return; }
-    const response = await fetch(`/api/live/${slug}/control`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'offer', offer, mode, participantCount: participantList.length }),
-    });
+    if (liveStatus !== 'live') { setActiveOffer(offer); setOfferMode(mode); return; }
+    const response = await fetch(`/api/live/${slug}/control`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'offer', offer, mode, participantCount: participantList.length }) });
     const payload = await response.json();
     if (!response.ok) return setError(payload.error || 'Não foi possível exibir a oferta.');
-    setActiveOffer(offer);
-    setOfferMode(mode);
-    setScene(nextScene);
+    setActiveOffer(offer); setOfferMode(mode);
     callRef.current?.sendAppMessage({ type: 'offer-display', offer, mode }, '*');
-    callRef.current?.sendAppMessage({ type: 'scene', scene: nextScene }, '*');
   }
 
   function moderate(sessionId: string, command: 'grant-audio' | 'mute-audio' | 'grant-camera' | 'stop-camera' | 'leave') {
     callRef.current?.sendAppMessage({ type: 'moderation', command }, sessionId);
-    if (command === 'grant-audio') setHandRequests((current) => ({ ...current, [sessionId]: { ...(current[sessionId] || { name: 'Participante', requestedAt: Date.now() }), raised: false } }));
   }
 
   function featureParticipant(sessionId: string | null) {
@@ -349,19 +298,13 @@ export default function FocoLiveRoom({ slug, initialLive }: Props) {
 
   async function toggleMic() {
     if (!canSpeak) return setError('O apresentador bloqueou seu microfone.');
-    const call = callRef.current;
-    if (!call || call.meetingState?.() !== 'joined-meeting') return setError('Aguarde a conexão da sala terminar.');
-    const next = !micOn;
-    try { await call.setLocalAudio(next); setMicOn(next); }
+    try { const next = !micOn; await callRef.current?.setLocalAudio(next); setMicOn(next); }
     catch { setError('Não foi possível acessar o microfone. Confira a permissão do navegador.'); }
   }
 
   async function toggleCamera() {
     if (!canUseCamera) return setError('O apresentador bloqueou sua câmera.');
-    const call = callRef.current;
-    if (!call || call.meetingState?.() !== 'joined-meeting') return setError('Aguarde a conexão da sala terminar.');
-    const next = !cameraOn;
-    try { await call.setLocalVideo(next); setCameraOn(next); }
+    try { const next = !cameraOn; await callRef.current?.setLocalVideo(next); setCameraOn(next); }
     catch { setError('Não foi possível acessar a câmera. Confira a permissão do navegador.'); }
   }
 
@@ -369,38 +312,25 @@ export default function FocoLiveRoom({ slug, initialLive }: Props) {
     try {
       if (screenSharing) await callRef.current?.stopScreenShare();
       else await callRef.current?.startScreenShare();
-      setScreenSharing(!screenSharing);
-      if (!screenSharing && isHost) await control('scene', 'screen');
     } catch { setError('Não foi possível compartilhar a tela neste dispositivo.'); }
   }
 
   function toggleHand() {
-    const next = !raised;
-    setRaised(next);
+    const next = !raised; setRaised(next);
     callRef.current?.sendAppMessage({ type: 'hand', raised: next, name, sessionId: localParticipant?.session_id }, '*');
   }
 
   function sendMessage(event: FormEvent) {
     event.preventDefault();
-    const body = chatText.trim();
-    if (!body) return;
+    const body = chatText.trim(); if (!body) return;
     setMessages((current) => [...current, { id: crypto.randomUUID(), name: 'Você', body, mine: true }]);
-    callRef.current?.sendAppMessage({ type: 'chat', name, body }, '*');
-    setChatText('');
+    callRef.current?.sendAppMessage({ type: 'chat', name, body }, '*'); setChatText('');
   }
 
   async function copyPublicLink() {
     try { await navigator.clipboard.writeText(publicUrl); }
-    catch {
-      const input = document.createElement('input');
-      input.value = publicUrl;
-      document.body.appendChild(input);
-      input.select();
-      document.execCommand('copy');
-      input.remove();
-    }
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1800);
+    catch { const input = document.createElement('input'); input.value = publicUrl; document.body.appendChild(input); input.select(); document.execCommand('copy'); input.remove(); }
+    setCopied(true); window.setTimeout(() => setCopied(false), 1800);
   }
 
   async function nativeShare() {
@@ -411,78 +341,38 @@ export default function FocoLiveRoom({ slug, initialLive }: Props) {
 
   async function leave() {
     if (isHost && liveStatus === 'live') await control('end');
-    await cleanupCall(callRef.current);
-    setJoined(false);
-    setParticipants({});
+    await cleanupCall(callRef.current); setJoined(false); setParticipants({});
   }
 
-  if (!joined && liveStatus === 'ended') return (
-    <main className="fl-entry-shell"><section className="fl-entry-card"><div className="fl-brand"><span>F</span><div><b>FOCO LIVE</b><small>por Foco em Canto</small></div></div><div className="fl-ended-stage"><div className="fl-pulse-logo">F</div><h2>Transmissão encerrada</h2><p>Esta aula ao vivo já foi finalizada pelo apresentador.</p></div></section></main>
-  );
+  if (!joined && liveStatus === 'ended') return <main className="fl-entry-shell"><section className="fl-entry-card"><div className="fl-brand"><span>F</span><div><b>FOCO LIVE</b><small>por Foco em Canto</small></div></div><div className="fl-ended-stage"><div className="fl-pulse-logo">F</div><h2>Transmissão encerrada</h2><p>Esta aula ao vivo já foi finalizada pelo apresentador.</p></div></section></main>;
 
-  if (!joined) return (
-    <main className={`fl-entry-shell${isHost ? ' host-entry' : ''}`}>
-      <div className="fl-entry-glow one" /><div className="fl-entry-glow two" />
-      <section className="fl-entry-card">
-        <div className="fl-brand"><span>F</span><div><b>{isHost ? 'FOCO LIVE STUDIO' : 'FOCO LIVE'}</b><small>{isHost ? 'Ambiente do apresentador' : 'por Foco em Canto'}</small></div></div>
-        <div className={`fl-live-badge${isHost ? ' host' : ''}`}>{isHost ? 'HOST' : liveStatus === 'live' ? 'AO VIVO' : 'AGUARDANDO'}</div>
-        <p className="fl-kicker">{isHost ? 'Prepare sua transmissão' : 'Uma experiência vocal ao vivo'}</p>
-        <h1>{initialLive.title}</h1>
-        <p className="fl-description">{isHost ? 'Entre no estúdio, confira câmera e microfone e inicie a transmissão quando estiver pronto.' : initialLive.description || 'Entre para acompanhar esta transmissão ao vivo.'}</p>
-        <form onSubmit={enter} className="fl-entry-form">
-          <label>{isHost ? 'Nome do apresentador' : 'Como podemos chamar você?'}<input value={name} onChange={(event) => setName(event.target.value)} placeholder="Seu nome" required minLength={2} /></label>
-          {!isHost && initialLive.guest_fields?.email && <label>E-mail<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="voce@email.com" /></label>}
-          {!isHost && initialLive.guest_fields?.whatsapp && <label>WhatsApp<input value={whatsapp} onChange={(event) => setWhatsapp(event.target.value)} placeholder="(71) 99999-9999" /></label>}
-          {error && <p className="fl-error">{error}</p>}
-          <button disabled={joining}>{joining ? 'Preparando sua entrada…' : isHost ? 'Entrar no estúdio' : 'Entrar na live'}</button>
-          {joining && <div className="fl-join-progress"><i className="fl-join-spinner" /> Conectando com segurança. Isso pode levar alguns segundos.</div>}
-        </form>
-        <div className="fl-entry-foot"><span>🔒 Sala protegida</span><span>{isHost ? '🎬 Controles exclusivos do host' : '🎧 Você entra com câmera e microfone desligados'}</span></div>
-      </section>
-    </main>
-  );
+  if (!joined) return <main className={`fl-entry-shell${isHost ? ' host-entry' : ''}`}><div className="fl-entry-glow one" /><div className="fl-entry-glow two" /><section className="fl-entry-card"><div className="fl-brand"><span>F</span><div><b>{isHost ? 'FOCO LIVE STUDIO' : 'FOCO LIVE'}</b><small>{isHost ? 'Ambiente do apresentador' : 'por Foco em Canto'}</small></div></div><div className={`fl-live-badge${isHost ? ' host' : ''}`}>{isHost ? 'HOST' : liveStatus === 'live' ? 'AO VIVO' : 'AGUARDANDO'}</div><p className="fl-kicker">{isHost ? 'Prepare sua transmissão' : 'Uma experiência vocal ao vivo'}</p><h1>{initialLive.title}</h1><p className="fl-description">{isHost ? 'Entre no estúdio, confira câmera e microfone e inicie a transmissão quando estiver pronto.' : initialLive.description || 'Entre para acompanhar esta transmissão ao vivo.'}</p><form onSubmit={enter} className="fl-entry-form"><label>{isHost ? 'Nome do apresentador' : 'Como podemos chamar você?'}<input value={name} onChange={(event) => setName(event.target.value)} placeholder="Seu nome" required minLength={2} /></label>{!isHost && initialLive.guest_fields?.email && <label>E-mail<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="voce@email.com" /></label>}{!isHost && initialLive.guest_fields?.whatsapp && <label>WhatsApp<input value={whatsapp} onChange={(event) => setWhatsapp(event.target.value)} placeholder="(71) 99999-9999" /></label>}{error && <p className="fl-error">{error}</p>}<button disabled={joining}>{joining ? 'Preparando sua entrada…' : isHost ? 'Entrar no estúdio' : 'Entrar na live'}</button>{joining && <div className="fl-join-progress"><i className="fl-join-spinner" /> Conectando com segurança.</div>}</form><div className="fl-entry-foot"><span>🔒 Sala protegida</span><span>{isHost ? '🎬 Controles exclusivos do host' : '🎧 Você entra com câmera e microfone desligados'}</span></div></section></main>;
 
-  return (
-    <main className={`fl-room scene-${scene}${splitOfferVisible ? ' offer-split-active' : ''}${isHost ? ' host-studio' : ''}`}>
-      <header className="fl-topbar">
-        <div className="fl-brand compact"><span>F</span><div><b>{isHost ? 'FOCO LIVE STUDIO' : 'FOCO LIVE'}</b><small>{initialLive.title}</small></div></div>
-        <div className={`fl-top-status${liveStatus !== 'live' ? ' waiting' : ''}`}><span className="fl-red-dot" /> {liveStatus === 'live' ? 'AO VIVO' : 'PRÉ-SALA'} <i>{participantList.length} presentes</i></div>
-        {!online && <div className="fl-connection-warning">Conexão instável — tentando reconectar…</div>}
-        <div className="fl-top-actions"><button className="fl-share-live-button" onClick={() => setShareOpen(true)}><Share2 size={16} /><span>Compartilhar</span></button><button className="fl-icon-button mobile-only" onClick={() => setSidePanel(sidePanel ? null : 'chat')}><MessageCircle size={20} /></button></div>
-      </header>
+  return <main className={`fl-room${isHost ? ' host-studio' : ''}${screenSharer ? ' is-presenting' : ''}${splitOfferVisible ? ' offer-split-active' : ''}`}>
+    <header className="fl-topbar"><div className="fl-brand compact"><span>F</span><div><b>{isHost ? 'FOCO LIVE STUDIO' : 'FOCO LIVE'}</b><small>{initialLive.title}</small></div></div><div className={`fl-top-status${liveStatus !== 'live' ? ' waiting' : ''}`}><span className="fl-red-dot" /> {liveStatus === 'live' ? 'AO VIVO' : 'PRÉ-SALA'} <i>{participantList.length} presentes</i></div>{!online && <div className="fl-connection-warning">Conexão instável — tentando reconectar…</div>}<div className="fl-top-actions"><button className="fl-share-live-button" onClick={() => setShareOpen(true)}><Share2 size={16} /><span>Compartilhar</span></button><button className="fl-icon-button mobile-only" onClick={() => setSidePanel(sidePanel ? null : 'chat')}><MessageCircle size={20} /></button></div></header>
 
-      <section className="fl-workspace">
-        <div className="fl-stage-wrap">
-          {participantList.length > 0 && <div className="fl-native-layout-switcher" aria-label="Organização da sala"><button className={layout === 'class' ? 'active' : ''} onClick={() => setLayout('class')}><LayoutPanelTop size={16} /><span>Aula</span></button><button className={layout === 'grid' ? 'active' : ''} onClick={() => setLayout('grid')}><Grid2X2 size={16} /><span>Grade</span></button><button className={layout === 'auto' ? 'active' : ''} onClick={() => setLayout('auto')}><Sparkles size={16} /><span>Automático</span></button></div>}
+    <section className="fl-workspace"><div className="fl-stage-wrap">
+      {participantList.length > 0 && !screenSharer && <div className="fl-native-layout-switcher"><button className={layout === 'class' ? 'active' : ''} onClick={() => setLayout('class')}><LayoutPanelTop size={16} /><span>Aula</span></button><button className={layout === 'grid' ? 'active' : ''} onClick={() => setLayout('grid')}><Grid2X2 size={16} /><span>Grade</span></button><button className={layout === 'auto' ? 'active' : ''} onClick={() => setLayout('auto')}><Sparkles size={16} /><span>Automático</span></button></div>}
 
-          <section className={`fl-stage-content${splitOfferVisible ? ' has-split-offer' : ''}`}>
-            <div className="fl-stage-video-area">
-              {layout === 'grid' ? (
-                <section className={`fl-native-grid count-${Math.min(participantList.length, 9)}`}>{participantList.map((participant: any) => <VideoTile key={participant.session_id} participant={participant} speaking={participant.session_id === activeSpeaker?.session_id} />)}</section>
-              ) : mainParticipant ? (
-                <section className="fl-speaker-layout"><div className="fl-speaker-main"><VideoTile participant={mainParticipant} featured speaking={mainParticipant.session_id === activeSpeaker?.session_id} /></div>{thumbnailParticipants.length > 0 && <div className="fl-speaker-thumbnails">{thumbnailParticipants.map((participant: any) => <VideoTile key={participant.session_id} participant={participant} compact speaking={participant.session_id === activeSpeaker?.session_id} />)}</div>}</section>
-              ) : (
-                <div className="fl-waiting-stage"><div className="fl-pulse-logo">F</div><h2>{isHost ? 'Seu estúdio está pronto' : 'A transmissão está sendo preparada'}</h2><p>{isHost ? 'Ative câmera e microfone e inicie quando estiver pronto.' : 'Você já está na sala. Aguarde só mais um instante.'}</p></div>
-              )}
-            </div>
-            {splitOfferVisible && activeOffer && <div className="fl-offer-card fl-offer-card-split"><OfferContent offer={activeOffer} /></div>}
-          </section>
-
-          {activeOffer && offerMode === 'banner' && <div className="fl-offer-banner"><OfferContent offer={activeOffer} compact /></div>}
-          {activeOffer && offerMode === 'floating' && <a className="fl-offer-floating" href={absoluteUrl(activeOffer.checkout_url)} target="_blank" rel="noreferrer"><ShoppingBag size={18} /><span><small>{activeOffer.badge || 'Oferta especial'}</small><strong>{activeOffer.name}</strong></span></a>}
-          {isHost && liveStatus !== 'live' && <div className="fl-host-start-overlay"><span>PRÉ-SALA DO HOST</span><strong>Você ainda não está ao vivo.</strong><button onClick={() => control('start')}><Play size={18} /> Iniciar transmissão</button></div>}
-          {error && <div className="fl-toast" onClick={() => setError('')}>{error}<X size={16} /></div>}
+      <section className={`fl-stage-content${splitOfferVisible ? ' has-split-offer' : ''}`}>
+        <div className="fl-stage-video-area">
+          {screenSharer ? <><ScreenTile participant={screenSharer} />{mainParticipant && <div className="fl-presenter-pip"><VideoTile participant={mainParticipant} compact /></div>}</> : layout === 'grid' ? <section className={`fl-native-grid count-${Math.min(participantList.length, 9)}`}>{participantList.map((participant: any) => <VideoTile key={participant.session_id} participant={participant} speaking={participant.session_id === activeSpeaker?.session_id} />)}</section> : mainParticipant ? <section className="fl-speaker-layout"><div className="fl-speaker-main"><VideoTile participant={mainParticipant} speaking={mainParticipant.session_id === activeSpeaker?.session_id} /></div>{thumbnailParticipants.length > 0 && <div className="fl-speaker-thumbnails">{thumbnailParticipants.map((participant: any) => <VideoTile key={participant.session_id} participant={participant} compact speaking={participant.session_id === activeSpeaker?.session_id} />)}</div>}</section> : <div className="fl-waiting-stage"><div className="fl-pulse-logo">F</div><h2>{isHost ? 'Seu estúdio está pronto' : 'A transmissão está sendo preparada'}</h2></div>}
         </div>
-
-        <aside className={`fl-sidepanel${sidePanel ? ' open' : ''}`}>
-          <div className="fl-tabs"><button className={sidePanel === 'chat' ? 'active' : ''} onClick={() => setSidePanel(sidePanel === 'chat' ? null : 'chat')}><MessageCircle size={17} /> Chat</button><button className={sidePanel === 'people' ? 'active' : ''} onClick={() => setSidePanel(sidePanel === 'people' ? null : 'people')}><Users size={17} /> Pessoas</button>{isHost && <button className={sidePanel === 'director' ? 'active' : ''} onClick={() => setSidePanel(sidePanel === 'director' ? null : 'director')}><Layers size={17} /> Direção</button>}</div>
-          {sidePanel === 'chat' ? <><div className="fl-chat-list">{!messages.length && <div className="fl-chat-empty"><MessageCircle size={28} /><strong>O chat está aberto</strong><p>Envie uma mensagem para a turma.</p></div>}{messages.map((message) => <div key={message.id} className={`fl-message${message.mine ? ' mine' : ''}`}><b>{message.name}</b><p>{message.body}</p></div>)}</div><form className="fl-chat-form" onSubmit={sendMessage}><input value={chatText} onChange={(event) => setChatText(event.target.value)} placeholder="Escreva uma mensagem…" /><button><Send size={18} /></button></form></> : sidePanel === 'people' ? <div className="fl-people-list">{participantList.map((participant: any) => { const id = participant.session_id; const hand = handRequests[id]?.raised; return <div key={id} className={hand ? 'hand-raised' : ''}><span>{(participant.user_name || 'P').slice(0, 1).toUpperCase()}</span><div><b>{participant.user_name || 'Participante'} {hand && '✋'}</b><small>{participant.local ? 'Você' : featuredSessionId === id ? 'No palco' : 'Na sala'}</small></div>{participant.audio === false ? <MicOff size={15} /> : <Mic size={15} />}{isHost && !participant.local && <div className="fl-person-actions"><button onClick={() => featureParticipant(featuredSessionId === id ? null : id)}><Star size={14} /></button><button onClick={() => moderate(id, participant.audio === false ? 'grant-audio' : 'mute-audio')}>{participant.audio === false ? <Mic size={14} /> : <MicOff size={14} />}</button><button onClick={() => moderate(id, participant.video === false ? 'grant-camera' : 'stop-camera')}>{participant.video === false ? <Video size={14} /> : <CameraOff size={14} />}</button><button className="danger" onClick={() => moderate(id, 'leave')}><UserMinus size={14} /></button></div>}</div>; })}</div> : sidePanel === 'director' ? <div className="fl-director-panel"><span>DIREÇÃO AO VIVO</span><h3>Controle o que todos veem</h3><button onClick={() => { featureParticipant(null); setLayout('class'); void control('scene', 'class'); }}><Layers size={18} /> Modo aula</button><button onClick={() => control('scene', 'screen')}><MonitorUp size={18} /> Apresentação</button><div className="fl-director-audio"><strong>Perfil de áudio</strong><small>Use Modo Música para canto, playback e instrumentos.</small><div className="fl-audio-mode"><button className={audioMode === 'speech' ? 'active' : ''} disabled={audioModeBusy} onClick={() => applyAudioMode('speech')}><Mic2 size={16} /><span>Fala</span></button><button className={audioMode === 'music' ? 'active music' : ''} disabled={audioModeBusy} onClick={() => applyAudioMode('music')}><Music2 size={16} /><span>Modo música</span></button></div>{!audioModeSupported && <small>Processamento padrão mantido neste navegador.</small>}</div><div className="fl-director-offers"><strong>OFERTAS DESTA LIVE</strong>{offers.length === 0 ? <p>Nenhuma oferta vinculada.</p> : offers.map((item) => <article key={item.id}><div><b>{item.name}</b><small>{item.price || item.headline}</small></div><button className={activeOffer?.id === item.id && offerMode === 'split' ? 'active-offer-mode' : ''} onClick={() => displayOffer(item, 'split')}>Tela dividida</button><button className={activeOffer?.id === item.id && offerMode === 'banner' ? 'active-offer-mode' : ''} onClick={() => displayOffer(item, 'banner')}>CTA na tela</button><button className={activeOffer?.id === item.id && offerMode === 'floating' ? 'active-offer-mode' : ''} onClick={() => displayOffer(item, 'floating')}>Botão</button></article>)}{activeOffer && <button className="danger" onClick={() => displayOffer(null, 'hidden')}><X size={17} /> Ocultar oferta</button>}</div>{liveStatus === 'live' ? <button className="danger" onClick={() => control('end')}><Square size={18} /> Encerrar transmissão</button> : <button onClick={() => control('start')}><Play size={18} /> Iniciar transmissão</button>}</div> : <div />}
-        </aside>
+        {splitOfferVisible && activeOffer && <div className="fl-offer-card fl-offer-card-split"><OfferContent offer={activeOffer} /></div>}
       </section>
 
-      <footer className="fl-controls"><button onClick={toggleMic} className={!micOn ? 'off' : ''}>{micOn ? <Mic /> : <MicOff />}<span>{micOn ? 'Microfone' : !canSpeak ? 'Microfone bloqueado' : 'Ativar mic'}</span></button><button onClick={toggleCamera} className={!cameraOn ? 'off' : ''}>{cameraOn ? <Camera /> : <CameraOff />}<span>{cameraOn ? 'Câmera' : !canUseCamera ? 'Câmera bloqueada' : 'Ativar câmera'}</span></button><button onClick={toggleScreenShare} className={screenSharing ? 'active' : ''}><MonitorUp /><span>{screenSharing ? 'Parar tela' : 'Compartilhar tela'}</span></button>{!isHost && <button onClick={toggleHand} className={raised ? 'active gold' : ''}><Hand /><span>{raised ? 'Mão levantada' : 'Levantar mão'}</span></button>}{isHost && <button onClick={() => setSidePanel(sidePanel === 'director' ? null : 'director')} className="active"><Layers /><span>Direção</span></button>}<button onClick={() => setSidePanel(sidePanel === 'chat' ? null : 'chat')} className="desktop-only"><MessageCircle /><span>Chat</span></button><button onClick={leave} className="danger"><LogOut /><span>{isHost && liveStatus === 'live' ? 'Encerrar e sair' : 'Sair'}</span></button></footer>
+      {activeOffer && offerMode === 'banner' && <div className="fl-offer-banner"><OfferContent offer={activeOffer} compact /></div>}
+      {activeOffer && offerMode === 'floating' && <a className="fl-offer-floating" href={absoluteUrl(activeOffer.checkout_url)} target="_blank" rel="noreferrer"><ShoppingBag size={18} /><span><small>{activeOffer.badge || 'Oferta especial'}</small><strong>{activeOffer.name}</strong></span></a>}
+      {isHost && liveStatus !== 'live' && <div className="fl-host-start-overlay"><span>PRÉ-SALA DO HOST</span><strong>Você ainda não está ao vivo.</strong><button onClick={() => control('start')}><Play size={18} /> Iniciar transmissão</button></div>}
+      {error && <div className="fl-toast" onClick={() => setError('')}>{error}<X size={16} /></div>}
+    </div>
 
-      {shareOpen && <div className="fl-share-overlay" onClick={(event) => { if (event.target === event.currentTarget) setShareOpen(false); }}><section className="fl-share-modal" role="dialog" aria-modal="true"><button className="fl-share-close" onClick={() => setShareOpen(false)}>×</button><span>CONVIDAR PARTICIPANTES</span><h2>Compartilhar live</h2><p>Este é o link público para alunos e convidados, sem os controles do apresentador.</p><div className="fl-share-link-row"><input readOnly value={publicUrl} /><button onClick={copyPublicLink}>{copied ? '✓ Copiado!' : 'Copiar'}</button></div><div className="fl-share-actions"><button onClick={() => window.open(`https://wa.me/?text=${encodeURIComponent(`🎙️ Você está convidado para a live “${initialLive.title}” do Foco em Canto!\n\n${publicUrl}`)}`, '_blank', 'noopener,noreferrer')}>Enviar pelo WhatsApp</button><button className="secondary" onClick={nativeShare}>Mais opções</button></div><small>O parâmetro <b>?host=1</b> nunca é compartilhado.</small></section></div>}
-    </main>
-  );
+    <aside className={`fl-sidepanel${sidePanel ? ' open' : ''}`}><div className="fl-tabs"><button className={sidePanel === 'chat' ? 'active' : ''} onClick={() => setSidePanel(sidePanel === 'chat' ? null : 'chat')}><MessageCircle size={17} /> Chat</button><button className={sidePanel === 'people' ? 'active' : ''} onClick={() => setSidePanel(sidePanel === 'people' ? null : 'people')}><Users size={17} /> Pessoas</button>{isHost && <button className={sidePanel === 'director' ? 'active' : ''} onClick={() => setSidePanel(sidePanel === 'director' ? null : 'director')}><Layers size={17} /> Direção</button>}</div>
+      {sidePanel === 'chat' ? <><div className="fl-chat-list">{!messages.length && <div className="fl-chat-empty"><MessageCircle size={28} /><strong>O chat está aberto</strong></div>}{messages.map((message) => <div key={message.id} className={`fl-message${message.mine ? ' mine' : ''}`}><b>{message.name}</b><p>{message.body}</p></div>)}</div><form className="fl-chat-form" onSubmit={sendMessage}><input value={chatText} onChange={(event) => setChatText(event.target.value)} placeholder="Escreva uma mensagem…" /><button><Send size={18} /></button></form></> : sidePanel === 'people' ? <div className="fl-people-list">{participantList.map((participant: any) => { const id = participant.session_id; return <div key={id}><span>{(participant.user_name || 'P').slice(0, 1).toUpperCase()}</span><div><b>{participant.user_name || 'Participante'}</b><small>{participant.local ? 'Você' : featuredSessionId === id ? 'Fixado' : 'Na sala'}</small></div>{participant.audio === false ? <MicOff size={15} /> : <Mic size={15} />}{isHost && !participant.local && <div className="fl-person-actions"><button onClick={() => featureParticipant(featuredSessionId === id ? null : id)}><Star size={14} /></button><button onClick={() => moderate(id, participant.audio === false ? 'grant-audio' : 'mute-audio')}>{participant.audio === false ? <Mic size={14} /> : <MicOff size={14} />}</button><button onClick={() => moderate(id, participant.video === false ? 'grant-camera' : 'stop-camera')}>{participant.video === false ? <Video size={14} /> : <CameraOff size={14} />}</button><button className="danger" onClick={() => moderate(id, 'leave')}><UserMinus size={14} /></button></div>}</div>; })}</div> : sidePanel === 'director' ? <div className="fl-director-panel"><span>DIREÇÃO AO VIVO</span><h3>Controle o que todos veem</h3><div className="fl-director-audio"><strong>Perfil de áudio</strong><div className="fl-audio-mode"><button className={audioMode === 'speech' ? 'active' : ''} disabled={audioModeBusy} onClick={() => applyAudioMode('speech')}><Mic2 size={16} /><span>Fala</span></button><button className={audioMode === 'music' ? 'active music' : ''} disabled={audioModeBusy} onClick={() => applyAudioMode('music')}><Music2 size={16} /><span>Modo música</span></button></div>{!audioModeSupported && <small>Processamento padrão mantido.</small>}</div><div className="fl-director-offers"><strong>OFERTAS DESTA LIVE</strong>{offers.map((item) => <article key={item.id}><div><b>{item.name}</b><small>{item.price || item.headline}</small></div><button className={activeOffer?.id === item.id && offerMode === 'split' ? 'active-offer-mode' : ''} onClick={() => displayOffer(item, 'split')}>Tela dividida</button><button className={activeOffer?.id === item.id && offerMode === 'banner' ? 'active-offer-mode' : ''} onClick={() => displayOffer(item, 'banner')}>CTA</button><button className={activeOffer?.id === item.id && offerMode === 'floating' ? 'active-offer-mode' : ''} onClick={() => displayOffer(item, 'floating')}>Botão</button></article>)}{activeOffer && <button className="danger" onClick={() => displayOffer(null, 'hidden')}><X size={17} /> Ocultar oferta</button>}</div>{liveStatus === 'live' ? <button className="danger" onClick={() => control('end')}><Square size={18} /> Encerrar transmissão</button> : <button onClick={() => control('start')}><Play size={18} /> Iniciar transmissão</button>}</div> : <div />}
+    </aside></section>
+
+    <footer className="fl-controls"><button onClick={toggleMic} className={!micOn ? 'off' : ''}>{micOn ? <Mic /> : <MicOff />}<span>{micOn ? 'Microfone' : 'Ativar mic'}</span></button><button onClick={toggleCamera} className={!cameraOn ? 'off' : ''}>{cameraOn ? <Camera /> : <CameraOff />}<span>{cameraOn ? 'Câmera' : 'Ativar câmera'}</span></button><button onClick={toggleScreenShare} className={screenSharing ? 'active' : ''}><MonitorUp /><span>{screenSharing ? 'Parar apresentação' : 'Apresentar agora'}</span></button>{!isHost && <button onClick={toggleHand} className={raised ? 'active gold' : ''}><Hand /><span>{raised ? 'Mão levantada' : 'Levantar mão'}</span></button>}{isHost && <button onClick={() => setSidePanel(sidePanel === 'director' ? null : 'director')} className="active"><Layers /><span>Direção</span></button>}<button onClick={() => setSidePanel(sidePanel === 'chat' ? null : 'chat')} className="desktop-only"><MessageCircle /><span>Chat</span></button><button onClick={leave} className="danger"><LogOut /><span>{isHost && liveStatus === 'live' ? 'Encerrar e sair' : 'Sair'}</span></button></footer>
+
+    {shareOpen && <div className="fl-share-overlay" onClick={(event) => { if (event.target === event.currentTarget) setShareOpen(false); }}><section className="fl-share-modal"><button className="fl-share-close" onClick={() => setShareOpen(false)}>×</button><span>CONVIDAR PARTICIPANTES</span><h2>Compartilhar live</h2><p>Link público, sem controles do apresentador.</p><div className="fl-share-link-row"><input readOnly value={publicUrl} /><button onClick={copyPublicLink}>{copied ? '✓ Copiado!' : 'Copiar'}</button></div><div className="fl-share-actions"><button onClick={() => window.open(`https://wa.me/?text=${encodeURIComponent(`🎙️ Você está convidado para a live “${initialLive.title}” do Foco em Canto!\n\n${publicUrl}`)}`, '_blank', 'noopener,noreferrer')}>WhatsApp</button><button className="secondary" onClick={nativeShare}>Mais opções</button></div></section></div>}
+  </main>;
 }
