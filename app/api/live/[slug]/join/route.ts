@@ -65,7 +65,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ sl
     }
 
     let profileId: string | null = null;
-    if (accessEmail) {
+    if (accessEmail && !isHost) {
       const { data: profile } = await supabase.from('profiles').select('id,name,email').eq('email', accessEmail).maybeSingle();
       profileId = profile?.id || null;
     }
@@ -85,7 +85,16 @@ export async function POST(request: NextRequest, context: { params: Promise<{ sl
 
     if (participantError) throw participantError;
 
-    const token = await createDailyMeetingToken(live.daily_room_name, isHost, input.name);
+    // O participant.id é exclusivo para esta entrada. Isso impede que dois dispositivos
+    // sejam tratados pela Daily como a mesma identidade/conexão.
+    const dailyUserId = `${isHost ? 'host' : 'participant'}-${participant.id}`;
+    const token = await createDailyMeetingToken(
+      live.daily_room_name,
+      isHost,
+      input.name,
+      dailyUserId,
+    );
+
     return NextResponse.json({
       live: { id: live.id, title: live.title, description: live.description, status: live.status, currentScene: live.current_scene, offerConfig: live.offer_config || {} },
       participantId: participant.id,
