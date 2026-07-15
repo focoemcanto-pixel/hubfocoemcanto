@@ -21,8 +21,16 @@ export default function DailyCallBridge() {
       window.__focoLiveCall = call;
       window.__focoMediaLocks = { audio: false, video: false };
 
-      call.on('app-message', (eventData: any) => {
+      call.on('app-message', async (eventData: any) => {
         const data = eventData?.data;
+
+        if (data?.type === 'live-ended') {
+          window.dispatchEvent(new CustomEvent('foco-live-ended'));
+          try { await call.leave?.(); } catch {}
+          try { await call.destroy?.(); } catch {}
+          return;
+        }
+
         if (data?.type !== 'moderation') return;
         if (data.command === 'mute-audio') window.__focoMediaLocks!.audio = true;
         if (data.command === 'grant-audio') window.__focoMediaLocks!.audio = false;
