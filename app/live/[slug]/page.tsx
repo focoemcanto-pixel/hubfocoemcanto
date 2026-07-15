@@ -7,6 +7,7 @@ import DailyCallBridge from './daily-call-bridge';
 import WaitingRoomRuntime from './waiting-room-runtime';
 import SessionEndGuard from './session-end-guard';
 import HostSessionRuntime from './host-session-runtime';
+import MeetStageRuntime from './meet-stage-runtime';
 import './room.css';
 import './host-studio.css';
 import './split-offer-fix.css';
@@ -14,6 +15,7 @@ import './live-ux-fix.css';
 import './waiting-room.css';
 import './session-end.css';
 import './host-session-runtime.css';
+import './meet-stage.css';
 
 export const dynamic = 'force-dynamic';
 
@@ -51,6 +53,7 @@ export default async function LivePage({ params }: { params: Promise<{ slug: str
       <WaitingRoomRuntime slug={slug} />
       <SessionEndGuard initialStatus={live.status} title={live.title} />
       <HostSessionRuntime slug={slug} />
+      <MeetStageRuntime />
       <FocoLiveRoom
         slug={slug}
         initialLive={{
