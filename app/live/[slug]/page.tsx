@@ -9,7 +9,6 @@ import SessionEndGuard from './session-end-guard';
 import HostSessionRuntime from './host-session-runtime';
 import PrejoinRuntime from './prejoin-runtime';
 import LivePolishRuntime from './live-polish-runtime';
-import MeetStageRuntime from './meet-stage-runtime';
 import './room.css';
 import './host-studio.css';
 import './split-offer-fix.css';
@@ -20,7 +19,6 @@ import './host-session-runtime.css';
 import './offer-stage-integration.css';
 import './prejoin-runtime.css';
 import './live-polish.css';
-import './meet-stage.css';
 
 export const dynamic = 'force-dynamic';
 
@@ -106,8 +104,6 @@ export default async function LivePage({ params }: PageProps) {
       <HostSessionRuntime slug={slug} />
       <PrejoinRuntime />
       <LivePolishRuntime />
-      {/* O palco de apresentação só é ativado depois de meetingState=joined-meeting. */}
-      <MeetStageRuntime />
       <FocoLiveRoom
         slug={slug}
         initialLive={{
