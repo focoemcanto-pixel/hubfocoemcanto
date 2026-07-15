@@ -10,6 +10,7 @@ const schema = z.object({
   email: z.string().trim().email().optional().or(z.literal('')),
   whatsapp: z.string().trim().max(30).optional().or(z.literal('')),
   mode: z.enum(['guest', 'student', 'host']).default('guest'),
+  admissionToken: z.string().uuid().optional(),
 });
 
 export async function POST(request: NextRequest, context: { params: Promise<{ slug: string }> }) {
@@ -31,9 +32,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ sl
     const effectiveMode = isHost ? 'host' : accessEmail && input.mode === 'student' ? 'student' : 'guest';
 
     if (!isHost && live.status !== 'live') {
-      const message = live.status === 'ended'
-        ? 'Esta transmissão já foi encerrada.'
-        : 'A transmissão ainda não começou.';
+      const message = live.status === 'ended' ? 'Esta transmissão já foi encerrada.' : 'A transmissão ainda não começou.';
       return NextResponse.json({ error: message, fallbackMode: requestedHost ? 'guest' : undefined }, { status: 403 });
     }
 
@@ -41,23 +40,30 @@ export async function POST(request: NextRequest, context: { params: Promise<{ sl
       return NextResponse.json({ error: 'Esta transmissão não pode ser aberta no estúdio.' }, { status: 403 });
     }
 
-    if (!live.daily_room_name || !live.daily_room_url) {
-      return NextResponse.json({ error: 'Sala de vídeo ainda não configurada.' }, { status: 409 });
-    }
-    if (!isHost && effectiveMode === 'guest' && !live.guest_access_enabled) {
-      return NextResponse.json({ error: 'A entrada como convidado não está habilitada.' }, { status: 403 });
-    }
-    if (!isHost && live.access_type === 'restricted' && effectiveMode === 'guest') {
-      return NextResponse.json({ error: 'Esta live é exclusiva para alunos autorizados.' }, { status: 403 });
+    if (!live.daily_room_name || !live.daily_room_url) return NextResponse.json({ error: 'Sala de vídeo ainda não configurada.' }, { status: 409 });
+    if (!isHost && effectiveMode === 'guest' && !live.guest_access_enabled) return NextResponse.json({ error: 'A entrada como convidado não está habilitada.' }, { status: 403 });
+    if (!isHost && live.access_type === 'restricted' && effectiveMode === 'guest') return NextResponse.json({ error: 'Esta live é exclusiva para alunos autorizados.' }, { status: 403 });
+
+    if (!isHost && live.waiting_room_locked) {
+      let approved = false;
+      if (input.admissionToken) {
+        const { data: admission } = await supabase
+          .from('live_entry_requests')
+          .select('id,status')
+          .eq('id', input.admissionToken)
+          .eq('live_session_id', live.id)
+          .maybeSingle();
+        approved = admission?.status === 'approved';
+      }
+      if (!approved) {
+        return NextResponse.json({ error: 'Aguardando aprovação do host.', waitingRoom: true }, { status: 423 });
+      }
+      await supabase.from('live_entry_requests').update({ status: 'consumed', consumed_at: new Date().toISOString() }).eq('id', input.admissionToken!);
     }
 
     let profileId: string | null = null;
     if (accessEmail) {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('id,name,email')
-        .eq('email', accessEmail)
-        .maybeSingle();
+      const { data: profile } = await supabase.from('profiles').select('id,name,email').eq('email', accessEmail).maybeSingle();
       profileId = profile?.id || null;
     }
 
@@ -78,14 +84,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ sl
 
     const token = await createDailyMeetingToken(live.daily_room_name, isHost, input.name);
     return NextResponse.json({
-      live: {
-        id: live.id,
-        title: live.title,
-        description: live.description,
-        status: live.status,
-        currentScene: live.current_scene,
-        offerConfig: live.offer_config || {},
-      },
+      live: { id: live.id, title: live.title, description: live.description, status: live.status, currentScene: live.current_scene, offerConfig: live.offer_config || {} },
       participantId: participant.id,
       roomUrl: live.daily_room_url,
       token: token.token,
