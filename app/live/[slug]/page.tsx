@@ -18,6 +18,7 @@ import './session-end.css';
 import './host-session-runtime.css';
 import './meet-stage.css';
 import './prejoin-runtime.css';
+import './offer-stage-integration.css';
 
 export const dynamic = 'force-dynamic';
 
