@@ -224,14 +224,14 @@ export default function PrejoinRuntime() {
         window.__focoPrejoin!.videoEnabled = (event.target as HTMLInputElement).checked;
       });
 
-      // Importante: nunca bloqueie nem reprograme o submit original da sala.
-      // A prévia é encerrada sincronamente para liberar câmera/microfone e o fluxo
-      // nativo do FocoLiveRoom continua imediatamente no mesmo evento de submit.
+      // Mantém exatamente a ordem da primeira versão funcional: o React processa
+      // o submit da sala primeiro; este listener roda na fase de bubbling, agenda
+      // as preferências e só então libera a prévia.
       form.addEventListener('submit', () => {
-        stopPreview();
         window.setTimeout(applyPreferencesToCall, 500);
         window.setTimeout(applyPreferencesToCall, 1400);
-      }, true);
+        stopPreview();
+      });
     }
 
     const observer = new MutationObserver(mount);
