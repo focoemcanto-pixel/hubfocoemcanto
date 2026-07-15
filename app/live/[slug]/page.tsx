@@ -3,24 +3,12 @@ import { notFound } from 'next/navigation';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getBrandingMetadata } from '@/lib/seo/branding-metadata';
 import FocoLiveRoom from './room';
-import OfferRuntimeFix from './offer-runtime-fix';
-import LiveUxFix from './live-ux-fix';
-import DailyCallBridge from './daily-call-bridge';
-import WaitingRoomRuntime from './waiting-room-runtime';
 import SessionEndGuard from './session-end-guard';
-import HostSessionRuntime from './host-session-runtime';
-import MeetStageRuntime from './meet-stage-runtime';
-import LivePolishRuntime from './live-polish-runtime';
 import './room.css';
 import './host-studio.css';
 import './split-offer-fix.css';
-import './live-ux-fix.css';
-import './waiting-room.css';
 import './session-end.css';
-import './host-session-runtime.css';
-import './meet-stage.css';
 import './offer-stage-integration.css';
-import './live-polish.css';
 
 export const dynamic = 'force-dynamic';
 
@@ -99,14 +87,7 @@ export default async function LivePage({ params }: PageProps) {
 
   return (
     <>
-      <DailyCallBridge />
-      <OfferRuntimeFix slug={slug} />
-      <LiveUxFix slug={slug} />
-      <WaitingRoomRuntime slug={slug} />
       <SessionEndGuard initialStatus={live.status} title={live.title} />
-      <HostSessionRuntime slug={slug} />
-      <MeetStageRuntime />
-      <LivePolishRuntime />
       <FocoLiveRoom
         slug={slug}
         initialLive={{
