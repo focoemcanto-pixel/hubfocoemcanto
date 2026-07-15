@@ -93,7 +93,7 @@ export default async function LivePage({ params }: PageProps) {
 
   return (
     <>
-      <SessionEndGuard initialStatus={live.status} title={live.title} />
+      <SessionEndGuard initialStatus={live.status} title={live.title} slug={slug} />
       <EndCleanupRuntime />
       <PrejoinRuntime />
       <LivePolishRuntime />
