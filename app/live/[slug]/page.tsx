@@ -4,10 +4,12 @@ import FocoLiveRoom from './room';
 import OfferRuntimeFix from './offer-runtime-fix';
 import LiveUxFix from './live-ux-fix';
 import DailyCallBridge from './daily-call-bridge';
+import WaitingRoomRuntime from './waiting-room-runtime';
 import './room.css';
 import './host-studio.css';
 import './split-offer-fix.css';
 import './live-ux-fix.css';
+import './waiting-room.css';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,16 +33,10 @@ export default async function LivePage({ params }: { params: Promise<{ slug: str
   const offers = (linked || [])
     .map((item: any) => item.offer)
     .filter(Boolean)
-    .map((offer: any) => ({
-      ...offer,
-      checkout_url: `/api/live/${slug}/offer-click/${offer.id}`,
-    }));
+    .map((offer: any) => ({ ...offer, checkout_url: `/api/live/${slug}/offer-click/${offer.id}` }));
 
   const persistedOffer = live.offer_config?.offer
-    ? {
-        ...live.offer_config.offer,
-        checkout_url: `/api/live/${slug}/offer-click/${live.offer_config.offer.id}`,
-      }
+    ? { ...live.offer_config.offer, checkout_url: `/api/live/${slug}/offer-click/${live.offer_config.offer.id}` }
     : null;
 
   return (
@@ -48,13 +44,12 @@ export default async function LivePage({ params }: { params: Promise<{ slug: str
       <DailyCallBridge />
       <OfferRuntimeFix slug={slug} />
       <LiveUxFix slug={slug} />
+      <WaitingRoomRuntime slug={slug} />
       <FocoLiveRoom
         slug={slug}
         initialLive={{
           ...live,
-          offer_config: live.offer_config
-            ? { ...live.offer_config, offer: persistedOffer }
-            : {},
+          offer_config: live.offer_config ? { ...live.offer_config, offer: persistedOffer } : {},
           offers,
         }}
       />
