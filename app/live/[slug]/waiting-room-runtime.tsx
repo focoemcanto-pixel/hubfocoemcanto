@@ -84,7 +84,8 @@ export default function WaitingRoomRuntime({ slug }: { slug: string }) {
 
     async function hostPanel() {
       const host = document.querySelector('.host-studio');
-      if (!host) return;
+      const header = document.querySelector('.fl-topbar');
+      if (!host || !header) return;
       const response = await originalFetch(`/api/live/${slug}/entry-control`, { cache: 'no-store' });
       if (!response.ok) return;
       const data = await response.json();
@@ -93,7 +94,9 @@ export default function WaitingRoomRuntime({ slug }: { slug: string }) {
         panel = document.createElement('div');
         panel.dataset.entryControl = 'true';
         panel.className = 'fl-entry-control';
-        document.body.appendChild(panel);
+        const share = header.querySelector('[data-live-share]');
+        if (share) share.insertAdjacentElement('beforebegin', panel);
+        else header.appendChild(panel);
       }
       const requests = (data.requests || []).map((item: any) => `<div class="fl-entry-request"><div><strong>${item.guest_name}</strong><small>quer entrar na live</small></div><button data-entry-action="approve" data-id="${item.id}">Permitir</button><button data-entry-action="deny" data-id="${item.id}">Recusar</button></div>`).join('');
       panel.innerHTML = `<button class="fl-lock-toggle" data-entry-action="${data.locked ? 'unlock' : 'lock'}">${data.locked ? '🔒 Entrada trancada' : '🟢 Entrada liberada'}</button>${data.requests?.length ? `<section><header><b>${data.requests.length} aguardando</b><button data-entry-action="approve-all">Permitir todos</button></header>${requests}</section>` : ''}`;
