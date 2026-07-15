@@ -12,6 +12,7 @@ const liveSchema = z.object({
   startsAt: z.string().datetime().optional().nullable(),
   recordingEnabled: z.boolean().default(false),
   offerIds: z.array(z.string().uuid()).max(30).optional().default([]),
+  shareImageUrl: z.string().url().optional().nullable(),
 });
 
 export async function POST(request: NextRequest) {
@@ -54,6 +55,7 @@ export async function POST(request: NextRequest) {
         daily_room_name: dailyRoom.name,
         daily_room_url: dailyRoom.url,
         created_by: accessEmail,
+        offer_config: input.shareImageUrl ? { share_image_url: input.shareImageUrl } : {},
       })
       .select('*')
       .single();
