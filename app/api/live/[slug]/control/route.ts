@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { deleteDailyRoom } from '@/lib/daily';
 
 export const dynamic = 'force-dynamic';
 
@@ -121,6 +122,17 @@ export async function POST(request: NextRequest, context: { params: Promise<{ sl
       .single();
 
     if (updateError) throw updateError;
+
+    // Encerrar significa fechar a sala de verdade. A exclusão na Daily derruba
+    // imediatamente host e convidados, encerrando áudio, vídeo e compartilhamento.
+    if (input.action === 'end' && live.daily_room_name) {
+      try {
+        await deleteDailyRoom(live.daily_room_name);
+      } catch (dailyError) {
+        console.error('Falha ao encerrar a sala Daily:', dailyError);
+      }
+    }
+
     return NextResponse.json({ live: updated });
   } catch (error) {
     if (error instanceof z.ZodError) {
