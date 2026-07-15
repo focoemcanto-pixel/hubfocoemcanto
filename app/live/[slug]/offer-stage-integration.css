@@ -1,75 +1,73 @@
-/* Integra as ofertas ao palco principal sem trocar para o layout antigo. */
-.fl-stage-wrap{overflow:hidden}
+/* Integra ofertas diretamente ao palco nativo do FocoLiveRoom.
+   Não depende de runtimes paralelos nem de um segundo controlador Daily. */
+.fl-stage-wrap{overflow:hidden;min-width:0}
+
+/* Estado visual do modo escolhido. */
+.fl-room:has(.fl-offer-scene) .fl-director-offers article button:nth-of-type(1),
+.fl-room:has(.fl-offer-banner) .fl-director-offers article button:nth-of-type(2),
+.fl-room:has(.fl-offer-floating) .fl-director-offers article button:nth-of-type(3){
+  border-color:#8b3dff!important;
+  background:rgba(139,61,255,.22)!important;
+  color:#fff!important;
+  box-shadow:0 0 0 1px rgba(168,85,247,.24) inset;
+}
 
 @media (min-width:981px){
-  /* Estado normal: restaura completamente o palco depois de ocultar uma oferta. */
-  .fl-room:not(.scene-offer) .fl-meet-stage{
-    display:flex!important;
-    inset:0!important;
-    right:0!important;
-    width:auto!important;
-    height:auto!important;
-    max-height:100%!important;
-    padding:14px!important;
-    overflow:hidden!important;
+  /* Tela dividida real: vídeo à esquerda, oferta à direita. */
+  .scene-offer .fl-stage-wrap{
+    padding:14px;
+    background:#09070d;
   }
-  .fl-room:not(.scene-offer) .fl-meet-main,
-  .fl-room:not(.scene-offer) .fl-meet-grid{
-    min-height:0!important;
-    height:100%!important;
-    max-height:100%!important;
-  }
-  .fl-room:not(.scene-offer) .fl-meet-main .fl-meet-tile{
+  .scene-offer .fl-offer-scene{
+    position:relative!important;
+    inset:auto!important;
     width:100%!important;
     height:100%!important;
     min-height:0!important;
-    max-height:100%!important;
+    display:grid!important;
+    grid-template-columns:minmax(0,46%) minmax(420px,54%);
+    gap:16px;
+    overflow:hidden;
+    align-items:stretch;
   }
-  .fl-room:not(.scene-offer) .fl-meet-main .fl-meet-tile video{
+  .scene-offer .fl-offer-video{
+    display:block!important;
+    min-width:0;
+    min-height:0;
+    height:100%;
+    overflow:hidden;
+    border-radius:22px;
+    background:#050409;
+    border:1px solid rgba(168,85,247,.22);
+  }
+  .scene-offer .fl-offer-video>.fl-video-tile{
+    width:100%!important;
+    height:100%!important;
+    min-height:0!important;
+    border-radius:22px!important;
+  }
+  .scene-offer .fl-offer-video video{
     width:100%!important;
     height:100%!important;
     object-fit:contain!important;
-    object-position:center center!important;
+    object-position:center!important;
+    background:#050409;
   }
-
-  .scene-offer .fl-stage-wrap.meet-stage-active>.fl-stage-grid{visibility:hidden!important;pointer-events:none!important}
-  .scene-offer .fl-meet-stage{
-    display:flex!important;
-    top:0!important;
-    bottom:0!important;
-    left:0!important;
-    right:56%!important;
-    width:auto!important;
-    height:auto!important;
-    max-height:100%!important;
-    padding:14px 10px 14px 14px!important;
-    overflow:hidden!important;
-  }
-  .scene-offer .fl-offer-scene{
-    position:absolute;
-    z-index:11;
-    top:14px;
-    right:14px;
-    bottom:14px;
-    width:calc(56% - 20px);
-    height:auto;
-    display:block;
-    overflow:hidden;
-  }
-  .scene-offer .fl-offer-video{display:none!important}
   .scene-offer .fl-offer-card{
-    width:100%;
-    height:100%;
+    width:100%!important;
+    height:100%!important;
+    min-width:0;
     min-height:0;
     overflow:hidden;
-    border-radius:24px;
+    border-radius:22px;
   }
   .scene-offer .fl-offer-card .fl-live-offer-content{
     height:100%;
+    min-height:0;
     align-content:center;
   }
-  .scene-offer .fl-meet-layout-switcher{display:none}
 
+  /* CTA sobre o vídeo sem trocar o palco. */
   .fl-offer-banner{
     z-index:30!important;
     left:50%!important;
@@ -84,13 +82,35 @@
     right:26px!important;
     bottom:24px!important;
   }
-  .fl-stage-wrap:has(.fl-offer-banner) .fl-meet-stage{padding-bottom:112px!important}
-  .fl-stage-wrap:has(.fl-offer-floating) .fl-meet-stage{padding-bottom:92px!important}
+  .fl-stage-wrap:has(.fl-offer-banner){padding-bottom:112px}
+  .fl-stage-wrap:has(.fl-offer-floating){padding-bottom:92px}
+}
+
+@media (max-width:1180px) and (min-width:981px){
+  .scene-offer .fl-offer-scene{
+    grid-template-columns:minmax(0,42%) minmax(390px,58%);
+    gap:12px;
+  }
 }
 
 @media (max-width:980px){
-  .scene-offer .fl-meet-stage{display:none!important}
-  .scene-offer .fl-stage-wrap.meet-stage-active>.fl-stage-grid{visibility:visible!important}
-  .scene-offer .fl-offer-scene{position:static;width:auto;height:100%;display:grid}
-  .scene-offer .fl-offer-video{display:block!important}
+  .scene-offer .fl-stage-wrap{overflow:auto}
+  .scene-offer .fl-offer-scene{
+    position:static!important;
+    width:auto!important;
+    height:auto!important;
+    min-height:100%;
+    display:flex!important;
+    flex-direction:column;
+    gap:14px;
+    padding:14px;
+  }
+  .scene-offer .fl-offer-video{
+    display:block!important;
+    min-height:260px;
+    border-radius:20px;
+    overflow:hidden;
+  }
+  .scene-offer .fl-offer-video>.fl-video-tile{min-height:260px}
+  .scene-offer .fl-offer-card{min-height:520px;border-radius:20px}
 }
