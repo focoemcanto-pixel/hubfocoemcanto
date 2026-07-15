@@ -25,8 +25,7 @@ export default function LiveUxFix({ slug }: { slug: string }) {
 
     function showToast(message: string) {
       const stage = document.querySelector('.fl-stage-wrap') || document.body;
-      const existing = document.querySelector('[data-runtime-toast]');
-      existing?.remove();
+      document.querySelector('[data-runtime-toast]')?.remove();
       const toast = document.createElement('div');
       toast.dataset.runtimeToast = 'true';
       toast.className = 'fl-toast';
@@ -35,43 +34,78 @@ export default function LiveUxFix({ slug }: { slug: string }) {
       window.setTimeout(() => toast.remove(), 2600);
     }
 
+    async function copyPublicLink() {
+      try {
+        await navigator.clipboard.writeText(publicUrl);
+        showToast('Link da live copiado!');
+      } catch {
+        const input = document.querySelector<HTMLInputElement>('[data-share-link-input]');
+        input?.select();
+        if (input) document.execCommand('copy');
+        showToast('Link da live copiado!');
+      }
+    }
+
+    function closeShareModal() {
+      document.querySelector('[data-live-share-modal]')?.remove();
+    }
+
+    function openShareModal() {
+      closeShareModal();
+      const title = document.querySelector('.fl-brand.compact small')?.textContent?.trim() || 'Foco Live';
+      const message = `🎙️ Você está convidado para a live “${title}” do Foco em Canto!\n\nEntre pelo link:\n${publicUrl}`;
+      const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
+
+      const overlay = document.createElement('div');
+      overlay.dataset.liveShareModal = 'true';
+      overlay.className = 'fl-share-overlay';
+      overlay.innerHTML = `
+        <section class="fl-share-modal" role="dialog" aria-modal="true" aria-label="Compartilhar live">
+          <button type="button" class="fl-share-close" data-share-close aria-label="Fechar">×</button>
+          <span>CONVIDAR PARTICIPANTES</span>
+          <h2>Compartilhar live</h2>
+          <p>Este é o link público para alunos e convidados. Ele não libera os controles do apresentador.</p>
+          <div class="fl-share-link-row">
+            <input data-share-link-input readonly value="${publicUrl.replace(/"/g, '&quot;')}" />
+            <button type="button" data-share-copy>Copiar</button>
+          </div>
+          <div class="fl-share-actions">
+            <a href="${whatsappUrl}" target="_blank" rel="noreferrer" data-share-whatsapp>Enviar pelo WhatsApp</a>
+            <button type="button" data-share-native>Mais opções</button>
+          </div>
+          <small>Link para convidados: sem <b>?host=1</b></small>
+        </section>`;
+
+      overlay.addEventListener('click', (event) => {
+        if (event.target === overlay || (event.target as HTMLElement).closest('[data-share-close]')) closeShareModal();
+      });
+      overlay.querySelector('[data-share-copy]')?.addEventListener('click', copyPublicLink);
+      overlay.querySelector('[data-share-native]')?.addEventListener('click', async () => {
+        if (!navigator.share) {
+          await copyPublicLink();
+          return;
+        }
+        try {
+          await navigator.share({ title, text: 'Você está convidado para esta live do Foco em Canto.', url: publicUrl });
+        } catch (error) {
+          if ((error as Error)?.name !== 'AbortError') await copyPublicLink();
+        }
+      });
+
+      document.body.appendChild(overlay);
+      window.setTimeout(() => overlay.classList.add('visible'), 10);
+    }
+
     function installShareButton() {
       const header = document.querySelector('.fl-topbar');
       if (!header || header.querySelector('[data-live-share]')) return;
-
       const button = document.createElement('button');
       button.type = 'button';
       button.dataset.liveShare = 'true';
       button.className = 'fl-share-live-button';
       button.innerHTML = '<span>Compartilhar</span>';
       button.setAttribute('aria-label', 'Compartilhar link da live');
-
-      button.addEventListener('click', async () => {
-        const shareData = {
-          title: document.title || 'Foco Live',
-          text: 'Você está convidado para esta live do Foco em Canto.',
-          url: publicUrl,
-        };
-
-        try {
-          if (navigator.share) {
-            await navigator.share(shareData);
-            return;
-          }
-          await navigator.clipboard.writeText(publicUrl);
-          button.innerHTML = '<span>Link copiado!</span>';
-          window.setTimeout(() => { button.innerHTML = '<span>Compartilhar</span>'; }, 1800);
-        } catch {
-          try {
-            await navigator.clipboard.writeText(publicUrl);
-            button.innerHTML = '<span>Link copiado!</span>';
-            window.setTimeout(() => { button.innerHTML = '<span>Compartilhar</span>'; }, 1800);
-          } catch {
-            window.prompt('Copie o link para convidados:', publicUrl);
-          }
-        }
-      });
-
+      button.addEventListener('click', openShareModal);
       const status = header.querySelector('.fl-top-status');
       if (status) status.insertAdjacentElement('afterend', button);
       else header.appendChild(button);
@@ -80,7 +114,6 @@ export default function LiveUxFix({ slug }: { slug: string }) {
     function normalizeGuestExperience() {
       const isHostUrl = new URLSearchParams(window.location.search).get('host') === '1';
       if (!isHostUrl || !isHostStudio()) closeMobilePanel();
-
       document.querySelectorAll<HTMLAnchorElement>('a[href*="?host=1"]').forEach((anchor) => {
         if (anchor.closest('.host-studio')) return;
         anchor.href = publicUrl;
@@ -99,41 +132,24 @@ export default function LiveUxFix({ slug }: { slug: string }) {
       if (!button) return;
       button.classList.toggle('off', !enabled);
       const label = button.querySelector('span');
-      if (label) label.textContent = kind === 'audio'
-        ? enabled ? 'Microfone' : 'Ativar mic'
-        : enabled ? 'Câmera' : 'Ativar câmera';
+      if (label) label.textContent = kind === 'audio' ? enabled ? 'Microfone' : 'Ativar mic' : enabled ? 'Câmera' : 'Ativar câmera';
       button.setAttribute('aria-pressed', String(enabled));
     }
 
     async function handleGuestMediaClick(event: MouseEvent) {
       if (isHostStudio()) return;
-      const target = event.target as HTMLElement | null;
-      const button = target?.closest<HTMLButtonElement>('.fl-controls > button');
+      const button = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>('.fl-controls > button');
       if (!button) return;
-
       const audioButton = mediaButton('audio');
       const videoButton = mediaButton('video');
       const kind = button === audioButton ? 'audio' : button === videoButton ? 'video' : null;
       if (!kind) return;
-
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
-
       const call = window.__focoLiveCall;
-      if (!call) {
-        showToast('Aguarde a conexão da sala terminar.');
-        return;
-      }
-
-      const locked = Boolean(window.__focoMediaLocks?.[kind]);
-      if (locked) {
-        showToast(kind === 'audio'
-          ? 'O apresentador bloqueou seu microfone.'
-          : 'O apresentador bloqueou sua câmera.');
-        return;
-      }
-
+      if (!call) return showToast('Aguarde a conexão da sala terminar.');
+      if (window.__focoMediaLocks?.[kind]) return showToast(kind === 'audio' ? 'O apresentador bloqueou seu microfone.' : 'O apresentador bloqueou sua câmera.');
       try {
         const local = call.participants?.()?.local;
         const current = kind === 'audio' ? local?.audio !== false : local?.video !== false;
@@ -142,9 +158,7 @@ export default function LiveUxFix({ slug }: { slug: string }) {
         else await call.setLocalVideo(next);
         syncMediaButton(kind, next);
       } catch {
-        showToast(kind === 'audio'
-          ? 'Não foi possível acessar o microfone. Confira a permissão do navegador.'
-          : 'Não foi possível acessar a câmera. Confira a permissão do navegador.');
+        showToast(kind === 'audio' ? 'Não foi possível acessar o microfone. Confira a permissão do navegador.' : 'Não foi possível acessar a câmera. Confira a permissão do navegador.');
       }
     }
 
@@ -152,12 +166,10 @@ export default function LiveUxFix({ slug }: { slug: string }) {
       installShareButton();
       normalizeGuestExperience();
     });
-
     observer.observe(document.body, { childList: true, subtree: true });
     document.addEventListener('click', handleGuestMediaClick, true);
     installShareButton();
     normalizeGuestExperience();
-
     const onResize = () => normalizeGuestExperience();
     window.addEventListener('resize', onResize);
 
@@ -165,6 +177,7 @@ export default function LiveUxFix({ slug }: { slug: string }) {
       observer.disconnect();
       document.removeEventListener('click', handleGuestMediaClick, true);
       window.removeEventListener('resize', onResize);
+      closeShareModal();
     };
   }, [slug]);
 
