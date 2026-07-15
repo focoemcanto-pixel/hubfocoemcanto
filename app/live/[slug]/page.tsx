@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { getBrandingMetadata } from '@/lib/seo/branding-metadata';
 import FocoLiveRoom from './room';
 import SessionEndGuard from './session-end-guard';
+import EndCleanupRuntime from './end-cleanup-runtime';
 import PrejoinRuntime from './prejoin-runtime';
 import LivePolishRuntime from './live-polish-runtime';
 import ShareInvite from './share-invite';
@@ -93,6 +94,7 @@ export default async function LivePage({ params }: PageProps) {
   return (
     <>
       <SessionEndGuard initialStatus={live.status} title={live.title} />
+      <EndCleanupRuntime />
       <PrejoinRuntime />
       <LivePolishRuntime />
       <ShareInvite
