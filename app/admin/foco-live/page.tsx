@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin';
+import DeleteLiveButton from './delete-live-button';
 
 export const dynamic = 'force-dynamic';
 
@@ -84,12 +85,13 @@ export default async function FocoLiveAdminPage() {
           {lives.length === 0 ? (
             <div className="foco-live-empty"><strong>Nenhuma live cadastrada ainda.</strong><p>Crie a primeira sala e gere seu link personalizado.</p></div>
           ) : lives.map((live) => (
-            <a href={`/admin/foco-live/${live.id}`} key={live.id}>
+            <div key={live.id} style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto auto auto', alignItems: 'center', gap: 16, padding: '14px 18px', border: '1px solid rgba(255,255,255,.07)', borderRadius: 16 }}>
               <span className={`foco-live-dot status-${live.status}`} />
-              <div><strong>{live.title}</strong><small>{dateLabel(live.starts_at)} · {live.access_type === 'public' ? 'Pública' : live.access_type === 'hybrid' ? 'Híbrida' : 'Restrita'}</small></div>
+              <div><strong>{live.title}</strong><small style={{ display: 'block' }}>{dateLabel(live.starts_at)} · {live.access_type === 'public' ? 'Pública' : live.access_type === 'hybrid' ? 'Híbrida' : 'Restrita'}</small></div>
               <em>{live.guest_access_enabled ? 'Convidados liberados' : 'Somente alunos'}</em>
-              <b>Gerenciar →</b>
-            </a>
+              <a href={`/admin/foco-live/${live.id}`} style={{ color: '#fff', fontWeight: 900, textDecoration: 'none' }}>Gerenciar →</a>
+              <DeleteLiveButton id={live.id} title={live.title} status={live.status} />
+            </div>
           ))}
         </div>
       </section>
