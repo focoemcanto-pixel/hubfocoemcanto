@@ -2,7 +2,8 @@
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import DailyIframe from '@daily-co/daily-js';
-import { Camera, CameraOff, Hand, Layers, LogOut, MessageCircle, Mic, MicOff, MonitorUp, Play, Send, ShoppingBag, Square, Star, UserMinus, Users, Video, X } from 'lucide-react';
+import { Camera, CameraOff, Grid2X2, Hand, Layers, LayoutPanelTop, LogOut, MessageCircle, Mic, MicOff, MonitorUp, Play, Send, ShoppingBag, Sparkles, Square, Star, UserMinus, Users, Video, X } from 'lucide-react';
+import './room-layout.css';
 
 type Offer = {
   id: string;
@@ -18,6 +19,7 @@ type Offer = {
 };
 
 type OfferMode = 'hidden' | 'split' | 'banner' | 'floating';
+type LayoutMode = 'class' | 'grid' | 'auto';
 
 type Live = {
   id: string;
@@ -37,22 +39,26 @@ type ChatMessage = { id: string; name: string; body: string; mine?: boolean };
 type HandRequest = { raised: boolean; name: string; requestedAt: number };
 type Props = { slug: string; initialLive: Live };
 
-function VideoTile({ participant, featured = false }: { participant: any; featured?: boolean }) {
+function VideoTile({ participant, featured = false, compact = false, speaking = false }: { participant: any; featured?: boolean; compact?: boolean; speaking?: boolean }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const videoTrack = participant?.tracks?.video?.persistentTrack || participant?.videoTrack;
   const audioTrack = participant?.tracks?.audio?.persistentTrack || participant?.audioTrack;
 
   useEffect(() => {
-    if (!videoRef.current) return;
-    videoRef.current.srcObject = videoTrack ? new MediaStream([videoTrack]) : null;
-    videoRef.current.play().catch(() => undefined);
+    const video = videoRef.current;
+    if (!video) return;
+    video.srcObject = videoTrack ? new MediaStream([videoTrack]) : null;
+    video.play().catch(() => undefined);
+    return () => { video.srcObject = null; };
   }, [videoTrack]);
 
   useEffect(() => {
-    if (participant?.local || !audioRef.current) return;
-    audioRef.current.srcObject = audioTrack ? new MediaStream([audioTrack]) : null;
-    audioRef.current.play().catch(() => undefined);
+    const audio = audioRef.current;
+    if (participant?.local || !audio) return;
+    audio.srcObject = audioTrack ? new MediaStream([audioTrack]) : null;
+    audio.play().catch(() => undefined);
+    return () => { audio.srcObject = null; };
   }, [audioTrack, participant?.local]);
 
   const name = participant?.user_name || (participant?.local ? 'Você' : 'Participante');
@@ -60,10 +66,10 @@ function VideoTile({ participant, featured = false }: { participant: any; featur
   const micOn = participant?.audio !== false;
 
   return (
-    <article className={`fl-video-tile${featured ? ' featured' : ''}`}>
+    <article className={`fl-video-tile${featured ? ' featured' : ''}${compact ? ' compact' : ''}${speaking ? ' speaking' : ''}`}>
       {cameraOn ? <video ref={videoRef} autoPlay playsInline muted={Boolean(participant?.local)} /> : <div className="fl-avatar">{name.slice(0, 1).toUpperCase()}</div>}
       {!participant?.local && <audio ref={audioRef} autoPlay />}
-      <div className="fl-video-meta"><span>{name}</span><i>{micOn ? <Mic size={14} /> : <MicOff size={14} />}</i></div>
+      <div className="fl-video-meta"><span>{name}{participant?.local ? ' (você)' : ''}</span><i>{micOn ? <Mic size={14} /> : <MicOff size={14} />}</i></div>
     </article>
   );
 }
@@ -104,6 +110,8 @@ export default function FocoLiveRoom({ slug, initialLive }: Props) {
   const [canUseCamera, setCanUseCamera] = useState(false);
   const [handRequests, setHandRequests] = useState<Record<string, HandRequest>>({});
   const [featuredSessionId, setFeaturedSessionId] = useState<string | null>(null);
+  const [activeSpeakerId, setActiveSpeakerId] = useState<string | null>(null);
+  const [layout, setLayout] = useState<LayoutMode>('class');
   const [sidePanel, setSidePanel] = useState<'chat' | 'people' | 'director' | null>('chat');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [chatText, setChatText] = useState('');
@@ -116,6 +124,11 @@ export default function FocoLiveRoom({ slug, initialLive }: Props) {
   const participantList = useMemo(() => Object.values(participants), [participants]);
   const remoteParticipants = participantList.filter((item: any) => !item.local);
   const localParticipant = participantList.find((item: any) => item.local);
+  const hostParticipant = isHost ? localParticipant : remoteParticipants.find((item: any) => item.owner) || remoteParticipants[0];
+  const featuredParticipant = featuredSessionId ? participantList.find((item: any) => item.session_id === featuredSessionId) : null;
+  const activeSpeaker = activeSpeakerId ? participantList.find((item: any) => item.session_id === activeSpeakerId || item.user_id === activeSpeakerId) : null;
+  const mainParticipant = featuredParticipant || (layout === 'auto' ? activeSpeaker : null) || hostParticipant || localParticipant || remoteParticipants[0];
+  const thumbnailParticipants = participantList.filter((item: any) => item.session_id !== mainParticipant?.session_id);
 
   useEffect(() => {
     const hostMode = new URLSearchParams(window.location.search).get('host') === '1';
@@ -140,8 +153,7 @@ export default function FocoLiveRoom({ slug, initialLive }: Props) {
     setError('');
     try {
       const response = await fetch(`/api/live/${slug}/join`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email, whatsapp, mode: isHost ? 'host' : 'guest' }),
       });
       const payload = await response.json();
@@ -160,6 +172,9 @@ export default function FocoLiveRoom({ slug, initialLive }: Props) {
         setFeaturedSessionId((current) => current === sessionId ? null : current);
       });
       call.on('joined-meeting', sync);
+      call.on('active-speaker-change', (eventData: any) => {
+        setActiveSpeakerId(eventData?.activeSpeaker?.peerId || eventData?.activeSpeaker?.session_id || null);
+      });
       call.on('app-message', async (eventData: any) => {
         const data = eventData?.data;
         const senderId = data?.sessionId || eventData?.fromId;
@@ -195,16 +210,13 @@ export default function FocoLiveRoom({ slug, initialLive }: Props) {
       setJoined(true);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Erro ao entrar na live.');
-    } finally {
-      setJoining(false);
-    }
+    } finally { setJoining(false); }
   }
 
   async function control(action: 'start' | 'end' | 'scene', nextScene?: string) {
     setError('');
     const response = await fetch(`/api/live/${slug}/control`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(action === 'scene' ? { action, scene: nextScene } : { action }),
     });
     const payload = await response.json();
@@ -217,13 +229,11 @@ export default function FocoLiveRoom({ slug, initialLive }: Props) {
   async function displayOffer(offer: Offer | null, mode: OfferMode) {
     setError('');
     const response = await fetch(`/api/live/${slug}/control`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'offer', offer, mode, participantCount: participantList.length }),
     });
     const payload = await response.json();
     if (!response.ok) return setError(payload.error || 'Não foi possível exibir a oferta.');
-
     setActiveOffer(offer);
     setOfferMode(mode);
     const nextScene = mode === 'split' ? 'offer' : scene === 'offer' ? 'class' : scene;
@@ -245,16 +255,12 @@ export default function FocoLiveRoom({ slug, initialLive }: Props) {
 
   async function toggleMic() {
     if (!isHost && !canSpeak) { setError('Levante a mão para pedir autorização ao host.'); return; }
-    const next = !micOn;
-    await callRef.current?.setLocalAudio(next);
-    setMicOn(next);
+    const next = !micOn; await callRef.current?.setLocalAudio(next); setMicOn(next);
   }
 
   async function toggleCamera() {
     if (!isHost && !canUseCamera) { setError('O host precisa convidar você ao palco para liberar a câmera.'); return; }
-    const next = !cameraOn;
-    await callRef.current?.setLocalVideo(next);
-    setCameraOn(next);
+    const next = !cameraOn; await callRef.current?.setLocalVideo(next); setCameraOn(next);
   }
 
   async function toggleShare() {
@@ -266,26 +272,20 @@ export default function FocoLiveRoom({ slug, initialLive }: Props) {
   }
 
   function toggleHand() {
-    const next = !raised;
-    setRaised(next);
+    const next = !raised; setRaised(next);
     callRef.current?.sendAppMessage({ type: 'hand', raised: next, name, sessionId: localParticipant?.session_id }, '*');
   }
 
   function sendMessage(event: FormEvent) {
     event.preventDefault();
-    const body = chatText.trim();
-    if (!body) return;
+    const body = chatText.trim(); if (!body) return;
     setMessages((current) => [...current, { id: crypto.randomUUID(), name: 'Você', body, mine: true }]);
-    callRef.current?.sendAppMessage({ type: 'chat', name, body }, '*');
-    setChatText('');
+    callRef.current?.sendAppMessage({ type: 'chat', name, body }, '*'); setChatText('');
   }
 
   async function leave() {
-    await callRef.current?.leave();
-    await callRef.current?.destroy();
-    callRef.current = null;
-    setJoined(false);
-    setParticipants({});
+    await callRef.current?.leave(); await callRef.current?.destroy();
+    callRef.current = null; setJoined(false); setParticipants({});
   }
 
   if (!joined) {
@@ -311,9 +311,6 @@ export default function FocoLiveRoom({ slug, initialLive }: Props) {
     );
   }
 
-  const featured = featuredSessionId ? participantList.find((item: any) => item.session_id === featuredSessionId) : null;
-  const stagePeople = featured ? [featured] : remoteParticipants.length ? remoteParticipants : localParticipant ? [localParticipant] : [];
-
   return (
     <main className={`fl-room scene-${scene}${isHost ? ' host-studio' : ''}`}>
       <header className="fl-topbar">
@@ -325,14 +322,29 @@ export default function FocoLiveRoom({ slug, initialLive }: Props) {
 
       <section className="fl-workspace">
         <div className="fl-stage-wrap">
-          {scene === 'offer' && activeOffer ? (
-            <section className="fl-offer-scene"><div className="fl-offer-video">{stagePeople[0] && <VideoTile participant={stagePeople[0]} featured />}</div><div className="fl-offer-card"><OfferContent offer={activeOffer} /></div></section>
-          ) : (
-            <section className={`fl-stage-grid count-${Math.min(stagePeople.length, 4)}`}>
-              {stagePeople.map((participant: any, index) => <VideoTile key={participant.session_id || index} participant={participant} featured={stagePeople.length === 1} />)}
-              {!stagePeople.length && <div className="fl-waiting-stage"><div className="fl-pulse-logo">F</div><h2>{isHost ? 'Seu estúdio está pronto' : 'A transmissão está sendo preparada'}</h2><p>{isHost ? 'Ative câmera e microfone e inicie quando estiver pronto.' : 'Você já está na sala. Aguarde só mais um instante.'}</p></div>}
-            </section>
+          {scene !== 'offer' && participantList.length > 0 && (
+            <div className="fl-native-layout-switcher" aria-label="Organização da sala">
+              <button className={layout === 'class' ? 'active' : ''} onClick={() => setLayout('class')} title="Apresentador em destaque"><LayoutPanelTop size={16} /><span>Aula</span></button>
+              <button className={layout === 'grid' ? 'active' : ''} onClick={() => setLayout('grid')} title="Todos em grade"><Grid2X2 size={16} /><span>Grade</span></button>
+              <button className={layout === 'auto' ? 'active' : ''} onClick={() => setLayout('auto')} title="Destacar quem está falando"><Sparkles size={16} /><span>Automático</span></button>
+            </div>
           )}
+
+          {scene === 'offer' && activeOffer ? (
+            <section className="fl-offer-scene"><div className="fl-offer-video">{mainParticipant && <VideoTile participant={mainParticipant} featured />}</div><div className="fl-offer-card"><OfferContent offer={activeOffer} /></div></section>
+          ) : layout === 'grid' ? (
+            <section className={`fl-native-grid count-${Math.min(participantList.length, 9)}`}>
+              {participantList.map((participant: any) => <VideoTile key={participant.session_id} participant={participant} speaking={participant.session_id === activeSpeaker?.session_id} />)}
+            </section>
+          ) : mainParticipant ? (
+            <section className="fl-speaker-layout">
+              <div className="fl-speaker-main"><VideoTile participant={mainParticipant} featured speaking={mainParticipant.session_id === activeSpeaker?.session_id} /></div>
+              {thumbnailParticipants.length > 0 && <div className="fl-speaker-thumbnails">{thumbnailParticipants.map((participant: any) => <VideoTile key={participant.session_id} participant={participant} compact speaking={participant.session_id === activeSpeaker?.session_id} />)}</div>}
+            </section>
+          ) : (
+            <div className="fl-waiting-stage"><div className="fl-pulse-logo">F</div><h2>{isHost ? 'Seu estúdio está pronto' : 'A transmissão está sendo preparada'}</h2><p>{isHost ? 'Ative câmera e microfone e inicie quando estiver pronto.' : 'Você já está na sala. Aguarde só mais um instante.'}</p></div>
+          )}
+
           {activeOffer && offerMode === 'banner' && <div className="fl-offer-banner"><OfferContent offer={activeOffer} compact /></div>}
           {activeOffer && offerMode === 'floating' && <a className="fl-offer-floating" href={activeOffer.checkout_url} target="_blank" rel="noreferrer"><ShoppingBag size={18} /><span><small>{activeOffer.badge || 'Oferta especial'}</small><strong>{activeOffer.name}</strong></span></a>}
           {isHost && liveStatus !== 'live' && liveStatus !== 'ended' && <div className="fl-host-start-overlay"><span>PRÉ-SALA DO HOST</span><strong>Você ainda não está ao vivo.</strong><button onClick={() => control('start')}><Play size={18} /> Iniciar transmissão</button></div>}
@@ -346,38 +358,9 @@ export default function FocoLiveRoom({ slug, initialLive }: Props) {
             {isHost && <button className={sidePanel === 'director' ? 'active' : ''} onClick={() => setSidePanel('director')}><Layers size={17} /> Direção</button>}
           </div>
 
-          {sidePanel === 'chat' ? <>
-            <div className="fl-chat-list">{!messages.length && <div className="fl-chat-empty"><MessageCircle size={28} /><strong>O chat está aberto</strong><p>Envie uma mensagem para a turma.</p></div>}{messages.map((message) => <div key={message.id} className={`fl-message${message.mine ? ' mine' : ''}`}><b>{message.name}</b><p>{message.body}</p></div>)}</div>
-            <form className="fl-chat-form" onSubmit={sendMessage}><input value={chatText} onChange={(event) => setChatText(event.target.value)} placeholder="Escreva uma mensagem…" /><button><Send size={18} /></button></form>
-          </> : sidePanel === 'people' ? (
-            <div className="fl-people-list">
-              {participantList.map((participant: any) => {
-                const id = participant.session_id;
-                const hand = handRequests[id]?.raised;
-                return <div key={id} className={hand ? 'hand-raised' : ''}>
-                  <span>{(participant.user_name || 'P').slice(0, 1).toUpperCase()}</span>
-                  <div><b>{participant.user_name || 'Participante'} {hand && '✋'}</b><small>{participant.local ? 'Você' : featuredSessionId === id ? 'No palco' : 'Na sala'}</small></div>
-                  {participant.audio === false ? <MicOff size={15} /> : <Mic size={15} />}
-                  {isHost && !participant.local && <div className="fl-person-actions">
-                    <button title="Colocar no palco" onClick={() => featureParticipant(featuredSessionId === id ? null : id)}><Star size={14} /></button>
-                    <button title={participant.audio === false ? 'Dar voz' : 'Silenciar'} onClick={() => moderate(id, participant.audio === false ? 'grant-audio' : 'mute-audio')}>{participant.audio === false ? <Mic size={14} /> : <MicOff size={14} />}</button>
-                    <button title={participant.video === false ? 'Liberar câmera' : 'Desligar câmera'} onClick={() => moderate(id, participant.video === false ? 'grant-camera' : 'stop-camera')}>{participant.video === false ? <Video size={14} /> : <CameraOff size={14} />}</button>
-                    <button title="Remover da sala" className="danger" onClick={() => moderate(id, 'leave')}><UserMinus size={14} /></button>
-                  </div>}
-                </div>;
-              })}
-            </div>
-          ) : <div className="fl-director-panel">
-            <span>DIREÇÃO AO VIVO</span><h3>Controle o que todos veem</h3>
-            <button onClick={() => { featureParticipant(null); control('scene', 'class'); }}><Layers size={18} /> Modo aula</button>
-            <button onClick={() => control('scene', 'screen')}><MonitorUp size={18} /> Apresentação</button>
-            <div className="fl-director-offers">
-              <strong>OFERTAS DESTA LIVE</strong>
-              {offers.length === 0 ? <p>Nenhuma oferta vinculada. Configure no admin da live.</p> : offers.map((item) => <article key={item.id}><div><b>{item.name}</b><small>{item.price || item.headline}</small></div><button onClick={() => displayOffer(item, 'split')}>Tela dividida</button><button onClick={() => displayOffer(item, 'banner')}>CTA na tela</button><button onClick={() => displayOffer(item, 'floating')}>Botão</button></article>)}
-              {activeOffer && <button className="danger" onClick={() => displayOffer(null, 'hidden')}><X size={17} /> Ocultar oferta</button>}
-            </div>
-            {liveStatus === 'live' ? <button className="danger" onClick={() => control('end')}><Square size={18} /> Encerrar transmissão</button> : <button onClick={() => control('start')}><Play size={18} /> Iniciar transmissão</button>}
-          </div>}
+          {sidePanel === 'chat' ? <><div className="fl-chat-list">{!messages.length && <div className="fl-chat-empty"><MessageCircle size={28} /><strong>O chat está aberto</strong><p>Envie uma mensagem para a turma.</p></div>}{messages.map((message) => <div key={message.id} className={`fl-message${message.mine ? ' mine' : ''}`}><b>{message.name}</b><p>{message.body}</p></div>)}</div><form className="fl-chat-form" onSubmit={sendMessage}><input value={chatText} onChange={(event) => setChatText(event.target.value)} placeholder="Escreva uma mensagem…" /><button><Send size={18} /></button></form></> : sidePanel === 'people' ? (
+            <div className="fl-people-list">{participantList.map((participant: any) => { const id = participant.session_id; const hand = handRequests[id]?.raised; return <div key={id} className={hand ? 'hand-raised' : ''}><span>{(participant.user_name || 'P').slice(0, 1).toUpperCase()}</span><div><b>{participant.user_name || 'Participante'} {hand && '✋'}</b><small>{participant.local ? 'Você' : featuredSessionId === id ? 'No palco' : 'Na sala'}</small></div>{participant.audio === false ? <MicOff size={15} /> : <Mic size={15} />}{isHost && !participant.local && <div className="fl-person-actions"><button title="Colocar no palco" onClick={() => featureParticipant(featuredSessionId === id ? null : id)}><Star size={14} /></button><button title={participant.audio === false ? 'Dar voz' : 'Silenciar'} onClick={() => moderate(id, participant.audio === false ? 'grant-audio' : 'mute-audio')}>{participant.audio === false ? <Mic size={14} /> : <MicOff size={14} />}</button><button title={participant.video === false ? 'Liberar câmera' : 'Desligar câmera'} onClick={() => moderate(id, participant.video === false ? 'grant-camera' : 'stop-camera')}>{participant.video === false ? <Video size={14} /> : <CameraOff size={14} />}</button><button title="Remover da sala" className="danger" onClick={() => moderate(id, 'leave')}><UserMinus size={14} /></button></div>}</div>; })}</div>
+          ) : <div className="fl-director-panel"><span>DIREÇÃO AO VIVO</span><h3>Controle o que todos veem</h3><button onClick={() => { featureParticipant(null); setLayout('class'); control('scene', 'class'); }}><Layers size={18} /> Modo aula</button><button onClick={() => control('scene', 'screen')}><MonitorUp size={18} /> Apresentação</button><div className="fl-director-offers"><strong>OFERTAS DESTA LIVE</strong>{offers.length === 0 ? <p>Nenhuma oferta vinculada. Configure no admin da live.</p> : offers.map((item) => <article key={item.id}><div><b>{item.name}</b><small>{item.price || item.headline}</small></div><button onClick={() => displayOffer(item, 'split')}>Tela dividida</button><button onClick={() => displayOffer(item, 'banner')}>CTA na tela</button><button onClick={() => displayOffer(item, 'floating')}>Botão</button></article>)}{activeOffer && <button className="danger" onClick={() => displayOffer(null, 'hidden')}><X size={17} /> Ocultar oferta</button>}</div>{liveStatus === 'live' ? <button className="danger" onClick={() => control('end')}><Square size={18} /> Encerrar transmissão</button> : <button onClick={() => control('start')}><Play size={18} /> Iniciar transmissão</button>}</div>}
         </aside>
       </section>
 
