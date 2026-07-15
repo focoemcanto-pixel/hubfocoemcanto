@@ -150,24 +150,6 @@ export default function PrejoinRuntime() {
       }
     }
 
-    async function applyPreferencesToCall() {
-      const call = window.__focoLiveCall;
-      const preferences = window.__focoPrejoin;
-      if (!call || !preferences) return;
-      try {
-        if (call.setInputDevicesAsync && (preferences.audioDeviceId || preferences.videoDeviceId)) {
-          await call.setInputDevicesAsync({
-            audioDeviceId: preferences.audioDeviceId,
-            videoDeviceId: preferences.videoDeviceId,
-          });
-        }
-        await call.setLocalAudio(Boolean(preferences.audioEnabled));
-        await call.setLocalVideo(Boolean(preferences.videoEnabled));
-      } catch {
-        // Mantém os dispositivos padrão caso o navegador não permita a troca.
-      }
-    }
-
     function mount() {
       const card = document.querySelector<HTMLElement>('.fl-entry-card');
       const form = card?.querySelector<HTMLFormElement>('form');
@@ -224,14 +206,9 @@ export default function PrejoinRuntime() {
         window.__focoPrejoin!.videoEnabled = (event.target as HTMLInputElement).checked;
       });
 
-      // Mantém exatamente a ordem da primeira versão funcional: o React processa
-      // o submit da sala primeiro; este listener roda na fase de bubbling, agenda
-      // as preferências e só então libera a prévia.
-      form.addEventListener('submit', () => {
-        window.setTimeout(applyPreferencesToCall, 500);
-        window.setTimeout(applyPreferencesToCall, 1400);
-        stopPreview();
-      });
+      // A pré-sala apenas libera os dispositivos. Ela não chama nenhum método da
+      // Daily durante o processo de join, evitando concorrência com call.join().
+      form.addEventListener('submit', stopPreview);
     }
 
     const observer = new MutationObserver(mount);
