@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { createDailyMeetingToken } from '@/lib/daily';
+import { createDailyMeetingToken, createDailyRoom } from '@/lib/daily';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,14 +18,15 @@ export async function POST(request: NextRequest, context: { params: Promise<{ sl
     const { slug } = await context.params;
     const input = schema.parse(await request.json());
     const supabase = createAdminClient();
-    const { data: live, error } = await supabase
+    const { data: foundLive, error } = await supabase
       .from('live_sessions')
       .select('*')
       .eq('slug', slug)
       .single();
 
-    if (error || !live) return NextResponse.json({ error: 'Live não encontrada.' }, { status: 404 });
+    if (error || !foundLive) return NextResponse.json({ error: 'Live não encontrada.' }, { status: 404 });
 
+    let live = foundLive;
     const accessEmail = request.cookies.get('hub_access_email')?.value;
     const requestedHost = input.mode === 'host';
     const isHost = requestedHost && Boolean(accessEmail);
@@ -41,6 +42,40 @@ export async function POST(request: NextRequest, context: { params: Promise<{ sl
 
     if (isHost && !['draft', 'scheduled', 'live'].includes(live.status)) {
       return NextResponse.json({ error: 'Esta transmissão não pode ser aberta no estúdio.' }, { status: 403 });
+    }
+
+    // Salas agendadas eram criadas com expiração de seis horas após o horário da live.
+    // Ao reutilizar uma live de teste no dia seguinte, a API ainda gerava token, mas a
+    // Daily nunca concluía o join. O host agora recria automaticamente uma sala vencida.
+    const scheduledAt = live.starts_at ? new Date(live.starts_at).getTime() : null;
+    const roomLikelyExpired = Boolean(scheduledAt && Date.now() > scheduledAt + 6 * 60 * 60 * 1000);
+    const needsRoom = !live.daily_room_name || !live.daily_room_url || roomLikelyExpired;
+
+    if (isHost && needsRoom) {
+      const roomName = `foco-${slug}-${Date.now().toString(36)}`;
+      const dailyRoom = await createDailyRoom({
+        name: roomName,
+        privacy: 'private',
+        properties: {
+          exp: Math.floor(Date.now() / 1000) + 60 * 60 * 12,
+          enable_chat: false,
+          enable_people_ui: false,
+          enable_screenshare: true,
+          start_video_off: true,
+          start_audio_off: true,
+          enable_recording: live.recording_enabled ? 'cloud' : false,
+        },
+      });
+
+      const { data: refreshedLive, error: roomUpdateError } = await supabase
+        .from('live_sessions')
+        .update({ daily_room_name: dailyRoom.name, daily_room_url: dailyRoom.url })
+        .eq('id', live.id)
+        .select('*')
+        .single();
+
+      if (roomUpdateError || !refreshedLive) throw roomUpdateError || new Error('Não foi possível renovar a sala de vídeo.');
+      live = refreshedLive;
     }
 
     if (!live.daily_room_name || !live.daily_room_url) return NextResponse.json({ error: 'Sala de vídeo ainda não configurada.' }, { status: 409 });
@@ -85,15 +120,8 @@ export async function POST(request: NextRequest, context: { params: Promise<{ sl
 
     if (participantError) throw participantError;
 
-    // O participant.id é exclusivo para esta entrada. Isso impede que dois dispositivos
-    // sejam tratados pela Daily como a mesma identidade/conexão.
     const dailyUserId = `${isHost ? 'host' : 'participant'}-${participant.id}`;
-    const token = await createDailyMeetingToken(
-      live.daily_room_name,
-      isHost,
-      input.name,
-      dailyUserId,
-    );
+    const token = await createDailyMeetingToken(live.daily_room_name, isHost, input.name, dailyUserId);
 
     return NextResponse.json({
       live: { id: live.id, title: live.title, description: live.description, status: live.status, currentScene: live.current_scene, offerConfig: live.offer_config || {} },
@@ -103,6 +131,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ sl
       isHost,
       effectiveMode,
       hostFallback: requestedHost && !isHost,
+      roomRenewed: needsRoom,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Não foi possível entrar na live.';
