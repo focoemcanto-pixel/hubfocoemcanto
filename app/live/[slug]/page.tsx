@@ -9,6 +9,7 @@ import SessionEndGuard from './session-end-guard';
 import HostSessionRuntime from './host-session-runtime';
 import MeetStageRuntime from './meet-stage-runtime';
 import PrejoinRuntime from './prejoin-runtime';
+import LivePolishRuntime from './live-polish-runtime';
 import './room.css';
 import './host-studio.css';
 import './split-offer-fix.css';
@@ -19,6 +20,7 @@ import './host-session-runtime.css';
 import './meet-stage.css';
 import './prejoin-runtime.css';
 import './offer-stage-integration.css';
+import './live-polish.css';
 
 export const dynamic = 'force-dynamic';
 
@@ -58,6 +60,7 @@ export default async function LivePage({ params }: { params: Promise<{ slug: str
       <SessionEndGuard initialStatus={live.status} title={live.title} />
       <HostSessionRuntime slug={slug} />
       <MeetStageRuntime />
+      <LivePolishRuntime />
       <FocoLiveRoom
         slug={slug}
         initialLive={{
