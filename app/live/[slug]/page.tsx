@@ -6,6 +6,7 @@ import LiveUxFix from './live-ux-fix';
 import './room.css';
 import './host-studio.css';
 import './split-offer-fix.css';
+import './live-ux-fix.css';
 
 export const dynamic = 'force-dynamic';
 
