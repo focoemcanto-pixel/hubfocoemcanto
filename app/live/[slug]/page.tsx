@@ -4,11 +4,14 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { getBrandingMetadata } from '@/lib/seo/branding-metadata';
 import FocoLiveRoom from './room';
 import SessionEndGuard from './session-end-guard';
+import PrejoinRuntime from './prejoin-runtime';
 import './room.css';
 import './host-studio.css';
 import './split-offer-fix.css';
 import './session-end.css';
 import './offer-stage-integration.css';
+import './prejoin-runtime.css';
+import './live-polish.css';
 
 export const dynamic = 'force-dynamic';
 
@@ -88,6 +91,7 @@ export default async function LivePage({ params }: PageProps) {
   return (
     <>
       <SessionEndGuard initialStatus={live.status} title={live.title} />
+      <PrejoinRuntime />
       <FocoLiveRoom
         slug={slug}
         initialLive={{
