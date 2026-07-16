@@ -7,7 +7,7 @@ import SessionEndGuard from './session-end-guard';
 import EndCleanupRuntime from './end-cleanup-runtime';
 import PrejoinRuntime from './prejoin-runtime';
 import LivePolishRuntime from './live-polish-runtime';
-import ShareInvite from './share-invite';
+import ScreenShareFocusRuntime from './screen-share-focus-runtime';
 import './room.css';
 import './host-studio.css';
 import './split-offer-fix.css';
@@ -59,7 +59,7 @@ export default async function LivePage({ params }: PageProps) {
     <EndCleanupRuntime />
     <PrejoinRuntime />
     <LivePolishRuntime />
-    <ShareInvite slug={slug} title={live.title} description={live.description} startsAt={live.starts_at} />
+    <ScreenShareFocusRuntime />
     <FocoLiveRoom slug={slug} initialLive={{ ...live, offer_config: live.offer_config ? { ...live.offer_config, offer: persistedOffer } : {}, offers }} />
   </>;
 }
