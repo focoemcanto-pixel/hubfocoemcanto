@@ -28,6 +28,21 @@ export async function createDailyRoom(payload: DailyRoomPayload) {
   return response.json() as Promise<{ id: string; name: string; url: string }>;
 }
 
+export async function updateDailyRoom(roomName: string, properties: Record<string, unknown>) {
+  const response = await fetch(`https://api.daily.co/v1/rooms/${encodeURIComponent(roomName)}`, {
+    method: 'POST',
+    headers: dailyHeaders(),
+    body: JSON.stringify({ properties }),
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`Falha ao atualizar sala na Daily: ${response.status} ${detail}`);
+  }
+
+  return response.json() as Promise<{ id: string; name: string; url: string }>;
+}
+
 export async function deleteDailyRoom(roomName: string) {
   const response = await fetch(`https://api.daily.co/v1/rooms/${encodeURIComponent(roomName)}`, {
     method: 'DELETE',
