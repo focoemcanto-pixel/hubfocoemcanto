@@ -1,0 +1,134 @@
+/* Landscape phone refinement: main stage fills the viewport, secondary participants stay docked. */
+@media (orientation: landscape) and (max-height: 650px) {
+  .fl-stage-wrap,
+  .fl-stage-content,
+  .fl-stage-video-area,
+  .fl-speaker-layout {
+    width: 100% !important;
+    height: 100% !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+  }
+
+  .fl-speaker-layout {
+    position: relative !important;
+    display: block !important;
+    overflow: hidden !important;
+    padding: 0 !important;
+  }
+
+  .fl-speaker-main {
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+  }
+
+  .fl-speaker-main > .fl-video-tile {
+    width: 100% !important;
+    height: 100% !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    border-radius: 18px !important;
+  }
+
+  .fl-speaker-main .fl-video-frame {
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 0 !important;
+  }
+
+  .fl-speaker-main .fl-video-frame video {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: contain !important;
+    object-position: center !important;
+  }
+
+  .fl-speaker-main .fl-video-meta {
+    position: absolute !important;
+    left: 12px !important;
+    bottom: 10px !important;
+    z-index: 4 !important;
+    width: auto !important;
+    min-height: 28px !important;
+    border: 0 !important;
+    border-radius: 10px !important;
+    background: rgba(10,8,14,.82) !important;
+    backdrop-filter: blur(8px);
+  }
+
+  .fl-speaker-thumbnails {
+    position: absolute !important;
+    right: 14px !important;
+    bottom: 14px !important;
+    left: auto !important;
+    top: auto !important;
+    z-index: 8 !important;
+    display: flex !important;
+    flex-direction: row !important;
+    justify-content: flex-end !important;
+    align-items: flex-end !important;
+    gap: 8px !important;
+    width: auto !important;
+    max-width: 58% !important;
+    height: auto !important;
+    padding: 0 !important;
+    transform: none !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+  }
+
+  .fl-speaker-thumbnails .fl-video-tile.compact {
+    flex: 0 0 clamp(118px, 19vw, 180px) !important;
+    width: clamp(118px, 19vw, 180px) !important;
+    height: clamp(82px, 23vh, 128px) !important;
+    min-width: 118px !important;
+    min-height: 82px !important;
+    max-height: 128px !important;
+    border-radius: 14px !important;
+    box-shadow: 0 12px 34px rgba(0,0,0,.48) !important;
+  }
+
+  .fl-speaker-thumbnails .fl-video-frame {
+    height: 100% !important;
+    min-height: 0 !important;
+  }
+
+  .fl-speaker-thumbnails .fl-video-frame video {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important;
+    object-position: center !important;
+  }
+
+  .fl-speaker-thumbnails .fl-video-meta {
+    position: absolute !important;
+    left: 6px !important;
+    right: 6px !important;
+    bottom: 6px !important;
+    min-height: 22px !important;
+    padding: 3px 6px !important;
+    border: 0 !important;
+    border-radius: 8px !important;
+    background: rgba(8,7,11,.78) !important;
+  }
+
+  .fl-native-layout-switcher {
+    top: 10px !important;
+    left: 10px !important;
+    z-index: 20 !important;
+  }
+
+  .fl-room:not(.offer-split-active) .fl-stage-wrap {
+    padding: 8px 12px !important;
+  }
+
+  .fl-room:not(.offer-split-active) .fl-stage-content,
+  .fl-room:not(.offer-split-active) .fl-stage-video-area {
+    border-radius: 18px !important;
+    overflow: hidden !important;
+  }
+}
