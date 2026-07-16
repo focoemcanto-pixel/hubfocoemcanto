@@ -10,16 +10,13 @@ export default function LivePolishRuntime() {
       const room = document.querySelector<HTMLElement>('.fl-room');
       if (!room) return;
 
-      const split = Boolean(room.querySelector('.fl-offer-scene'));
+      const split = room.classList.contains('offer-split-active');
       const banner = Boolean(room.querySelector('.fl-offer-banner'));
       const floating = Boolean(room.querySelector('.fl-offer-floating'));
       const mode = split ? 'split' : banner ? 'banner' : floating ? 'floating' : 'hidden';
       const desiredClass = `offer-mode-${mode}`;
       const modeClasses = ['offer-mode-split', 'offer-mode-banner', 'offer-mode-floating', 'offer-mode-hidden'];
 
-      // Make DOM writes idempotent. The previous version observed class changes and
-      // rewrote the same classes inside its callback, creating a mutation loop as
-      // soon as the room mounted.
       const currentModeClass = modeClasses.find((className) => room.classList.contains(className));
       if (currentModeClass !== desiredClass) {
         modeClasses.forEach((className) => {
@@ -28,20 +25,11 @@ export default function LivePolishRuntime() {
         if (!room.classList.contains(desiredClass)) room.classList.add(desiredClass);
       }
 
-      const offerButtons = room.querySelectorAll<HTMLButtonElement>('.fl-director-offers article button');
-      offerButtons.forEach((button, index) => {
-        const buttonMode = index % 3 === 0 ? 'split' : index % 3 === 1 ? 'banner' : 'floating';
-        const active = mode === buttonMode;
-        if (button.classList.contains('active-offer-mode') !== active) {
-          button.classList.toggle('active-offer-mode', active);
-        }
-        const pressed = String(active);
-        if (button.getAttribute('aria-pressed') !== pressed) button.setAttribute('aria-pressed', pressed);
-      });
+      // O estado visual dos botões de oferta pertence ao React em FocoLiveRoom.
+      // Não alteramos active-offer-mode pelo DOM, porque isso acendia o mesmo
+      // modo em todas as ofertas ao mesmo tempo.
     };
 
-    // Offer layouts change by mounting/unmounting elements. Watching childList is
-    // enough and avoids observing the class updates performed by sync itself.
     const observer = new MutationObserver(sync);
     observer.observe(document.body, { childList: true, subtree: true });
     sync();
