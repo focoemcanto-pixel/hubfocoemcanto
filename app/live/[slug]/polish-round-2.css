@@ -1,0 +1,23 @@
+/* Final visual overrides after live testing. */
+.fl-director-offers article button{border-color:rgba(255,255,255,.1)!important;background:rgba(255,255,255,.055)!important;color:#d8cedf!important;box-shadow:none!important}
+.fl-director-offers article button.active-offer-mode{border-color:#9f52ff!important;background:rgba(139,61,255,.28)!important;color:#fff!important;box-shadow:0 0 0 1px rgba(168,85,247,.32) inset!important}
+
+.fl-entry-control{display:flex!important;flex-direction:column!important;gap:10px!important;padding:14px!important}
+.fl-entry-control>strong{display:block;font-size:13px;line-height:1.25}
+.fl-entry-control>button{width:100%;padding:8px 10px;line-height:1.25;white-space:normal}
+.fl-entry-request{display:grid!important;grid-template-columns:1fr 1fr!important;gap:8px!important;padding:10px!important;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(255,255,255,.03)}
+.fl-entry-request span{grid-column:1/-1;display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fl-entry-request button{width:100%;padding:7px 8px}
+
+.fl-share-link-row button{white-space:nowrap}
+.fl-recording-button:disabled{opacity:.5;cursor:not-allowed}
+
+@media(max-width:760px){
+  .fl-offer-banner{left:10px!important;right:10px!important;bottom:118px!important;max-height:none!important;overflow:visible!important}
+  .fl-offer-banner .fl-live-offer-content{display:grid!important;grid-template-columns:minmax(0,1fr)!important;grid-template-rows:auto auto auto!important;gap:7px!important;min-height:0!important;max-height:none!important;padding:12px!important;border-radius:18px!important}
+  .fl-offer-banner .fl-live-offer-content h2{grid-column:1!important;grid-row:1!important;white-space:normal!important;display:-webkit-box!important;-webkit-line-clamp:2!important;-webkit-box-orient:vertical!important;overflow:hidden!important;font-size:15px!important;line-height:1.12!important}
+  .fl-offer-banner .fl-live-offer-price{grid-column:1!important;grid-row:2!important;justify-content:flex-start!important}
+  .fl-offer-banner .fl-live-offer-content>a{grid-column:1!important;grid-row:3!important;width:100%!important;min-width:0!important;min-height:46px!important;padding:0 12px!important;white-space:normal!important;text-align:center!important;line-height:1.15!important;font-size:12px!important;overflow:hidden!important}
+  .fl-room:has(.fl-offer-banner) .fl-speaker-thumbnails{bottom:8px!important}
+  .fl-entry-control{margin:8px!important}
+}
