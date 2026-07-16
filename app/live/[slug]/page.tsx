@@ -15,6 +15,7 @@ import './session-end.css';
 import './offer-stage-integration.css';
 import './prejoin-runtime.css';
 import './live-polish.css';
+import './polish-round-2.css';
 
 export const dynamic = 'force-dynamic';
 type PageProps = { params: Promise<{ slug: string }> };
