@@ -17,6 +17,7 @@ import './prejoin-runtime.css';
 import './live-polish.css';
 import './polish-round-2.css';
 import './mobile-responsive-v2.css';
+import './landscape-meet-fix.css';
 
 export const dynamic = 'force-dynamic';
 type PageProps = { params: Promise<{ slug: string }> };
