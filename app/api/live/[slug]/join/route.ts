@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { createDailyMeetingToken, createDailyRoom } from '@/lib/daily';
+import { createDailyMeetingToken, createDailyRoom, updateDailyRoom } from '@/lib/daily';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,21 +34,21 @@ export async function POST(request: NextRequest, context: { params: Promise<{ sl
     const scheduledAt = live.starts_at ? new Date(live.starts_at).getTime() : null;
     const roomLikelyExpired = Boolean(scheduledAt && Date.now() > scheduledAt + 6 * 60 * 60 * 1000);
     const needsRoom = !live.daily_room_name || !live.daily_room_url || roomLikelyExpired;
+    const roomProperties = {
+      enable_chat: false,
+      enable_people_ui: false,
+      enable_screenshare: true,
+      start_video_off: false,
+      start_audio_off: false,
+      enable_recording: live.recording_enabled ? 'cloud' : false,
+    };
 
     if (isHost && needsRoom) {
       const roomName = `foco-${slug}-${Date.now().toString(36)}`;
       const dailyRoom = await createDailyRoom({
         name: roomName,
         privacy: 'private',
-        properties: {
-          exp: Math.floor(Date.now() / 1000) + 60 * 60 * 12,
-          enable_chat: false,
-          enable_people_ui: false,
-          enable_screenshare: true,
-          start_video_off: false,
-          start_audio_off: false,
-          enable_recording: live.recording_enabled ? 'cloud' : false,
-        },
+        properties: { ...roomProperties, exp: Math.floor(Date.now() / 1000) + 60 * 60 * 12 },
       });
       const { data: refreshedLive, error: roomUpdateError } = await supabase.from('live_sessions').update({ daily_room_name: dailyRoom.name, daily_room_url: dailyRoom.url }).eq('id', live.id).select('*').single();
       if (roomUpdateError || !refreshedLive) throw roomUpdateError || new Error('Não foi possível renovar a sala de vídeo.');
@@ -56,6 +56,12 @@ export async function POST(request: NextRequest, context: { params: Promise<{ sl
     }
 
     if (!live.daily_room_name || !live.daily_room_url) return NextResponse.json({ error: 'Sala de vídeo ainda não configurada.' }, { status: 409 });
+
+    // Salas já existentes podem ter sido criadas antes de a gravação ser habilitada.
+    // Atualizamos as propriedades quando o host entra para que o botão Gravar reflita
+    // a configuração atual da live, sem obrigar a recriação da sala.
+    if (isHost && !needsRoom) await updateDailyRoom(live.daily_room_name, roomProperties);
+
     if (!isHost && effectiveMode === 'guest' && !live.guest_access_enabled) return NextResponse.json({ error: 'A entrada como convidado não está habilitada.' }, { status: 403 });
     if (!isHost && live.access_type === 'restricted' && effectiveMode === 'guest') return NextResponse.json({ error: 'Esta live é exclusiva para alunos autorizados.' }, { status: 403 });
 
