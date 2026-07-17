@@ -1,0 +1,288 @@
+/* Foco Live UI 2.0
+ * Native layout pass: no injected toolbar, no DOM observers, no duplicate controls.
+ * The existing React room owns every interaction; this file only defines the shell.
+ */
+
+.fl-room {
+  --fl-shell-bg: #0f1115;
+  --fl-panel-bg: #191c22;
+  --fl-panel-border: rgba(255,255,255,.08);
+  --fl-control-bg: rgba(38,42,50,.96);
+  --fl-control-hover: #353a44;
+  --fl-accent: #8b5cf6;
+  min-height: 100dvh;
+  height: 100dvh;
+  overflow: hidden;
+  display: grid !important;
+  grid-template-rows: 64px minmax(0,1fr) 76px;
+  background: var(--fl-shell-bg) !important;
+}
+
+.fl-room .fl-topbar {
+  position: relative !important;
+  inset: auto !important;
+  z-index: 30;
+  min-height: 0 !important;
+  height: 64px;
+  padding: 0 20px !important;
+  display: grid !important;
+  grid-template-columns: minmax(180px,1fr) auto minmax(180px,1fr);
+  align-items: center;
+  gap: 16px;
+  background: rgba(15,17,21,.96) !important;
+  border-bottom: 1px solid var(--fl-panel-border) !important;
+  backdrop-filter: blur(18px);
+}
+
+.fl-room .fl-top-status { justify-self: center; white-space: nowrap; }
+.fl-room .fl-top-actions { justify-self: end; display: flex; align-items: center; gap: 8px; }
+.fl-room .fl-brand.compact { min-width: 0; }
+.fl-room .fl-brand.compact small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 34vw; }
+
+.fl-room .fl-workspace {
+  min-width: 0 !important;
+  min-height: 0 !important;
+  height: auto !important;
+  display: grid !important;
+  grid-template-columns: minmax(0,1fr) 0;
+  overflow: hidden;
+  transition: grid-template-columns .22s ease;
+}
+
+.fl-room .fl-workspace:has(.fl-sidepanel.open) {
+  grid-template-columns: minmax(0,1fr) min(380px,32vw);
+}
+
+.fl-room .fl-stage-wrap {
+  position: relative;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  width: auto !important;
+  height: auto !important;
+  padding: 12px !important;
+  overflow: hidden;
+}
+
+.fl-room .fl-stage-content,
+.fl-room .fl-stage-video-area,
+.fl-room .fl-speaker-layout,
+.fl-room .fl-speaker-main,
+.fl-room .fl-native-grid {
+  min-width: 0;
+  min-height: 0;
+  height: 100% !important;
+}
+
+.fl-room .fl-stage-content {
+  border-radius: 18px;
+  overflow: hidden;
+  background: #08090c;
+}
+
+.fl-room .fl-video-tile,
+.fl-room .fl-screen-tile {
+  border-radius: 16px !important;
+  overflow: hidden;
+}
+
+.fl-room .fl-sidepanel {
+  position: relative !important;
+  inset: auto !important;
+  z-index: 20;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  height: 100% !important;
+  transform: translateX(24px);
+  opacity: 0;
+  visibility: hidden;
+  overflow: hidden;
+  background: var(--fl-panel-bg) !important;
+  border-left: 1px solid var(--fl-panel-border) !important;
+  box-shadow: none !important;
+  transition: transform .22s ease, opacity .18s ease, visibility .18s ease;
+}
+
+.fl-room .fl-sidepanel.open {
+  transform: none;
+  opacity: 1;
+  visibility: visible;
+}
+
+.fl-room .fl-tabs {
+  height: 56px;
+  display: grid !important;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  align-items: stretch;
+  padding: 6px !important;
+  gap: 4px;
+  border-bottom: 1px solid var(--fl-panel-border) !important;
+  background: var(--fl-panel-bg) !important;
+}
+
+.fl-room .fl-tabs button {
+  min-width: 0;
+  border-radius: 10px !important;
+  justify-content: center;
+}
+
+.fl-room .fl-chat-form {
+  padding: 12px !important;
+  display: grid !important;
+  grid-template-columns: minmax(0,1fr) 44px;
+  gap: 8px;
+  border-top: 1px solid var(--fl-panel-border) !important;
+  background: var(--fl-panel-bg) !important;
+}
+
+.fl-room .fl-chat-form input { min-width: 0; }
+.fl-room .fl-chat-form button { width: 44px !important; height: 44px !important; border-radius: 12px !important; }
+
+.fl-room .fl-controls {
+  position: relative !important;
+  inset: auto !important;
+  z-index: 40;
+  min-height: 0 !important;
+  height: 76px;
+  width: 100%;
+  padding: 10px 18px !important;
+  display: flex !important;
+  align-items: center;
+  justify-content: center !important;
+  gap: 8px !important;
+  background: rgba(15,17,21,.98) !important;
+  border-top: 1px solid var(--fl-panel-border) !important;
+  box-shadow: 0 -8px 30px rgba(0,0,0,.18) !important;
+}
+
+.fl-room .fl-controls > button {
+  position: relative !important;
+  inset: auto !important;
+  transform: none !important;
+  min-width: 54px !important;
+  width: auto !important;
+  height: 52px !important;
+  margin: 0 !important;
+  padding: 0 14px !important;
+  border-radius: 16px !important;
+  display: inline-flex !important;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px !important;
+  background: var(--fl-control-bg) !important;
+  border: 1px solid rgba(255,255,255,.06) !important;
+  color: #f7f7f8 !important;
+  box-shadow: none !important;
+}
+
+.fl-room .fl-controls > button:hover { background: var(--fl-control-hover) !important; }
+.fl-room .fl-controls > button svg { width: 20px; height: 20px; }
+.fl-room .fl-controls > button span { font-size: 10px !important; line-height: 1; white-space: nowrap; }
+.fl-room .fl-controls > button.active:not(.danger) { background: rgba(139,92,246,.2) !important; border-color: rgba(139,92,246,.55) !important; }
+.fl-room .fl-controls > button.off,
+.fl-room .fl-controls > button.danger { background: #b3261e !important; border-color: transparent !important; }
+.fl-room .fl-controls > button.danger { margin-left: 8px !important; }
+
+.fl-room .fl-native-layout-switcher {
+  top: 22px !important;
+  right: 22px !important;
+  left: auto !important;
+  z-index: 16;
+  padding: 4px !important;
+  border-radius: 14px !important;
+  background: rgba(20,22,27,.88) !important;
+  backdrop-filter: blur(12px);
+}
+
+.fl-room .fl-host-start-overlay {
+  left: 50% !important;
+  top: auto !important;
+  right: auto !important;
+  bottom: 22px !important;
+  transform: translateX(-50%) !important;
+  width: auto !important;
+  max-width: min(520px,calc(100% - 32px)) !important;
+  display: flex !important;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 12px 10px 16px !important;
+  border-radius: 16px !important;
+  background: rgba(25,28,34,.96) !important;
+  border: 1px solid var(--fl-panel-border) !important;
+  box-shadow: 0 18px 50px rgba(0,0,0,.35) !important;
+}
+
+.fl-room .fl-host-start-overlay strong { white-space: nowrap; }
+.fl-room .fl-share-overlay { z-index: 100 !important; }
+
+@media (max-width: 900px) {
+  .fl-room { grid-template-rows: 56px minmax(0,1fr) 68px; }
+  .fl-room .fl-topbar {
+    height: 56px;
+    padding: 0 12px !important;
+    grid-template-columns: minmax(0,1fr) auto;
+  }
+  .fl-room .fl-top-status { display: none !important; }
+  .fl-room .fl-brand.compact small { max-width: 48vw; }
+  .fl-room .fl-workspace,
+  .fl-room .fl-workspace:has(.fl-sidepanel.open) { grid-template-columns: minmax(0,1fr); }
+  .fl-room .fl-stage-wrap { padding: 6px !important; }
+  .fl-room .fl-stage-content { border-radius: 14px; }
+  .fl-room .fl-sidepanel,
+  .fl-room .fl-sidepanel.open {
+    position: fixed !important;
+    inset: auto 0 0 0 !important;
+    z-index: 70 !important;
+    width: 100% !important;
+    height: min(72dvh,680px) !important;
+    border: 1px solid var(--fl-panel-border) !important;
+    border-bottom: 0 !important;
+    border-radius: 22px 22px 0 0 !important;
+    transform: translateY(100%);
+    opacity: 1;
+    visibility: hidden;
+    box-shadow: 0 -24px 70px rgba(0,0,0,.5) !important;
+  }
+  .fl-room .fl-sidepanel.open { transform: none; visibility: visible; }
+  .fl-room .fl-sidepanel.open::before {
+    content: '';
+    display: block;
+    width: 42px;
+    height: 4px;
+    margin: 8px auto 2px;
+    border-radius: 99px;
+    background: rgba(255,255,255,.28);
+  }
+  .fl-room .fl-tabs { height: 52px; }
+  .fl-room .fl-controls {
+    height: 68px;
+    justify-content: space-around !important;
+    gap: 4px !important;
+    padding: 8px !important;
+  }
+  .fl-room .fl-controls > button {
+    min-width: 48px !important;
+    height: 48px !important;
+    padding: 0 10px !important;
+    border-radius: 15px !important;
+  }
+  .fl-room .fl-controls > button span { display: none !important; }
+  .fl-room .fl-controls > button.danger { margin-left: 0 !important; }
+  .fl-room .fl-native-layout-switcher { top: 12px !important; right: 12px !important; }
+  .fl-room .fl-host-start-overlay {
+    bottom: 12px !important;
+    max-width: calc(100% - 20px) !important;
+  }
+}
+
+@media (max-width: 560px) {
+  .fl-room .fl-top-actions .fl-recording-button span,
+  .fl-room .fl-top-actions .fl-share-live-button span { display: none !important; }
+  .fl-room .fl-brand.compact b { font-size: 12px !important; }
+  .fl-room .fl-brand.compact small { max-width: 42vw; }
+  .fl-room .fl-native-layout-switcher button span { display: none !important; }
+  .fl-room .fl-host-start-overlay strong { display: none; }
+  .fl-room .fl-host-start-overlay { padding: 8px !important; }
+}
