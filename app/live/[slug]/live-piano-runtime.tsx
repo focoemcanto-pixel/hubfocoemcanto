@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import DailyIframe from '@daily-co/daily-js';
-import { ChevronDown, ChevronLeft, ChevronRight, KeyboardMusic, Midi, Music2, Volume2, X } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, KeyboardMusic, Music2, Volume2, X } from 'lucide-react';
 import { playPianoSample, preloadPianoSamples, stopPianoSamples } from '@/lib/audio/piano-sample-engine';
 
 const WHITE_STEPS = [0, 2, 4, 5, 7, 9, 11];
@@ -62,7 +62,9 @@ function installCallBridge(listener: (data: PianoMessage) => void) {
   }
 
   if (target.__FOCO_LIVE_CALL__) attachCall(target.__FOCO_LIVE_CALL__, target);
-  return () => target.__FOCO_PIANO_LISTENERS__?.delete(listener);
+  return () => {
+    target.__FOCO_PIANO_LISTENERS__?.delete(listener);
+  };
 }
 
 export default function LivePianoRuntime() {
@@ -231,7 +233,7 @@ export default function LivePianoRuntime() {
       <KeyboardMusic size={21} /><span>{open ? 'Fechar piano' : 'Piano'}</span>
     </button>}
 
-    {open && <section className={`fl-piano-dock${isHost ? ' host' : 'viewer'}`} aria-label="Foco Keys — piano da aula">
+    {open && <section className={`fl-piano-dock${isHost ? ' host' : ' viewer'}`} aria-label="Foco Keys — piano da aula">
       <header>
         <div className="fl-piano-title"><span><Music2 size={17} /></span><div><strong>Foco Keys</strong><small>{isHost ? 'Toque e todos ouvirão' : 'Piano do professor'}</small></div></div>
         <div className="fl-piano-readout"><b>{lastNote === null ? '—' : noteLabel(lastNote)}</b><small>{lastNote === null ? 'Aguardando nota' : `MIDI ${lastNote}`}</small></div>
@@ -241,7 +243,7 @@ export default function LivePianoRuntime() {
           <button onClick={() => shiftOctave(1)} disabled={baseMidi >= 72} title="Oitava acima"><ChevronRight size={17} /></button>
           <label><Volume2 size={15} /><input type="range" min="0.2" max="1" step="0.05" value={volume} onChange={(event) => setVolume(Number(event.target.value))} /></label>
           <button className={sustain ? 'active' : ''} onClick={() => setSustain((current) => !current)}>Sustain</button>
-          <button className={midiStatus === 'ready' ? 'active' : ''} onClick={connectMidi} title="Conectar teclado MIDI"><Midi size={16} /> MIDI</button>
+          <button className={midiStatus === 'ready' ? 'active' : ''} onClick={connectMidi} title="Conectar teclado MIDI"><KeyboardMusic size={16} /> MIDI</button>
         </div>}
         {isHost ? <button className="fl-piano-close" onClick={togglePiano}><X size={18} /></button> : <span className="fl-piano-live-badge">AO VIVO</span>}
       </header>
