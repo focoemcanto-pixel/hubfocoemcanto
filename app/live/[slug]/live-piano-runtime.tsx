@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import DailyIframe from '@daily-co/daily-js';
-import { ChevronDown, ChevronLeft, ChevronRight, KeyboardMusic, Midi, Music2, Volume2, X } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, KeyboardMusic, Music2, Volume2, X } from 'lucide-react';
 import { playPianoSample, preloadPianoSamples, stopPianoSamples } from '@/lib/audio/piano-sample-engine';
 
 const WHITE_STEPS = [0, 2, 4, 5, 7, 9, 11];
@@ -19,6 +19,10 @@ function noteLabel(midi: number) {
 
 function isBlack(midi: number) {
   return BLACK_STEPS.includes(midi % 12);
+}
+
+function isTypingTarget(target: EventTarget | null) {
+  return target instanceof HTMLElement && Boolean(target.closest('input, textarea, select, [contenteditable="true"]'));
 }
 
 type PianoMessage =
@@ -68,16 +72,20 @@ function installCallBridge(listener: (data: PianoMessage) => void) {
 export default function LivePianoRuntime() {
   const audioRef = useRef<AudioContext | null>(null);
   const noteTimersRef = useRef<Map<number, number>>(new Map());
+  const pressedKeysRef = useRef<Map<string, number>>(new Map());
   const [isHost, setIsHost] = useState(false);
   const [roomReady, setRoomReady] = useState(false);
   const [open, setOpen] = useState(false);
   const [baseMidi, setBaseMidi] = useState(48);
   const [volume, setVolume] = useState(0.88);
-  const [sustain, setSustain] = useState(true);
+  const [sustainLatch, setSustainLatch] = useState(true);
+  const [sustainPedal, setSustainPedal] = useState(false);
+  const [keyboardEnabled, setKeyboardEnabled] = useState(true);
   const [activeNotes, setActiveNotes] = useState<Set<number>>(new Set());
   const [lastNote, setLastNote] = useState<number | null>(null);
   const [midiStatus, setMidiStatus] = useState<'idle' | 'ready' | 'unsupported' | 'error'>('idle');
 
+  const sustain = sustainLatch || sustainPedal;
   const notes = useMemo(() => Array.from({ length: 25 }, (_, index) => baseMidi + index), [baseMidi]);
 
   function getAudio() {
@@ -85,25 +93,35 @@ export default function LivePianoRuntime() {
     return audioRef.current;
   }
 
-  function markActive(midi: number, duration = 430) {
+  function setNoteActive(midi: number, active: boolean, fallbackDuration?: number) {
     const previous = noteTimersRef.current.get(midi);
     if (previous) window.clearTimeout(previous);
-    setActiveNotes((current) => new Set(current).add(midi));
-    const timer = window.setTimeout(() => {
-      setActiveNotes((current) => {
-        const next = new Set(current);
-        next.delete(midi);
-        return next;
-      });
-      noteTimersRef.current.delete(midi);
-    }, duration);
-    noteTimersRef.current.set(midi, timer);
+    noteTimersRef.current.delete(midi);
+
+    setActiveNotes((current) => {
+      const next = new Set(current);
+      if (active) next.add(midi);
+      else next.delete(midi);
+      return next;
+    });
+
+    if (active && fallbackDuration) {
+      const timer = window.setTimeout(() => {
+        setActiveNotes((current) => {
+          const next = new Set(current);
+          next.delete(midi);
+          return next;
+        });
+        noteTimersRef.current.delete(midi);
+      }, fallbackDuration);
+      noteTimersRef.current.set(midi, timer);
+    }
   }
 
-  async function playNote(midi: number, velocity = volume, shouldBroadcast = false) {
+  async function playNote(midi: number, velocity = volume, shouldBroadcast = false, held = false) {
     const context = getAudio();
     await context.resume().catch(() => undefined);
-    markActive(midi, sustain ? 760 : 360);
+    setNoteActive(midi, true, held ? undefined : sustain ? 760 : 360);
     setLastNote(midi);
     void playPianoSample(
       context,
@@ -134,6 +152,8 @@ export default function LivePianoRuntime() {
     const next = Math.max(36, Math.min(72, baseMidi + direction * 12));
     setBaseMidi(next);
     publishState(open, next);
+    pressedKeysRef.current.clear();
+    setActiveNotes(new Set());
     if (audioRef.current) void preloadPianoSamples(audioRef.current, Array.from({ length: 25 }, (_, index) => next + index));
   }
 
@@ -146,7 +166,8 @@ export default function LivePianoRuntime() {
         input.onmidimessage = (event: any) => {
           const [status, midi, velocity] = event.data || [];
           const command = status & 0xf0;
-          if (command === 0x90 && velocity > 0) void playNote(midi, Math.max(0.18, velocity / 127), true);
+          if (command === 0x90 && velocity > 0) void playNote(midi, Math.max(0.18, velocity / 127), true, true);
+          if (command === 0x80 || (command === 0x90 && velocity === 0)) setNoteActive(midi, false);
         };
       });
       setMidiStatus('ready');
@@ -187,23 +208,65 @@ export default function LivePianoRuntime() {
   }, [open, notes]);
 
   useEffect(() => {
-    if (!isHost || !open) return;
-    const pressed = new Set<string>();
+    if (!isHost || !open || !keyboardEnabled) return;
+
     const down = (event: KeyboardEvent) => {
-      if (event.repeat || pressed.has(event.key.toLowerCase())) return;
-      const offset = KEYBOARD_MAP[event.key.toLowerCase()];
-      if (offset === undefined) return;
-      const target = event.target as HTMLElement | null;
-      if (target?.matches('input,textarea,[contenteditable="true"]')) return;
+      if (isTypingTarget(event.target)) return;
+      const key = event.key.toLowerCase();
+
+      if (key === 'z') {
+        if (!event.repeat) shiftOctave(-1);
+        event.preventDefault();
+        return;
+      }
+      if (key === 'x') {
+        if (!event.repeat) shiftOctave(1);
+        event.preventDefault();
+        return;
+      }
+      if (event.code === 'Space') {
+        event.preventDefault();
+        if (!event.repeat) setSustainPedal(true);
+        return;
+      }
+
+      const offset = KEYBOARD_MAP[key];
+      if (offset === undefined || event.repeat || pressedKeysRef.current.has(key)) return;
       event.preventDefault();
-      pressed.add(event.key.toLowerCase());
-      void playNote(baseMidi + offset, volume, true);
+      const midi = baseMidi + offset;
+      pressedKeysRef.current.set(key, midi);
+      void playNote(midi, event.shiftKey ? Math.min(1.15, volume + 0.2) : volume, true, true);
     };
-    const up = (event: KeyboardEvent) => pressed.delete(event.key.toLowerCase());
+
+    const up = (event: KeyboardEvent) => {
+      const key = event.key.toLowerCase();
+      if (event.code === 'Space') {
+        if (!isTypingTarget(event.target)) event.preventDefault();
+        setSustainPedal(false);
+        return;
+      }
+      const midi = pressedKeysRef.current.get(key);
+      if (midi === undefined) return;
+      pressedKeysRef.current.delete(key);
+      setNoteActive(midi, false);
+    };
+
+    const releaseAll = () => {
+      pressedKeysRef.current.forEach((midi) => setNoteActive(midi, false));
+      pressedKeysRef.current.clear();
+      setSustainPedal(false);
+    };
+
     window.addEventListener('keydown', down);
     window.addEventListener('keyup', up);
-    return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); };
-  }, [baseMidi, isHost, open, volume, sustain]);
+    window.addEventListener('blur', releaseAll);
+    return () => {
+      window.removeEventListener('keydown', down);
+      window.removeEventListener('keyup', up);
+      window.removeEventListener('blur', releaseAll);
+      releaseAll();
+    };
+  }, [baseMidi, isHost, keyboardEnabled, open, volume, sustainLatch]);
 
   useEffect(() => {
     if (!isHost || !roomReady) return;
@@ -231,17 +294,18 @@ export default function LivePianoRuntime() {
       <KeyboardMusic size={21} /><span>{open ? 'Fechar piano' : 'Piano'}</span>
     </button>}
 
-    {open && <section className={`fl-piano-dock${isHost ? ' host' : 'viewer'}`} aria-label="Foco Keys — piano da aula">
+    {open && <section className={`fl-piano-dock${isHost ? ' host' : ' viewer'}`} aria-label="Foco Keys — piano da aula">
       <header>
         <div className="fl-piano-title"><span><Music2 size={17} /></span><div><strong>Foco Keys</strong><small>{isHost ? 'Toque e todos ouvirão' : 'Piano do professor'}</small></div></div>
         <div className="fl-piano-readout"><b>{lastNote === null ? '—' : noteLabel(lastNote)}</b><small>{lastNote === null ? 'Aguardando nota' : `MIDI ${lastNote}`}</small></div>
         {isHost && <div className="fl-piano-tools">
-          <button onClick={() => shiftOctave(-1)} disabled={baseMidi <= 36} title="Oitava abaixo"><ChevronLeft size={17} /></button>
+          <button onClick={() => shiftOctave(-1)} disabled={baseMidi <= 36} title="Oitava abaixo — tecla Z"><ChevronLeft size={17} /></button>
           <span>{noteLabel(baseMidi)}–{noteLabel(baseMidi + 24)}</span>
-          <button onClick={() => shiftOctave(1)} disabled={baseMidi >= 72} title="Oitava acima"><ChevronRight size={17} /></button>
+          <button onClick={() => shiftOctave(1)} disabled={baseMidi >= 72} title="Oitava acima — tecla X"><ChevronRight size={17} /></button>
           <label><Volume2 size={15} /><input type="range" min="0.2" max="1" step="0.05" value={volume} onChange={(event) => setVolume(Number(event.target.value))} /></label>
-          <button className={sustain ? 'active' : ''} onClick={() => setSustain((current) => !current)}>Sustain</button>
-          <button className={midiStatus === 'ready' ? 'active' : ''} onClick={connectMidi} title="Conectar teclado MIDI"><Midi size={16} /> MIDI</button>
+          <button className={sustain ? 'active' : ''} onClick={() => setSustainLatch((current) => !current)} title="Sustain fixo; a barra de espaço funciona como pedal">Sustain</button>
+          <button className={keyboardEnabled ? 'active' : ''} onClick={() => setKeyboardEnabled((current) => !current)} title="Ativar ou desativar o teclado do computador"><KeyboardMusic size={16} /> PC</button>
+          <button className={midiStatus === 'ready' ? 'active' : ''} onClick={connectMidi} title="Conectar teclado MIDI"><Music2 size={16} /> MIDI</button>
         </div>}
         {isHost ? <button className="fl-piano-close" onClick={togglePiano}><X size={18} /></button> : <span className="fl-piano-live-badge">AO VIVO</span>}
       </header>
@@ -268,7 +332,7 @@ export default function LivePianoRuntime() {
           })}
         </div>
       </div>
-      {isHost && <footer><span>Teclado: A W S E D F T G Y H U J K O L P ;</span><button onClick={togglePiano}><ChevronDown size={16} /> Recolher</button></footer>}
+      {isHost && <footer><span>PC: A W S E D F T G Y H U J K O L P ; · Z/X oitava · Espaço sustain · Shift mais intensidade</span><button onClick={togglePiano}><ChevronDown size={16} /> Recolher</button></footer>}
     </section>}
   </>;
 }
