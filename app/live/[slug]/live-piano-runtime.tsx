@@ -62,7 +62,9 @@ function installCallBridge(listener: (data: PianoMessage) => void) {
   }
 
   if (target.__FOCO_LIVE_CALL__) attachCall(target.__FOCO_LIVE_CALL__, target);
-  return () => target.__FOCO_PIANO_LISTENERS__?.delete(listener);
+  return () => {
+    target.__FOCO_PIANO_LISTENERS__?.delete(listener);
+  };
 }
 
 export default function LivePianoRuntime() {
