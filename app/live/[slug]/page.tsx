@@ -9,6 +9,7 @@ import PrejoinRuntime from './prejoin-runtime';
 import LivePolishRuntime from './live-polish-runtime';
 import ScreenShareFocusRuntime from './screen-share-focus-runtime';
 import LivePianoRuntime from './live-piano-runtime';
+import LiveToolsRuntime from './live-tools-runtime';
 import HandSignalRuntime from './hand-signal-runtime';
 import './room.css';
 import './host-studio.css';
@@ -20,6 +21,7 @@ import './live-polish.css';
 import './polish-round-2.css';
 import './mobile-responsive-v2.css';
 import './live-piano.css';
+import './live-tools.css';
 import './hand-signal.css';
 import './room-shell-v2.css';
 
@@ -69,6 +71,7 @@ export default async function LivePage({ params }: PageProps) {
     <LivePolishRuntime />
     <ScreenShareFocusRuntime />
     <LivePianoRuntime />
+    <LiveToolsRuntime />
     <HandSignalRuntime />
     <FocoLiveRoom slug={slug} initialLive={{ ...live, offer_config: live.offer_config ? { ...live.offer_config, offer: persistedOffer } : {}, offers }} />
   </>;
