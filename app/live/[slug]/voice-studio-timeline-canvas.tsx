@@ -40,7 +40,7 @@ type TimelineCanvasProps = {
   onBeginRecord: () => void;
 };
 
-const CANVAS_CSS = `.vs-pro-canvas{position:relative;min-height:100%;overflow:hidden}.vs-pro-canvas-content{position:relative;min-height:100%}.vs-pro-canvas .vs-lane{position:relative}.vs-pro-canvas .vs-clip{position:absolute;top:9px;bottom:9px;height:auto;cursor:grab;touch-action:none}.vs-pro-canvas .vs-live-clip{position:absolute;top:9px;bottom:9px;height:auto}.vs-pro-canvas .vs-playhead{position:absolute;top:0;bottom:0;z-index:7;pointer-events:none}.vs-pro-canvas .vs-empty{inset:42px 0 0}`;
+const CANVAS_CSS = `.vs-pro-canvas{position:relative;min-height:100%;overflow:hidden}.vs-pro-canvas-content{position:relative;min-height:100%}.vs-pro-canvas .vs-lane{position:relative}.vs-pro-canvas .vs-clip{position:absolute;top:9px;bottom:9px;height:auto;cursor:grab;touch-action:none}.vs-pro-canvas .vs-live-clip{position:absolute;top:9px;bottom:9px;height:auto;min-width:0;overflow:hidden}.vs-pro-canvas .vs-playhead{position:absolute;top:0;bottom:0;z-index:7;pointer-events:none}.vs-pro-canvas .vs-empty{inset:42px 0 0}`;
 
 export default function VoiceStudioTimelineCanvas({
   project,
@@ -64,6 +64,7 @@ export default function VoiceStudioTimelineCanvas({
   onBeginRecord,
 }: TimelineCanvasProps) {
   const recording = status === 'recording' || status === 'countin';
+  const liveDuration = status === 'recording' ? Math.max(0, elapsed - recordStart) : 0;
 
   return <div className="vs-pro-canvas">
     <style>{CANVAS_CSS}</style>
@@ -93,7 +94,7 @@ export default function VoiceStudioTimelineCanvas({
       {recording && <div className={`vs-lane live ${armedKind}`}>
         <div className="vs-live-clip" style={{
           left: timelineTimeToPixels(recordStart, zoom),
-          width: Math.max(16, timelineTimeToPixels(Math.max(0, elapsed - recordStart), zoom)),
+          width: timelineTimeToPixels(liveDuration, zoom),
         }}>
           {armedKind === 'audio'
             ? <Wave peaks={livePeaks}/>
