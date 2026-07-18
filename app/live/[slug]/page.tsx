@@ -11,6 +11,7 @@ import ScreenShareFocusRuntime from './screen-share-focus-runtime';
 import LivePianoRuntime from './live-piano-runtime';
 import LiveToolsRuntime from './live-tools-runtime';
 import LiveStudioRuntime from './live-studio-runtime';
+import LiveCameraControlsRuntime from './live-camera-controls-runtime';
 import HandSignalRuntime from './hand-signal-runtime';
 import './room.css';
 import './host-studio.css';
@@ -24,6 +25,7 @@ import './mobile-responsive-v2.css';
 import './live-piano.css';
 import './live-tools.css';
 import './live-studio.css';
+import './live-camera-controls.css';
 import './hand-signal.css';
 import './room-shell-v2.css';
 
@@ -75,6 +77,7 @@ export default async function LivePage({ params }: PageProps) {
     <LivePianoRuntime />
     <LiveToolsRuntime />
     <LiveStudioRuntime />
+    <LiveCameraControlsRuntime />
     <HandSignalRuntime />
     <FocoLiveRoom slug={slug} initialLive={{ ...live, offer_config: live.offer_config ? { ...live.offer_config, offer: persistedOffer } : {}, offers }} />
   </>;
