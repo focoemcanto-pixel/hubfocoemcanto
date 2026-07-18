@@ -125,7 +125,7 @@ export default function VoiceStudioWorkflowRuntime() {
       if (event.code === 'Space') {
         event.preventDefault();
         const play = controlButton(1);
-        if (!play?.disabled) {
+        if (play && !play.disabled) {
           play.click();
           flashShortcut('Espaço · Play / Pause');
         }
@@ -135,7 +135,7 @@ export default function VoiceStudioWorkflowRuntime() {
       if (event.key.toLowerCase() === 'r') {
         event.preventDefault();
         const record = controlButton(2);
-        if (!record?.disabled) {
+        if (record && !record.disabled) {
           record.click();
           flashShortcut('R · Gravar / Parar');
         }
@@ -151,12 +151,8 @@ export default function VoiceStudioWorkflowRuntime() {
 
       if (event.key === 'Home' || event.key === 'Enter') {
         const play = controlButton(1);
-        if (play?.querySelector('svg') && root.querySelector('.vs-main-controls button:first-child')) {
-          if (root.querySelector('.vs-main-controls button:first-child')) {
-            const activeTime = root.querySelector('time');
-            if (activeTime?.textContent !== '00:00.0' && !play.disabled) play.click();
-          }
-        }
+        const activeTime = root.querySelector('time');
+        if (play && activeTime?.textContent !== '00:00.0' && !play.disabled) play.click();
         root.querySelector<HTMLElement>('.vs-timeline')?.scrollTo({ left: 0, behavior: 'smooth' });
         flashShortcut('Enter · Voltar ao início');
       }
