@@ -115,7 +115,7 @@ export function projectToLegacyTracks(
   blobs: Record<string, Blob> = {},
   objectUrls: Record<string, string> = {},
 ): LegacyVoiceStudioTrack[] {
-  return project.tracks.flatMap(track => track.clips.map((clip, clipIndex) => {
+  return project.tracks.flatMap(track => track.clips.flatMap((clip, clipIndex) => {
     const asset = project.assets[clip.assetId];
     if (!asset) return [];
     const suffix = track.clips.length > 1 ? ` ${clipIndex + 1}` : '';
@@ -137,6 +137,6 @@ export function projectToLegacyTracks(
       muted: track.muted,
       solo: track.solo,
       volume: track.volume * clip.gain,
-    }];
+    } satisfies LegacyVoiceStudioTrack];
   }));
 }
