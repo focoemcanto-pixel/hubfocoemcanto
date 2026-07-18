@@ -199,7 +199,12 @@ function FocoBoard({ readOnly }: { readOnly: boolean }) {
   }
 
   function pointerDown(event: ReactPointerEvent) {
-    if (readOnly || tool === 'select' || tool === 'text') return;
+    if (readOnly || tool === 'select') return;
+    if (tool === 'text') {
+      const point = relativePoint(event);
+      setTexts((current) => [...current, { id: crypto.randomUUID(), x: point.x, y: point.y, html: 'Digite aqui' }]);
+      return;
+    }
     event.currentTarget.setPointerCapture(event.pointerId);
     const point = relativePoint(event);
     const next: Stroke = { id: crypto.randomUUID(), tool: tool as Stroke['tool'], points: [point], color, width: tool === 'highlight' ? 18 : width };
@@ -217,12 +222,6 @@ function FocoBoard({ readOnly }: { readOnly: boolean }) {
   }
 
   function pointerUp() { drawingRef.current = null; }
-
-  function addText(event: ReactPointerEvent) {
-    if (readOnly || tool !== 'text') return;
-    const point = relativePoint(event);
-    setTexts((current) => [...current, { id: crypto.randomUUID(), x: point.x, y: point.y, html: 'Digite aqui' }]);
-  }
 
   function undo() {
     setStrokes((current) => {
@@ -260,11 +259,11 @@ function FocoBoard({ readOnly }: { readOnly: boolean }) {
       <button onClick={redo} disabled={!redoStack.length}><Redo2 size={17} /></button>
       <button onClick={() => { setStrokes([]); setTexts([]); }}><Trash2 size={17} /></button>
     </aside>}
-    <div ref={canvasRef} className={`fl-board-canvas tool-${tool}`} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onDoubleClick={addText}>
+    <div ref={canvasRef} className={`fl-board-canvas tool-${tool}`} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp}>
       <div className="fl-board-grid" />
       <svg><g>{svgPaths}</g></svg>
       {texts.map((block) => <RichTextBlock key={block.id} block={block} readOnly={readOnly} onChange={(html) => setTexts((current) => current.map((item) => item.id === block.id ? { ...item, html } : item))} />)}
-      {!strokes.length && !texts.length && <div className="fl-board-empty"><strong>Foco Board</strong><span>Desenhe, destaque ou dê dois cliques para inserir texto.</span><div><b>🎼 Harmonia</b><b>🎤 Técnica vocal</b><b>🎹 Escalas</b></div></div>}
+      {!strokes.length && !texts.length && <div className="fl-board-empty"><strong>Foco Board</strong><span>Selecione uma ferramenta e toque no quadro para começar.</span><div><b>🎼 Harmonia</b><b>🎤 Técnica vocal</b><b>🎹 Escalas</b></div></div>}
     </div>
   </div>;
 }
