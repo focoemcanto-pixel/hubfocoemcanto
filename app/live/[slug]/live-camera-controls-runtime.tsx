@@ -22,6 +22,7 @@ export default function LiveCameraControlsRuntime() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [transform, setTransform] = useState<CameraTransform>(DEFAULT_TRANSFORM);
   const transformRef = useRef(transform);
+  const domSignatureRef = useRef('');
   const dragRef = useRef<{ mode: DragMode; startX: number; startY: number; initial: CameraTransform } | null>(null);
   const attachedCallRef = useRef<any>(null);
 
@@ -36,11 +37,19 @@ export default function LiveCameraControlsRuntime() {
   useEffect(() => {
     setIsHost(new URLSearchParams(window.location.search).get('host') === '1');
     try { const saved = window.localStorage.getItem(STORAGE_KEY); if (saved) setTransform({ ...DEFAULT_TRANSFORM, ...JSON.parse(saved) }); } catch {}
-    const sync = () => { setReady(Boolean(document.querySelector('.fl-room') && document.querySelector('.fl-stage-video-area'))); setDomVersion((value) => value + 1); };
+    const sync = () => {
+      const currentRoom = document.querySelector<HTMLElement>('.fl-room');
+      const currentStage = document.querySelector('.fl-stage-video-area');
+      const currentCamera = document.querySelector('.fl-stage-video-area .fl-speaker-layout, .fl-stage-video-area .fl-native-grid');
+      const signature = `${Boolean(currentRoom)}:${Boolean(currentStage)}:${Boolean(currentCamera)}:${currentRoom?.classList.contains('foco-studio-scene-open')}:${currentRoom?.dataset.studioLayout || ''}`;
+      setReady(Boolean(currentRoom && currentStage));
+      if (signature !== domSignatureRef.current) { domSignatureRef.current = signature; setDomVersion((value) => value + 1); }
+    };
     const observer = new MutationObserver(sync);
-    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'data-studio-layout'] });
+    observer.observe(document.body, { childList: true, subtree: true });
+    const timer = window.setInterval(sync, 250);
     sync();
-    return () => observer.disconnect();
+    return () => { observer.disconnect(); window.clearInterval(timer); };
   }, []);
 
   useEffect(() => {
