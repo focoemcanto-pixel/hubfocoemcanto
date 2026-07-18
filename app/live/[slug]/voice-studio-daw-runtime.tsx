@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import VoiceStudioDaw from './voice-studio-daw';
+import VoiceStudioDaw from './voice-studio-daw-v2';
 
 export default function VoiceStudioDawRuntime(){
   const [target,setTarget]=useState<Element|null>(null);
