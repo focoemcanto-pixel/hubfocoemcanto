@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronUp, KeyboardMusic, Mic2, Settings2, SlidersHorizontal, Video } from 'lucide-react';
+import { AudioLines, ChevronUp, KeyboardMusic, Mic2, PenTool, Settings2, SlidersHorizontal, Video } from 'lucide-react';
 
 type Panel = 'apps' | 'mic' | 'camera' | null;
 
@@ -73,6 +73,11 @@ export default function LiveToolsRuntime() {
     } catch {}
   }
 
+  function openApp(eventName: string) {
+    window.dispatchEvent(new Event(eventName));
+    setPanel(null);
+  }
+
   if (!roomReady) return null;
 
   return <>
@@ -83,8 +88,12 @@ export default function LiveToolsRuntime() {
     {panel && <section className={`fl-tools-popover panel-${panel}`}>
       <header><div><small>FOCO LIVE</small><strong>{title}</strong></div><button onClick={() => setPanel(null)}>×</button></header>
       {panel === 'apps' && <div className="fl-tools-list">
-        {isHost && <button onClick={() => { window.dispatchEvent(new Event('foco-piano-toggle')); setPanel(null); }}><KeyboardMusic /><div><b>Foco Keys</b><small>Piano sincronizado da aula</small></div><i>›</i></button>}
-        {!isHost && <div className="fl-tools-info"><KeyboardMusic /><div><b>Foco Keys</b><small>O piano aparece automaticamente quando o professor abrir.</small></div></div>}
+        {isHost && <>
+          <button onClick={() => openApp('foco-piano-toggle')}><KeyboardMusic /><div><b>Foco Keys</b><small>Piano sincronizado da aula</small></div><i>›</i></button>
+          <button onClick={() => openApp('foco-board-toggle')}><PenTool /><div><b>Foco Board</b><small>Quadro visual com desenho e texto rico</small></div><i>›</i></button>
+          <button onClick={() => openApp('foco-voice-studio-toggle')}><AudioLines /><div><b>Voice Studio</b><small>Gravação vocal em múltiplas faixas</small></div><i>›</i></button>
+        </>}
+        {!isHost && <div className="fl-tools-info"><KeyboardMusic /><div><b>Apps da aula</b><small>As ferramentas aparecem automaticamente quando o professor exibir.</small></div></div>}
         <button disabled><Settings2 /><div><b>Afinador</b><small>Em breve</small></div></button>
         <button disabled><SlidersHorizontal /><div><b>Timer</b><small>Em breve</small></div></button>
       </div>}
