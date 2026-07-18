@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  clampTimelineZoom,
+  normalizeTimelineZoom,
   timelineContentWidth,
   timelinePixelsToTime,
   timelineScrollForTime,
@@ -41,7 +41,7 @@ export function useVoiceStudioTimeline({
     scrollLeft: Math.max(0, view.scrollLeft),
   });
 
-  const zoom = clampTimelineZoom(view.zoom);
+  const zoom = normalizeTimelineZoom(view.zoom);
   const contentWidth = useMemo(
     () => timelineContentWidth(duration, viewport.width, zoom),
     [duration, viewport.width, zoom],
@@ -109,26 +109,26 @@ export function useVoiceStudioTimeline({
 
   const setZoom = useCallback((nextZoom: number, anchorClientX?: number) => {
     const element = elementRef.current;
-    const clamped = clampTimelineZoom(nextZoom);
+    const clamped = normalizeTimelineZoom(nextZoom);
     if (!element) {
       onViewChange({ ...view, zoom: clamped });
       return;
     }
     const bounds = element.getBoundingClientRect();
-    const anchorX = anchorClientX === undefined
+    const pointerX = anchorClientX === undefined
       ? viewport.width / 2
       : Math.max(0, Math.min(viewport.width, anchorClientX - bounds.left));
-    const nextScroll = timelineZoomAroundPoint({
-      oldZoom: zoom,
-      newZoom: clamped,
+    const result = timelineZoomAroundPoint({
+      zoom,
+      nextZoom: clamped,
       scrollLeft: element.scrollLeft,
-      anchorX,
+      pointerX,
       viewportWidth: viewport.width,
       duration,
     });
-    element.scrollLeft = nextScroll;
-    setViewport(current => ({ ...current, scrollLeft: nextScroll }));
-    onViewChange({ ...view, zoom: clamped, scrollLeft: nextScroll });
+    element.scrollLeft = result.scrollLeft;
+    setViewport(current => ({ ...current, scrollLeft: result.scrollLeft }));
+    onViewChange({ ...view, zoom: result.zoom, scrollLeft: result.scrollLeft });
   }, [duration, onViewChange, view, viewport.width, zoom]);
 
   const onWheel = useCallback((event: WheelEvent) => {
@@ -150,17 +150,16 @@ export function useVoiceStudioTimeline({
     if (!element) return;
     const x = timelineTimeToPixels(time, zoom);
     const visibleStart = element.scrollLeft;
-    const visibleEnd = visibleStart + viewport.width;
     const threshold = visibleStart + viewport.width * AUTO_SCROLL_EDGE;
     if (!force && x >= visibleStart && x <= threshold) return;
     if (!force && x < visibleStart) {
-      const next = timelineScrollForTime(time, zoom, viewport.width, 0.08, duration);
+      const next = timelineScrollForTime(time, viewport.width, zoom, 0.08);
       element.scrollLeft = next;
       return;
     }
-    const next = timelineScrollForTime(time, zoom, viewport.width, AUTO_SCROLL_ANCHOR, duration);
+    const next = timelineScrollForTime(time, viewport.width, zoom, AUTO_SCROLL_ANCHOR);
     element.scrollLeft = next;
-  }, [duration, viewport.width, zoom]);
+  }, [viewport.width, zoom]);
 
   const timeFromClientX = useCallback((clientX: number) => {
     const element = elementRef.current;
