@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import {
   createTimelineTicks,
   timelineContentWidth,
+  timelinePixelsToTime,
   timelineTimeToPixels,
   type TimelineViewport,
 } from './voice-studio-timeline-engine';
@@ -46,8 +47,7 @@ export default function VoiceStudioTimelineRuler({
     const bounds = event.currentTarget.getBoundingClientRect();
     const localX = event.clientX - bounds.left;
     const absoluteX = localX + viewport.scrollLeft;
-    const nextTime = Math.max(0, Math.min(duration, absoluteX / (width / Math.max(8, duration))));
-    onSeek(nextTime);
+    onSeek(Math.min(duration, timelinePixelsToTime(absoluteX, zoom)));
   }
 
   const loopStart = loop?.enabled ? timelineTimeToPixels(loop.start, zoom) : 0;
