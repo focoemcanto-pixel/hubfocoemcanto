@@ -115,28 +115,34 @@ export function projectToLegacyTracks(
   blobs: Record<string, Blob> = {},
   objectUrls: Record<string, string> = {},
 ): LegacyVoiceStudioTrack[] {
-  return project.tracks.flatMap(track => track.clips.map((clip, clipIndex) => {
-    const asset = project.assets[clip.assetId];
-    if (!asset) return [];
-    const suffix = track.clips.length > 1 ? ` ${clipIndex + 1}` : '';
+  const legacyTracks: LegacyVoiceStudioTrack[] = [];
 
-    return [{
-      id: clip.id,
-      kind: track.kind,
-      name: `${track.name}${suffix}`,
-      color: track.color,
-      url: objectUrls[clip.assetId],
-      blob: blobs[clip.assetId],
-      start: clip.start,
-      sourceOffset: clip.sourceOffset,
-      duration: clip.duration,
-      sourceDuration: asset.duration,
-      peaks: [...asset.peaks],
-      notes: asset.midiNotes.map(note => ({ ...note })),
-      instrument: track.instrument ?? asset.instrument ?? 'piano',
-      muted: track.muted,
-      solo: track.solo,
-      volume: track.volume * clip.gain,
-    }];
-  }));
+  for (const track of project.tracks) {
+    track.clips.forEach((clip, clipIndex) => {
+      const asset = project.assets[clip.assetId];
+      if (!asset) return;
+      const suffix = track.clips.length > 1 ? ` ${clipIndex + 1}` : '';
+
+      legacyTracks.push({
+        id: clip.id,
+        kind: track.kind,
+        name: `${track.name}${suffix}`,
+        color: track.color,
+        url: objectUrls[clip.assetId],
+        blob: blobs[clip.assetId],
+        start: clip.start,
+        sourceOffset: clip.sourceOffset,
+        duration: clip.duration,
+        sourceDuration: asset.duration,
+        peaks: [...asset.peaks],
+        notes: asset.midiNotes.map(note => ({ ...note })),
+        instrument: track.instrument ?? asset.instrument ?? 'piano',
+        muted: track.muted,
+        solo: track.solo,
+        volume: track.volume * clip.gain,
+      });
+    });
+  }
+
+  return legacyTracks;
 }
