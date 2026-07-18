@@ -24,6 +24,7 @@ import './polish-round-2.css';
 import './mobile-responsive-v2.css';
 import './live-piano.css';
 import './live-tools.css';
+import './live-device-selectors.css';
 import './live-studio.css';
 import './live-camera-controls.css';
 import './hand-signal.css';
