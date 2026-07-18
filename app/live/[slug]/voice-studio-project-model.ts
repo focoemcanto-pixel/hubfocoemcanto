@@ -8,9 +8,31 @@ export type VoiceStudioMidiNote = {
   duration: number;
 };
 
+export type VoiceStudioMarker = {
+  id: string;
+  name: string;
+  time: number;
+  color?: string;
+};
+
+export type VoiceStudioAutomationPoint = {
+  id: string;
+  time: number;
+  value: number;
+};
+
+export type VoiceStudioAutomationLane = {
+  id: string;
+  target: 'volume' | 'pan' | 'gain' | string;
+  trackId?: string;
+  clipId?: string;
+  points: VoiceStudioAutomationPoint[];
+};
+
 export type VoiceStudioAsset = {
   id: string;
   kind: VoiceStudioTrackKind;
+  libraryItemId?: string;
   mimeType?: string;
   fileName?: string;
   duration: number;
@@ -57,6 +79,22 @@ export type VoiceStudioProject = {
   metronomeDuringRecording: boolean;
   tracks: VoiceStudioTrack[];
   assets: Record<string, VoiceStudioAsset>;
+  markers: VoiceStudioMarker[];
+  view: {
+    zoom: number;
+    scrollLeft: number;
+    playhead: number;
+  };
+  loop: {
+    enabled: boolean;
+    start: number;
+    end: number;
+  };
+  settings: {
+    snapping: boolean;
+    snapDivision: number;
+  };
+  automation: VoiceStudioAutomationLane[];
 };
 
 export function createVoiceStudioProject(name = 'Novo projeto'): VoiceStudioProject {
@@ -73,56 +111,62 @@ export function createVoiceStudioProject(name = 'Novo projeto'): VoiceStudioProj
     metronomeDuringRecording: true,
     tracks: [],
     assets: {},
+    markers: [],
+    view: { zoom: 1, scrollLeft: 0, playhead: 0 },
+    loop: { enabled: false, start: 0, end: 4 },
+    settings: { snapping: true, snapDivision: 0.5 },
+    automation: [],
+  };
+}
+
+export function normalizeVoiceStudioProject(project: VoiceStudioProject): VoiceStudioProject {
+  return {
+    ...project,
+    markers: project.markers ?? [],
+    view: project.view ?? { zoom: 1, scrollLeft: 0, playhead: 0 },
+    loop: project.loop ?? { enabled: false, start: 0, end: 4 },
+    settings: project.settings ?? { snapping: true, snapDivision: 0.5 },
+    automation: project.automation ?? [],
   };
 }
 
 export function cloneVoiceStudioProject(project: VoiceStudioProject): VoiceStudioProject {
+  const normalized = normalizeVoiceStudioProject(project);
   return {
-    ...project,
-    timeSignature: [...project.timeSignature] as [number, number],
-    tracks: project.tracks.map(track => ({
+    ...normalized,
+    timeSignature: [...normalized.timeSignature] as [number, number],
+    tracks: normalized.tracks.map(track => ({
       ...track,
       clips: track.clips.map(clip => ({ ...clip })),
     })),
     assets: Object.fromEntries(
-      Object.entries(project.assets).map(([id, asset]) => [id, {
+      Object.entries(normalized.assets).map(([id, asset]) => [id, {
         ...asset,
         peaks: [...asset.peaks],
         midiNotes: asset.midiNotes.map(note => ({ ...note })),
       }]),
     ),
+    markers: normalized.markers.map(marker => ({ ...marker })),
+    view: { ...normalized.view },
+    loop: { ...normalized.loop },
+    settings: { ...normalized.settings },
+    automation: normalized.automation.map(lane => ({ ...lane, points: lane.points.map(point => ({ ...point })) })),
   };
 }
 
 export function projectDuration(project: VoiceStudioProject) {
-  return Math.max(
-    8,
-    ...project.tracks.flatMap(track => track.clips.map(clip => clip.start + clip.duration)),
-  );
+  return Math.max(8, ...project.tracks.flatMap(track => track.clips.map(clip => clip.start + clip.duration)));
 }
 
-export function splitClipInTrack(
-  project: VoiceStudioProject,
-  trackId: string,
-  clipId: string,
-  playhead: number,
-  minimumDuration = 0.08,
-): VoiceStudioProject {
+export function splitClipInTrack(project: VoiceStudioProject, trackId: string, clipId: string, playhead: number, minimumDuration = 0.08): VoiceStudioProject {
   const next = cloneVoiceStudioProject(project);
   const track = next.tracks.find(item => item.id === trackId);
   const clipIndex = track?.clips.findIndex(item => item.id === clipId) ?? -1;
   if (!track || clipIndex < 0) return project;
-
   const clip = track.clips[clipIndex];
   const localSplit = playhead - clip.start;
   if (localSplit <= minimumDuration || localSplit >= clip.duration - minimumDuration) return project;
-
-  const left: VoiceStudioClip = {
-    ...clip,
-    id: crypto.randomUUID(),
-    duration: localSplit,
-    fadeOut: Math.min(clip.fadeOut, localSplit),
-  };
+  const left: VoiceStudioClip = { ...clip, id: crypto.randomUUID(), duration: localSplit, fadeOut: Math.min(clip.fadeOut, localSplit) };
   const rightDuration = clip.duration - localSplit;
   const right: VoiceStudioClip = {
     ...clip,
@@ -133,19 +177,12 @@ export function splitClipInTrack(
     duration: rightDuration,
     fadeIn: Math.min(clip.fadeIn, rightDuration),
   };
-
   track.clips.splice(clipIndex, 1, left, right);
   next.updatedAt = new Date().toISOString();
   return next;
 }
 
-export function moveClipBetweenTracks(
-  project: VoiceStudioProject,
-  sourceTrackId: string,
-  targetTrackId: string,
-  clipId: string,
-  start: number,
-): VoiceStudioProject {
+export function moveClipBetweenTracks(project: VoiceStudioProject, sourceTrackId: string, targetTrackId: string, clipId: string, start: number): VoiceStudioProject {
   const next = cloneVoiceStudioProject(project);
   const source = next.tracks.find(track => track.id === sourceTrackId);
   const target = next.tracks.find(track => track.id === targetTrackId);
