@@ -52,6 +52,10 @@ export type VoiceStudioClip = {
   gain: number;
   fadeIn: number;
   fadeOut: number;
+  color?: string;
+  muted: boolean;
+  locked: boolean;
+  groupId?: string;
 };
 
 export type VoiceStudioTrack = {
@@ -68,7 +72,7 @@ export type VoiceStudioTrack = {
 };
 
 export type VoiceStudioProject = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   id: string;
   name: string;
   createdAt: string;
@@ -97,14 +101,44 @@ export type VoiceStudioProject = {
   automation: VoiceStudioAutomationLane[];
 };
 
-export function createVoiceStudioProject(name = 'Novo projeto'): VoiceStudioProject {
-  const now = new Date().toISOString();
+export type VoiceStudioClipLocation = {
+  trackId: string;
+  trackIndex: number;
+  clipIndex: number;
+  track: VoiceStudioTrack;
+  clip: VoiceStudioClip;
+};
+
+export type VoiceStudioClipboardClip = {
+  sourceTrackId: string;
+  clip: VoiceStudioClip;
+};
+
+const MINIMUM_CLIP_DURATION = 0.08;
+
+function now() {
+  return new Date().toISOString();
+}
+
+function normalizeClip(clip: VoiceStudioClip): VoiceStudioClip {
   return {
-    schemaVersion: 1,
+    ...clip,
+    gain: Number.isFinite(clip.gain) ? clip.gain : 1,
+    fadeIn: Number.isFinite(clip.fadeIn) ? clip.fadeIn : 0,
+    fadeOut: Number.isFinite(clip.fadeOut) ? clip.fadeOut : 0,
+    muted: clip.muted ?? false,
+    locked: clip.locked ?? false,
+  };
+}
+
+export function createVoiceStudioProject(name = 'Novo projeto'): VoiceStudioProject {
+  const timestamp = now();
+  return {
+    schemaVersion: 2,
     id: crypto.randomUUID(),
     name,
-    createdAt: now,
-    updatedAt: now,
+    createdAt: timestamp,
+    updatedAt: timestamp,
     tempo: 90,
     timeSignature: [4, 4],
     countInBars: 1,
@@ -122,6 +156,13 @@ export function createVoiceStudioProject(name = 'Novo projeto'): VoiceStudioProj
 export function normalizeVoiceStudioProject(project: VoiceStudioProject): VoiceStudioProject {
   return {
     ...project,
+    schemaVersion: 2,
+    tracks: (project.tracks ?? []).map(track => ({
+      ...track,
+      pan: Number.isFinite(track.pan) ? track.pan : 0,
+      clips: (track.clips ?? []).map(normalizeClip),
+    })),
+    assets: project.assets ?? {},
     markers: project.markers ?? [],
     view: project.view ?? { zoom: 1, scrollLeft: 0, playhead: 0 },
     loop: project.loop ?? { enabled: false, start: 0, end: 4 },
@@ -158,16 +199,31 @@ export function projectDuration(project: VoiceStudioProject) {
   return Math.max(8, ...project.tracks.flatMap(track => track.clips.map(clip => clip.start + clip.duration)));
 }
 
-export function splitClipInTrack(project: VoiceStudioProject, trackId: string, clipId: string, playhead: number, minimumDuration = 0.08): VoiceStudioProject {
+export function findClip(project: VoiceStudioProject, clipId: string): VoiceStudioClipLocation | null {
+  for (let trackIndex = 0; trackIndex < project.tracks.length; trackIndex += 1) {
+    const track = project.tracks[trackIndex];
+    const clipIndex = track.clips.findIndex(clip => clip.id === clipId);
+    if (clipIndex >= 0) return { trackId: track.id, trackIndex, clipIndex, track, clip: track.clips[clipIndex] };
+  }
+  return null;
+}
+
+export function splitClip(project: VoiceStudioProject, clipId: string, playhead: number, minimumDuration = MINIMUM_CLIP_DURATION): VoiceStudioProject {
+  const location = findClip(project, clipId);
+  if (!location || location.clip.locked) return project;
+  const localSplit = playhead - location.clip.start;
+  if (localSplit <= minimumDuration || localSplit >= location.clip.duration - minimumDuration) return project;
+
   const next = cloneVoiceStudioProject(project);
-  const track = next.tracks.find(item => item.id === trackId);
-  const clipIndex = track?.clips.findIndex(item => item.id === clipId) ?? -1;
-  if (!track || clipIndex < 0) return project;
-  const clip = track.clips[clipIndex];
-  const localSplit = playhead - clip.start;
-  if (localSplit <= minimumDuration || localSplit >= clip.duration - minimumDuration) return project;
-  const left: VoiceStudioClip = { ...clip, id: crypto.randomUUID(), duration: localSplit, fadeOut: Math.min(clip.fadeOut, localSplit) };
+  const track = next.tracks[location.trackIndex];
+  const clip = track.clips[location.clipIndex];
   const rightDuration = clip.duration - localSplit;
+  const left: VoiceStudioClip = {
+    ...clip,
+    id: crypto.randomUUID(),
+    duration: localSplit,
+    fadeOut: Math.min(clip.fadeOut, localSplit),
+  };
   const right: VoiceStudioClip = {
     ...clip,
     id: crypto.randomUUID(),
@@ -177,21 +233,111 @@ export function splitClipInTrack(project: VoiceStudioProject, trackId: string, c
     duration: rightDuration,
     fadeIn: Math.min(clip.fadeIn, rightDuration),
   };
-  track.clips.splice(clipIndex, 1, left, right);
-  next.updatedAt = new Date().toISOString();
+  track.clips.splice(location.clipIndex, 1, left, right);
+  next.updatedAt = now();
   return next;
 }
 
-export function moveClipBetweenTracks(project: VoiceStudioProject, sourceTrackId: string, targetTrackId: string, clipId: string, start: number): VoiceStudioProject {
+export function moveClip(project: VoiceStudioProject, clipId: string, targetTrackId: string, start: number): VoiceStudioProject {
+  const location = findClip(project, clipId);
+  const target = project.tracks.find(track => track.id === targetTrackId);
+  if (!location || !target || location.clip.locked || target.kind !== location.track.kind) return project;
+
   const next = cloneVoiceStudioProject(project);
-  const source = next.tracks.find(track => track.id === sourceTrackId);
-  const target = next.tracks.find(track => track.id === targetTrackId);
-  const index = source?.clips.findIndex(clip => clip.id === clipId) ?? -1;
-  if (!source || !target || index < 0 || source.kind !== target.kind) return project;
-  const [clip] = source.clips.splice(index, 1);
-  target.clips.push({ ...clip, start: Math.max(0, start) });
+  const sourceTrack = next.tracks[location.trackIndex];
+  const targetTrack = next.tracks.find(track => track.id === targetTrackId);
+  if (!targetTrack) return project;
+  const [clip] = sourceTrack.clips.splice(location.clipIndex, 1);
+  targetTrack.clips.push({ ...clip, start: Math.max(0, start) });
+  targetTrack.clips.sort((a, b) => a.start - b.start);
+  next.updatedAt = now();
+  return next;
+}
+
+export function resizeClip(
+  project: VoiceStudioProject,
+  clipId: string,
+  edge: 'left' | 'right',
+  value: number,
+  minimumDuration = MINIMUM_CLIP_DURATION,
+): VoiceStudioProject {
+  const location = findClip(project, clipId);
+  if (!location || location.clip.locked) return project;
+  const asset = project.assets[location.clip.assetId];
+  if (!asset) return project;
+
+  const next = cloneVoiceStudioProject(project);
+  const clip = next.tracks[location.trackIndex].clips[location.clipIndex];
+  if (edge === 'right') {
+    const maxDuration = Math.max(minimumDuration, asset.duration - clip.sourceOffset);
+    clip.duration = Math.min(maxDuration, Math.max(minimumDuration, value));
+  } else {
+    const proposedStart = Math.max(0, value);
+    const delta = proposedStart - clip.start;
+    const maxPositiveDelta = clip.duration - minimumDuration;
+    const applied = Math.min(maxPositiveDelta, Math.max(-clip.sourceOffset, delta));
+    clip.start += applied;
+    clip.sourceOffset += applied;
+    clip.duration -= applied;
+  }
+  clip.fadeIn = Math.min(clip.fadeIn, clip.duration);
+  clip.fadeOut = Math.min(clip.fadeOut, clip.duration);
+  next.updatedAt = now();
+  return next;
+}
+
+export function duplicateClip(project: VoiceStudioProject, clipId: string, start?: number, targetTrackId?: string): VoiceStudioProject {
+  const location = findClip(project, clipId);
+  if (!location) return project;
+  const destinationId = targetTrackId ?? location.trackId;
+  const destination = project.tracks.find(track => track.id === destinationId);
+  if (!destination || destination.kind !== location.track.kind) return project;
+
+  const next = cloneVoiceStudioProject(project);
+  const targetTrack = next.tracks.find(track => track.id === destinationId);
+  if (!targetTrack) return project;
+  targetTrack.clips.push({
+    ...location.clip,
+    id: crypto.randomUUID(),
+    name: `${location.clip.name} cópia`,
+    start: Math.max(0, start ?? location.clip.start + location.clip.duration),
+  });
+  targetTrack.clips.sort((a, b) => a.start - b.start);
+  next.updatedAt = now();
+  return next;
+}
+
+export function deleteClip(project: VoiceStudioProject, clipId: string): VoiceStudioProject {
+  const location = findClip(project, clipId);
+  if (!location || location.clip.locked) return project;
+  const next = cloneVoiceStudioProject(project);
+  next.tracks[location.trackIndex].clips.splice(location.clipIndex, 1);
+  next.updatedAt = now();
+  return next;
+}
+
+export function copyClip(project: VoiceStudioProject, clipId: string): VoiceStudioClipboardClip | null {
+  const location = findClip(project, clipId);
+  return location ? { sourceTrackId: location.trackId, clip: { ...location.clip } } : null;
+}
+
+export function pasteClip(project: VoiceStudioProject, clipboard: VoiceStudioClipboardClip, start: number, targetTrackId?: string): VoiceStudioProject {
+  if (!project.assets[clipboard.clip.assetId]) return project;
+  const sourceTrack = project.tracks.find(track => track.id === clipboard.sourceTrackId);
+  const destination = project.tracks.find(track => track.id === (targetTrackId ?? clipboard.sourceTrackId));
+  if (!sourceTrack || !destination || sourceTrack.kind !== destination.kind) return project;
+
+  const next = cloneVoiceStudioProject(project);
+  const target = next.tracks.find(track => track.id === destination.id);
+  if (!target) return project;
+  target.clips.push({
+    ...clipboard.clip,
+    id: crypto.randomUUID(),
+    name: `${clipboard.clip.name} cópia`,
+    start: Math.max(0, start),
+  });
   target.clips.sort((a, b) => a.start - b.start);
-  next.updatedAt = new Date().toISOString();
+  next.updatedAt = now();
   return next;
 }
 
@@ -199,6 +345,6 @@ export function removeUnusedAssets(project: VoiceStudioProject): VoiceStudioProj
   const used = new Set(project.tracks.flatMap(track => track.clips.map(clip => clip.assetId)));
   const next = cloneVoiceStudioProject(project);
   next.assets = Object.fromEntries(Object.entries(next.assets).filter(([id]) => used.has(id)));
-  next.updatedAt = new Date().toISOString();
+  next.updatedAt = now();
   return next;
 }

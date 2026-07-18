@@ -1,12 +1,11 @@
 'use client';
 
-import { FormEvent, PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import DailyIframe from '@daily-co/daily-js';
 import {
-  Bold, Brush, Circle, Download, Eraser, Eye, EyeOff, Italic, List,
-  Mic2, Minus, MousePointer2, Move, Plus, Redo2, RotateCcw, Square,
-  StopCircle, Text, Trash2, Type, Underline, Undo2, Video, X,
+  Bold, Brush, Circle, Eraser, Eye, EyeOff, Italic, List,
+  Minus, MousePointer2, Redo2, Square, Trash2, Type, Underline, Undo2, X,
 } from 'lucide-react';
 
 type StudioApp = 'board' | 'voice' | null;
@@ -17,7 +16,6 @@ type BoardTool = 'select' | 'pen' | 'highlight' | 'text' | 'line' | 'rect' | 'ci
 type Point = { x: number; y: number };
 type Stroke = { id: string; tool: Exclude<BoardTool, 'select' | 'text'>; points: Point[]; color: string; width: number };
 type TextBlock = { id: string; x: number; y: number; html: string };
-type Track = { id: string; name: string; color: string; url: string; blob: Blob; muted: boolean; solo: boolean; volume: number };
 type SceneMessage = {
   type: 'foco-studio-scene';
   open: boolean;
@@ -26,23 +24,26 @@ type SceneMessage = {
   cameraShape: CameraShape;
   cameraCorner: CameraCorner;
 };
+type DailyCallLike = {
+  __focoStudioAttached?: boolean;
+  on?: (event: string, listener: (event: { data?: SceneMessage }) => void) => void;
+  sendAppMessage?: (message: SceneMessage, recipient: string) => void;
+};
 type StudioWindow = Window & {
-  __FOCO_LIVE_CALL__?: any;
+  __FOCO_LIVE_CALL__?: DailyCallLike;
   __FOCO_STUDIO_WRAPPED__?: boolean;
   __FOCO_STUDIO_LISTENERS__?: Set<(message: SceneMessage) => void>;
 };
 
-const TRACK_COLORS = ['#7c3aed', '#0ea5e9', '#f97316', '#10b981', '#ec4899', '#eab308'];
-
-function attachCall(call: any, target: StudioWindow) {
+function attachCall(call: DailyCallLike | null | undefined, target: StudioWindow) {
   if (!call || typeof call !== 'object') return;
   target.__FOCO_LIVE_CALL__ = call;
-  if ((call as any).__focoStudioAttached) return;
-  (call as any).__focoStudioAttached = true;
-  call.on?.('app-message', (event: any) => {
-    const data = event?.data as SceneMessage | undefined;
+  if (call.__focoStudioAttached) return;
+  call.__focoStudioAttached = true;
+  call.on?.('app-message', (event) => {
+    const data = event?.data;
     if (data?.type !== 'foco-studio-scene') return;
-    target.__FOCO_STUDIO_LISTENERS__?.forEach((listener) => listener(data));
+    target.__FOCO_STUDIO_LISTENERS__?.forEach(listener => listener(data));
   });
 }
 
@@ -52,15 +53,15 @@ function installBridge(listener: (message: SceneMessage) => void) {
   target.__FOCO_STUDIO_LISTENERS__.add(listener);
   if (!target.__FOCO_STUDIO_WRAPPED__) {
     const original = DailyIframe.createCallObject.bind(DailyIframe);
-    (DailyIframe as any).createCallObject = (...args: any[]) => {
+    (DailyIframe as typeof DailyIframe & { createCallObject: (...args: Parameters<typeof original>) => ReturnType<typeof original> }).createCallObject = (...args) => {
       const call = original(...args);
-      attachCall(call, target);
+      attachCall(call as unknown as DailyCallLike, target);
       return call;
     };
     target.__FOCO_STUDIO_WRAPPED__ = true;
   }
   if (target.__FOCO_LIVE_CALL__) attachCall(target.__FOCO_LIVE_CALL__, target);
-  return (): void => { target.__FOCO_STUDIO_LISTENERS__?.delete(listener); };
+  return () => { target.__FOCO_STUDIO_LISTENERS__?.delete(listener); };
 }
 
 export default function LiveStudioRuntime() {
@@ -154,7 +155,7 @@ export default function LiveStudioRuntime() {
         close={close}
       />}
       <div className="fl-studio-app-canvas">
-        {app === 'board' ? <FocoBoard readOnly={!isHost} /> : <VoiceStudio readOnly={!isHost} />}
+        {app === 'board' ? <FocoBoard readOnly={!isHost} /> : <div className="fl-voice-runtime-slot" aria-label="Voice Studio" />}
       </div>
     </section>,
     stage,
@@ -202,14 +203,14 @@ function FocoBoard({ readOnly }: { readOnly: boolean }) {
     if (readOnly || tool === 'select') return;
     if (tool === 'text') {
       const point = relativePoint(event);
-      setTexts((current) => [...current, { id: crypto.randomUUID(), x: point.x, y: point.y, html: 'Digite aqui' }]);
+      setTexts(current => [...current, { id: crypto.randomUUID(), x: point.x, y: point.y, html: 'Digite aqui' }]);
       return;
     }
     event.currentTarget.setPointerCapture(event.pointerId);
     const point = relativePoint(event);
     const next: Stroke = { id: crypto.randomUUID(), tool: tool as Stroke['tool'], points: [point], color, width: tool === 'highlight' ? 18 : width };
     drawingRef.current = next;
-    setStrokes((current) => [...current, next]);
+    setStrokes(current => [...current, next]);
     setRedoStack([]);
   }
 
@@ -218,36 +219,36 @@ function FocoBoard({ readOnly }: { readOnly: boolean }) {
     if (!active) return;
     const point = relativePoint(event);
     active.points = [...active.points, point];
-    setStrokes((current) => current.map((stroke) => stroke.id === active.id ? { ...active } : stroke));
+    setStrokes(current => current.map(stroke => stroke.id === active.id ? { ...active } : stroke));
   }
 
   function pointerUp() { drawingRef.current = null; }
 
   function undo() {
-    setStrokes((current) => {
+    setStrokes(current => {
       const last = current.at(-1);
-      if (last) setRedoStack((stack) => [...stack, last]);
+      if (last) setRedoStack(stack => [...stack, last]);
       return current.slice(0, -1);
     });
   }
 
   function redo() {
-    setRedoStack((current) => {
+    setRedoStack(current => {
       const last = current.at(-1);
-      if (last) setStrokes((stack) => [...stack, last]);
+      if (last) setStrokes(stack => [...stack, last]);
       return current.slice(0, -1);
     });
   }
 
-  const svgPaths = useMemo(() => strokes.map((stroke) => {
+  const svgPaths = useMemo(() => strokes.map(stroke => {
     if (!stroke.points.length) return null;
     const start = stroke.points[0];
     const end = stroke.points.at(-1) || start;
     if (stroke.tool === 'line') return <line key={stroke.id} x1={start.x} y1={start.y} x2={end.x} y2={end.y} stroke={stroke.color} strokeWidth={stroke.width} strokeLinecap="round" />;
     if (stroke.tool === 'rect') return <rect key={stroke.id} x={Math.min(start.x, end.x)} y={Math.min(start.y, end.y)} width={Math.abs(end.x - start.x)} height={Math.abs(end.y - start.y)} fill="none" stroke={stroke.color} strokeWidth={stroke.width} rx="8" />;
     if (stroke.tool === 'circle') return <ellipse key={stroke.id} cx={(start.x + end.x) / 2} cy={(start.y + end.y) / 2} rx={Math.abs(end.x - start.x) / 2} ry={Math.abs(end.y - start.y) / 2} fill="none" stroke={stroke.color} strokeWidth={stroke.width} />;
-    const d = stroke.points.map((point, index) => `${index ? 'L' : 'M'} ${point.x} ${point.y}`).join(' ');
-    return <path key={stroke.id} d={d} fill="none" stroke={stroke.tool === 'eraser' ? '#ffffff' : stroke.color} strokeWidth={stroke.tool === 'eraser' ? 28 : stroke.width} strokeLinecap="round" strokeLinejoin="round" opacity={stroke.tool === 'highlight' ? 0.28 : 1} />;
+    const path = stroke.points.map((point, index) => `${index ? 'L' : 'M'} ${point.x} ${point.y}`).join(' ');
+    return <path key={stroke.id} d={path} fill="none" stroke={stroke.tool === 'eraser' ? '#ffffff' : stroke.color} strokeWidth={stroke.tool === 'eraser' ? 28 : stroke.width} strokeLinecap="round" strokeLinejoin="round" opacity={stroke.tool === 'highlight' ? 0.28 : 1} />;
   }), [strokes]);
 
   return <div className="fl-board-shell">
@@ -262,7 +263,7 @@ function FocoBoard({ readOnly }: { readOnly: boolean }) {
     <div ref={canvasRef} className={`fl-board-canvas tool-${tool}`} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp}>
       <div className="fl-board-grid" />
       <svg><g>{svgPaths}</g></svg>
-      {texts.map((block) => <RichTextBlock key={block.id} block={block} readOnly={readOnly} onChange={(html) => setTexts((current) => current.map((item) => item.id === block.id ? { ...item, html } : item))} />)}
+      {texts.map(block => <RichTextBlock key={block.id} block={block} readOnly={readOnly} onChange={(html) => setTexts(current => current.map(item => item.id === block.id ? { ...item, html } : item))} />)}
       {!strokes.length && !texts.length && <div className="fl-board-empty"><strong>Foco Board</strong><span>Selecione uma ferramenta e toque no quadro para começar.</span><div><b>🎼 Harmonia</b><b>🎤 Técnica vocal</b><b>🎹 Escalas</b></div></div>}
     </div>
   </div>;
@@ -272,67 +273,7 @@ function RichTextBlock({ block, readOnly, onChange }: { block: TextBlock; readOn
   const ref = useRef<HTMLDivElement>(null);
   function command(name: string) { document.execCommand(name); ref.current?.focus(); }
   return <div className="fl-rich-text" style={{ left: block.x, top: block.y }}>
-    {!readOnly && <div className="fl-rich-toolbar"><button onMouseDown={(e) => { e.preventDefault(); command('bold'); }}><Bold size={13} /></button><button onMouseDown={(e) => { e.preventDefault(); command('italic'); }}><Italic size={13} /></button><button onMouseDown={(e) => { e.preventDefault(); command('underline'); }}><Underline size={13} /></button><button onMouseDown={(e) => { e.preventDefault(); command('insertUnorderedList'); }}><List size={13} /></button></div>}
+    {!readOnly && <div className="fl-rich-toolbar"><button onMouseDown={(event) => { event.preventDefault(); command('bold'); }}><Bold size={13} /></button><button onMouseDown={(event) => { event.preventDefault(); command('italic'); }}><Italic size={13} /></button><button onMouseDown={(event) => { event.preventDefault(); command('underline'); }}><Underline size={13} /></button><button onMouseDown={(event) => { event.preventDefault(); command('insertUnorderedList'); }}><List size={13} /></button></div>}
     <div ref={ref} contentEditable={!readOnly} suppressContentEditableWarning dangerouslySetInnerHTML={{ __html: block.html }} onInput={(event) => onChange(event.currentTarget.innerHTML)} />
-  </div>;
-}
-
-function VoiceStudio({ readOnly }: { readOnly: boolean }) {
-  const [tracks, setTracks] = useState<Track[]>([]);
-  const [recording, setRecording] = useState(false);
-  const [tempo, setTempo] = useState(90);
-  const [countIn, setCountIn] = useState(true);
-  const [metronome, setMetronome] = useState(false);
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const metroRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    if (!metronome) { if (metroRef.current) window.clearInterval(metroRef.current); return; }
-    const context = new AudioContext();
-    const click = () => { const osc = context.createOscillator(); const gain = context.createGain(); osc.frequency.value = 1050; gain.gain.setValueAtTime(0.12, context.currentTime); gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.05); osc.connect(gain).connect(context.destination); osc.start(); osc.stop(context.currentTime + 0.055); };
-    click(); metroRef.current = window.setInterval(click, 60000 / tempo);
-    return () => { if (metroRef.current) window.clearInterval(metroRef.current); void context.close(); };
-  }, [metronome, tempo]);
-
-  async function startRecording() {
-    if (readOnly || recording) return;
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
-    if (countIn) await new Promise((resolve) => window.setTimeout(resolve, (60000 / tempo) * 4));
-    const recorder = new MediaRecorder(stream);
-    chunksRef.current = [];
-    recorder.ondataavailable = (event) => { if (event.data.size) chunksRef.current.push(event.data); };
-    recorder.onstop = () => {
-      const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' });
-      const url = URL.createObjectURL(blob);
-      setTracks((current) => [...current, { id: crypto.randomUUID(), name: `Voz ${current.length + 1}`, color: TRACK_COLORS[current.length % TRACK_COLORS.length], url, blob, muted: false, solo: false, volume: 1 }]);
-      stream.getTracks().forEach((track) => track.stop());
-    };
-    recorderRef.current = recorder;
-    recorder.start();
-    setRecording(true);
-  }
-
-  function stopRecording() { recorderRef.current?.stop(); setRecording(false); }
-  function updateTrack(id: string, patch: Partial<Track>) { setTracks((current) => current.map((track) => track.id === id ? { ...track, ...patch } : track)); }
-  function removeTrack(id: string) { setTracks((current) => current.filter((track) => track.id !== id)); }
-  function playAll() {
-    const soloed = tracks.filter((track) => track.solo);
-    tracks.forEach((track) => {
-      if (track.muted || (soloed.length && !track.solo)) return;
-      const audio = new Audio(track.url); audio.volume = track.volume; void audio.play();
-    });
-  }
-  function exportMix() {
-    tracks.forEach((track) => { const anchor = document.createElement('a'); anchor.href = track.url; anchor.download = `${track.name.replace(/\s+/g, '-').toLowerCase()}.webm`; anchor.click(); });
-  }
-
-  return <div className="fl-voice-shell">
-    <header className="fl-voice-header"><div><strong>Voice Studio</strong><small>Multipistas para demonstrações vocais ao vivo</small></div><div className="fl-voice-transport"><label>{tempo} BPM<input disabled={readOnly} type="range" min="50" max="180" value={tempo} onChange={(event) => setTempo(Number(event.target.value))} /></label><button className={metronome ? 'active' : ''} disabled={readOnly} onClick={() => setMetronome((value) => !value)}>Metrônomo</button><button className={countIn ? 'active' : ''} disabled={readOnly} onClick={() => setCountIn((value) => !value)}>Contagem 4</button><button onClick={playAll} disabled={!tracks.length}><Video size={16} /> Ouvir todas</button>{!readOnly && <button onClick={exportMix} disabled={!tracks.length}><Download size={16} /> Exportar faixas</button>}</div></header>
-    <section className="fl-track-list">
-      {!tracks.length && <div className="fl-track-empty"><Mic2 size={34} /><strong>Construa uma harmonia por camadas</strong><span>Grave a voz principal, depois terça, quinta e outras demonstrações.</span></div>}
-      {tracks.map((track) => <article key={track.id} className="fl-track-card" style={{ '--track-color': track.color } as React.CSSProperties}><i /><input disabled={readOnly} value={track.name} onChange={(event) => updateTrack(track.id, { name: event.target.value })} /><audio src={track.url} controls /><button className={track.muted ? 'active' : ''} disabled={readOnly} onClick={() => updateTrack(track.id, { muted: !track.muted })}>M</button><button className={track.solo ? 'active' : ''} disabled={readOnly} onClick={() => updateTrack(track.id, { solo: !track.solo })}>S</button><input disabled={readOnly} type="range" min="0" max="1" step="0.05" value={track.volume} onChange={(event) => updateTrack(track.id, { volume: Number(event.target.value) })} />{!readOnly && <button onClick={() => removeTrack(track.id)}><Trash2 size={15} /></button>}</article>)}
-    </section>
-    {!readOnly && <footer className="fl-voice-recorder"><button className={recording ? 'recording' : ''} onClick={recording ? stopRecording : startRecording}>{recording ? <StopCircle size={21} /> : <Mic2 size={21} />}{recording ? 'Parar gravação' : 'Gravar nova voz'}</button><span>{recording ? 'Gravando demonstração…' : 'O áudio é processado localmente no navegador.'}</span></footer>}
   </div>;
 }
