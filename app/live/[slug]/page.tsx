@@ -29,6 +29,7 @@ import './live-device-selectors.css';
 import './live-studio.css';
 import './live-camera-controls.css';
 import './voice-studio-daw.css';
+import './voice-studio-midi.css';
 import './voice-studio-daw-runtime.css';
 import './hand-signal.css';
 import './room-shell-v2.css';
