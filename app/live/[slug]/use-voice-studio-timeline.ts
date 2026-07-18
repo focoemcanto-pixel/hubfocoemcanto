@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  clampTimelineZoom,
+  normalizeTimelineZoom as clampTimelineZoom,
   timelineContentWidth,
   timelinePixelsToTime,
   timelineScrollForTime,
@@ -109,26 +109,26 @@ export function useVoiceStudioTimeline({
 
   const setZoom = useCallback((nextZoom: number, anchorClientX?: number) => {
     const element = elementRef.current;
-    const clamped = clampTimelineZoom(nextZoom);
+    const requestedZoom = clampTimelineZoom(nextZoom);
     if (!element) {
-      onViewChange({ ...view, zoom: clamped });
+      onViewChange({ ...view, zoom: requestedZoom });
       return;
     }
     const bounds = element.getBoundingClientRect();
-    const anchorX = anchorClientX === undefined
+    const pointerX = anchorClientX === undefined
       ? viewport.width / 2
       : Math.max(0, Math.min(viewport.width, anchorClientX - bounds.left));
-    const nextScroll = timelineZoomAroundPoint({
-      oldZoom: zoom,
-      newZoom: clamped,
+    const result = timelineZoomAroundPoint({
+      zoom,
+      nextZoom: requestedZoom,
       scrollLeft: element.scrollLeft,
-      anchorX,
+      pointerX,
       viewportWidth: viewport.width,
       duration,
     });
-    element.scrollLeft = nextScroll;
-    setViewport(current => ({ ...current, scrollLeft: nextScroll }));
-    onViewChange({ ...view, zoom: clamped, scrollLeft: nextScroll });
+    element.scrollLeft = result.scrollLeft;
+    setViewport(current => ({ ...current, scrollLeft: result.scrollLeft }));
+    onViewChange({ ...view, zoom: result.zoom, scrollLeft: result.scrollLeft });
   }, [duration, onViewChange, view, viewport.width, zoom]);
 
   const onWheel = useCallback((event: WheelEvent) => {
@@ -150,17 +150,12 @@ export function useVoiceStudioTimeline({
     if (!element) return;
     const x = timelineTimeToPixels(time, zoom);
     const visibleStart = element.scrollLeft;
-    const visibleEnd = visibleStart + viewport.width;
     const threshold = visibleStart + viewport.width * AUTO_SCROLL_EDGE;
     if (!force && x >= visibleStart && x <= threshold) return;
-    if (!force && x < visibleStart) {
-      const next = timelineScrollForTime(time, zoom, viewport.width, 0.08, duration);
-      element.scrollLeft = next;
-      return;
-    }
-    const next = timelineScrollForTime(time, zoom, viewport.width, AUTO_SCROLL_ANCHOR, duration);
+    const anchor = !force && x < visibleStart ? 0.08 : AUTO_SCROLL_ANCHOR;
+    const next = timelineScrollForTime(time, viewport.width, zoom, anchor);
     element.scrollLeft = next;
-  }, [duration, viewport.width, zoom]);
+  }, [viewport.width, zoom]);
 
   const timeFromClientX = useCallback((clientX: number) => {
     const element = elementRef.current;
