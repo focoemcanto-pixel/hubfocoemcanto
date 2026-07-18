@@ -1,6 +1,6 @@
 'use client';
 
-import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type ChangeEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, FileAudio, FolderOpen, Loader2, MoreHorizontal, Plus, Save, Settings, Trash2, Upload, X } from 'lucide-react';
 import { createVoiceStudioProject, type VoiceStudioProject } from './voice-studio-project-model';
 import {
@@ -21,7 +21,8 @@ import {
 } from './voice-studio-project-storage';
 
 type Tab = 'session' | 'projects' | 'library' | 'settings';
-type Toast = { kind: 'success' | 'error'; message: string } | null;
+type ToastKind = 'success' | 'error';
+type Toast = { kind: ToastKind; message: string } | null;
 type StudioSnapshot = { project: VoiceStudioProject; blobs?: Record<string, Blob> };
 
 const SNAPSHOT_EVENT = 'foco-voice-studio-snapshot';
@@ -45,13 +46,18 @@ function audioDuration(file: File) {
     const audio = new Audio();
     const cleanup = () => { audio.src = ''; URL.revokeObjectURL(url); };
     audio.preload = 'metadata';
-    audio.onloadedmetadata = () => { const value = audio.duration; cleanup(); Number.isFinite(value) && value > 0 ? resolve(value) : reject(new Error('Arquivo inválido.')); };
+    audio.onloadedmetadata = () => {
+      const value = audio.duration;
+      cleanup();
+      if (Number.isFinite(value) && value > 0) resolve(value);
+      else reject(new Error('Arquivo inválido.'));
+    };
     audio.onerror = () => { cleanup(); reject(new Error('Não foi possível ler o áudio.')); };
     audio.src = url;
   });
 }
 
-export default function VoiceStudioProjectManager({ children }: { children: React.ReactNode }) {
+export default function VoiceStudioProjectManager({ children }: { children: ReactNode }) {
   const [tab, setTab] = useState<Tab>('session');
   const [project, setProject] = useState<VoiceStudioProject>(() => createVoiceStudioProject());
   const [blobs, setBlobs] = useState<Record<string, Blob>>({});
@@ -66,7 +72,7 @@ export default function VoiceStudioProjectManager({ children }: { children: Reac
   const autosaveTimer = useRef<number | null>(null);
   const toastTimer = useRef<number | null>(null);
 
-  const notice = useCallback((kind: Toast extends infer _T ? 'success' | 'error' : never, message: string) => {
+  const notice = useCallback((kind: ToastKind, message: string) => {
     setToast({ kind, message });
     if (toastTimer.current) window.clearTimeout(toastTimer.current);
     toastTimer.current = window.setTimeout(() => setToast(null), 2600);
@@ -136,9 +142,7 @@ export default function VoiceStudioProjectManager({ children }: { children: Reac
     if (toastTimer.current) window.clearTimeout(toastTimer.current);
   }, []);
 
-  function requestSnapshot() {
-    window.dispatchEvent(new CustomEvent(REQUEST_EVENT));
-  }
+  function requestSnapshot() { window.dispatchEvent(new CustomEvent(REQUEST_EVENT)); }
 
   async function saveCurrent(saveAs = false) {
     setBusy(true);
@@ -147,7 +151,9 @@ export default function VoiceStudioProjectManager({ children }: { children: Reac
       await new Promise(resolve => window.setTimeout(resolve, 30));
       const name = saveAs ? window.prompt('Nome do novo projeto', `${project.name} cópia`)?.trim() : project.name.trim();
       if (!name) return;
-      const next = saveAs ? { ...project, id: crypto.randomUUID(), name, createdAt: new Date().toISOString() } : { ...project, name };
+      const next: VoiceStudioProject = saveAs
+        ? { ...project, id: crypto.randomUUID(), name, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+        : { ...project, name };
       const stored = await saveVoiceStudioProject(next, blobs);
       setProject(stored);
       setDirty(false);
@@ -233,13 +239,14 @@ export default function VoiceStudioProjectManager({ children }: { children: Reac
 
   async function performDelete() {
     if (!confirmDelete) return;
+    const pending = confirmDelete;
     setBusy(true);
     try {
-      if (confirmDelete.type === 'project') await deleteVoiceStudioProject(confirmDelete.id);
-      else await deleteVoiceStudioLibraryAudio(confirmDelete.id);
+      if (pending.type === 'project') await deleteVoiceStudioProject(pending.id);
+      else await deleteVoiceStudioLibraryAudio(pending.id);
       await refreshLists();
       setConfirmDelete(null);
-      notice('success', confirmDelete.type === 'project' ? 'Projeto excluído.' : 'Áudio removido da biblioteca.');
+      notice('success', pending.type === 'project' ? 'Projeto excluído.' : 'Áudio removido da biblioteca.');
     } catch (error) {
       notice('error', error instanceof Error ? error.message : 'Não foi possível excluir.');
     } finally {
@@ -284,7 +291,7 @@ export default function VoiceStudioProjectManager({ children }: { children: Reac
 
     {tab === 'projects' && <div className="vs-manager-panel"><div className="vs-panel-head"><div><strong>Projetos</strong><span>Projetos referenciam os áudios da biblioteca sem criar cópias.</span></div><button onClick={() => void newProject()}><Plus size={16} /> Novo Projeto</button></div>{projects.length ? <div className="vs-project-grid">{projects.map(item => <article key={item.id}><div><span>{item.tracks.length} faixas</span><strong>{item.name}</strong><small>{new Date(item.updatedAt).toLocaleString('pt-BR')}</small></div><div><button onClick={() => void openProject(item.id)}><FolderOpen size={15} /> Abrir</button><button className="icon" onClick={() => setConfirmDelete({ type: 'project', id: item.id, name: item.name })}><Trash2 size={15} /></button></div></article>)}</div> : <Empty icon={<FolderOpen />} title="Nenhum projeto salvo" text="A Sessão Atual só se torna um projeto quando você clicar em Salvar." />}</div>}
 
-    {tab === 'library' && <div className="vs-manager-panel"><div className="vs-panel-head"><div><strong>Biblioteca de Áudios</strong><span>Importe uma vez e reutilize em qualquer projeto.</span></div><label className="vs-import-button"><Upload size={16} /> Importar MP3 ou WAV<input type="file" accept="audio/mpeg,audio/wav,audio/x-wav" multiple hidden onChange={importAudio} /></label></div>{library.length ? <div className="vs-library-list">{library.map(item => <article key={item.id}><FileAudio size={24} /><div><strong>{item.name}</strong><span>{formatDuration(item.duration)} · {formatBytes(item.size)} · {new Date(item.createdAt).toLocaleDateString('pt-BR')}</span></div><audio controls preload="metadata" src={URL.createObjectURL(item.blob)} /><button onClick={() => renameAudio(item)}><MoreHorizontal size={16} /> Renomear</button><button className="icon danger" onClick={() => setConfirmDelete({ type: 'audio', id: item.id, name: item.name })}><Trash2 size={16} /></button></article>)}</div> : <Empty icon={<FileAudio />} title="Biblioteca vazia" text="Arquivos importados ficam disponíveis para todos os projetos futuros." />}</div>}
+    {tab === 'library' && <div className="vs-manager-panel"><div className="vs-panel-head"><div><strong>Biblioteca de Áudios</strong><span>Importe uma vez e reutilize em qualquer projeto.</span></div><label className="vs-import-button"><Upload size={16} /> Importar MP3 ou WAV<input type="file" accept="audio/mpeg,audio/wav,audio/x-wav" multiple hidden onChange={importAudio} /></label></div>{library.length ? <div className="vs-library-list">{library.map(item => <LibraryAudioRow key={item.id} item={item} onRename={renameAudio} onDelete={() => setConfirmDelete({ type: 'audio', id: item.id, name: item.name })} />)}</div> : <Empty icon={<FileAudio />} title="Biblioteca vazia" text="Arquivos importados ficam disponíveis para todos os projetos futuros." />}</div>}
 
     {tab === 'settings' && <div className="vs-manager-panel"><div className="vs-panel-head"><div><strong>Configurações</strong><span>Preferências do editor e segurança de arquivos.</span></div></div><div className="vs-settings-grid"><article><strong>Autosave</strong><span>Apenas a Sessão Atual é salva automaticamente. Nenhum projeto é criado sem sua ação.</span><b>Ativo</b></article><article><strong>Formatos permitidos</strong><span>MP3 e WAV, com validação de duração e integridade.</span><b>100 MB por arquivo</b></article><article><strong>Armazenamento</strong><span>Projetos e biblioteca permanecem locais neste navegador.</span><b>IndexedDB</b></article></div></div>}
 
@@ -293,6 +300,16 @@ export default function VoiceStudioProjectManager({ children }: { children: Reac
   </section>;
 }
 
-function Empty({ icon, title, text }: { icon: React.ReactNode; title: string; text: string }) {
+function LibraryAudioRow({ item, onRename, onDelete }: { item: VoiceStudioLibraryItem; onRename: (item: VoiceStudioLibraryItem) => void; onDelete: () => void }) {
+  const [url, setUrl] = useState('');
+  useEffect(() => {
+    const next = URL.createObjectURL(item.blob);
+    setUrl(next);
+    return () => URL.revokeObjectURL(next);
+  }, [item.blob]);
+  return <article><FileAudio size={24} /><div><strong>{item.name}</strong><span>{formatDuration(item.duration)} · {formatBytes(item.size)} · {new Date(item.createdAt).toLocaleDateString('pt-BR')}</span></div><audio controls preload="metadata" src={url} /><button onClick={() => onRename(item)}><MoreHorizontal size={16} /> Renomear</button><button className="icon danger" onClick={onDelete}><Trash2 size={16} /></button></article>;
+}
+
+function Empty({ icon, title, text }: { icon: ReactNode; title: string; text: string }) {
   return <div className="vs-manager-empty">{icon}<strong>{title}</strong><span>{text}</span></div>;
 }
