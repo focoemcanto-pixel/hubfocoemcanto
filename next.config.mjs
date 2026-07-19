@@ -7,22 +7,6 @@ const nextConfig = {
   experimental: {
     optimizePackageImports: ['lucide-react']
   },
-  async redirects() {
-    return [
-      {
-        source: '/aluno/:path*',
-        destination: '/login',
-        permanent: false,
-        missing: [{ type: 'cookie', key: 'hub_access_email' }]
-      },
-      {
-        source: '/admin/:path*',
-        destination: '/login',
-        permanent: false,
-        missing: [{ type: 'cookie', key: 'hub_access_email' }]
-      }
-    ];
-  },
   images: {
     formats: ['image/avif', 'image/webp'],
     minimumCacheTTL: 60 * 60 * 24 * 30,
