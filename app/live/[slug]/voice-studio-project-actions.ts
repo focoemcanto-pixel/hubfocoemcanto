@@ -55,6 +55,17 @@ class ProjectMutationCommand implements VoiceStudioCommand {
   undo(project: VoiceStudioProject): VoiceStudioProject {
     return this.#before ? cloneVoiceStudioProject(this.#before) : project;
   }
+
+  canMergeWith(command: VoiceStudioCommand): boolean {
+    return command instanceof ProjectMutationCommand
+      && Boolean(this.groupId)
+      && command.groupId === this.groupId
+      && command.label === this.label;
+  }
+
+  mergeWith(command: VoiceStudioCommand): VoiceStudioCommand {
+    return command instanceof ProjectMutationCommand ? command : this;
+  }
 }
 
 function replaceProject(target: VoiceStudioProject, source: VoiceStudioProject): VoiceStudioProject {
@@ -68,6 +79,12 @@ function updateTimestamp(project: VoiceStudioProject): VoiceStudioProject {
   return project;
 }
 
+/**
+ * Public mutation boundary for VoiceStudioProject.
+ *
+ * UI and controllers should call this facade instead of importing mutation
+ * helpers from voice-studio-project-model directly.
+ */
 export class VoiceStudioProjectActions {
   readonly #project: VoiceStudioProject;
   readonly #history: VoiceStudioHistoryEngine;
