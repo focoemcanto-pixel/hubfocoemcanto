@@ -15,13 +15,12 @@ import type {
   VoiceStudioRuntimePlaybackCallbacks,
 } from './voice-studio-runtime';
 import type { VoiceStudioSelectionState } from './voice-studio-selection-engine';
+import type { VoiceStudioTransportController } from './voice-studio-transport-controller';
 
-export type VoiceStudioTransportStatus = 'idle' | 'countin' | 'recording' | 'playing';
-
-export type VoiceStudioTransport = {
-  status: VoiceStudioTransportStatus;
-  position: number;
-};
+export type VoiceStudioPlaybackConfiguration = Pick<
+  VoiceStudioRuntimePlaybackCallbacks,
+  'midiFrequency' | 'instrumentWave'
+>;
 
 export type VoiceStudioRecording = {
   supportedRecordingMimeType: typeof supportedRecordingMimeType;
@@ -37,17 +36,17 @@ export type VoiceStudioSession = {
   selection: VoiceStudioSelectionState;
   playback: VoiceStudioPlaybackEngine;
   recording: VoiceStudioRecording;
-  transport: VoiceStudioTransport;
+  transport: VoiceStudioTransportController;
   assetStore: VoiceStudioAssetStore;
   runtime: VoiceStudioRuntime;
 };
 
 export type CreateVoiceStudioSessionOptions = {
-  playbackCallbacks: VoiceStudioRuntimePlaybackCallbacks;
+  playbackCallbacks: VoiceStudioPlaybackConfiguration;
   project?: VoiceStudioProject;
   historyLimit?: number;
   selection?: VoiceStudioSelectionState;
-  transport?: VoiceStudioTransport;
+  transport?: VoiceStudioTransportController;
   assetStore?: VoiceStudioAssetStore;
   runtime?: VoiceStudioRuntime;
   runtimeOptions?: CreateVoiceStudioRuntimeOptions;
