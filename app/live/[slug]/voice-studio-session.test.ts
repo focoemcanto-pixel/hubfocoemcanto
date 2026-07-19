@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createVoiceStudioAssetStore, VoiceStudioAssetStore } from './voice-studio-asset-store';
 import { VoiceStudioHistoryEngine } from './voice-studio-history-engine';
 import { VoiceStudioPlayback } from './voice-studio-playback';
+import { VoiceStudioProjectActions } from './voice-studio-project-actions';
 import { createVoiceStudioProject } from './voice-studio-project-model';
 import { VoiceStudioRecording } from './voice-studio-recording';
 import { createVoiceStudioRuntime } from './voice-studio-runtime';
@@ -14,6 +15,8 @@ describe('createVoiceStudioSession', () => {
     const audioContextFactory = vi.fn(() => { throw new Error('AudioContext should not be requested during composition.'); });
     const session = createVoiceStudioSession({ runtimeOptions: { audioContextFactory } });
     expect(session.project.schemaVersion).toBe(2);
+    expect(session.actions).toBeInstanceOf(VoiceStudioProjectActions);
+    expect(session.actions.project).toBe(session.project);
     expect(session.history).toBeInstanceOf(VoiceStudioHistoryEngine);
     expect(session.selection.clipIds.size).toBe(0);
     expect(session.playback).toBeInstanceOf(VoiceStudioPlayback);
@@ -34,6 +37,7 @@ describe('createVoiceStudioSession', () => {
     const assetStore = createVoiceStudioAssetStore(runtime);
     const session = createVoiceStudioSession({ project, selection, transport, assetStore, runtime, historyLimit: 12 });
     expect(session.project).toBe(project);
+    expect(session.actions.project).toBe(project);
     expect(session.selection).toBe(selection);
     expect(session.transport).toBe(transport);
     expect(session.assetStore).toBe(assetStore);
