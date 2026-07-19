@@ -114,10 +114,30 @@ export type VoiceStudioClipboardClip = {
   clip: VoiceStudioClip;
 };
 
+type LegacyTrackMediaFields = {
+  audio?: unknown;
+  waveform?: unknown;
+  peaks?: unknown;
+  trimStart?: unknown;
+  trimEnd?: unknown;
+  sourceOffset?: unknown;
+  offset?: unknown;
+  duration?: unknown;
+  blob?: unknown;
+  blobUrl?: unknown;
+  url?: unknown;
+};
+
+const TRACK_COLORS = ['#22c55e', '#8b5cf6', '#0ea5e9', '#f97316', '#ec4899', '#eab308'];
 const MINIMUM_CLIP_DURATION = 0.08;
 
 function now() {
   return new Date().toISOString();
+}
+
+function sanitizeTrackContainer(track: VoiceStudioTrack): VoiceStudioTrack {
+  const { audio: _audio, waveform: _waveform, peaks: _peaks, trimStart: _trimStart, trimEnd: _trimEnd, sourceOffset: _sourceOffset, offset: _offset, duration: _duration, blob: _blob, blobUrl: _blobUrl, url: _url, ...container } = track as VoiceStudioTrack & LegacyTrackMediaFields;
+  return container;
 }
 
 function normalizeClip(clip: VoiceStudioClip): VoiceStudioClip {
@@ -157,11 +177,14 @@ export function normalizeVoiceStudioProject(project: VoiceStudioProject): VoiceS
   return {
     ...project,
     schemaVersion: 2,
-    tracks: (project.tracks ?? []).map(track => ({
-      ...track,
-      pan: Number.isFinite(track.pan) ? track.pan : 0,
-      clips: (track.clips ?? []).map(normalizeClip),
-    })),
+    tracks: (project.tracks ?? []).map(track => {
+      const container = sanitizeTrackContainer(track);
+      return {
+        ...container,
+        pan: Number.isFinite(container.pan) ? container.pan : 0,
+        clips: (container.clips ?? []).map(normalizeClip),
+      };
+    }),
     assets: project.assets ?? {},
     markers: project.markers ?? [],
     view: project.view ?? { zoom: 1, scrollLeft: 0, playhead: 0 },
@@ -193,6 +216,68 @@ export function cloneVoiceStudioProject(project: VoiceStudioProject): VoiceStudi
     settings: { ...normalized.settings },
     automation: normalized.automation.map(lane => ({ ...lane, points: lane.points.map(point => ({ ...point })) })),
   };
+}
+
+
+export function createTrackContainer(input: {
+  kind: VoiceStudioTrackKind;
+  name: string;
+  color?: string;
+  index?: number;
+  instrument?: string;
+}): VoiceStudioTrack {
+  return {
+    id: crypto.randomUUID(),
+    kind: input.kind,
+    name: input.name,
+    color: input.color ?? TRACK_COLORS[Math.max(0, input.index ?? 0) % TRACK_COLORS.length],
+    muted: false,
+    solo: false,
+    volume: 1,
+    pan: 0,
+    instrument: input.instrument,
+    clips: [],
+  };
+}
+
+export function createClipFromAsset(input: {
+  asset: VoiceStudioAsset;
+  name?: string;
+  start?: number;
+  sourceOffset?: number;
+  duration?: number;
+  color?: string;
+}): VoiceStudioClip {
+  const sourceOffset = Math.max(0, input.sourceOffset ?? 0);
+  const maxDuration = Math.max(MINIMUM_CLIP_DURATION, input.asset.duration - sourceOffset);
+  return {
+    id: crypto.randomUUID(),
+    assetId: input.asset.id,
+    name: input.name ?? input.asset.fileName ?? 'Clip',
+    start: Math.max(0, input.start ?? 0),
+    sourceOffset,
+    duration: Math.min(maxDuration, Math.max(MINIMUM_CLIP_DURATION, input.duration ?? maxDuration)),
+    gain: 1,
+    fadeIn: 0,
+    fadeOut: 0,
+    color: input.color,
+    muted: false,
+    locked: false,
+  };
+}
+
+export function addAssetClipToProject(project: VoiceStudioProject, asset: VoiceStudioAsset, clipName: string, start: number, targetTrackId?: string): VoiceStudioProject {
+  const next = cloneVoiceStudioProject(project);
+  next.assets[asset.id] = { ...asset, peaks: [...asset.peaks], midiNotes: asset.midiNotes.map(note => ({ ...note })) };
+  let track = targetTrackId ? next.tracks.find(item => item.id === targetTrackId && item.kind === asset.kind) : null;
+  if (!track) {
+    track = createTrackContainer({ kind: asset.kind, name: clipName, index: next.tracks.length, instrument: asset.instrument });
+    next.tracks.push(track);
+  }
+  track.clips.push(createClipFromAsset({ asset, name: clipName, start }));
+  track.clips.sort((a, b) => a.start - b.start);
+  next.updatedAt = now();
+  return next;
 }
 
 export function projectDuration(project: VoiceStudioProject) {

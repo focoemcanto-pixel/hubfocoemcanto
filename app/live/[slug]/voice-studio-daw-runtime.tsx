@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import VoiceStudioDaw from './voice-studio-daw';
+import { addAssetClipToProject, type VoiceStudioAsset, type VoiceStudioProject } from './voice-studio-project-model';
 import VoiceStudioProjectManager from './voice-studio-project-manager';
 
 const SNAPSHOT_EVENT='foco-voice-studio-snapshot';
@@ -10,7 +11,6 @@ const REQUEST_EVENT='foco-voice-studio-request-snapshot';
 const LOAD_EVENT='foco-voice-studio-load-project';
 const MAX_UPLOAD_BYTES=100*1024*1024;
 const AUDIO_EXTENSIONS=/\.(mp3|wav|m4a|aac|ogg|oga|webm|flac)$/i;
-const TRACK_COLORS=['#22c55e','#8b5cf6','#0ea5e9','#f97316','#ec4899','#eab308'];
 
 const RUNTIME_CSS = `
 .vs-daw-runtime{height:100%;min-height:0;position:relative}
@@ -45,13 +45,7 @@ type RoomSnapshot = {
 };
 
 type StudioSnapshot = {
-  project: {
-    assets: Record<string, unknown>;
-    tracks: Array<{id:string;kind:string;name:string;color:string;muted:boolean;solo:boolean;volume:number;pan:number;clips:Array<unknown>}>;
-    view?: {playhead?:number;zoom?:number};
-    updatedAt?: string;
-    [key:string]: unknown;
-  };
+  project: VoiceStudioProject;
   blobs?: Record<string,Blob>;
 };
 
@@ -162,14 +156,14 @@ export default function VoiceStudioDawRuntime(){
     try{
       const snapshot=await requestStudioSnapshot();
       const decoded=await Promise.all(accepted.map(async file=>({file,...await decodeAudio(file)})));
-      const project=structuredClone(snapshot.project);
+      let project=structuredClone(snapshot.project);
       const blobs={...(snapshot.blobs||{})};
       const start=Math.max(0,Number(project.view?.playhead)||0);
       decoded.forEach(({file,duration,peaks},index)=>{
         const assetId=crypto.randomUUID();
         const name=fileLabel(file);
-        project.assets={...(project.assets||{}),[assetId]:{id:assetId,kind:'audio',duration,peaks,midiNotes:[],mimeType:file.type||'audio/mpeg',fileName:file.name,createdAt:new Date().toISOString()}};
-        project.tracks=[...(project.tracks||[]),{id:crypto.randomUUID(),kind:'audio',name,color:TRACK_COLORS[(project.tracks?.length||0)%TRACK_COLORS.length],muted:false,solo:false,volume:1,pan:0,clips:[{id:crypto.randomUUID(),assetId,name,start,sourceOffset:0,duration,gain:1,fadeIn:0,fadeOut:0,muted:false,locked:false}]}];
+        const asset:VoiceStudioAsset={id:assetId,kind:'audio',duration,peaks,midiNotes:[],mimeType:file.type||'audio/mpeg',fileName:file.name,createdAt:new Date().toISOString()};
+        project=addAssetClipToProject(project,asset,name,start);
         blobs[assetId]=file;
         if(index===decoded.length-1)project.updatedAt=new Date().toISOString();
       });
