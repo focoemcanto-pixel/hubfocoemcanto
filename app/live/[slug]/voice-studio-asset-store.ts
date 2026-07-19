@@ -65,7 +65,7 @@ export class VoiceStudioAssetStore {
     const asset: VoiceStudioAsset = {
       id: assetId,
       kind: 'audio',
-      mimeType: options.mimeType ?? blob.type || 'audio/mpeg',
+      mimeType: options.mimeType ?? (blob.type || 'audio/mpeg'),
       fileName: options.fileName,
       duration: Math.max(0.08, audioBuffer.duration),
       createdAt: options.createdAt ?? new Date().toISOString(),
