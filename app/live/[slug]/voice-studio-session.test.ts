@@ -3,6 +3,7 @@ import { createVoiceStudioAssetStore, VoiceStudioAssetStore } from './voice-stud
 import { VoiceStudioHistoryEngine } from './voice-studio-history-engine';
 import { VoiceStudioPlayback } from './voice-studio-playback';
 import { createVoiceStudioProject } from './voice-studio-project-model';
+import { VoiceStudioRecording } from './voice-studio-recording';
 import { createVoiceStudioRuntime } from './voice-studio-runtime';
 import { createSelectionState } from './voice-studio-selection-engine';
 import { createVoiceStudioSession } from './voice-studio-session';
@@ -16,7 +17,7 @@ describe('createVoiceStudioSession', () => {
     expect(session.history).toBeInstanceOf(VoiceStudioHistoryEngine);
     expect(session.selection.clipIds.size).toBe(0);
     expect(session.playback).toBeInstanceOf(VoiceStudioPlayback);
-    expect(session.recording.createRecordingSession).toBeTypeOf('function');
+    expect(session.recording).toBeInstanceOf(VoiceStudioRecording);
     expect(session.transport).toBeInstanceOf(VoiceStudioTransportController);
     expect(session.transport.getSnapshot()).toMatchObject({ status: 'idle', playhead: 0, tempo: 90, bpm: 90 });
     expect(session.assetStore).toBeInstanceOf(VoiceStudioAssetStore);
