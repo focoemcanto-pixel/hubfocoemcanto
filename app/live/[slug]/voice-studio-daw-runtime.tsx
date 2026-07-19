@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import VoiceStudioDaw from './voice-studio-daw';
 import VoiceStudioProjectManager from './voice-studio-project-manager';
@@ -13,14 +13,21 @@ const RUNTIME_CSS = `
 .vs-daw-runtime .vs-editor{order:2;min-height:0;flex:1 1 auto}
 .vs-window-minimize{width:38px;height:38px;border:1px solid rgba(255,255,255,.18);border-radius:10px;background:rgba(255,255,255,.08);color:#fff;font-size:24px;line-height:1;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;margin-left:8px}
 .vs-window-minimize:hover{background:rgba(255,255,255,.14)}
-.fl-studio-scene.app-voice.vs-minimized{position:fixed!important;inset:auto 20px 20px auto!important;width:auto!important;height:auto!important;min-width:0!important;min-height:0!important;z-index:10000!important;background:transparent!important;box-shadow:none!important;pointer-events:none}
-.fl-studio-scene.app-voice.vs-minimized>.fl-scene-toolbar,.fl-studio-scene.app-voice.vs-minimized>.fl-studio-app-canvas{display:none!important}
+.fl-studio-scene.app-voice.vs-minimized{display:none!important}
 .vs-restore-studio{position:fixed;right:20px;bottom:20px;z-index:10001;border:1px solid rgba(255,255,255,.2);border-radius:14px;background:#171a22;color:#fff;padding:13px 17px;font-weight:800;box-shadow:0 16px 40px rgba(0,0,0,.42);cursor:pointer;pointer-events:auto}
 .vs-restore-studio:hover{background:#232735}
 .vs-emergency-stop{position:fixed;right:28px;top:238px;z-index:10000;border:1px solid rgba(255,255,255,.22);border-radius:10px;background:#dc2626;color:#fff;font-weight:800;padding:11px 18px;box-shadow:0 10px 30px rgba(0,0,0,.38);cursor:pointer}
 .vs-emergency-stop:hover{background:#ef4444}
 @media(max-width:900px){.vs-emergency-stop{right:14px;top:190px}.vs-restore-studio{right:12px;bottom:12px}}
 `;
+
+type RoomSnapshot = {
+  sceneOpen: boolean;
+  broadcasting: boolean;
+  layout: string | null;
+  cameraShape: string | null;
+  cameraCorner: string | null;
+};
 
 function isEditableTarget(target: EventTarget | null) {
   return target instanceof HTMLElement && Boolean(target.closest('input,textarea,select,[contenteditable="true"]'));
@@ -44,6 +51,7 @@ export default function VoiceStudioDawRuntime(){
   const [isHost,setIsHost]=useState(false);
   const [recording,setRecording]=useState(false);
   const [minimized,setMinimized]=useState(false);
+  const roomSnapshotRef=useRef<RoomSnapshot|null>(null);
 
   useEffect(()=>{
     setIsHost(new URLSearchParams(window.location.search).get('host')==='1');
@@ -60,8 +68,47 @@ export default function VoiceStudioDawRuntime(){
 
   useEffect(()=>{
     const scene=document.querySelector('.fl-studio-scene.app-voice');
-    scene?.classList.toggle('vs-minimized',minimized);
-    return()=>scene?.classList.remove('vs-minimized');
+    const room=document.querySelector('.fl-room');
+    if(!scene || !room)return;
+
+    if(minimized){
+      roomSnapshotRef.current={
+        sceneOpen:room.classList.contains('foco-studio-scene-open'),
+        broadcasting:room.classList.contains('foco-studio-broadcasting'),
+        layout:room.getAttribute('data-studio-layout'),
+        cameraShape:room.getAttribute('data-camera-shape'),
+        cameraCorner:room.getAttribute('data-camera-corner'),
+      };
+      scene.classList.add('vs-minimized');
+      room.classList.remove('foco-studio-scene-open','foco-studio-broadcasting');
+      room.removeAttribute('data-studio-layout');
+      room.removeAttribute('data-camera-shape');
+      room.removeAttribute('data-camera-corner');
+    }else{
+      scene.classList.remove('vs-minimized');
+      const snapshot=roomSnapshotRef.current;
+      if(snapshot){
+        room.classList.toggle('foco-studio-scene-open',snapshot.sceneOpen);
+        room.classList.toggle('foco-studio-broadcasting',snapshot.broadcasting);
+        if(snapshot.layout)room.setAttribute('data-studio-layout',snapshot.layout);
+        if(snapshot.cameraShape)room.setAttribute('data-camera-shape',snapshot.cameraShape);
+        if(snapshot.cameraCorner)room.setAttribute('data-camera-corner',snapshot.cameraCorner);
+        roomSnapshotRef.current=null;
+      }
+    }
+
+    return()=>{
+      scene.classList.remove('vs-minimized');
+      const snapshot=roomSnapshotRef.current;
+      if(snapshot){
+        room.classList.toggle('foco-studio-scene-open',snapshot.sceneOpen);
+        room.classList.toggle('foco-studio-broadcasting',snapshot.broadcasting);
+        if(snapshot.layout)room.setAttribute('data-studio-layout',snapshot.layout);
+        if(snapshot.cameraShape)room.setAttribute('data-camera-shape',snapshot.cameraShape);
+        if(snapshot.cameraCorner)room.setAttribute('data-camera-corner',snapshot.cameraCorner);
+        roomSnapshotRef.current=null;
+      }
+    };
   },[minimized,target]);
 
   useEffect(()=>{
