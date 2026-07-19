@@ -86,7 +86,9 @@ export type VoiceStudioProject = {
   markers: VoiceStudioMarker[];
   view: {
     zoom: number;
+    verticalZoom: number;
     scrollLeft: number;
+    scrollTop: number;
     playhead: number;
   };
   loop: {
@@ -140,6 +142,16 @@ function sanitizeTrackContainer(track: VoiceStudioTrack): VoiceStudioTrack {
   return container;
 }
 
+function normalizeProjectView(view: Partial<VoiceStudioProject['view']> | undefined): VoiceStudioProject['view'] {
+  return {
+    zoom: Number.isFinite(view?.zoom) ? Number(view?.zoom) : 1,
+    verticalZoom: Number.isFinite(view?.verticalZoom) ? Number(view?.verticalZoom) : 1,
+    scrollLeft: Number.isFinite(view?.scrollLeft) ? Number(view?.scrollLeft) : 0,
+    scrollTop: Number.isFinite(view?.scrollTop) ? Number(view?.scrollTop) : 0,
+    playhead: Number.isFinite(view?.playhead) ? Number(view?.playhead) : 0,
+  };
+}
+
 function normalizeClip(clip: VoiceStudioClip): VoiceStudioClip {
   return {
     ...clip,
@@ -166,7 +178,7 @@ export function createVoiceStudioProject(name = 'Novo projeto'): VoiceStudioProj
     tracks: [],
     assets: {},
     markers: [],
-    view: { zoom: 1, scrollLeft: 0, playhead: 0 },
+    view: { zoom: 1, verticalZoom: 1, scrollLeft: 0, scrollTop: 0, playhead: 0 },
     loop: { enabled: false, start: 0, end: 4 },
     settings: { snapping: true, snapDivision: 0.5 },
     automation: [],
@@ -187,7 +199,7 @@ export function normalizeVoiceStudioProject(project: VoiceStudioProject): VoiceS
     }),
     assets: project.assets ?? {},
     markers: project.markers ?? [],
-    view: project.view ?? { zoom: 1, scrollLeft: 0, playhead: 0 },
+    view: normalizeProjectView(project.view),
     loop: project.loop ?? { enabled: false, start: 0, end: 4 },
     settings: project.settings ?? { snapping: true, snapDivision: 0.5 },
     automation: project.automation ?? [],

@@ -10,7 +10,9 @@ export type TimelineTick = {
 
 export type TimelineViewport = {
   width: number;
+  height: number;
   scrollLeft: number;
+  scrollTop: number;
 };
 
 export type TimelineZoomResult = {
@@ -20,6 +22,9 @@ export type TimelineZoomResult = {
 
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 12;
+const MIN_VERTICAL_ZOOM = 0.75;
+const MAX_VERTICAL_ZOOM = 2.4;
+const BASE_TRACK_HEIGHT = 74;
 const BASE_PIXELS_PER_SECOND = 56;
 const MIN_VISIBLE_DURATION = 8;
 
@@ -35,6 +40,15 @@ function round(value: number, precision = 6) {
 export function normalizeTimelineZoom(zoom: number) {
   if (!Number.isFinite(zoom)) return 1;
   return clamp(zoom, MIN_ZOOM, MAX_ZOOM);
+}
+
+export function normalizeTimelineVerticalZoom(zoom: number) {
+  if (!Number.isFinite(zoom)) return 1;
+  return clamp(zoom, MIN_VERTICAL_ZOOM, MAX_VERTICAL_ZOOM);
+}
+
+export function timelineTrackHeight(verticalZoom: number) {
+  return Math.round(BASE_TRACK_HEIGHT * normalizeTimelineVerticalZoom(verticalZoom));
 }
 
 export function timelinePixelsPerSecond(zoom: number) {
@@ -164,4 +178,6 @@ export function timelineSelectionRange(startPixels: number, endPixels: number, s
 export const TIMELINE_ZOOM_LIMITS = {
   minimum: MIN_ZOOM,
   maximum: MAX_ZOOM,
+  verticalMinimum: MIN_VERTICAL_ZOOM,
+  verticalMaximum: MAX_VERTICAL_ZOOM,
 } as const;

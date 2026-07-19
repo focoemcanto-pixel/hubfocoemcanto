@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  normalizeTimelineVerticalZoom,
   normalizeTimelineZoom,
   timelineContentWidth,
   timelinePixelsToTime,
@@ -13,7 +14,9 @@ import {
 
 export type TimelineViewState = {
   zoom: number;
+  verticalZoom: number;
   scrollLeft: number;
+  scrollTop: number;
   playhead: number;
 };
 
@@ -38,10 +41,13 @@ export function useVoiceStudioTimeline({
   const pendingScrollRef = useRef(view.scrollLeft);
   const [viewport, setViewport] = useState<TimelineViewport>({
     width: 1,
+    height: 1,
     scrollLeft: Math.max(0, view.scrollLeft),
+    scrollTop: Math.max(0, view.scrollTop),
   });
 
   const zoom = normalizeTimelineZoom(view.zoom);
+  const verticalZoom = normalizeTimelineVerticalZoom(view.verticalZoom);
   const contentWidth = useMemo(
     () => timelineContentWidth(duration, viewport.width, zoom),
     [duration, viewport.width, zoom],
@@ -51,8 +57,10 @@ export function useVoiceStudioTimeline({
     elementRef.current = node;
     if (!node) return;
     const width = Math.max(1, node.clientWidth);
+    const height = Math.max(1, node.clientHeight);
     const scrollLeft = Math.max(0, Math.min(node.scrollLeft, Math.max(0, node.scrollWidth - width)));
-    setViewport({ width, scrollLeft });
+    const scrollTop = Math.max(0, Math.min(node.scrollTop, Math.max(0, node.scrollHeight - height)));
+    setViewport({ width, height, scrollLeft, scrollTop });
   }, []);
 
   useEffect(() => {
@@ -60,7 +68,8 @@ export function useVoiceStudioTimeline({
     if (!element) return;
     const observer = new ResizeObserver(entries => {
       const width = Math.max(1, entries[0]?.contentRect.width ?? element.clientWidth);
-      setViewport(current => ({ ...current, width }));
+      const height = Math.max(1, entries[0]?.contentRect.height ?? element.clientHeight);
+      setViewport(current => ({ ...current, width, height }));
     });
     observer.observe(element);
     return () => observer.disconnect();
@@ -71,9 +80,11 @@ export function useVoiceStudioTimeline({
     if (!element) return;
     const maxScroll = Math.max(0, contentWidth - viewport.width);
     const nextScroll = Math.max(0, Math.min(view.scrollLeft, maxScroll));
+    const nextTop = Math.max(0, view.scrollTop || 0);
     if (Math.abs(element.scrollLeft - nextScroll) > 0.5) element.scrollLeft = nextScroll;
-    setViewport(current => Math.abs(current.scrollLeft - nextScroll) > 0.5 ? { ...current, scrollLeft: nextScroll } : current);
-  }, [contentWidth, view.scrollLeft, viewport.width]);
+    if (Math.abs(element.scrollTop - nextTop) > 0.5) element.scrollTop = nextTop;
+    setViewport(current => (Math.abs(current.scrollLeft - nextScroll) > 0.5 || Math.abs(current.scrollTop - nextTop) > 0.5) ? { ...current, scrollLeft: nextScroll, scrollTop: nextTop } : current);
+  }, [contentWidth, view.scrollLeft, view.scrollTop, viewport.width]);
 
   useEffect(() => () => {
     if (scrollFrameRef.current !== null) cancelAnimationFrame(scrollFrameRef.current);
@@ -84,15 +95,16 @@ export function useVoiceStudioTimeline({
     if (scrollFrameRef.current !== null) return;
     scrollFrameRef.current = requestAnimationFrame(() => {
       scrollFrameRef.current = null;
-      onViewChange({ ...view, zoom, scrollLeft: pendingScrollRef.current });
+      onViewChange({ ...view, zoom, verticalZoom, scrollLeft: pendingScrollRef.current, scrollTop: elementRef.current?.scrollTop ?? view.scrollTop });
     });
-  }, [onViewChange, view, zoom]);
+  }, [onViewChange, view, zoom, verticalZoom]);
 
   const onScroll = useCallback(() => {
     const element = elementRef.current;
     if (!element) return;
     const scrollLeft = Math.max(0, element.scrollLeft);
-    setViewport(current => ({ ...current, scrollLeft }));
+    const scrollTop = Math.max(0, element.scrollTop);
+    setViewport(current => ({ ...current, scrollLeft, scrollTop }));
     persistScroll(scrollLeft);
   }, [persistScroll]);
 
@@ -103,9 +115,9 @@ export function useVoiceStudioTimeline({
     const absoluteX = clientX - bounds.left + element.scrollLeft;
     const rawTime = timelinePixelsToTime(absoluteX, zoom);
     const nextPlayhead = Math.max(0, Math.min(duration, quantize ? quantize(rawTime) : rawTime));
-    onViewChange({ ...view, zoom, scrollLeft: element.scrollLeft, playhead: nextPlayhead });
+    onViewChange({ ...view, zoom, verticalZoom, scrollLeft: element.scrollLeft, scrollTop: element.scrollTop, playhead: nextPlayhead });
     return nextPlayhead;
-  }, [disabled, duration, onViewChange, view, zoom]);
+  }, [disabled, duration, onViewChange, view, zoom, verticalZoom]);
 
   const setZoom = useCallback((nextZoom: number, anchorClientX?: number) => {
     const element = elementRef.current;
@@ -128,15 +140,21 @@ export function useVoiceStudioTimeline({
     });
     element.scrollLeft = result.scrollLeft;
     setViewport(current => ({ ...current, scrollLeft: result.scrollLeft }));
-    onViewChange({ ...view, zoom: result.zoom, scrollLeft: result.scrollLeft });
-  }, [duration, onViewChange, view, viewport.width, zoom]);
+    onViewChange({ ...view, zoom: result.zoom, verticalZoom, scrollLeft: result.scrollLeft, scrollTop: element.scrollTop });
+  }, [duration, onViewChange, view, viewport.width, zoom, verticalZoom]);
 
   const onWheel = useCallback((event: WheelEvent) => {
+    if (event.shiftKey && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
+      const direction = event.deltaY > 0 ? -1 : 1;
+      onViewChange({ ...view, zoom, verticalZoom: normalizeTimelineVerticalZoom(verticalZoom + direction * 0.12), scrollLeft: elementRef.current?.scrollLeft ?? view.scrollLeft, scrollTop: elementRef.current?.scrollTop ?? view.scrollTop });
+      return;
+    }
     if (!(event.ctrlKey || event.metaKey)) return;
     event.preventDefault();
     const direction = event.deltaY > 0 ? -1 : 1;
     setZoom(zoom + direction * Math.max(0.1, zoom * 0.12), event.clientX);
-  }, [setZoom, zoom]);
+  }, [onViewChange, setZoom, verticalZoom, view, zoom]);
 
   useEffect(() => {
     const element = elementRef.current;
@@ -175,6 +193,7 @@ export function useVoiceStudioTimeline({
     zoom,
     contentWidth,
     onScroll,
+    verticalZoom,
     setZoom,
     seekAtClientX,
     timeFromClientX,
