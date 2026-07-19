@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useMemo, type ReactNode } from 'react';
+import { createContext, useContext, useMemo, useRef, type ReactNode } from 'react';
 import { createVoiceStudioSession } from './voice-studio-session';
 import type { VoiceStudioSession } from './voice-studio-session-types';
 
@@ -12,9 +12,12 @@ export type VoiceStudioProviderValue = {
 const VoiceStudioContext = createContext<VoiceStudioProviderValue | null>(null);
 
 export function VoiceStudioProvider({ readOnly, children }: { readOnly: boolean; children: ReactNode }) {
+  const sessionRef = useRef<VoiceStudioSession | null>(null);
+  sessionRef.current ??= createVoiceStudioSession();
+
   const value = useMemo<VoiceStudioProviderValue>(() => ({
     readOnly,
-    session: createVoiceStudioSession(),
+    session: sessionRef.current as VoiceStudioSession,
   }), [readOnly]);
 
   return <VoiceStudioContext.Provider value={value}>{children}</VoiceStudioContext.Provider>;
