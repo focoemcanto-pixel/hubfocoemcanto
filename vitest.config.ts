@@ -10,7 +10,7 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['app/live/[slug]/**/*.test.ts'],
+    include: ['app/live/**/*.test.ts'],
     restoreMocks: true,
   },
 });
