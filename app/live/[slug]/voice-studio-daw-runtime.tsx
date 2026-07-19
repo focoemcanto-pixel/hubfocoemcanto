@@ -5,20 +5,32 @@ import { createPortal } from 'react-dom';
 import VoiceStudioDaw from './voice-studio-daw';
 import VoiceStudioProjectManager from './voice-studio-project-manager';
 
+const SNAPSHOT_EVENT='foco-voice-studio-snapshot';
+const REQUEST_EVENT='foco-voice-studio-request-snapshot';
+const LOAD_EVENT='foco-voice-studio-load-project';
+const MAX_UPLOAD_BYTES=100*1024*1024;
+const AUDIO_EXTENSIONS=/\.(mp3|wav|m4a|aac|ogg|oga|webm|flac)$/i;
+const TRACK_COLORS=['#22c55e','#8b5cf6','#0ea5e9','#f97316','#ec4899','#eab308'];
+
 const RUNTIME_CSS = `
 .vs-daw-runtime{height:100%;min-height:0;position:relative}
 .vs-daw-runtime .vs-daw{height:100%;min-height:0;display:flex;flex-direction:column}
 .vs-daw-runtime .vs-transport{position:sticky!important;top:0;z-index:90;order:0;flex:0 0 auto;background:#11141b;box-shadow:0 1px 0 #2c313d,0 8px 20px rgba(0,0,0,.22)}
 .vs-daw-runtime .vs-options{order:1;flex:0 0 auto}
 .vs-daw-runtime .vs-editor{order:2;min-height:0;flex:1 1 auto}
-.vs-window-minimize{width:38px;height:38px;border:1px solid rgba(255,255,255,.18);border-radius:10px;background:rgba(255,255,255,.08);color:#fff;font-size:24px;line-height:1;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;margin-left:8px}
-.vs-window-minimize:hover{background:rgba(255,255,255,.14)}
+.vs-window-action{height:38px;border:1px solid rgba(255,255,255,.18);border-radius:10px;background:rgba(255,255,255,.08);color:#fff;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;margin-left:8px;font-weight:800}
+.vs-window-action:hover{background:rgba(255,255,255,.14)}
+.vs-window-action:disabled{opacity:.5;cursor:wait}
+.vs-window-import{padding:0 13px;gap:7px;font-size:12px;white-space:nowrap}
+.vs-window-minimize{width:38px;font-size:24px;line-height:1}
 .fl-studio-scene.app-voice.vs-minimized{display:none!important}
 .vs-restore-studio{position:fixed;right:20px;bottom:20px;z-index:10001;border:1px solid rgba(255,255,255,.2);border-radius:14px;background:#171a22;color:#fff;padding:13px 17px;font-weight:800;box-shadow:0 16px 40px rgba(0,0,0,.42);cursor:pointer;pointer-events:auto}
 .vs-restore-studio:hover{background:#232735}
 .vs-emergency-stop{position:fixed;right:28px;top:238px;z-index:10000;border:1px solid rgba(255,255,255,.22);border-radius:10px;background:#dc2626;color:#fff;font-weight:800;padding:11px 18px;box-shadow:0 10px 30px rgba(0,0,0,.38);cursor:pointer}
 .vs-emergency-stop:hover{background:#ef4444}
-@media(max-width:900px){.vs-emergency-stop{right:14px;top:190px}.vs-restore-studio{right:12px;bottom:12px}}
+.vs-upload-status{position:fixed;right:20px;bottom:78px;z-index:10002;max-width:min(360px,calc(100vw - 32px));border:1px solid rgba(255,255,255,.16);border-radius:12px;background:#171a22;color:#fff;padding:11px 14px;font-size:12px;font-weight:700;box-shadow:0 14px 36px rgba(0,0,0,.4)}
+.vs-upload-status.error{border-color:rgba(248,113,113,.55);color:#fecaca}
+@media(max-width:900px){.vs-emergency-stop{right:14px;top:190px}.vs-restore-studio{right:12px;bottom:12px}.vs-window-import{padding:0 10px}.vs-window-import span{display:none}.vs-upload-status{right:12px;bottom:66px}}
 `;
 
 type RoomSnapshot = {
@@ -27,6 +39,17 @@ type RoomSnapshot = {
   layout: string | null;
   cameraShape: string | null;
   cameraCorner: string | null;
+};
+
+type StudioSnapshot = {
+  project: {
+    assets: Record<string, unknown>;
+    tracks: Array<{id:string;kind:string;name:string;color:string;muted:boolean;solo:boolean;volume:number;pan:number;clips:Array<unknown>}>;
+    view?: {playhead?:number;zoom?:number};
+    updatedAt?: string;
+    [key:string]: unknown;
+  };
+  blobs?: Record<string,Blob>;
 };
 
 function isEditableTarget(target: EventTarget | null) {
@@ -55,13 +78,130 @@ function findProjectButtons() {
   };
 }
 
+function fileLabel(file:File){
+  return file.name.replace(/\.[^.]+$/,'').trim() || 'Áudio importado';
+}
+
+function makePeaks(data:Float32Array,count=180){
+  const step=Math.max(1,Math.floor(data.length/count));
+  return Array.from({length:count},(_,index)=>{
+    let max=0;
+    for(let cursor=index*step;cursor<Math.min(data.length,(index+1)*step);cursor+=1)max=Math.max(max,Math.abs(data[cursor]));
+    return Math.max(.03,max);
+  });
+}
+
+async function decodeAudio(file:File){
+  const context=new AudioContext();
+  try{
+    const buffer=await context.decodeAudioData(await file.arrayBuffer());
+    return {duration:Math.max(.08,buffer.duration),peaks:makePeaks(buffer.getChannelData(0))};
+  }finally{
+    await context.close().catch(()=>undefined);
+  }
+}
+
+function requestStudioSnapshot(timeoutMs=2500){
+  return new Promise<StudioSnapshot>((resolve,reject)=>{
+    const timeout=window.setTimeout(()=>{
+      window.removeEventListener(SNAPSHOT_EVENT,onSnapshot as EventListener);
+      reject(new Error('O projeto não respondeu. Tente novamente.'));
+    },timeoutMs);
+    const onSnapshot=(event:Event)=>{
+      const detail=(event as CustomEvent<StudioSnapshot>).detail;
+      if(!detail?.project)return;
+      window.clearTimeout(timeout);
+      window.removeEventListener(SNAPSHOT_EVENT,onSnapshot as EventListener);
+      resolve(detail);
+    };
+    window.addEventListener(SNAPSHOT_EVENT,onSnapshot as EventListener);
+    window.dispatchEvent(new Event(REQUEST_EVENT));
+  });
+}
+
 export default function VoiceStudioDawRuntime(){
   const [target,setTarget]=useState<Element|null>(null);
   const [toolbar,setToolbar]=useState<Element|null>(null);
   const [isHost,setIsHost]=useState(false);
   const [recording,setRecording]=useState(false);
   const [minimized,setMinimized]=useState(false);
+  const [uploading,setUploading]=useState(false);
+  const [uploadMessage,setUploadMessage]=useState('');
+  const [uploadError,setUploadError]=useState(false);
   const roomSnapshotRef=useRef<RoomSnapshot|null>(null);
+  const fileInputRef=useRef<HTMLInputElement|null>(null);
+  const messageTimerRef=useRef<number|null>(null);
+
+  function showUploadMessage(message:string,error=false){
+    setUploadMessage(message);
+    setUploadError(error);
+    if(messageTimerRef.current)window.clearTimeout(messageTimerRef.current);
+    messageTimerRef.current=window.setTimeout(()=>setUploadMessage(''),error?6500:4000);
+  }
+
+  async function importAudio(file:File){
+    if(uploading)return;
+    if(!file.type.startsWith('audio/')&&!AUDIO_EXTENSIONS.test(file.name)){
+      showUploadMessage('Escolha um arquivo de áudio: MP3, WAV, M4A, AAC, OGG, WebM ou FLAC.',true);
+      return;
+    }
+    if(file.size>MAX_UPLOAD_BYTES){
+      showUploadMessage('O arquivo ultrapassa o limite de 100 MB.',true);
+      return;
+    }
+    setUploading(true);
+    showUploadMessage(`Preparando ${file.name}…`);
+    try{
+      const [{duration,peaks},snapshot]=await Promise.all([decodeAudio(file),requestStudioSnapshot()]);
+      const project=structuredClone(snapshot.project);
+      const assetId=crypto.randomUUID();
+      const trackId=crypto.randomUUID();
+      const clipId=crypto.randomUUID();
+      const name=fileLabel(file);
+      const start=Math.max(0,Number(project.view?.playhead)||0);
+      project.assets={...(project.assets||{}),[assetId]:{
+        id:assetId,
+        kind:'audio',
+        duration,
+        peaks,
+        midiNotes:[],
+        mimeType:file.type||'audio/mpeg',
+        fileName:file.name,
+        createdAt:new Date().toISOString(),
+      }};
+      project.tracks=[...(project.tracks||[]),{
+        id:trackId,
+        kind:'audio',
+        name,
+        color:TRACK_COLORS[(project.tracks?.length||0)%TRACK_COLORS.length],
+        muted:false,
+        solo:false,
+        volume:1,
+        pan:0,
+        clips:[{
+          id:clipId,
+          assetId,
+          name,
+          start,
+          sourceOffset:0,
+          duration,
+          gain:1,
+          fadeIn:0,
+          fadeOut:0,
+          muted:false,
+          locked:false,
+        }],
+      }];
+      project.updatedAt=new Date().toISOString();
+      window.dispatchEvent(new CustomEvent(LOAD_EVENT,{detail:{project,blobs:{...(snapshot.blobs||{}),[assetId]:file}}}));
+      showUploadMessage(`“${name}” foi adicionada na posição ${start.toFixed(1)}s.`);
+    }catch(reason){
+      showUploadMessage(reason instanceof Error?reason.message:'Não foi possível importar o áudio.',true);
+    }finally{
+      setUploading(false);
+      if(fileInputRef.current)fileInputRef.current.value='';
+    }
+  }
 
   useEffect(()=>{
     setIsHost(new URLSearchParams(window.location.search).get('host')==='1');
@@ -74,6 +214,10 @@ export default function VoiceStudioDawRuntime(){
     observer.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['class']});
     sync();
     return()=>observer.disconnect();
+  },[]);
+
+  useEffect(()=>()=>{
+    if(messageTimerRef.current)window.clearTimeout(messageTimerRef.current);
   },[]);
 
   useEffect(()=>{
@@ -149,6 +293,13 @@ export default function VoiceStudioDawRuntime(){
         return;
       }
 
+      if(mod&&key==='o'&&isHost){
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        fileInputRef.current?.click();
+        return;
+      }
+
       if(event.code==='Space'){
         event.preventDefault();
         event.stopImmediatePropagation();
@@ -173,7 +324,7 @@ export default function VoiceStudioDawRuntime(){
     };
     window.addEventListener('keydown',onKeyDown,true);
     return()=>window.removeEventListener('keydown',onKeyDown,true);
-  },[recording]);
+  },[recording,isHost]);
 
   if(!target)return null;
   return <>
@@ -185,7 +336,13 @@ export default function VoiceStudioDawRuntime(){
       </VoiceStudioProjectManager>,
       target,
     )}
-    {isHost&&toolbar&&!minimized&&createPortal(<button type="button" className="vs-window-minimize" aria-label="Minimizar Voice Studio" title="Minimizar Voice Studio" onClick={()=>setMinimized(true)}>−</button>,toolbar)}
+    {isHost&&toolbar&&!minimized&&createPortal(<>
+      <style>{RUNTIME_CSS}</style>
+      <input ref={fileInputRef} hidden type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.oga,.webm,.flac" onChange={event=>{const file=event.target.files?.[0];if(file)void importAudio(file);}}/>
+      <button type="button" className="vs-window-action vs-window-import" disabled={uploading||recording} aria-label="Importar áudio" title="Importar faixa de áudio (Ctrl/Cmd + O)" onClick={()=>fileInputRef.current?.click()}>＋ <span>{uploading?'IMPORTANDO…':'IMPORTAR ÁUDIO'}</span></button>
+      <button type="button" className="vs-window-action vs-window-minimize" aria-label="Minimizar Voice Studio" title="Minimizar Voice Studio" onClick={()=>setMinimized(true)}>−</button>
+    </>,toolbar)}
     {isHost&&minimized&&createPortal(<><style>{RUNTIME_CSS}</style><button type="button" className="vs-restore-studio" onClick={()=>setMinimized(false)}>🎙 Voice Studio · Restaurar</button></>,document.body)}
+    {uploadMessage&&createPortal(<><style>{RUNTIME_CSS}</style><div className={`vs-upload-status ${uploadError?'error':''}`} role={uploadError?'alert':'status'}>{uploadMessage}</div></>,document.body)}
   </>;
 }
