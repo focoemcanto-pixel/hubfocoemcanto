@@ -1,5 +1,5 @@
 import type { VoiceStudioHistoryEngine } from './voice-studio-history-engine';
-import type { VoiceStudioPlaybackCallbacks, VoiceStudioPlaybackEngine } from './voice-studio-playback-engine';
+import type { VoiceStudioPlaybackEngine } from './voice-studio-playback-engine';
 import type { VoiceStudioProject } from './voice-studio-project-model';
 import type {
   buildRecordedAudioAsset,
@@ -8,6 +8,11 @@ import type {
   createRecordingSession,
   supportedRecordingMimeType,
 } from './voice-studio-recording-engine';
+import type {
+  VoiceStudioRuntime,
+  CreateVoiceStudioRuntimeOptions,
+  VoiceStudioRuntimePlaybackCallbacks,
+} from './voice-studio-runtime';
 import type { VoiceStudioSelectionState } from './voice-studio-selection-engine';
 
 export type VoiceStudioTransportStatus = 'idle' | 'countin' | 'recording' | 'playing';
@@ -19,12 +24,6 @@ export type VoiceStudioTransport = {
 
 export type VoiceStudioAssetStore = {
   blobs: Map<string, Blob>;
-  objectUrls: Map<string, string>;
-};
-
-export type VoiceStudioRuntime = {
-  audioContext: AudioContext | null;
-  disposed: boolean;
 };
 
 export type VoiceStudioRecording = {
@@ -47,11 +46,12 @@ export type VoiceStudioSession = {
 };
 
 export type CreateVoiceStudioSessionOptions = {
-  playbackCallbacks: VoiceStudioPlaybackCallbacks;
+  playbackCallbacks: VoiceStudioRuntimePlaybackCallbacks;
   project?: VoiceStudioProject;
   historyLimit?: number;
   selection?: VoiceStudioSelectionState;
   transport?: VoiceStudioTransport;
   assetStore?: VoiceStudioAssetStore;
   runtime?: VoiceStudioRuntime;
+  runtimeOptions?: CreateVoiceStudioRuntimeOptions;
 };
