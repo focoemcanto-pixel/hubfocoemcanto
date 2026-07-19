@@ -152,12 +152,24 @@ function normalizeProjectView(view: Partial<VoiceStudioProject['view']> | undefi
   };
 }
 
+function clamp(value: number, minimum: number, maximum: number) {
+  return Math.min(maximum, Math.max(minimum, value));
+}
+
 function normalizeClip(clip: VoiceStudioClip): VoiceStudioClip {
+  const start = Math.max(0, Number.isFinite(clip.start) ? Number(clip.start) : 0);
+  const sourceOffset = Math.max(0, Number.isFinite(clip.sourceOffset) ? Number(clip.sourceOffset) : 0);
+  const duration = Math.max(MINIMUM_CLIP_DURATION, Number.isFinite(clip.duration) ? Number(clip.duration) : MINIMUM_CLIP_DURATION);
+  const fadeIn = clamp(Number.isFinite(clip.fadeIn) ? Number(clip.fadeIn) : 0, 0, duration);
+  const fadeOut = clamp(Number.isFinite(clip.fadeOut) ? Number(clip.fadeOut) : 0, 0, duration);
   return {
     ...clip,
+    start,
+    sourceOffset,
+    duration,
     gain: Number.isFinite(clip.gain) ? clip.gain : 1,
-    fadeIn: Number.isFinite(clip.fadeIn) ? clip.fadeIn : 0,
-    fadeOut: Number.isFinite(clip.fadeOut) ? clip.fadeOut : 0,
+    fadeIn: Math.min(fadeIn, duration - Math.min(fadeOut, duration)),
+    fadeOut: Math.min(fadeOut, duration - Math.min(fadeIn, duration)),
     muted: clip.muted ?? false,
     locked: clip.locked ?? false,
   };
@@ -339,6 +351,7 @@ export function moveClip(project: VoiceStudioProject, clipId: string, targetTrac
   const location = findClip(project, clipId);
   const target = project.tracks.find(track => track.id === targetTrackId);
   if (!location || !target || location.clip.locked || target.kind !== location.track.kind) return project;
+  if (location.trackId === targetTrackId && Math.abs(location.clip.start - Math.max(0, start)) < 0.000001) return project;
 
   const next = cloneVoiceStudioProject(project);
   const sourceTrack = next.tracks[location.trackIndex];
@@ -379,6 +392,52 @@ export function resizeClip(
   }
   clip.fadeIn = Math.min(clip.fadeIn, clip.duration);
   clip.fadeOut = Math.min(clip.fadeOut, clip.duration);
+  next.updatedAt = now();
+  return next;
+}
+
+
+export function trimClipStart(project: VoiceStudioProject, clipId: string, start: number, minimumDuration = MINIMUM_CLIP_DURATION): VoiceStudioProject {
+  return resizeClip(project, clipId, 'left', start, minimumDuration);
+}
+
+export function trimClipEnd(project: VoiceStudioProject, clipId: string, end: number, minimumDuration = MINIMUM_CLIP_DURATION): VoiceStudioProject {
+  const location = findClip(project, clipId);
+  if (!location) return project;
+  return resizeClip(project, clipId, 'right', end - location.clip.start, minimumDuration);
+}
+
+export function updateClipFade(project: VoiceStudioProject, clipId: string, patch: { fadeIn?: number; fadeOut?: number }): VoiceStudioProject {
+  const location = findClip(project, clipId);
+  if (!location || location.clip.locked) return project;
+  const current = location.clip;
+  const fadeIn = clamp(Number.isFinite(patch.fadeIn) ? Number(patch.fadeIn) : current.fadeIn, 0, current.duration);
+  const fadeOut = clamp(Number.isFinite(patch.fadeOut) ? Number(patch.fadeOut) : current.fadeOut, 0, current.duration);
+  const nextFadeIn = Math.min(fadeIn, current.duration - Math.min(fadeOut, current.duration));
+  const nextFadeOut = Math.min(fadeOut, current.duration - nextFadeIn);
+  if (Math.abs(current.fadeIn - nextFadeIn) < 0.000001 && Math.abs(current.fadeOut - nextFadeOut) < 0.000001) return project;
+  const next = cloneVoiceStudioProject(project);
+  const clip = next.tracks[location.trackIndex].clips[location.clipIndex];
+  clip.fadeIn = nextFadeIn;
+  clip.fadeOut = nextFadeOut;
+  next.updatedAt = now();
+  return next;
+}
+
+export function updateClip(project: VoiceStudioProject, clipId: string, patch: Partial<VoiceStudioClip>): VoiceStudioProject {
+  const location = findClip(project, clipId);
+  if (!location || location.clip.locked) return project;
+  const next = cloneVoiceStudioProject(project);
+  const clip = next.tracks[location.trackIndex].clips[location.clipIndex];
+  Object.assign(clip, patch);
+  const asset = next.assets[clip.assetId];
+  const maxDuration = Math.max(MINIMUM_CLIP_DURATION, (asset?.duration ?? clip.sourceOffset + clip.duration) - clip.sourceOffset);
+  clip.start = Math.max(0, Number.isFinite(clip.start) ? clip.start : 0);
+  clip.sourceOffset = Math.max(0, Number.isFinite(clip.sourceOffset) ? clip.sourceOffset : 0);
+  clip.duration = Math.min(maxDuration, Math.max(MINIMUM_CLIP_DURATION, Number.isFinite(clip.duration) ? clip.duration : MINIMUM_CLIP_DURATION));
+  clip.gain = Number.isFinite(clip.gain) ? clip.gain : 1;
+  clip.fadeIn = clamp(Number.isFinite(clip.fadeIn) ? clip.fadeIn : 0, 0, clip.duration);
+  clip.fadeOut = clamp(Number.isFinite(clip.fadeOut) ? clip.fadeOut : 0, 0, clip.duration - clip.fadeIn);
   next.updatedAt = now();
   return next;
 }
