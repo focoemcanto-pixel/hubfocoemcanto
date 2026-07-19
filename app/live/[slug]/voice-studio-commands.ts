@@ -10,7 +10,13 @@ import {
   type VoiceStudioProject,
 } from './voice-studio-project-model';
 
-export type VoiceStudioCommandKind = 'move-clip' | 'split-clip' | 'delete-clip' | 'duplicate-clip' | 'trim-clip';
+export type VoiceStudioCommandKind =
+  | 'move-clip'
+  | 'split-clip'
+  | 'delete-clip'
+  | 'duplicate-clip'
+  | 'trim-clip'
+  | 'project-mutation';
 
 export interface VoiceStudioCommand {
   readonly id: string;
@@ -45,7 +51,6 @@ abstract class ProjectCommand implements VoiceStudioCommand {
   }
 
   undo(project: VoiceStudioProject): VoiceStudioProject {
-    void project;
     return this.#before ? cloneVoiceStudioProject(this.#before) : project;
   }
 
