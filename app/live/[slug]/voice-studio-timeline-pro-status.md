@@ -1,18 +1,22 @@
-# Voice Studio Timeline PRO — Integration Stage
+# Voice Studio Timeline PRO — Professional Timeline
 
-Current branch state:
+Status deste PR:
 
-- Timeline scale and viewport engine implemented.
-- Adaptive ruler implemented.
-- React viewport controller implemented.
-- Pixel-based canvas implemented.
-- Main DAW runtime integration pending.
+- `voice-studio-daw.tsx` consome a arquitetura oficial `useVoiceStudioTimeline`.
+- A renderização da timeline passa pelo renderer oficial `VoiceStudioTimelineCanvas`.
+- A escala horizontal usa o engine oficial em pixels (`voice-studio-timeline-engine.ts`).
+- Ruler adaptativo, grid, playhead e loop visual são renderizados pelo módulo oficial da timeline.
+- Scroll horizontal e vertical ficam no container oficial `.vs-timeline`.
+- Zoom horizontal persiste em `project.view.zoom` e `project.view.scrollLeft`.
+- Zoom vertical é local de UI e controla `--vs-track-height`, sem criar store novo.
+- Fit Project e Fit Selection usam somente o viewport oficial e a escala oficial.
+- Auto scroll mantém o playhead visível durante playback/gravação via `ensureTimeVisible`.
+- Snapping segue `project.settings.snapping` e `project.settings.snapDivision`.
+- Seleção e cursor foram alinhados ao canvas pixel-based.
 
-Do not merge this stage before:
+Escopo intencional:
 
-- `voice-studio-daw.tsx` consumes `useVoiceStudioTimeline`;
-- timeline uses `VoiceStudioTimelineCanvas`;
-- scroll and zoom persist through `project.view`;
-- drag and trim use pixel-to-time conversion;
-- playback auto-scroll is validated;
-- Next/OpenNext build is green.
+- Não há novo store.
+- Não há novo renderer.
+- Não há nova arquitetura.
+- Este PR não adiciona novas operações de edição de clips; apenas preserva os handlers existentes enquanto corrige escala, viewport, seleção e sincronização visual.
