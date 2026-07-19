@@ -1,3 +1,4 @@
+import type { VoiceStudioEventBus } from './voice-studio-event-bus';
 import type { VoiceStudioAsset } from './voice-studio-project-model';
 import type { VoiceStudioRuntime } from './voice-studio-runtime';
 
@@ -30,21 +31,18 @@ function waveformFromBuffer(buffer: AudioBuffer, pointCount: number): number[] {
 
 export class VoiceStudioAssetStore {
   readonly #runtime: VoiceStudioRuntime;
+  readonly #eventBus: VoiceStudioEventBus;
   readonly #assets = new Map<string, VoiceStudioAsset>();
   readonly #blobs = new Map<string, Blob>();
   #disposed = false;
 
-  constructor(runtime: VoiceStudioRuntime) {
+  constructor(runtime: VoiceStudioRuntime, eventBus: VoiceStudioEventBus) {
     this.#runtime = runtime;
+    this.#eventBus = eventBus;
   }
 
-  get disposed(): boolean {
-    return this.#disposed;
-  }
-
-  get size(): number {
-    return this.#assets.size;
-  }
+  get disposed(): boolean { return this.#disposed; }
+  get size(): number { return this.#assets.size; }
 
   registerAsset(asset: VoiceStudioAsset, blob?: Blob): VoiceStudioAsset {
     this.#assertActive();
@@ -54,6 +52,7 @@ export class VoiceStudioAssetStore {
       this.#runtime.registerObjectURL(asset.id, blob);
     }
     if (asset.peaks.length) this.#runtime.cacheWaveform(asset.id, asset.peaks);
+    this.#eventBus.publish('ASSET_IMPORTED', { asset, blob });
     return asset;
   }
 
@@ -76,36 +75,17 @@ export class VoiceStudioAssetStore {
     this.#blobs.set(assetId, blob);
     this.#runtime.cacheWaveform(assetId, peaks);
     const objectUrl = this.#runtime.registerObjectURL(assetId, blob);
+    this.#eventBus.publish('ASSET_IMPORTED', { asset, blob });
     return { asset, blob, objectUrl, audioBuffer };
   }
 
-  getAsset(assetId: string): VoiceStudioAsset | undefined {
-    return this.#assets.get(assetId);
-  }
-
-  getBlob(assetId: string): Blob | undefined {
-    return this.#blobs.get(assetId);
-  }
-
-  getObjectURL(assetId: string): string | undefined {
-    return this.#runtime.getObjectURL(assetId);
-  }
-
-  getDecodedAudio(assetId: string): AudioBuffer | undefined {
-    return this.#runtime.getDecodedAudio(assetId);
-  }
-
-  getWaveform(assetId: string): ReadonlyArray<number> | undefined {
-    return this.#runtime.getWaveform(assetId);
-  }
-
-  assetsSnapshot(): Readonly<Record<string, VoiceStudioAsset>> {
-    return Object.fromEntries(this.#assets);
-  }
-
-  blobsSnapshot(): Readonly<Record<string, Blob>> {
-    return Object.fromEntries(this.#blobs);
-  }
+  getAsset(assetId: string): VoiceStudioAsset | undefined { return this.#assets.get(assetId); }
+  getBlob(assetId: string): Blob | undefined { return this.#blobs.get(assetId); }
+  getObjectURL(assetId: string): string | undefined { return this.#runtime.getObjectURL(assetId); }
+  getDecodedAudio(assetId: string): AudioBuffer | undefined { return this.#runtime.getDecodedAudio(assetId); }
+  getWaveform(assetId: string): ReadonlyArray<number> | undefined { return this.#runtime.getWaveform(assetId); }
+  assetsSnapshot(): Readonly<Record<string, VoiceStudioAsset>> { return Object.fromEntries(this.#assets); }
+  blobsSnapshot(): Readonly<Record<string, Blob>> { return Object.fromEntries(this.#blobs); }
 
   remove(assetId: string): boolean {
     const existed = this.#assets.delete(assetId) || this.#blobs.delete(assetId);
@@ -134,6 +114,6 @@ export class VoiceStudioAssetStore {
   }
 }
 
-export function createVoiceStudioAssetStore(runtime: VoiceStudioRuntime): VoiceStudioAssetStore {
-  return new VoiceStudioAssetStore(runtime);
+export function createVoiceStudioAssetStore(runtime: VoiceStudioRuntime, eventBus: VoiceStudioEventBus): VoiceStudioAssetStore {
+  return new VoiceStudioAssetStore(runtime, eventBus);
 }
