@@ -1,5 +1,4 @@
 import { VoiceStudioHistoryEngine } from './voice-studio-history-engine';
-import { VoiceStudioPlaybackEngine } from './voice-studio-playback-engine';
 import { createVoiceStudioProject } from './voice-studio-project-model';
 import {
   buildRecordedAudioAsset,
@@ -8,6 +7,7 @@ import {
   createRecordingSession,
   supportedRecordingMimeType,
 } from './voice-studio-recording-engine';
+import { createVoiceStudioRuntime } from './voice-studio-runtime';
 import { createSelectionState } from './voice-studio-selection-engine';
 import type {
   CreateVoiceStudioSessionOptions,
@@ -25,12 +25,13 @@ const recording: VoiceStudioRecording = {
 
 export function createVoiceStudioSession(options: CreateVoiceStudioSessionOptions): VoiceStudioSession {
   const project = options.project ?? createVoiceStudioProject();
+  const runtime = options.runtime ?? createVoiceStudioRuntime(options.runtimeOptions);
 
   return {
     project,
     history: new VoiceStudioHistoryEngine(options.historyLimit),
     selection: options.selection ?? createSelectionState(),
-    playback: new VoiceStudioPlaybackEngine(options.playbackCallbacks),
+    playback: runtime.createPlayback(options.playbackCallbacks),
     recording,
     transport: options.transport ?? {
       status: 'idle',
@@ -38,11 +39,7 @@ export function createVoiceStudioSession(options: CreateVoiceStudioSessionOption
     },
     assetStore: options.assetStore ?? {
       blobs: new Map(),
-      objectUrls: new Map(),
     },
-    runtime: options.runtime ?? {
-      audioContext: null,
-      disposed: false,
-    },
+    runtime,
   };
 }
