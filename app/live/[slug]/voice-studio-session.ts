@@ -1,6 +1,7 @@
 import { createVoiceStudioAssetStore } from './voice-studio-asset-store';
 import { VoiceStudioHistoryEngine } from './voice-studio-history-engine';
 import { createVoiceStudioPlayback } from './voice-studio-playback';
+import { createVoiceStudioProjectActions } from './voice-studio-project-actions';
 import { createVoiceStudioProject } from './voice-studio-project-model';
 import { createVoiceStudioRecording } from './voice-studio-recording';
 import { createVoiceStudioRuntime } from './voice-studio-runtime';
@@ -10,6 +11,8 @@ import type { CreateVoiceStudioSessionOptions, VoiceStudioSession } from './voic
 
 export function createVoiceStudioSession(options: CreateVoiceStudioSessionOptions = {}): VoiceStudioSession {
   const project = options.project ?? createVoiceStudioProject();
+  const history = new VoiceStudioHistoryEngine(options.historyLimit);
+  const actions = createVoiceStudioProjectActions(project, history);
   const runtime = options.runtime ?? createVoiceStudioRuntime(options.runtimeOptions);
   const assetStore = options.assetStore ?? createVoiceStudioAssetStore(runtime);
   const transport = options.transport ?? createVoiceStudioTransportController({
@@ -24,7 +27,8 @@ export function createVoiceStudioSession(options: CreateVoiceStudioSessionOption
 
   return {
     project,
-    history: new VoiceStudioHistoryEngine(options.historyLimit),
+    actions,
+    history,
     selection: options.selection ?? createSelectionState(),
     playback,
     recording,
