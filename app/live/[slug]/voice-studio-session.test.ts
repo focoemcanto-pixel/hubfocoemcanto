@@ -2,14 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { VoiceStudioHistoryEngine } from './voice-studio-history-engine';
 import { VoiceStudioPlaybackEngine } from './voice-studio-playback-engine';
 import { createVoiceStudioProject } from './voice-studio-project-model';
+import { createVoiceStudioRuntime } from './voice-studio-runtime';
 import { createSelectionState } from './voice-studio-selection-engine';
 import { createVoiceStudioSession } from './voice-studio-session';
 
 function playbackCallbacks() {
   return {
-    getAudioContext: vi.fn(() => {
-      throw new Error('AudioContext should not be requested during composition.');
-    }),
     onTick: vi.fn(),
     onEnded: vi.fn(),
     midiFrequency: vi.fn(() => 440),
@@ -19,8 +17,13 @@ function playbackCallbacks() {
 
 describe('createVoiceStudioSession', () => {
   it('composes the existing Voice Studio modules without starting browser runtime', () => {
-    const callbacks = playbackCallbacks();
-    const session = createVoiceStudioSession({ playbackCallbacks: callbacks });
+    const audioContextFactory = vi.fn(() => {
+      throw new Error('AudioContext should not be requested during composition.');
+    });
+    const session = createVoiceStudioSession({
+      playbackCallbacks: playbackCallbacks(),
+      runtimeOptions: { audioContextFactory },
+    });
 
     expect(session.project.schemaVersion).toBe(2);
     expect(session.history).toBeInstanceOf(VoiceStudioHistoryEngine);
@@ -29,9 +32,9 @@ describe('createVoiceStudioSession', () => {
     expect(session.recording.createRecordingSession).toBeTypeOf('function');
     expect(session.transport).toEqual({ status: 'idle', position: 0 });
     expect(session.assetStore.blobs.size).toBe(0);
-    expect(session.assetStore.objectUrls.size).toBe(0);
-    expect(session.runtime).toEqual({ audioContext: null, disposed: false });
-    expect(callbacks.getAudioContext).not.toHaveBeenCalled();
+    expect(session.runtime.initialized).toBe(false);
+    expect(session.runtime.disposed).toBe(false);
+    expect(audioContextFactory).not.toHaveBeenCalled();
   });
 
   it('preserves explicitly supplied composition objects', () => {
@@ -39,8 +42,12 @@ describe('createVoiceStudioSession', () => {
     project.view.playhead = 12;
     const selection = createSelectionState(['clip-a']);
     const transport = { status: 'playing' as const, position: 7 };
-    const assetStore = { blobs: new Map<string, Blob>(), objectUrls: new Map<string, string>() };
-    const runtime = { audioContext: null, disposed: true };
+    const assetStore = { blobs: new Map<string, Blob>() };
+    const runtime = createVoiceStudioRuntime({
+      audioContextFactory: () => {
+        throw new Error('AudioContext should remain lazy.');
+      },
+    });
 
     const session = createVoiceStudioSession({
       playbackCallbacks: playbackCallbacks(),
