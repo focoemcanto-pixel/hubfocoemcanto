@@ -42,7 +42,7 @@ type TimelineCanvasProps = {
   onBeginRecord: () => void;
 };
 
-const CANVAS_CSS = `.vs-pro-canvas{position:relative;min-height:100%;overflow:hidden}.vs-pro-canvas-content{position:relative;min-height:100%;background-image:linear-gradient(90deg,rgba(255,255,255,.04) 1px,transparent 1px);background-size:var(--grid-step,56px) 100%}.vs-pro-canvas .vs-lane{position:relative}.vs-pro-canvas .vs-clip{position:absolute;top:9px;bottom:9px;height:auto;cursor:grab;touch-action:none}.vs-pro-canvas .vs-live-clip{position:absolute;top:9px;bottom:9px;height:auto}.vs-pro-canvas .vs-playhead{position:absolute;top:0;bottom:0;z-index:7;pointer-events:none;will-change:transform}.vs-pro-canvas .vs-empty{inset:42px 0 0}`;
+const CANVAS_CSS = `.vs-pro-canvas{position:relative;min-height:100%;overflow:hidden}.vs-pro-canvas-content{position:relative;min-height:100%;background-image:linear-gradient(90deg,rgba(255,255,255,.04) 1px,transparent 1px);background-size:var(--grid-step,56px) 100%}.vs-pro-canvas .vs-lane{position:relative}.vs-pro-canvas .vs-clip{position:absolute;top:9px;bottom:9px;height:auto;cursor:grab;touch-action:none}.vs-pro-canvas .vs-live-clip{position:absolute;top:9px;bottom:9px;height:auto}.vs-pro-canvas .vs-playhead{position:absolute;top:0;bottom:0;z-index:7;pointer-events:none;will-change:transform}.vs-pro-canvas .vs-empty{inset:42px 0 0}.vs-pro-canvas .vs-trim{display:none;position:absolute;top:0;bottom:0;width:10px;border:0;background:rgba(255,255,255,.88);z-index:6;cursor:ew-resize}.vs-pro-canvas .vs-clip.selected:not(.locked) .vs-trim{display:block}.vs-pro-canvas .vs-trim.left{left:0;border-radius:6px 0 0 6px}.vs-pro-canvas .vs-trim.right{right:0;border-radius:0 6px 6px 0}.vs-pro-canvas .vs-fade{position:absolute;top:0;bottom:0;pointer-events:none;opacity:.36}.vs-pro-canvas .vs-fade.in{left:0;background:linear-gradient(90deg,#fff,transparent)}.vs-pro-canvas .vs-fade.out{right:0;background:linear-gradient(90deg,transparent,#fff)}`;
 
 export default function VoiceStudioTimelineCanvas({
   project,
@@ -188,6 +188,9 @@ const TimelineClip = memo(function TimelineClip({
     opacity: clip.muted ? 0.45 : 1,
   } as CSSProperties;
 
+  const fadeInWidth = Math.min(timelineTimeToPixels(clip.fadeIn || 0, zoom), Math.max(0, timelineTimeToPixels(clip.duration, zoom)));
+  const fadeOutWidth = Math.min(timelineTimeToPixels(clip.fadeOut || 0, zoom), Math.max(0, timelineTimeToPixels(clip.duration, zoom) - fadeInWidth));
+
   return <div
     className={`vs-clip ${selected ? 'selected' : ''} ${clip.locked ? 'locked' : ''}`}
     onPointerDown={event => {
@@ -202,7 +205,11 @@ const TimelineClip = memo(function TimelineClip({
     <b>{clip.name}</b>
     {asset.kind === 'audio'
       ? <Wave peaks={asset.peaks} offset={clip.sourceOffset} duration={clip.duration} sourceDuration={asset.duration}/>
-      : <MidiClip notes={asset.midiNotes} offset={clip.sourceOffset} duration={clip.duration}/>} 
+      : <MidiClip notes={asset.midiNotes} offset={clip.sourceOffset} duration={clip.duration}/>}
+    {clip.fadeIn > 0 && <i className="vs-fade in" style={{ width: fadeInWidth }} />}
+    {clip.fadeOut > 0 && <i className="vs-fade out" style={{ width: fadeOutWidth }} />}
+    <button type="button" aria-label={`Aparar início de ${clip.name}`} className="vs-trim left" onPointerDown={event => { event.stopPropagation(); onBeginDrag(event, track.id, clip.id, 'trim-left'); }} />
+    <button type="button" aria-label={`Aparar fim de ${clip.name}`} className="vs-trim right" onPointerDown={event => { event.stopPropagation(); onBeginDrag(event, track.id, clip.id, 'trim-right'); }} />
   </div>;
 });
 
