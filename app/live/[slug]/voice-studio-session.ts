@@ -2,25 +2,11 @@ import { createVoiceStudioAssetStore } from './voice-studio-asset-store';
 import { VoiceStudioHistoryEngine } from './voice-studio-history-engine';
 import { createVoiceStudioPlayback } from './voice-studio-playback';
 import { createVoiceStudioProject } from './voice-studio-project-model';
-import {
-  buildRecordedAudioAsset,
-  commitRecordingToProject,
-  createAudioCapture,
-  createRecordingSession,
-  supportedRecordingMimeType,
-} from './voice-studio-recording-engine';
+import { createVoiceStudioRecording } from './voice-studio-recording';
 import { createVoiceStudioRuntime } from './voice-studio-runtime';
 import { createSelectionState } from './voice-studio-selection-engine';
 import { createVoiceStudioTransportController } from './voice-studio-transport-controller';
-import type { CreateVoiceStudioSessionOptions, VoiceStudioRecording, VoiceStudioSession } from './voice-studio-session-types';
-
-const recording: VoiceStudioRecording = {
-  supportedRecordingMimeType,
-  createRecordingSession,
-  createAudioCapture,
-  buildRecordedAudioAsset,
-  commitRecordingToProject,
-};
+import type { CreateVoiceStudioSessionOptions, VoiceStudioSession } from './voice-studio-session-types';
 
 export function createVoiceStudioSession(options: CreateVoiceStudioSessionOptions = {}): VoiceStudioSession {
   const project = options.project ?? createVoiceStudioProject();
@@ -33,6 +19,7 @@ export function createVoiceStudioSession(options: CreateVoiceStudioSessionOption
     loop: project.loop,
   });
   const playback = createVoiceStudioPlayback({ runtime, transport, project, assetStore });
+  const recording = createVoiceStudioRecording(runtime, project, assetStore, transport);
   transport.attachPlayback(playback);
 
   return {
