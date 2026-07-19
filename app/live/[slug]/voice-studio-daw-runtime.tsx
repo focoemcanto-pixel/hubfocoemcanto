@@ -30,7 +30,10 @@ const RUNTIME_CSS = `
 .vs-emergency-stop:hover{background:#ef4444}
 .vs-upload-status{position:fixed;right:20px;bottom:78px;z-index:10002;max-width:min(360px,calc(100vw - 32px));border:1px solid rgba(255,255,255,.16);border-radius:12px;background:#171a22;color:#fff;padding:11px 14px;font-size:12px;font-weight:700;box-shadow:0 14px 36px rgba(0,0,0,.4)}
 .vs-upload-status.error{border-color:rgba(248,113,113,.55);color:#fecaca}
-@media(max-width:900px){.vs-emergency-stop{right:14px;top:190px}.vs-restore-studio{right:12px;bottom:12px}.vs-window-import{padding:0 10px}.vs-window-import span{display:none}.vs-upload-status{right:12px;bottom:66px}}
+.vs-drop-overlay{position:fixed;inset:0;z-index:10020;display:grid;place-items:center;background:rgba(6,8,14,.82);backdrop-filter:blur(7px);pointer-events:none}
+.vs-drop-card{width:min(520px,calc(100vw - 32px));border:2px dashed rgba(167,139,250,.85);border-radius:24px;background:linear-gradient(145deg,rgba(34,39,55,.98),rgba(20,23,34,.98));padding:36px;text-align:center;color:#fff;box-shadow:0 30px 90px rgba(0,0,0,.55)}
+.vs-drop-card strong{display:block;font-size:22px;margin-bottom:8px}.vs-drop-card span{display:block;color:#c4b5fd;font-size:13px;line-height:1.5}
+@media(max-width:900px){.vs-emergency-stop{right:14px;top:190px}.vs-restore-studio{right:12px;bottom:12px}.vs-window-import{padding:0 10px}.vs-window-import span{display:none}.vs-upload-status{right:12px;bottom:66px}.vs-drop-card{padding:28px 20px}}
 `;
 
 type RoomSnapshot = {
@@ -82,6 +85,10 @@ function fileLabel(file:File){
   return file.name.replace(/\.[^.]+$/,'').trim() || 'Áudio importado';
 }
 
+function validAudio(file:File){
+  return file.type.startsWith('audio/') || AUDIO_EXTENSIONS.test(file.name);
+}
+
 function makePeaks(data:Float32Array,count=180){
   const step=Math.max(1,Math.floor(data.length/count));
   return Array.from({length:count},(_,index)=>{
@@ -128,9 +135,11 @@ export default function VoiceStudioDawRuntime(){
   const [uploading,setUploading]=useState(false);
   const [uploadMessage,setUploadMessage]=useState('');
   const [uploadError,setUploadError]=useState(false);
+  const [draggingFiles,setDraggingFiles]=useState(false);
   const roomSnapshotRef=useRef<RoomSnapshot|null>(null);
   const fileInputRef=useRef<HTMLInputElement|null>(null);
   const messageTimerRef=useRef<number|null>(null);
+  const dragDepthRef=useRef(0);
 
   function showUploadMessage(message:string,error=false){
     setUploadMessage(message);
@@ -139,62 +148,34 @@ export default function VoiceStudioDawRuntime(){
     messageTimerRef.current=window.setTimeout(()=>setUploadMessage(''),error?6500:4000);
   }
 
-  async function importAudio(file:File){
-    if(uploading)return;
-    if(!file.type.startsWith('audio/')&&!AUDIO_EXTENSIONS.test(file.name)){
-      showUploadMessage('Escolha um arquivo de áudio: MP3, WAV, M4A, AAC, OGG, WebM ou FLAC.',true);
-      return;
-    }
-    if(file.size>MAX_UPLOAD_BYTES){
-      showUploadMessage('O arquivo ultrapassa o limite de 100 MB.',true);
+  async function importAudioFiles(input:FileList|File[]){
+    if(uploading||recording)return;
+    const files=Array.from(input);
+    const rejected=files.filter(file=>!validAudio(file)||file.size>MAX_UPLOAD_BYTES);
+    const accepted=files.filter(file=>validAudio(file)&&file.size<=MAX_UPLOAD_BYTES);
+    if(!accepted.length){
+      showUploadMessage(rejected.some(file=>file.size>MAX_UPLOAD_BYTES)?'Os arquivos precisam ter no máximo 100 MB cada.':'Escolha arquivos MP3, WAV, M4A, AAC, OGG, WebM ou FLAC.',true);
       return;
     }
     setUploading(true);
-    showUploadMessage(`Preparando ${file.name}…`);
+    showUploadMessage(`Preparando ${accepted.length===1?accepted[0].name:`${accepted.length} faixas`}…`);
     try{
-      const [{duration,peaks},snapshot]=await Promise.all([decodeAudio(file),requestStudioSnapshot()]);
+      const snapshot=await requestStudioSnapshot();
+      const decoded=await Promise.all(accepted.map(async file=>({file,...await decodeAudio(file)})));
       const project=structuredClone(snapshot.project);
-      const assetId=crypto.randomUUID();
-      const trackId=crypto.randomUUID();
-      const clipId=crypto.randomUUID();
-      const name=fileLabel(file);
+      const blobs={...(snapshot.blobs||{})};
       const start=Math.max(0,Number(project.view?.playhead)||0);
-      project.assets={...(project.assets||{}),[assetId]:{
-        id:assetId,
-        kind:'audio',
-        duration,
-        peaks,
-        midiNotes:[],
-        mimeType:file.type||'audio/mpeg',
-        fileName:file.name,
-        createdAt:new Date().toISOString(),
-      }};
-      project.tracks=[...(project.tracks||[]),{
-        id:trackId,
-        kind:'audio',
-        name,
-        color:TRACK_COLORS[(project.tracks?.length||0)%TRACK_COLORS.length],
-        muted:false,
-        solo:false,
-        volume:1,
-        pan:0,
-        clips:[{
-          id:clipId,
-          assetId,
-          name,
-          start,
-          sourceOffset:0,
-          duration,
-          gain:1,
-          fadeIn:0,
-          fadeOut:0,
-          muted:false,
-          locked:false,
-        }],
-      }];
-      project.updatedAt=new Date().toISOString();
-      window.dispatchEvent(new CustomEvent(LOAD_EVENT,{detail:{project,blobs:{...(snapshot.blobs||{}),[assetId]:file}}}));
-      showUploadMessage(`“${name}” foi adicionada na posição ${start.toFixed(1)}s.`);
+      decoded.forEach(({file,duration,peaks},index)=>{
+        const assetId=crypto.randomUUID();
+        const name=fileLabel(file);
+        project.assets={...(project.assets||{}),[assetId]:{id:assetId,kind:'audio',duration,peaks,midiNotes:[],mimeType:file.type||'audio/mpeg',fileName:file.name,createdAt:new Date().toISOString()}};
+        project.tracks=[...(project.tracks||[]),{id:crypto.randomUUID(),kind:'audio',name,color:TRACK_COLORS[(project.tracks?.length||0)%TRACK_COLORS.length],muted:false,solo:false,volume:1,pan:0,clips:[{id:crypto.randomUUID(),assetId,name,start,sourceOffset:0,duration,gain:1,fadeIn:0,fadeOut:0,muted:false,locked:false}]}];
+        blobs[assetId]=file;
+        if(index===decoded.length-1)project.updatedAt=new Date().toISOString();
+      });
+      window.dispatchEvent(new CustomEvent(LOAD_EVENT,{detail:{project,blobs}}));
+      const extra=rejected.length?` ${rejected.length} arquivo(s) ignorado(s).`:'';
+      showUploadMessage(`${accepted.length} faixa${accepted.length>1?'s':''} adicionada${accepted.length>1?'s':''} na posição ${start.toFixed(1)}s.${extra}`,Boolean(rejected.length));
     }catch(reason){
       showUploadMessage(reason instanceof Error?reason.message:'Não foi possível importar o áudio.',true);
     }finally{
@@ -219,6 +200,20 @@ export default function VoiceStudioDawRuntime(){
   useEffect(()=>()=>{
     if(messageTimerRef.current)window.clearTimeout(messageTimerRef.current);
   },[]);
+
+  useEffect(()=>{
+    if(!isHost)return;
+    const hasFiles=(event:DragEvent)=>Array.from(event.dataTransfer?.types||[]).includes('Files');
+    const enter=(event:DragEvent)=>{if(!hasFiles(event))return;event.preventDefault();dragDepthRef.current+=1;setDraggingFiles(true);};
+    const over=(event:DragEvent)=>{if(!hasFiles(event))return;event.preventDefault();if(event.dataTransfer)event.dataTransfer.dropEffect='copy';};
+    const leave=(event:DragEvent)=>{if(!hasFiles(event))return;event.preventDefault();dragDepthRef.current=Math.max(0,dragDepthRef.current-1);if(!dragDepthRef.current)setDraggingFiles(false);};
+    const drop=(event:DragEvent)=>{if(!hasFiles(event))return;event.preventDefault();dragDepthRef.current=0;setDraggingFiles(false);if(event.dataTransfer?.files.length)void importAudioFiles(event.dataTransfer.files);};
+    window.addEventListener('dragenter',enter);
+    window.addEventListener('dragover',over);
+    window.addEventListener('dragleave',leave);
+    window.addEventListener('drop',drop);
+    return()=>{window.removeEventListener('dragenter',enter);window.removeEventListener('dragover',over);window.removeEventListener('dragleave',leave);window.removeEventListener('drop',drop);};
+  },[isHost,uploading,recording]);
 
   useEffect(()=>{
     const scene=document.querySelector('.fl-studio-scene.app-voice');
@@ -338,11 +333,12 @@ export default function VoiceStudioDawRuntime(){
     )}
     {isHost&&toolbar&&!minimized&&createPortal(<>
       <style>{RUNTIME_CSS}</style>
-      <input ref={fileInputRef} hidden type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.oga,.webm,.flac" onChange={event=>{const file=event.target.files?.[0];if(file)void importAudio(file);}}/>
-      <button type="button" className="vs-window-action vs-window-import" disabled={uploading||recording} aria-label="Importar áudio" title="Importar faixa de áudio (Ctrl/Cmd + O)" onClick={()=>fileInputRef.current?.click()}>＋ <span>{uploading?'IMPORTANDO…':'IMPORTAR ÁUDIO'}</span></button>
+      <input ref={fileInputRef} hidden multiple type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.oga,.webm,.flac" onChange={event=>{if(event.target.files?.length)void importAudioFiles(event.target.files);}}/>
+      <button type="button" className="vs-window-action vs-window-import" disabled={uploading||recording} aria-label="Importar áudio" title="Importar faixas de áudio (Ctrl/Cmd + O)" onClick={()=>fileInputRef.current?.click()}>＋ <span>{uploading?'IMPORTANDO…':'IMPORTAR ÁUDIO'}</span></button>
       <button type="button" className="vs-window-action vs-window-minimize" aria-label="Minimizar Voice Studio" title="Minimizar Voice Studio" onClick={()=>setMinimized(true)}>−</button>
     </>,toolbar)}
     {isHost&&minimized&&createPortal(<><style>{RUNTIME_CSS}</style><button type="button" className="vs-restore-studio" onClick={()=>setMinimized(false)}>🎙 Voice Studio · Restaurar</button></>,document.body)}
+    {draggingFiles&&isHost&&!recording&&createPortal(<><style>{RUNTIME_CSS}</style><div className="vs-drop-overlay"><div className="vs-drop-card"><strong>Solte suas faixas aqui</strong><span>Importe uma música, playback ou várias pistas de áudio de uma só vez.</span></div></div></>,document.body)}
     {uploadMessage&&createPortal(<><style>{RUNTIME_CSS}</style><div className={`vs-upload-status ${uploadError?'error':''}`} role={uploadError?'alert':'status'}>{uploadMessage}</div></>,document.body)}
   </>;
 }
