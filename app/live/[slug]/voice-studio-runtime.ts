@@ -1,4 +1,10 @@
+import {
+  VoiceStudioPlaybackEngine,
+  type VoiceStudioPlaybackCallbacks,
+} from './voice-studio-playback-engine';
+
 export type VoiceStudioWaveformData = ReadonlyArray<number>;
+export type VoiceStudioRuntimePlaybackCallbacks = Omit<VoiceStudioPlaybackCallbacks, 'getAudioContext'>;
 
 export type VoiceStudioRuntimeScheduler = {
   schedule(delayMs: number, task: () => void): string;
@@ -141,6 +147,13 @@ export class VoiceStudioRuntime {
 
   get destination(): AudioDestinationNode {
     return this.#ensureAudioContext().destination;
+  }
+
+  createPlayback(callbacks: VoiceStudioRuntimePlaybackCallbacks): VoiceStudioPlaybackEngine {
+    return new VoiceStudioPlaybackEngine({
+      ...callbacks,
+      getAudioContext: () => this.#ensureAudioContext(),
+    });
   }
 
   async resume(): Promise<void> {
