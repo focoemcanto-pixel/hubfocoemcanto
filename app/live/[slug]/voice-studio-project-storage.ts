@@ -92,8 +92,9 @@ export async function saveVoiceStudioProject(project: VoiceStudioProject, blobs:
   const now = new Date().toISOString();
   const stored: StoredProject = { ...project, updatedAt: now, savedAt: now };
   projectStore.put(stored);
+  const projectAssetIds = new Set(Object.keys(project.assets));
   Object.entries(blobs).forEach(([assetId, blob]) => {
-    if (!blob) return;
+    if (!blob || !projectAssetIds.has(assetId)) return;
     assetStore.put({ id: assetId, projectId: project.id, blob, savedAt: now } satisfies StoredAssetBlob);
   });
   await transactionDone(transaction);
@@ -148,7 +149,9 @@ export async function deleteVoiceStudioProject(projectId: string) {
 export async function saveCurrentVoiceStudioSession(project: VoiceStudioProject, blobs: Record<string, Blob> = {}) {
   const database = await openDatabase();
   const transaction = database.transaction(SESSION_STORE, 'readwrite');
-  transaction.objectStore(SESSION_STORE).put({ id: CURRENT_SESSION_ID, project, blobs, savedAt: new Date().toISOString() } satisfies StoredSession);
+  const projectAssetIds = new Set(Object.keys(project.assets));
+  const activeBlobs = Object.fromEntries(Object.entries(blobs).filter(([assetId]) => projectAssetIds.has(assetId)));
+  transaction.objectStore(SESSION_STORE).put({ id: CURRENT_SESSION_ID, project, blobs: activeBlobs, savedAt: new Date().toISOString() } satisfies StoredSession);
   await transactionDone(transaction);
   database.close();
 }
