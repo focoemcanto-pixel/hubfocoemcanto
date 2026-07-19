@@ -45,6 +45,16 @@ function findTransportButtons() {
   };
 }
 
+function findProjectButtons() {
+  const root = document.querySelector('.vs-manager-shell');
+  const buttons = Array.from(root?.querySelectorAll('button') || []) as HTMLButtonElement[];
+  const byText = (pattern: RegExp) => buttons.find(button => pattern.test(`${button.getAttribute('aria-label') || ''} ${button.title || ''} ${button.textContent || ''}`));
+  return {
+    save: (root?.querySelector('.vs-save-primary') as HTMLButtonElement | null) || byText(/^\s*salvar\s*$/i) || null,
+    saveAs: byText(/salvar\s+como/i) || null,
+  };
+}
+
 export default function VoiceStudioDawRuntime(){
   const [target,setTarget]=useState<Element|null>(null);
   const [toolbar,setToolbar]=useState<Element|null>(null);
@@ -131,6 +141,14 @@ export default function VoiceStudioDawRuntime(){
       const key=event.key.toLowerCase();
       const {play,record,stop}=findTransportButtons();
 
+      if(mod&&key==='s'){
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        const {save,saveAs}=findProjectButtons();
+        (event.shiftKey ? saveAs : save)?.click();
+        return;
+      }
+
       if(event.code==='Space'){
         event.preventDefault();
         event.stopImmediatePropagation();
@@ -144,6 +162,13 @@ export default function VoiceStudioDawRuntime(){
         event.stopImmediatePropagation();
         if(recording)(stop || record)?.click();
         else record?.click();
+        return;
+      }
+
+      if(key==='s'&&!mod){
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        (stop || (recording ? record : null))?.click();
       }
     };
     window.addEventListener('keydown',onKeyDown,true);
