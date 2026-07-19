@@ -63,20 +63,25 @@ export class VoiceStudioTransportController {
   async play(request: VoiceStudioPlaybackRequest): Promise<void> {
     const offset = clampTime(request.offset);
     this.#patch({ status: 'playing', playhead: offset, countBeat: 0 });
-    this.#eventBus.publish('PLAY_STARTED', { request: { ...request, offset, loop: request.mode === 'loop' || this.#snapshot.loop.enabled } });
+    try {
+      await this.#eventBus.publishAsync('PLAY_STARTED', {
+        request: { ...request, offset, loop: request.mode === 'loop' || this.#snapshot.loop.enabled },
+      });
+    } catch (error) {
+      this.#patch({ status: 'idle', countBeat: 0 });
+      throw error;
+    }
   }
 
   pause(): number {
     this.#eventBus.publish('PLAY_STOPPED', { playhead: this.#snapshot.playhead, reason: 'pause' });
     return this.#snapshot.playhead;
   }
-
   stop(reset = false): number {
     const playhead = reset ? 0 : this.#snapshot.playhead;
     this.#eventBus.publish('PLAY_STOPPED', { playhead, reason: 'stop' });
     return playhead;
   }
-
   seek(time: number): number {
     const playhead = clampTime(time);
     if (this.#snapshot.status === 'playing') this.#eventBus.publish('PLAY_STOPPED', { playhead, reason: 'stop' });
@@ -84,7 +89,6 @@ export class VoiceStudioTransportController {
     this.#eventBus.publish('PLAYHEAD_CHANGED', { playhead });
     return playhead;
   }
-
   setLoop(loop: Partial<VoiceStudioLoopState>): void {
     const next = { ...this.#snapshot.loop, ...loop };
     next.start = clampTime(next.start);
