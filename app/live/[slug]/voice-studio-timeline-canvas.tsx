@@ -36,6 +36,11 @@ type TimelineCanvasProps = {
   onMoveDrag?: (event: ReactPointerEvent) => void;
   onEndDrag?: () => void;
   lasso?: { left: number; top: number; width: number; height: number } | null;
+  /**
+   * @deprecated Compatibility-only prop for the legacy DAW.
+   * The Timeline does not invoke or own recording lifecycle.
+   */
+  onBeginRecord?: () => void;
 };
 
 const CANVAS_CSS = `.vs-pro-canvas{position:relative;min-height:100%;overflow:hidden}.vs-pro-canvas-content{position:relative;min-height:100%;background-image:linear-gradient(90deg,rgba(255,255,255,.04) 1px,transparent 1px);background-size:var(--grid-step,56px) 100%}.vs-pro-canvas .vs-lane{position:relative}.vs-pro-canvas .vs-clip{position:absolute;top:9px;bottom:9px;height:auto;touch-action:none}.vs-pro-canvas.interactive .vs-clip{cursor:grab}.vs-pro-canvas .vs-live-clip{position:absolute;top:9px;bottom:9px;height:auto}.vs-pro-canvas .vs-playhead{position:absolute;top:0;bottom:0;z-index:7;pointer-events:none;will-change:transform}.vs-pro-canvas .vs-trim{display:none;position:absolute;top:0;bottom:0;width:10px;border:0;background:rgba(255,255,255,.88);z-index:6;cursor:ew-resize}.vs-pro-canvas.interactive .vs-clip.selected:not(.locked) .vs-trim{display:block}.vs-pro-canvas .vs-trim.left{left:0;border-radius:6px 0 0 6px}.vs-pro-canvas .vs-trim.right{right:0;border-radius:0 6px 6px 0}.vs-pro-canvas .vs-fade{position:absolute;top:0;bottom:0;pointer-events:none;opacity:.36}.vs-lasso{position:absolute;z-index:9;border:1px solid #a78bfa;background:rgba(139,92,246,.16);pointer-events:none;box-shadow:0 0 0 1px rgba(255,255,255,.08) inset}.vs-pro-canvas .vs-fade.in{left:0;background:linear-gradient(90deg,#fff,transparent)}.vs-pro-canvas .vs-fade.out{right:0;background:linear-gradient(90deg,transparent,#fff)}`;
