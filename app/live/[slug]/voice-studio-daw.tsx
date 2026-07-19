@@ -37,7 +37,6 @@ type MidiInputLike = { id: string; name?: string; onmidimessage: ((event: MidiMe
 type MidiAccessLike = { inputs: Map<string, MidiInputLike>; onstatechange: (() => void) | null };
 type LoadDetail = { project: VoiceStudioProject; blobs?: Record<string, Blob> };
 
-const BARS = 16;
 const MIN_CLIP = 0.08;
 const SNAPSHOT_EVENT = 'foco-voice-studio-snapshot';
 const LOAD_EVENT = 'foco-voice-studio-load-project';
@@ -113,6 +112,12 @@ export default function VoiceStudioDaw({ readOnly }: { readOnly: boolean }) {
   projectRef.current = project;
   const duration = Math.max(projectDuration(project), elapsed);
   const beatSeconds = 60 / project.tempo;
+  const selectedSet = useMemo(() => selectedIds, [selectedIds]);
+  const updateTimelineView = useCallback((view: VoiceStudioProject['view']) => {
+    setProject(current => ({ ...current, view: { ...current.view, ...view } }));
+    setElapsed(view.playhead);
+  }, []);
+  const timeline = useVoiceStudioTimeline({ duration, view: project.view, onViewChange: updateTimelineView });
   const soloed = project.tracks.some(track => track.solo);
   const selected = Array.from(selectedIds).map(id => findClip(project, id)).filter((value): value is NonNullable<typeof value> => Boolean(value));
   const timeline = useVoiceStudioTimeline({
@@ -179,7 +184,7 @@ export default function VoiceStudioDaw({ readOnly }: { readOnly: boolean }) {
   }, [status, project, selectedIds, history, future, elapsed]);
 
   function dispatchSnapshot(next: VoiceStudioProject) { window.dispatchEvent(new CustomEvent(SNAPSHOT_EVENT, { detail: { project: cloneVoiceStudioProject(next), blobs: { ...blobsRef.current } } })); }
-  function quantize(value: number) { if (!project.settings.snapping) return Math.max(0, value); const unit = Math.max(0.01, beatSeconds * project.settings.snapDivision); return Math.max(0, Math.round(value / unit) * unit); }
+  function quantize(value: number) { return timelineSnapTime(value, project.tempo, project.settings.snapDivision, project.settings.snapping); }
   function commit(mutator: (current: VoiceStudioProject) => VoiceStudioProject) { setProject(current => { const next = mutator(current); if (next === current) return current; setHistory(items => [...items.slice(-49), cloneVoiceStudioProject(current)]); setFuture([]); return next; }); }
   function patchProject(patch: Partial<VoiceStudioProject>) { commit(current => ({ ...cloneVoiceStudioProject(current), ...patch, updatedAt: new Date().toISOString() })); }
   function patchTrack(trackId: string, patch: Partial<VoiceStudioTrack>) { commit(current => { const next = cloneVoiceStudioProject(current); const track = next.tracks.find(item => item.id === trackId); if (!track) return current; Object.assign(track, patch); next.updatedAt = new Date().toISOString(); return next; }); }
@@ -226,7 +231,7 @@ export default function VoiceStudioDaw({ readOnly }: { readOnly: boolean }) {
   function startBackingTracks(offset: number) { clearPlayback(); const context = audioContext(); playableTracks().forEach(track => track.clips.filter(clip => !clip.muted && offset < clip.start + clip.duration).forEach(clip => { const asset = project.assets[clip.assetId]; if (!asset) return; if (asset.kind === 'audio') scheduleAudioClip(track, clip, asset, offset); else scheduleMidiClip(track, clip, asset, context.currentTime, offset); })); }
   function scheduleAudioClip(track: VoiceStudioTrack, clip: VoiceStudioClip, asset: VoiceStudioAsset, offset: number) { const url = objectUrlsRef.current[asset.id]; if (!url) return; const delay = Math.max(0, clip.start - offset); const elapsedInsideClip = Math.max(0, offset - clip.start); const sourceTime = clip.sourceOffset + elapsedInsideClip; if (sourceTime >= clip.sourceOffset + clip.duration) return; const audio = new Audio(url); audio.volume = Math.min(1, Math.max(0, track.volume * clip.gain)); audio.currentTime = sourceTime; playAudiosRef.current.push(audio); const start = () => { void audio.play(); const remaining = Math.max(0.01, clip.duration - elapsedInsideClip); playbackTimersRef.current.push(window.setTimeout(() => audio.pause(), remaining * 1000)); }; if (delay > 0.005) playbackTimersRef.current.push(window.setTimeout(start, delay * 1000)); else start(); }
   function scheduleMidiClip(track: VoiceStudioTrack, clip: VoiceStudioClip, asset: VoiceStudioAsset, base: number, offset: number) { const context = audioContext(); const clipSourceEnd = clip.sourceOffset + clip.duration; asset.midiNotes.forEach(note => { const noteEnd = note.start + note.duration; if (noteEnd <= clip.sourceOffset || note.start >= clipSourceEnd) return; const globalStart = clip.start + Math.max(0, note.start - clip.sourceOffset); const globalEnd = clip.start + Math.min(clip.duration, noteEnd - clip.sourceOffset); if (globalEnd <= offset) return; const start = base + Math.max(0, globalStart - offset); const end = start + Math.max(0.01, globalEnd - Math.max(offset, globalStart)); const oscillator = context.createOscillator(); const gain = context.createGain(); oscillator.type = instrumentWave(track.instrument ?? asset.instrument ?? 'piano'); oscillator.frequency.value = midiFrequency(note.note); gain.gain.setValueAtTime(0, start); gain.gain.linearRampToValueAtTime((note.velocity / 127) * 0.16 * track.volume * clip.gain, start + 0.01); gain.gain.setTargetAtTime(0.0001, end, 0.04); oscillator.connect(gain).connect(context.destination); oscillator.start(start); oscillator.stop(end + 0.2); scheduledNodesRef.current.push(oscillator, gain); }); }
-  function playAll() { if (status === 'playing') { stopPlayback(); return; } if (!projectHasContent(project)) return; const offset = elapsed >= duration ? 0 : elapsed; playbackOffsetRef.current = offset; void audioContext().resume(); startBackingTracks(offset); startAtRef.current = performance.now(); setStatus('playing'); timerRef.current = window.setInterval(() => { const next = playbackOffsetRef.current + (performance.now() - startAtRef.current) / 1000; setElapsed(next); if (next >= duration) stopPlayback(true); }, 50); }
+  function playAll() { if (status === 'playing') { stopPlayback(); return; } if (!projectHasContent(project)) return; const offset = elapsed >= duration ? 0 : elapsed; playbackOffsetRef.current = offset; void audioContext().resume(); startBackingTracks(offset); startAtRef.current = performance.now(); setStatus('playing'); const tick = () => { const next = playbackOffsetRef.current + (performance.now() - startAtRef.current) / 1000; setElapsed(next); timeline.ensureTimeVisible(next); if (next >= duration) stopPlayback(true); else timerRef.current = window.setTimeout(tick, 16); }; tick(); }
   function stopPlayback(reset = false) { if (timerRef.current) window.clearInterval(timerRef.current); timerRef.current = null; clearPlayback(reset); setStatus('idle'); }
 
   function seekTimeline(event: React.MouseEvent<HTMLElement>) { if (status !== 'idle' || (event.target as HTMLElement).closest('.vs-clip,.vs-pro-ruler')) return; const nextPlayhead = timeline.seekAtClientX(event.clientX, quantize); setElapsed(nextPlayhead); setProject(current => ({ ...current, view: { ...current.view, playhead: nextPlayhead } })); setSelectedIds(new Set()); }

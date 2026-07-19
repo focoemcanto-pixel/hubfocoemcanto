@@ -1,6 +1,6 @@
 'use client';
 
-import type { CSSProperties, MouseEvent, PointerEvent as ReactPointerEvent } from 'react';
+import { memo, useMemo, type CSSProperties, type MouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { KeyboardMusic, Mic2, Circle } from 'lucide-react';
 import type {
   VoiceStudioAsset,
@@ -13,6 +13,7 @@ import type {
 import VoiceStudioTimelineRuler from './voice-studio-timeline-ruler';
 import {
   timelineTimeToPixels,
+  timelineTrackHeight,
   type TimelineViewport,
 } from './voice-studio-timeline-engine';
 
@@ -25,6 +26,7 @@ type TimelineCanvasProps = {
   viewport: TimelineViewport;
   zoom: number;
   contentWidth: number;
+  verticalZoom: number;
   selectedIds: Set<string>;
   status: 'idle' | 'countin' | 'recording' | 'playing';
   armedKind: VoiceStudioTrackKind;
@@ -40,7 +42,7 @@ type TimelineCanvasProps = {
   onBeginRecord: () => void;
 };
 
-const CANVAS_CSS = `.vs-pro-canvas{position:relative;min-height:100%;overflow:hidden}.vs-pro-canvas-content{position:relative;min-height:100%}.vs-pro-canvas .vs-lane{position:relative}.vs-pro-canvas .vs-clip{position:absolute;top:9px;bottom:9px;height:auto;cursor:grab;touch-action:none}.vs-pro-canvas .vs-live-clip{position:absolute;top:9px;bottom:9px;height:auto}.vs-pro-canvas .vs-playhead{position:absolute;top:0;bottom:0;z-index:7;pointer-events:none}.vs-pro-canvas .vs-empty{inset:42px 0 0}`;
+const CANVAS_CSS = `.vs-pro-canvas{position:relative;min-height:100%;overflow:hidden}.vs-pro-canvas-content{position:relative;min-height:100%;background-image:linear-gradient(90deg,rgba(255,255,255,.04) 1px,transparent 1px);background-size:var(--grid-step,56px) 100%}.vs-pro-canvas .vs-lane{position:relative}.vs-pro-canvas .vs-clip{position:absolute;top:9px;bottom:9px;height:auto;cursor:grab;touch-action:none}.vs-pro-canvas .vs-live-clip{position:absolute;top:9px;bottom:9px;height:auto}.vs-pro-canvas .vs-playhead{position:absolute;top:0;bottom:0;z-index:7;pointer-events:none;will-change:transform}.vs-pro-canvas .vs-empty{inset:42px 0 0}`;
 
 export default function VoiceStudioTimelineCanvas({
   project,
@@ -49,6 +51,7 @@ export default function VoiceStudioTimelineCanvas({
   viewport,
   zoom,
   contentWidth,
+  verticalZoom,
   selectedIds,
   status,
   armedKind,
@@ -64,10 +67,13 @@ export default function VoiceStudioTimelineCanvas({
   onBeginRecord,
 }: TimelineCanvasProps) {
   const recording = status === 'recording' || status === 'countin';
+  const trackHeight = timelineTrackHeight(verticalZoom);
+  const minHeight = 42 + (project.tracks.length + (recording ? 1 : 0)) * trackHeight;
+  const gridStep = timelineTimeToPixels(60 / Math.max(20, project.tempo), zoom);
 
   return <div className="vs-pro-canvas">
     <style>{CANVAS_CSS}</style>
-    <div className="vs-pro-canvas-content" style={{ width: contentWidth }} onClick={onBackgroundClick}>
+    <div className="vs-pro-canvas-content" style={{ width: contentWidth, minHeight, '--grid-step': `${gridStep}px` } as CSSProperties} onClick={onBackgroundClick}>
       <VoiceStudioTimelineRuler
         duration={duration}
         tempo={project.tempo}
@@ -78,7 +84,7 @@ export default function VoiceStudioTimelineCanvas({
         loop={project.loop}
         onSeek={onSeek}
       />
-      <div className="vs-playhead" style={{ left: timelineTimeToPixels(elapsed, zoom) }}/>
+      <div className="vs-playhead" style={{ transform: `translateX(${timelineTimeToPixels(elapsed, zoom)}px)` }}/>
       {project.tracks.map(track => <TimelineLane
         key={track.id}
         track={track}
@@ -89,8 +95,9 @@ export default function VoiceStudioTimelineCanvas({
         onBeginDrag={onBeginDrag}
         onMoveDrag={onMoveDrag}
         onEndDrag={onEndDrag}
+        trackHeight={trackHeight}
       />)}
-      {recording && <div className={`vs-lane live ${armedKind}`}>
+      {recording && <div className={`vs-lane live ${armedKind}`} style={{ height: trackHeight }}>
         <div className="vs-live-clip" style={{
           left: timelineTimeToPixels(recordStart, zoom),
           width: Math.max(16, timelineTimeToPixels(Math.max(0, elapsed - recordStart), zoom)),
@@ -121,6 +128,7 @@ function TimelineLane({
   onBeginDrag,
   onMoveDrag,
   onEndDrag,
+  trackHeight,
 }: {
   track: VoiceStudioTrack;
   assets: Record<string, VoiceStudioAsset>;
@@ -130,8 +138,9 @@ function TimelineLane({
   onBeginDrag: (event: ReactPointerEvent, trackId: string, clipId: string, mode: EditMode) => void;
   onMoveDrag: (event: ReactPointerEvent) => void;
   onEndDrag: () => void;
+  trackHeight: number;
 }) {
-  return <div className={`vs-lane ${track.kind}`}>
+  return <div className={`vs-lane ${track.kind}`} style={{ height: trackHeight }}>
     {track.clips.map(clip => {
       const asset = assets[clip.assetId];
       if (!asset) return null;
@@ -151,7 +160,7 @@ function TimelineLane({
   </div>;
 }
 
-function TimelineClip({
+const TimelineClip = memo(function TimelineClip({
   track,
   clip,
   asset,
@@ -190,28 +199,14 @@ function TimelineClip({
     onPointerCancel={onEndDrag}
     style={style}
   >
-    <button
-      className="vs-trim left"
-      aria-label="Aparar início"
-      onPointerDown={event => onBeginDrag(event, track.id, clip.id, 'trim-left')}
-      onPointerMove={onMoveDrag}
-      onPointerUp={onEndDrag}
-    />
     <b>{clip.name}</b>
     {asset.kind === 'audio'
       ? <Wave peaks={asset.peaks} offset={clip.sourceOffset} duration={clip.duration} sourceDuration={asset.duration}/>
       : <MidiClip notes={asset.midiNotes} offset={clip.sourceOffset} duration={clip.duration}/>} 
-    <button
-      className="vs-trim right"
-      aria-label="Aparar final"
-      onPointerDown={event => onBeginDrag(event, track.id, clip.id, 'trim-right')}
-      onPointerMove={onMoveDrag}
-      onPointerUp={onEndDrag}
-    />
   </div>;
-}
+});
 
-function Wave({
+const Wave = memo(function Wave({
   peaks,
   offset = 0,
   duration,
@@ -222,20 +217,22 @@ function Wave({
   duration?: number;
   sourceDuration?: number;
 }) {
-  const values = peaks.length ? peaks : Array.from({ length: 80 }, () => 0.04);
-  const total = Math.max(0.01, sourceDuration || duration || 1);
-  const start = Math.floor(offset / total * values.length);
-  const end = Math.max(start + 1, Math.ceil((offset + (duration || total)) / total * values.length));
-  const visible = values.slice(start, end);
+  const visible = useMemo(() => {
+    const values = peaks.length ? peaks : Array.from({ length: 80 }, () => 0.04);
+    const total = Math.max(0.01, sourceDuration || duration || 1);
+    const start = Math.floor(offset / total * values.length);
+    const end = Math.max(start + 1, Math.ceil((offset + (duration || total)) / total * values.length));
+    return values.slice(start, end);
+  }, [duration, offset, peaks, sourceDuration]);
   return <svg className="vs-wave" viewBox={`0 0 ${Math.max(1, visible.length)} 100`} preserveAspectRatio="none">
-    {visible.map((peak, index) => <line key={index} x1={index + 0.5} x2={index + 0.5} y1={50 - peak * 46} y2={50 + peak * 46}/>)}
+    {visible.map((peak, index) => <line key={index} x1={index + 0.5} x2={index + 0.5} y1={50 - peak * 46} y2={50 + peak * 46}/>) }
   </svg>;
-}
+});
 
-function MidiClip({ notes, offset, duration }: { notes: VoiceStudioMidiNote[]; offset: number; duration: number }) {
-  const visible = notes.filter(note => note.start + note.duration > offset && note.start < offset + duration);
-  return <div className="vs-midi-notes">
-    {visible.map(note => {
+const MidiClip = memo(function MidiClip({ notes, offset, duration }: { notes: VoiceStudioMidiNote[]; offset: number; duration: number }) {
+  const rendered = useMemo(() => notes
+    .filter(note => note.start + note.duration > offset && note.start < offset + duration)
+    .map(note => {
       const start = Math.max(0, note.start - offset);
       const clippedDuration = Math.min(note.start + note.duration, offset + duration) - Math.max(note.start, offset);
       const top = ((84 - Math.min(84, Math.max(36, note.note))) / 48) * 100;
@@ -245,9 +242,9 @@ function MidiClip({ notes, offset, duration }: { notes: VoiceStudioMidiNote[]; o
         top: `${top}%`,
         opacity: 0.45 + (note.velocity / 127) * 0.55,
       }}/>;
-    })}
-  </div>;
-}
+    }), [duration, offset, notes]);
+  return <div className="vs-midi-notes">{rendered}</div>;
+});
 
 function hasContent(project: VoiceStudioProject) {
   return project.tracks.some(track => track.clips.length > 0);
