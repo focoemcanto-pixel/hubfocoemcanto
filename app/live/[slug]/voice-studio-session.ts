@@ -1,3 +1,4 @@
+import { createVoiceStudioAssetStore } from './voice-studio-asset-store';
 import { VoiceStudioHistoryEngine } from './voice-studio-history-engine';
 import { createVoiceStudioProject } from './voice-studio-project-model';
 import {
@@ -26,6 +27,7 @@ const recording: VoiceStudioRecording = {
 export function createVoiceStudioSession(options: CreateVoiceStudioSessionOptions): VoiceStudioSession {
   const project = options.project ?? createVoiceStudioProject();
   const runtime = options.runtime ?? createVoiceStudioRuntime(options.runtimeOptions);
+  const assetStore = options.assetStore ?? createVoiceStudioAssetStore(runtime);
 
   return {
     project,
@@ -37,9 +39,7 @@ export function createVoiceStudioSession(options: CreateVoiceStudioSessionOption
       status: 'idle',
       position: project.view.playhead,
     },
-    assetStore: options.assetStore ?? {
-      blobs: new Map(),
-    },
+    assetStore,
     runtime,
   };
 }
