@@ -64,7 +64,7 @@ export class VoiceStudioPlayback {
     this.#project = options.project;
     this.#assetStore = options.assetStore;
     this.#unsubscribe = [
-      this.#eventBus.subscribe('PLAY_STARTED', ({ request }) => { void this.play(request); }),
+      this.#eventBus.subscribe('PLAY_STARTED', ({ request }) => this.play(request)),
       this.#eventBus.subscribe('PLAY_STOPPED', ({ playhead, reason }) => {
         if (this.isPlaying) this.stop(reason === 'ended' ? true : false, reason, playhead, false);
       }),
