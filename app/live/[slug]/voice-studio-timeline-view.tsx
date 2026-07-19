@@ -22,29 +22,22 @@ export default function VoiceStudioTimelineView({ session, width = 960, height =
   const [model, setModel] = useState<VoiceStudioTimelineViewModel>(() => createVoiceStudioTimelineViewModel(session));
 
   useEffect(() => {
-    const refreshProject = () => setModel(current => ({
+    const updateProject = (project: VoiceStudioTimelineViewModel['project']) => setModel(current => ({
       ...current,
-      project: session.project,
-      duration: voiceStudioTimelineDuration(session.project),
+      project,
+      duration: voiceStudioTimelineDuration(project),
     }));
-    const refreshTransport = () => {
-      const snapshot = session.transport.getSnapshot();
-      setModel(current => ({ ...current, playhead: snapshot.playhead, status: snapshot.status }));
-    };
 
     const unsubscribe = [
-      session.eventBus.subscribe('PROJECT_CHANGED', refreshProject),
-      session.eventBus.subscribe('TRACK_UPDATED', refreshProject),
+      session.eventBus.subscribe('PROJECT_CHANGED', ({ project }) => updateProject(project)),
+      session.eventBus.subscribe('TRACK_UPDATED', ({ project }) => updateProject(project)),
       session.eventBus.subscribe('PLAYHEAD_CHANGED', ({ playhead }) => setModel(current => ({ ...current, playhead }))),
-      session.eventBus.subscribe('PLAY_STARTED', refreshTransport),
-      session.eventBus.subscribe('PLAY_STOPPED', refreshTransport),
-      session.eventBus.subscribe('RECORD_STARTED', refreshTransport),
-      session.eventBus.subscribe('RECORD_STOPPED', refreshTransport),
-      session.eventBus.subscribe('ASSET_IMPORTED', refreshProject),
+      session.eventBus.subscribe('PLAY_STARTED', ({ request }) => setModel(current => ({ ...current, playhead: request.offset, status: 'playing' }))),
+      session.eventBus.subscribe('PLAY_STOPPED', ({ playhead }) => setModel(current => ({ ...current, playhead, status: 'idle' }))),
+      session.eventBus.subscribe('RECORD_STARTED', ({ start }) => setModel(current => ({ ...current, playhead: start, status: 'recording' }))),
+      session.eventBus.subscribe('RECORD_STOPPED', ({ playhead }) => setModel(current => ({ ...current, playhead, status: 'idle' }))),
     ];
 
-    refreshProject();
-    refreshTransport();
     return () => unsubscribe.forEach(release => release());
   }, [session]);
 
