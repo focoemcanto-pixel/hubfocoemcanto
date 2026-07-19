@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AudioLines, ChevronDown, Circle, Copy, Download, KeyboardMusic, Magnet, Mic2, Pause, Play, Plus, Redo2, Scissors, Square, Trash2, Undo2, Volume2, ZoomIn, ZoomOut, Maximize2, Focus } from 'lucide-react';
 import {
+  addAssetClipToProject,
   cloneVoiceStudioProject,
   copyClip,
   createVoiceStudioProject,
@@ -36,7 +37,7 @@ type MidiInputLike = { id: string; name?: string; onmidimessage: ((event: MidiMe
 type MidiAccessLike = { inputs: Map<string, MidiInputLike>; onstatechange: (() => void) | null };
 type LoadDetail = { project: VoiceStudioProject; blobs?: Record<string, Blob> };
 
-const COLORS = ['#22c55e', '#8b5cf6', '#0ea5e9', '#f97316', '#ec4899', '#eab308'];
+const BARS = 16;
 const MIN_CLIP = 0.08;
 const SNAPSHOT_EVENT = 'foco-voice-studio-snapshot';
 const LOAD_EVENT = 'foco-voice-studio-load-project';
@@ -219,7 +220,7 @@ export default function VoiceStudioDaw({ readOnly }: { readOnly: boolean }) {
   function stopRecording() { if (armed.kind === 'audio' && recorderRef.current?.state === 'recording') recorderRef.current.stop(); else if (armed.kind === 'midi') finishMidi(); }
   async function finishAudio(recorder: MediaRecorder) { const clipDuration = Math.max(MIN_CLIP, (performance.now() - startAtRef.current) / 1000); const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' }); let peaks = livePeaksRef.current; try { const buffer = await audioContext().decodeAudioData(await blob.arrayBuffer()); peaks = makePeaks(buffer.getChannelData(0)); } catch {} addRecordedAsset({ kind: 'audio', duration: clipDuration, peaks, midiNotes: [], mimeType: blob.type, fileName: `voz-${Date.now()}.webm` }, blob, `Voz ${project.tracks.filter(track => track.kind === 'audio').length + 1}`); cleanupCapture(); setElapsed(recordStartRef.current); setStatus('idle'); }
   function finishMidi() { const clipDuration = Math.max(MIN_CLIP, (performance.now() - startAtRef.current) / 1000); activeMidiRef.current.forEach((active, note) => midiNotesRef.current.push({ id: crypto.randomUUID(), note, velocity: active.velocity, start: active.start, duration: Math.max(0.04, clipDuration - active.start) })); activeMidiRef.current.clear(); addRecordedAsset({ kind: 'midi', duration: clipDuration, peaks: [], midiNotes: [...midiNotesRef.current], instrument: armed.instrument }, undefined, `Teclado ${project.tracks.filter(track => track.kind === 'midi').length + 1}`); cleanupCapture(); setElapsed(recordStartRef.current); setStatus('idle'); }
-  function addRecordedAsset(assetData: Omit<VoiceStudioAsset, 'id' | 'createdAt'>, blob: Blob | undefined, name: string) { const assetId = crypto.randomUUID(); if (blob) { blobsRef.current[assetId] = blob; objectUrlsRef.current[assetId] = URL.createObjectURL(blob); } commit(current => { const next = cloneVoiceStudioProject(current); next.assets[assetId] = { id: assetId, createdAt: new Date().toISOString(), ...assetData }; next.tracks.push({ id: crypto.randomUUID(), kind: assetData.kind, name, color: COLORS[next.tracks.length % COLORS.length], muted: false, solo: false, volume: 1, pan: 0, instrument: assetData.instrument, clips: [{ id: crypto.randomUUID(), assetId, name, start: recordStartRef.current, sourceOffset: 0, duration: assetData.duration, gain: 1, fadeIn: 0, fadeOut: 0, muted: false, locked: false }] }); next.updatedAt = new Date().toISOString(); return next; }); }
+  function addRecordedAsset(assetData: Omit<VoiceStudioAsset, 'id' | 'createdAt'>, blob: Blob | undefined, name: string) { const asset: VoiceStudioAsset = { id: crypto.randomUUID(), createdAt: new Date().toISOString(), ...assetData }; if (blob) { blobsRef.current[asset.id] = blob; objectUrlsRef.current[asset.id] = URL.createObjectURL(blob); } commit(current => addAssetClipToProject(current, asset, name, recordStartRef.current)); }
 
   function playableTracks() { return project.tracks.filter(track => !track.muted && (!soloed || track.solo)); }
   function startBackingTracks(offset: number) { clearPlayback(); const context = audioContext(); playableTracks().forEach(track => track.clips.filter(clip => !clip.muted && offset < clip.start + clip.duration).forEach(clip => { const asset = project.assets[clip.assetId]; if (!asset) return; if (asset.kind === 'audio') scheduleAudioClip(track, clip, asset, offset); else scheduleMidiClip(track, clip, asset, context.currentTime, offset); })); }
