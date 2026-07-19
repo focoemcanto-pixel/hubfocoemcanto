@@ -1,3 +1,4 @@
+import type { VoiceStudioAssetStore } from './voice-studio-asset-store';
 import type { VoiceStudioHistoryEngine } from './voice-studio-history-engine';
 import type { VoiceStudioPlaybackEngine } from './voice-studio-playback-engine';
 import type { VoiceStudioProject } from './voice-studio-project-model';
@@ -20,10 +21,6 @@ export type VoiceStudioTransportStatus = 'idle' | 'countin' | 'recording' | 'pla
 export type VoiceStudioTransport = {
   status: VoiceStudioTransportStatus;
   position: number;
-};
-
-export type VoiceStudioAssetStore = {
-  blobs: Map<string, Blob>;
 };
 
 export type VoiceStudioRecording = {
