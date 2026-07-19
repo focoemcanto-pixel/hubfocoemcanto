@@ -167,7 +167,7 @@ export default function VoiceStudioDawRuntime(){
         blobs[assetId]=file;
         if(index===decoded.length-1)project.updatedAt=new Date().toISOString();
       });
-      window.dispatchEvent(new CustomEvent(LOAD_EVENT,{detail:{project,blobs}}));
+      window.dispatchEvent(new CustomEvent(LOAD_EVENT,{detail:{project,blobs,historyOperation:'import',historyLabel:'Import audio'}}));
       const extra=rejected.length?` ${rejected.length} arquivo(s) ignorado(s).`:'';
       showUploadMessage(`${accepted.length} faixa${accepted.length>1?'s':''} adicionada${accepted.length>1?'s':''} na posição ${start.toFixed(1)}s.${extra}`,Boolean(rejected.length));
     }catch(reason){
