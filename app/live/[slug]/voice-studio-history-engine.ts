@@ -1,4 +1,5 @@
 import { cloneVoiceStudioProject, normalizeVoiceStudioProject, type VoiceStudioProject } from './voice-studio-project-model';
+import { commandChangedProject, type VoiceStudioCommand, type VoiceStudioCommandKind } from './voice-studio-commands';
 
 export type VoiceStudioHistoryOperation =
   | 'move'
@@ -19,22 +20,6 @@ export type VoiceStudioHistoryOperation =
   | 'marker'
   | 'project';
 
-export type VoiceStudioHistoryEntry = {
-  id: string;
-  operation: VoiceStudioHistoryOperation;
-  groupId?: string;
-  label?: string;
-  createdAt: string;
-  project: VoiceStudioProject;
-  signature: string;
-};
-
-export type VoiceStudioHistoryState = {
-  history: VoiceStudioHistoryEntry[];
-  future: VoiceStudioHistoryEntry[];
-  limit: number;
-};
-
 export type VoiceStudioHistoryCommitOptions = {
   operation: VoiceStudioHistoryOperation;
   label?: string;
@@ -42,22 +27,59 @@ export type VoiceStudioHistoryCommitOptions = {
   merge?: boolean;
 };
 
+export type VoiceStudioHistoryState = {
+  history: VoiceStudioCommand[];
+  future: VoiceStudioCommand[];
+  limit: number;
+};
+
 const DEFAULT_HISTORY_LIMIT = 50;
 
-function signature(project: VoiceStudioProject) {
-  return JSON.stringify(normalizeVoiceStudioProject(project));
+class AppliedProjectCommand implements VoiceStudioCommand {
+  readonly id = crypto.randomUUID();
+  readonly kind: VoiceStudioCommandKind = 'project-mutation';
+  readonly createdAt = new Date().toISOString();
+  readonly label: string;
+  readonly groupId?: string;
+  readonly operation: VoiceStudioHistoryOperation;
+  readonly #before: VoiceStudioProject;
+  readonly #after: VoiceStudioProject;
+
+  constructor(before: VoiceStudioProject, after: VoiceStudioProject, options: VoiceStudioHistoryCommitOptions) {
+    this.#before = cloneVoiceStudioProject(before);
+    this.#after = cloneVoiceStudioProject(after);
+    this.operation = options.operation;
+    this.label = options.label ?? options.operation;
+    this.groupId = options.groupId;
+  }
+
+  execute(): VoiceStudioProject {
+    return cloneVoiceStudioProject(this.#after);
+  }
+
+  undo(): VoiceStudioProject {
+    return cloneVoiceStudioProject(this.#before);
+  }
+
+  canMergeWith(command: VoiceStudioCommand): boolean {
+    return command instanceof AppliedProjectCommand
+      && command.operation === this.operation
+      && Boolean(this.groupId)
+      && command.groupId === this.groupId;
+  }
+
+  mergeWith(command: VoiceStudioCommand): VoiceStudioCommand {
+    if (!(command instanceof AppliedProjectCommand) || !this.canMergeWith(command)) return command;
+    return new AppliedProjectCommand(this.#before, command.#after, {
+      operation: this.operation,
+      label: command.label,
+      groupId: this.groupId,
+    });
+  }
 }
 
-function createEntry(project: VoiceStudioProject, options: VoiceStudioHistoryCommitOptions): VoiceStudioHistoryEntry {
-  return {
-    id: crypto.randomUUID(),
-    operation: options.operation,
-    groupId: options.groupId,
-    label: options.label,
-    createdAt: new Date().toISOString(),
-    project: cloneVoiceStudioProject(project),
-    signature: signature(project),
-  };
+function equivalent(left: VoiceStudioProject, right: VoiceStudioProject): boolean {
+  return JSON.stringify(normalizeVoiceStudioProject(left)) === JSON.stringify(normalizeVoiceStudioProject(right));
 }
 
 export class VoiceStudioHistoryEngine {
@@ -73,60 +95,84 @@ export class VoiceStudioHistoryEngine {
   get futureStack() { return this.state.future; }
   get limit() { return this.state.limit; }
 
-  configure(limit: number) {
+  configure(limit: number): void {
     this.state.limit = Math.max(1, limit);
     this.state.history = this.state.history.slice(-this.state.limit);
     this.state.future = this.state.future.slice(0, this.state.limit);
   }
 
-  reset() {
+  reset(): void {
     this.state = { ...this.state, history: [], future: [] };
   }
 
-  commit(before: VoiceStudioProject, after: VoiceStudioProject, options: VoiceStudioHistoryCommitOptions) {
-    const beforeSignature = signature(before);
-    const afterSignature = signature(after);
-    if (beforeSignature === afterSignature) return false;
-
+  execute(project: VoiceStudioProject, command: VoiceStudioCommand, options: { merge?: boolean } = {}): VoiceStudioProject {
     const previous = this.state.history.at(-1);
-    if (options.merge && previous?.operation === options.operation && previous.groupId && previous.groupId === options.groupId) {
-      this.state = { ...this.state, future: [] };
-      return true;
+    if (options.merge && previous?.canMergeWith?.(command) && previous.mergeWith) {
+      const withoutPrevious = previous.undo(project);
+      const merged = previous.mergeWith(command);
+      const next = merged.execute(withoutPrevious);
+      if (!commandChangedProject(withoutPrevious, next)) return project;
+      this.state = {
+        ...this.state,
+        history: [...this.state.history.slice(0, -1), merged],
+        future: [],
+      };
+      return next;
     }
 
-    if (previous?.signature === beforeSignature && previous.operation === options.operation && previous.groupId === options.groupId) {
-      this.state = { ...this.state, future: [] };
-      return true;
-    }
-
+    const next = command.execute(project);
+    if (!commandChangedProject(project, next)) return project;
     this.state = {
       ...this.state,
-      history: [...this.state.history, createEntry(before, options)].slice(-this.state.limit),
+      history: [...this.state.history, command].slice(-this.state.limit),
+      future: [],
+    };
+    return next;
+  }
+
+  commit(before: VoiceStudioProject, after: VoiceStudioProject, options: VoiceStudioHistoryCommitOptions): boolean {
+    if (equivalent(before, after)) return false;
+    const command = new AppliedProjectCommand(before, after, options);
+    const previous = this.state.history.at(-1);
+    if (options.merge && previous?.canMergeWith?.(command) && previous.mergeWith) {
+      const merged = previous.mergeWith(command);
+      this.state = {
+        ...this.state,
+        history: [...this.state.history.slice(0, -1), merged],
+        future: [],
+      };
+      return true;
+    }
+    this.state = {
+      ...this.state,
+      history: [...this.state.history, command].slice(-this.state.limit),
       future: [],
     };
     return true;
   }
 
-  undo(current: VoiceStudioProject) {
-    const entry = this.state.history.at(-1);
-    if (!entry) return null;
+  undo(project: VoiceStudioProject): VoiceStudioProject | null {
+    const command = this.state.history.at(-1);
+    if (!command) return null;
+    const next = command.undo(project);
     this.state = {
       ...this.state,
       history: this.state.history.slice(0, -1),
-      future: [createEntry(current, { operation: entry.operation, label: entry.label, groupId: entry.groupId }), ...this.state.future].slice(0, this.state.limit),
+      future: [command, ...this.state.future].slice(0, this.state.limit),
     };
-    return cloneVoiceStudioProject(entry.project);
+    return next;
   }
 
-  redo(current: VoiceStudioProject) {
-    const entry = this.state.future[0];
-    if (!entry) return null;
+  redo(project: VoiceStudioProject): VoiceStudioProject | null {
+    const command = this.state.future[0];
+    if (!command) return null;
+    const next = command.execute(project);
     this.state = {
       ...this.state,
-      history: [...this.state.history, createEntry(current, { operation: entry.operation, label: entry.label, groupId: entry.groupId })].slice(-this.state.limit),
+      history: [...this.state.history, command].slice(-this.state.limit),
       future: this.state.future.slice(1),
     };
-    return cloneVoiceStudioProject(entry.project);
+    return next;
   }
 
   snapshot(): VoiceStudioHistoryState {
