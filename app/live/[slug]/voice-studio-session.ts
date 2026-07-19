@@ -1,4 +1,5 @@
 import { createVoiceStudioAssetStore } from './voice-studio-asset-store';
+import { createVoiceStudioEventBus } from './voice-studio-event-bus';
 import { VoiceStudioHistoryEngine } from './voice-studio-history-engine';
 import { createVoiceStudioPlayback } from './voice-studio-playback';
 import { createVoiceStudioProjectActions } from './voice-studio-project-actions';
@@ -11,23 +12,25 @@ import type { CreateVoiceStudioSessionOptions, VoiceStudioSession } from './voic
 
 export function createVoiceStudioSession(options: CreateVoiceStudioSessionOptions = {}): VoiceStudioSession {
   const project = options.project ?? createVoiceStudioProject();
+  const eventBus = options.eventBus ?? createVoiceStudioEventBus();
   const history = new VoiceStudioHistoryEngine(options.historyLimit);
-  const actions = createVoiceStudioProjectActions(project, history);
+  const actions = createVoiceStudioProjectActions(project, history, eventBus);
   const runtime = options.runtime ?? createVoiceStudioRuntime(options.runtimeOptions);
-  const assetStore = options.assetStore ?? createVoiceStudioAssetStore(runtime);
+  const assetStore = options.assetStore ?? createVoiceStudioAssetStore(runtime, eventBus);
   const transport = options.transport ?? createVoiceStudioTransportController({
+    eventBus,
     playhead: project.view.playhead,
     tempo: project.tempo,
     countInBars: project.countInBars,
     loop: project.loop,
   });
-  const playback = createVoiceStudioPlayback({ runtime, transport, project, assetStore });
-  const recording = createVoiceStudioRecording(runtime, project, assetStore, transport);
-  transport.attachPlayback(playback);
+  const playback = createVoiceStudioPlayback({ runtime, eventBus, project, assetStore });
+  const recording = createVoiceStudioRecording(runtime, project, assetStore, transport, eventBus);
 
   return {
     project,
     actions,
+    eventBus,
     history,
     selection: options.selection ?? createSelectionState(),
     playback,

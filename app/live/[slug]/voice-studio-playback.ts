@@ -1,41 +1,32 @@
 import type { VoiceStudioAssetStore } from './voice-studio-asset-store';
+import type { VoiceStudioEventBus } from './voice-studio-event-bus';
 import type { VoiceStudioAsset, VoiceStudioClip, VoiceStudioProject, VoiceStudioTrack } from './voice-studio-project-model';
 import type { VoiceStudioRuntime } from './voice-studio-runtime';
-import type { VoiceStudioTransportController } from './voice-studio-transport-controller';
 
 export type VoiceStudioPlaybackMode = 'project' | 'loop' | 'selection';
 export type VoiceStudioPlaybackEndReason = 'stop' | 'pause' | 'ended' | 'loop';
-
-export type VoiceStudioPlaybackRequest = {
-  offset: number;
-  end: number;
-  mode: VoiceStudioPlaybackMode;
-  loop: boolean;
-};
-
+export type VoiceStudioPlaybackRequest = { offset: number; end: number; mode: VoiceStudioPlaybackMode; loop: boolean };
 export type CreateVoiceStudioPlaybackOptions = {
   runtime: VoiceStudioRuntime;
-  transport: VoiceStudioTransportController;
+  eventBus: VoiceStudioEventBus;
   project: VoiceStudioProject;
   assetStore: VoiceStudioAssetStore;
 };
 
 type ScheduledAudio = { audio: HTMLAudioElement; gain: GainNode; source: MediaElementAudioSourceNode; timer: number | null; timelineStart: number; sourceStart: number };
 type ScheduledNode = AudioScheduledSourceNode | AudioNode;
-
 const LOOKAHEAD_SECONDS = 0.16;
 const TIMER_INTERVAL_MS = 25;
 const START_LATENCY_SECONDS = 0.045;
 const DRIFT_RESYNC_SECONDS = 0.045;
 const FADE_FLOOR = 0.0001;
-
-function clamp(value: number, minimum: number, maximum: number) { return Math.min(maximum, Math.max(minimum, value)); }
-function audibleTracks(project: VoiceStudioProject) { const soloed = project.tracks.some(track => track.solo); return project.tracks.filter(track => !track.muted && (!soloed || track.solo)); }
-function clipEnd(clip: VoiceStudioClip) { return clip.start + clip.duration; }
-function clipIntersects(clip: VoiceStudioClip, start: number, end: number) { return clipEnd(clip) > start && clip.start < end; }
-function clipBaseGain(track: VoiceStudioTrack, clip: VoiceStudioClip) { return clamp(track.volume * clip.gain, 0, 1); }
-function midiFrequency(note: number) { return 440 * Math.pow(2, (note - 69) / 12); }
-function instrumentWave(instrument: string): OscillatorType { return instrument === 'organ' ? 'square' : instrument === 'strings' || instrument === 'pad' ? 'sawtooth' : instrument === 'electric' ? 'triangle' : 'sine'; }
+const clamp = (value: number, minimum: number, maximum: number) => Math.min(maximum, Math.max(minimum, value));
+const audibleTracks = (project: VoiceStudioProject) => { const soloed = project.tracks.some(track => track.solo); return project.tracks.filter(track => !track.muted && (!soloed || track.solo)); };
+const clipEnd = (clip: VoiceStudioClip) => clip.start + clip.duration;
+const clipIntersects = (clip: VoiceStudioClip, start: number, end: number) => clipEnd(clip) > start && clip.start < end;
+const clipBaseGain = (track: VoiceStudioTrack, clip: VoiceStudioClip) => clamp(track.volume * clip.gain, 0, 1);
+const midiFrequency = (note: number) => 440 * Math.pow(2, (note - 69) / 12);
+const instrumentWave = (instrument: string): OscillatorType => instrument === 'organ' ? 'square' : instrument === 'strings' || instrument === 'pad' ? 'sawtooth' : instrument === 'electric' ? 'triangle' : 'sine';
 function gainAtClipTime(clip: VoiceStudioClip, baseGain: number, localTime: number) {
   const fadeInGain = clip.fadeIn > 0 ? clamp(localTime / clip.fadeIn, 0, 1) : 1;
   const fadeOutStart = Math.max(0, clip.duration - clip.fadeOut);
@@ -52,8 +43,9 @@ export function playbackSelectionRange(project: VoiceStudioProject, clipIds: Ite
 
 export class VoiceStudioPlayback {
   readonly #runtime: VoiceStudioRuntime;
-  readonly #transport: VoiceStudioTransportController;
+  readonly #eventBus: VoiceStudioEventBus;
   readonly #assetStore: VoiceStudioAssetStore;
+  readonly #unsubscribe: Array<() => void>;
   #project: VoiceStudioProject;
   #request: VoiceStudioPlaybackRequest | null = null;
   #timer: number | null = null;
@@ -68,17 +60,23 @@ export class VoiceStudioPlayback {
 
   constructor(options: CreateVoiceStudioPlaybackOptions) {
     this.#runtime = options.runtime;
-    this.#transport = options.transport;
+    this.#eventBus = options.eventBus;
     this.#project = options.project;
     this.#assetStore = options.assetStore;
+    this.#unsubscribe = [
+      this.#eventBus.subscribe('PLAY_STARTED', ({ request }) => this.play(request)),
+      this.#eventBus.subscribe('PLAY_STOPPED', ({ playhead, reason }) => {
+        if (this.isPlaying) this.stop(reason === 'ended' ? true : false, reason, playhead, false);
+      }),
+      this.#eventBus.subscribe('PROJECT_CHANGED', ({ project }) => { this.#project = project; }),
+    ];
   }
 
   get isPlaying() { return !this.#stopped && Boolean(this.#request); }
-
   setProject(project: VoiceStudioProject): void { this.#project = project; }
 
   async play(request: VoiceStudioPlaybackRequest): Promise<void> {
-    this.stop(false, 'stop');
+    this.stop(false, 'stop', undefined, false);
     await this.#runtime.resume();
     const context = this.#runtime.audioContextForPlayback();
     this.#request = { ...request, offset: Math.max(0, request.offset), end: Math.max(request.offset, request.end) };
@@ -93,8 +91,8 @@ export class VoiceStudioPlayback {
 
   pause() { return this.stop(false, 'pause'); }
 
-  stop(reset = false, reason: VoiceStudioPlaybackEndReason = 'stop') {
-    const time = reset ? 0 : this.currentTime();
+  stop(reset = false, reason: VoiceStudioPlaybackEndReason = 'stop', forcedTime?: number, publish = true) {
+    const time = forcedTime ?? (reset ? 0 : this.currentTime());
     this.#stopped = true;
     if (this.#timer !== null) window.clearInterval(this.#timer);
     if (this.#raf !== null) cancelAnimationFrame(this.#raf);
@@ -102,7 +100,7 @@ export class VoiceStudioPlayback {
     this.#raf = null;
     this.#clearScheduled();
     this.#request = null;
-    this.#transport.handlePlaybackEnded(time, reason);
+    if (publish) this.#eventBus.publish('PLAY_STOPPED', { playhead: time, reason });
     return time;
   }
 
@@ -112,18 +110,21 @@ export class VoiceStudioPlayback {
     return Math.max(0, this.#timelineStartedAt + (context.currentTime - this.#contextStartedAt));
   }
 
-  dispose(): void { this.stop(false, 'stop'); }
+  dispose(): void {
+    this.stop(false, 'stop', undefined, false);
+    this.#unsubscribe.forEach(unsubscribe => unsubscribe());
+  }
 
   #startTickLoop() {
     const tick = () => {
       if (this.#stopped || !this.#request) return;
       const now = this.currentTime();
       this.#correctHtmlAudioDrift(now);
-      this.#transport.handlePlaybackTick(now);
+      this.#eventBus.publish('PLAYHEAD_CHANGED', { playhead: now });
       if (now >= this.#request.end) {
         if (this.#request.loop) {
           const request = { ...this.#request, offset: this.#request.offset };
-          this.#transport.handlePlaybackEnded(request.offset, 'loop');
+          this.#eventBus.publish('PLAY_STOPPED', { playhead: request.offset, reason: 'loop' });
           void this.play(request);
           return;
         }

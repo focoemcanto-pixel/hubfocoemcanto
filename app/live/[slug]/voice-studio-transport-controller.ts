@@ -1,8 +1,5 @@
-import type {
-  VoiceStudioPlayback,
-  VoiceStudioPlaybackEndReason,
-  VoiceStudioPlaybackRequest,
-} from './voice-studio-playback';
+import type { VoiceStudioEventBus } from './voice-studio-event-bus';
+import type { VoiceStudioPlaybackRequest } from './voice-studio-playback';
 
 export type VoiceStudioTransportStatus = 'idle' | 'countin' | 'recording' | 'playing';
 export type VoiceStudioLoopState = { enabled: boolean; start: number; end: number };
@@ -18,6 +15,7 @@ export type VoiceStudioTransportSnapshot = {
   punch: VoiceStudioPunchState;
 };
 export type CreateVoiceStudioTransportOptions = {
+  eventBus: VoiceStudioEventBus;
   playhead?: number;
   tempo?: number;
   countInBars?: number;
@@ -31,10 +29,12 @@ const clampTempo = (tempo: number) => Math.min(220, Math.max(40, Number.isFinite
 
 export class VoiceStudioTransportController {
   readonly #listeners = new Set<TransportListener>();
-  #playback: VoiceStudioPlayback | null = null;
+  readonly #eventBus: VoiceStudioEventBus;
+  readonly #unsubscribe: Array<() => void>;
   #snapshot: VoiceStudioTransportSnapshot;
 
-  constructor(options: CreateVoiceStudioTransportOptions = {}) {
+  constructor(options: CreateVoiceStudioTransportOptions) {
+    this.#eventBus = options.eventBus;
     const tempo = clampTempo(options.tempo ?? 90);
     this.#snapshot = {
       status: 'idle',
@@ -46,42 +46,47 @@ export class VoiceStudioTransportController {
       loop: { enabled: options.loop?.enabled ?? false, start: clampTime(options.loop?.start ?? 0), end: clampTime(options.loop?.end ?? 0) },
       punch: { enabled: options.punch?.enabled ?? false, in: options.punch?.in == null ? null : clampTime(options.punch.in), out: options.punch?.out == null ? null : clampTime(options.punch.out) },
     };
+    this.#unsubscribe = [
+      this.#eventBus.subscribe('PLAYHEAD_CHANGED', ({ playhead }) => {
+        if (this.#snapshot.status === 'playing') this.#patch({ playhead: clampTime(playhead) });
+      }),
+      this.#eventBus.subscribe('PLAY_STOPPED', ({ playhead, reason }) => {
+        if (reason === 'loop') this.#patch({ status: 'playing', playhead: clampTime(playhead) });
+        else this.#patch({ status: 'idle', playhead: clampTime(playhead), countBeat: 0 });
+      }),
+    ];
   }
 
   getSnapshot = (): VoiceStudioTransportSnapshot => this.#snapshot;
   subscribe = (listener: TransportListener): (() => void) => { this.#listeners.add(listener); return () => this.#listeners.delete(listener); };
 
-  attachPlayback(playback: VoiceStudioPlayback): void {
-    if (this.#playback && this.#playback !== playback) throw new Error('Playback is already attached to this Transport.');
-    this.#playback = playback;
-  }
-
   async play(request: VoiceStudioPlaybackRequest): Promise<void> {
-    const playback = this.#requirePlayback();
     const offset = clampTime(request.offset);
     this.#patch({ status: 'playing', playhead: offset, countBeat: 0 });
     try {
-      await playback.play({ ...request, offset, loop: request.mode === 'loop' || this.#snapshot.loop.enabled });
+      await this.#eventBus.publishAsync('PLAY_STARTED', {
+        request: { ...request, offset, loop: request.mode === 'loop' || this.#snapshot.loop.enabled },
+      });
     } catch (error) {
-      this.#patch({ status: 'idle' });
+      this.#patch({ status: 'idle', countBeat: 0 });
       throw error;
     }
   }
 
   pause(): number {
-    const playhead = this.#playback?.pause() ?? this.#snapshot.playhead;
-    this.#patch({ status: 'idle', playhead: clampTime(playhead), countBeat: 0 });
+    this.#eventBus.publish('PLAY_STOPPED', { playhead: this.#snapshot.playhead, reason: 'pause' });
     return this.#snapshot.playhead;
   }
   stop(reset = false): number {
-    const playhead = this.#playback?.stop(reset) ?? (reset ? 0 : this.#snapshot.playhead);
-    this.#patch({ status: 'idle', playhead: clampTime(playhead), countBeat: 0 });
-    return this.#snapshot.playhead;
+    const playhead = reset ? 0 : this.#snapshot.playhead;
+    this.#eventBus.publish('PLAY_STOPPED', { playhead, reason: 'stop' });
+    return playhead;
   }
   seek(time: number): number {
-    if (this.#snapshot.status === 'playing') this.#playback?.stop(false);
     const playhead = clampTime(time);
+    if (this.#snapshot.status === 'playing') this.#eventBus.publish('PLAY_STOPPED', { playhead, reason: 'stop' });
     this.#patch({ status: 'idle', playhead, countBeat: 0 });
+    this.#eventBus.publish('PLAYHEAD_CHANGED', { playhead });
     return playhead;
   }
   setLoop(loop: Partial<VoiceStudioLoopState>): void {
@@ -103,27 +108,19 @@ export class VoiceStudioTransportController {
   endRecording(playhead = this.#snapshot.playhead): void { this.#patch({ status: 'idle', playhead: clampTime(playhead), countBeat: 0 }); }
   setTempo(tempo: number): void { const next = clampTempo(tempo); this.#patch({ tempo: next, bpm: next }); }
   setBpm(bpm: number): void { this.setTempo(bpm); }
-  handlePlaybackTick(time: number): void { if (this.#snapshot.status === 'playing') this.#patch({ playhead: clampTime(time) }); }
-  handlePlaybackEnded(time: number, reason: VoiceStudioPlaybackEndReason): void {
-    if (reason === 'loop') { this.#patch({ status: 'playing', playhead: clampTime(time) }); return; }
-    this.#patch({ status: 'idle', playhead: clampTime(time), countBeat: 0 });
-  }
+
   dispose(): void {
-    this.#playback?.stop(false);
-    this.#playback = null;
+    this.#unsubscribe.forEach(unsubscribe => unsubscribe());
     this.#listeners.clear();
     this.#snapshot = { ...this.#snapshot, status: 'idle', countBeat: 0 };
   }
-  #requirePlayback(): VoiceStudioPlayback {
-    if (!this.#playback) throw new Error('Playback is not attached to VoiceStudioTransportController.');
-    return this.#playback;
-  }
+
   #patch(patch: Partial<VoiceStudioTransportSnapshot>): void {
     this.#snapshot = { ...this.#snapshot, ...patch };
     this.#listeners.forEach(listener => listener());
   }
 }
 
-export function createVoiceStudioTransportController(options: CreateVoiceStudioTransportOptions = {}): VoiceStudioTransportController {
+export function createVoiceStudioTransportController(options: CreateVoiceStudioTransportOptions): VoiceStudioTransportController {
   return new VoiceStudioTransportController(options);
 }

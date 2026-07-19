@@ -1,4 +1,5 @@
 import type { VoiceStudioAssetStore } from './voice-studio-asset-store';
+import type { VoiceStudioEventBus } from './voice-studio-event-bus';
 import type { VoiceStudioHistoryEngine } from './voice-studio-history-engine';
 import type { VoiceStudioPlayback } from './voice-studio-playback';
 import type { VoiceStudioProjectActions } from './voice-studio-project-actions';
@@ -11,6 +12,7 @@ import type { VoiceStudioTransportController } from './voice-studio-transport-co
 export type VoiceStudioSession = {
   project: VoiceStudioProject;
   actions: VoiceStudioProjectActions;
+  eventBus: VoiceStudioEventBus;
   history: VoiceStudioHistoryEngine;
   selection: VoiceStudioSelectionState;
   playback: VoiceStudioPlayback;
@@ -24,6 +26,7 @@ export type CreateVoiceStudioSessionOptions = {
   project?: VoiceStudioProject;
   historyLimit?: number;
   selection?: VoiceStudioSelectionState;
+  eventBus?: VoiceStudioEventBus;
   transport?: VoiceStudioTransportController;
   assetStore?: VoiceStudioAssetStore;
   runtime?: VoiceStudioRuntime;

@@ -1,38 +1,32 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { VoiceStudioPlayback, VoiceStudioPlaybackRequest } from './voice-studio-playback';
+import { createVoiceStudioEventBus } from './voice-studio-event-bus';
+import type { VoiceStudioPlaybackRequest } from './voice-studio-playback';
 import { createVoiceStudioTransportController } from './voice-studio-transport-controller';
-
-function playbackMock() {
-  return {
-    play: vi.fn(async () => undefined),
-    pause: vi.fn(() => 4.5),
-    stop: vi.fn((reset = false) => reset ? 0 : 6),
-  } as unknown as VoiceStudioPlayback;
-}
 
 function playbackRequest(): VoiceStudioPlaybackRequest {
   return { offset: 2, end: 12, mode: 'project', loop: false };
 }
 
 describe('VoiceStudioTransportController', () => {
-  it('owns play, pause, stop and playhead state', async () => {
-    const playback = playbackMock();
-    const transport = createVoiceStudioTransportController({ playhead: 1, tempo: 120 });
-    transport.attachPlayback(playback);
+  it('publishes playback intent and derives state from EventBus events', async () => {
+    const eventBus = createVoiceStudioEventBus();
+    const started = vi.fn();
+    eventBus.subscribe('PLAY_STARTED', started);
+    const transport = createVoiceStudioTransportController({ eventBus, playhead: 1, tempo: 120 });
+
     await transport.play(playbackRequest());
-    expect(playback.play).toHaveBeenCalledTimes(1);
+    expect(started).toHaveBeenCalledWith({ request: playbackRequest() });
     expect(transport.getSnapshot()).toMatchObject({ status: 'playing', playhead: 2, tempo: 120, bpm: 120 });
-    transport.handlePlaybackTick(3.25);
+
+    eventBus.publish('PLAYHEAD_CHANGED', { playhead: 3.25 });
     expect(transport.getSnapshot().playhead).toBe(3.25);
-    expect(transport.pause()).toBe(4.5);
+    eventBus.publish('PLAY_STOPPED', { playhead: 4.5, reason: 'pause' });
     expect(transport.getSnapshot()).toMatchObject({ status: 'idle', playhead: 4.5 });
-    expect(transport.stop(true)).toBe(0);
   });
 
   it('owns seek, loop, punch, count in and BPM', () => {
-    const playback = playbackMock();
-    const transport = createVoiceStudioTransportController();
-    transport.attachPlayback(playback);
+    const eventBus = createVoiceStudioEventBus();
+    const transport = createVoiceStudioTransportController({ eventBus });
     transport.seek(8);
     transport.setLoop({ enabled: true, start: 4, end: 10 });
     transport.setPunch({ enabled: true, in: 5, out: 9 });
@@ -47,7 +41,8 @@ describe('VoiceStudioTransportController', () => {
   });
 
   it('is observable without delegating ownership to React', () => {
-    const transport = createVoiceStudioTransportController();
+    const eventBus = createVoiceStudioEventBus();
+    const transport = createVoiceStudioTransportController({ eventBus });
     const listener = vi.fn();
     const unsubscribe = transport.subscribe(listener);
     transport.seek(7);
@@ -58,14 +53,15 @@ describe('VoiceStudioTransportController', () => {
     expect(listener).toHaveBeenCalledTimes(2);
   });
 
-  it('routes playback end reasons into state', () => {
-    const transport = createVoiceStudioTransportController();
+  it('routes playback end reasons received from EventBus into state', () => {
+    const eventBus = createVoiceStudioEventBus();
+    const transport = createVoiceStudioTransportController({ eventBus });
     transport.beginRecording();
     transport.endRecording(5);
     expect(transport.getSnapshot()).toMatchObject({ status: 'idle', playhead: 5 });
-    transport.handlePlaybackEnded(2, 'loop');
+    eventBus.publish('PLAY_STOPPED', { playhead: 2, reason: 'loop' });
     expect(transport.getSnapshot()).toMatchObject({ status: 'playing', playhead: 2 });
-    transport.handlePlaybackEnded(0, 'ended');
+    eventBus.publish('PLAY_STOPPED', { playhead: 0, reason: 'ended' });
     expect(transport.getSnapshot()).toMatchObject({ status: 'idle', playhead: 0 });
   });
 });

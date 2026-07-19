@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createVoiceStudioAssetStore, VoiceStudioAssetStore } from './voice-studio-asset-store';
+import { createVoiceStudioEventBus, VoiceStudioEventBus } from './voice-studio-event-bus';
 import { VoiceStudioHistoryEngine } from './voice-studio-history-engine';
 import { VoiceStudioPlayback } from './voice-studio-playback';
 import { VoiceStudioProjectActions } from './voice-studio-project-actions';
@@ -11,10 +12,11 @@ import { createVoiceStudioSession } from './voice-studio-session';
 import { createVoiceStudioTransportController, VoiceStudioTransportController } from './voice-studio-transport-controller';
 
 describe('createVoiceStudioSession', () => {
-  it('composes modules without starting browser runtime', () => {
+  it('composes modules around one EventBus without starting browser runtime', () => {
     const audioContextFactory = vi.fn(() => { throw new Error('AudioContext should not be requested during composition.'); });
     const session = createVoiceStudioSession({ runtimeOptions: { audioContextFactory } });
     expect(session.project.schemaVersion).toBe(2);
+    expect(session.eventBus).toBeInstanceOf(VoiceStudioEventBus);
     expect(session.actions).toBeInstanceOf(VoiceStudioProjectActions);
     expect(session.actions.project).toBe(session.project);
     expect(session.history).toBeInstanceOf(VoiceStudioHistoryEngine);
@@ -32,12 +34,14 @@ describe('createVoiceStudioSession', () => {
     const project = createVoiceStudioProject('Session project');
     project.view.playhead = 12;
     const selection = createSelectionState(['clip-a']);
-    const transport = createVoiceStudioTransportController({ playhead: 7, tempo: 120 });
+    const eventBus = createVoiceStudioEventBus();
+    const transport = createVoiceStudioTransportController({ eventBus, playhead: 7, tempo: 120 });
     const runtime = createVoiceStudioRuntime({ audioContextFactory: () => { throw new Error('AudioContext should remain lazy.'); } });
-    const assetStore = createVoiceStudioAssetStore(runtime);
-    const session = createVoiceStudioSession({ project, selection, transport, assetStore, runtime, historyLimit: 12 });
+    const assetStore = createVoiceStudioAssetStore(runtime, eventBus);
+    const session = createVoiceStudioSession({ project, selection, eventBus, transport, assetStore, runtime, historyLimit: 12 });
     expect(session.project).toBe(project);
     expect(session.actions.project).toBe(project);
+    expect(session.eventBus).toBe(eventBus);
     expect(session.selection).toBe(selection);
     expect(session.transport).toBe(transport);
     expect(session.assetStore).toBe(assetStore);
