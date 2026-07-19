@@ -8,6 +8,7 @@ import {
   createRecordingSession,
   supportedRecordingMimeType,
 } from './voice-studio-recording-engine';
+import { createVoiceStudioRuntime } from './voice-studio-runtime';
 import { createSelectionState } from './voice-studio-selection-engine';
 import type {
   CreateVoiceStudioSessionOptions,
@@ -38,11 +39,7 @@ export function createVoiceStudioSession(options: CreateVoiceStudioSessionOption
     },
     assetStore: options.assetStore ?? {
       blobs: new Map(),
-      objectUrls: new Map(),
     },
-    runtime: options.runtime ?? {
-      audioContext: null,
-      disposed: false,
-    },
+    runtime: options.runtime ?? createVoiceStudioRuntime(options.runtimeOptions),
   };
 }
