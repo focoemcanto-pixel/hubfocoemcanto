@@ -8,6 +8,7 @@ import type {
   createRecordingSession,
   supportedRecordingMimeType,
 } from './voice-studio-recording-engine';
+import type { VoiceStudioRuntime, CreateVoiceStudioRuntimeOptions } from './voice-studio-runtime';
 import type { VoiceStudioSelectionState } from './voice-studio-selection-engine';
 
 export type VoiceStudioTransportStatus = 'idle' | 'countin' | 'recording' | 'playing';
@@ -19,12 +20,6 @@ export type VoiceStudioTransport = {
 
 export type VoiceStudioAssetStore = {
   blobs: Map<string, Blob>;
-  objectUrls: Map<string, string>;
-};
-
-export type VoiceStudioRuntime = {
-  audioContext: AudioContext | null;
-  disposed: boolean;
 };
 
 export type VoiceStudioRecording = {
@@ -54,4 +49,5 @@ export type CreateVoiceStudioSessionOptions = {
   transport?: VoiceStudioTransport;
   assetStore?: VoiceStudioAssetStore;
   runtime?: VoiceStudioRuntime;
+  runtimeOptions?: CreateVoiceStudioRuntimeOptions;
 };
