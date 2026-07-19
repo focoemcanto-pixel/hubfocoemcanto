@@ -5,6 +5,7 @@ import {
   MoveClipCommand,
   SplitClipCommand,
   TrimClipCommand,
+  type VoiceStudioCommand,
 } from './voice-studio-commands';
 import { VoiceStudioHistoryEngine } from './voice-studio-history-engine';
 import {
@@ -16,7 +17,9 @@ import {
   type VoiceStudioProject,
 } from './voice-studio-project-model';
 
-function projectWithClip(): { project: VoiceStudioProject; clipId: string; trackId: string; secondTrackId: string } {
+type Fixture = { project: VoiceStudioProject; clipId: string; trackId: string; secondTrackId: string };
+
+function projectWithClip(): Fixture {
   const asset: VoiceStudioAsset = {
     id: 'asset-a',
     kind: 'audio',
@@ -38,19 +41,18 @@ function projectWithClip(): { project: VoiceStudioProject; clipId: string; track
   };
 }
 
-function roundTrip(command: MoveClipCommand | SplitClipCommand | DeleteClipCommand | DuplicateClipCommand | TrimClipCommand) {
-  const fixture = projectWithClip();
+function roundTrip(fixture: Fixture, command: VoiceStudioCommand) {
   const history = new VoiceStudioHistoryEngine();
   const changed = history.execute(fixture.project, command);
   const undone = history.undo(changed)!;
   const redone = history.redo(undone)!;
-  return { ...fixture, history, changed, undone, redone };
+  return { history, changed, undone, redone };
 }
 
 describe('Voice Studio clip Commands', () => {
   it('moves a clip and preserves undo/redo', () => {
     const fixture = projectWithClip();
-    const result = roundTrip(new MoveClipCommand(fixture.clipId, fixture.secondTrackId, 5));
+    const result = roundTrip(fixture, new MoveClipCommand(fixture.clipId, fixture.secondTrackId, 5));
     expect(findClip(result.changed, fixture.clipId)).toMatchObject({ trackId: fixture.secondTrackId, clip: { start: 5 } });
     expect(findClip(result.undone, fixture.clipId)).toMatchObject({ trackId: fixture.trackId, clip: { start: 1 } });
     expect(findClip(result.redone, fixture.clipId)).toMatchObject({ trackId: fixture.secondTrackId, clip: { start: 5 } });
@@ -58,7 +60,7 @@ describe('Voice Studio clip Commands', () => {
 
   it('splits a clip and restores the original clip on undo', () => {
     const fixture = projectWithClip();
-    const result = roundTrip(new SplitClipCommand(fixture.clipId, 5));
+    const result = roundTrip(fixture, new SplitClipCommand(fixture.clipId, 5));
     expect(result.changed.tracks[0].clips).toHaveLength(2);
     expect(result.undone.tracks[0].clips).toHaveLength(1);
     expect(result.undone.tracks[0].clips[0].id).toBe(fixture.clipId);
@@ -67,7 +69,7 @@ describe('Voice Studio clip Commands', () => {
 
   it('deletes and restores a clip', () => {
     const fixture = projectWithClip();
-    const result = roundTrip(new DeleteClipCommand(fixture.clipId));
+    const result = roundTrip(fixture, new DeleteClipCommand(fixture.clipId));
     expect(findClip(result.changed, fixture.clipId)).toBeNull();
     expect(findClip(result.undone, fixture.clipId)).not.toBeNull();
     expect(findClip(result.redone, fixture.clipId)).toBeNull();
@@ -75,7 +77,7 @@ describe('Voice Studio clip Commands', () => {
 
   it('duplicates a clip without generating a new duplicate during redo', () => {
     const fixture = projectWithClip();
-    const result = roundTrip(new DuplicateClipCommand(fixture.clipId, 7, fixture.secondTrackId));
+    const result = roundTrip(fixture, new DuplicateClipCommand(fixture.clipId, 7, fixture.secondTrackId));
     expect(result.changed.tracks[1].clips).toHaveLength(1);
     expect(result.undone.tracks[1].clips).toHaveLength(0);
     expect(result.redone.tracks[1].clips).toHaveLength(1);
@@ -84,7 +86,7 @@ describe('Voice Studio clip Commands', () => {
 
   it('trims either edge and restores exact clip geometry', () => {
     const fixture = projectWithClip();
-    const result = roundTrip(new TrimClipCommand(fixture.clipId, 'start', 3));
+    const result = roundTrip(fixture, new TrimClipCommand(fixture.clipId, 'start', 3));
     expect(findClip(result.changed, fixture.clipId)?.clip).toMatchObject({ start: 3, sourceOffset: 2, duration: 10 });
     expect(findClip(result.undone, fixture.clipId)?.clip).toMatchObject({ start: 1, sourceOffset: 0, duration: 12 });
     expect(findClip(result.redone, fixture.clipId)?.clip).toMatchObject({ start: 3, sourceOffset: 2, duration: 10 });
