@@ -13,28 +13,32 @@ export type VoiceStudioEventMap = {
 };
 
 export type VoiceStudioEventName = keyof VoiceStudioEventMap;
-export type VoiceStudioEventHandler<K extends VoiceStudioEventName> = (payload: VoiceStudioEventMap[K]) => void;
+export type VoiceStudioEventHandler<K extends VoiceStudioEventName> = (payload: VoiceStudioEventMap[K]) => void | Promise<void>;
+type UntypedHandler = (payload: unknown) => void | Promise<void>;
 
 export class VoiceStudioEventBus {
-  readonly #listeners = new Map<VoiceStudioEventName, Set<(payload: unknown) => void>>();
+  readonly #listeners = new Map<VoiceStudioEventName, Set<UntypedHandler>>();
 
   publish<K extends VoiceStudioEventName>(event: K, payload: VoiceStudioEventMap[K]): void {
-    this.#listeners.get(event)?.forEach(listener => listener(payload));
+    this.#listeners.get(event)?.forEach(listener => { void listener(payload); });
+  }
+
+  async publishAsync<K extends VoiceStudioEventName>(event: K, payload: VoiceStudioEventMap[K]): Promise<void> {
+    const listeners = [...(this.#listeners.get(event) ?? [])];
+    await Promise.all(listeners.map(listener => listener(payload)));
   }
 
   subscribe<K extends VoiceStudioEventName>(event: K, handler: VoiceStudioEventHandler<K>): () => void {
-    const listeners = this.#listeners.get(event) ?? new Set<(payload: unknown) => void>();
-    listeners.add(handler as (payload: unknown) => void);
+    const listeners = this.#listeners.get(event) ?? new Set<UntypedHandler>();
+    listeners.add(handler as UntypedHandler);
     this.#listeners.set(event, listeners);
     return () => {
-      listeners.delete(handler as (payload: unknown) => void);
+      listeners.delete(handler as UntypedHandler);
       if (!listeners.size) this.#listeners.delete(event);
     };
   }
 
-  clear(): void {
-    this.#listeners.clear();
-  }
+  clear(): void { this.#listeners.clear(); }
 }
 
 export function createVoiceStudioEventBus(): VoiceStudioEventBus {
