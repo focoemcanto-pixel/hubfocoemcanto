@@ -165,6 +165,14 @@ export class VoiceStudioRuntime {
     if (this.#audioContext?.state === 'running') await this.#audioContext.suspend();
   }
 
+  async decodeAudio(assetId: string, data: ArrayBuffer): Promise<AudioBuffer> {
+    const cached = this.#decodedAudio.get(assetId);
+    if (cached) return cached;
+    const buffer = await this.#ensureAudioContext().decodeAudioData(data.slice(0));
+    this.#decodedAudio.set(assetId, buffer);
+    return buffer;
+  }
+
   registerObjectURL(assetId: string, blob: Blob): string {
     this.revokeObjectURL(assetId);
     const url = this.#createObjectURL(blob);
