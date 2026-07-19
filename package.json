@@ -9,7 +9,9 @@
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test": "vitest",
+    "test:run": "vitest run"
   },
   "dependencies": {
     "@daily-co/daily-js": "latest",
@@ -30,6 +32,7 @@
     "eslint": "latest",
     "eslint-config-next": "latest",
     "typescript": "latest",
+    "vitest": "3.2.4",
     "wrangler": "latest"
   }
 }
