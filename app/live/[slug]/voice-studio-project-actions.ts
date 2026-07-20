@@ -68,6 +68,15 @@ export class VoiceStudioProjectActions {
   }
 
   get project(): VoiceStudioProject { return this.#project; }
+
+  replace(source: VoiceStudioProject, sourceName: 'bridge' | 'load' = 'load'): VoiceStudioProject {
+    const project = replaceProject(this.#project, normalizeVoiceStudioProject(source));
+    this.#history.reset();
+    this.#eventBus.publish('PROJECT_CHANGED', { project, source: sourceName === 'bridge' ? 'actions' : 'normalize' });
+    this.#eventBus.publish('PLAYHEAD_CHANGED', { playhead: project.view.playhead });
+    return project;
+  }
+
   moveClip(clipId: string, targetTrackId: string, start: number, options: VoiceStudioProjectActionOptions = {}): VoiceStudioProject { return this.#execute(new MoveClipCommand(clipId, targetTrackId, start, options.groupId), options); }
   splitClip(clipId: string, playhead: number): VoiceStudioProject { return this.#execute(new SplitClipCommand(clipId, playhead)); }
   trim(clipId: string, edge: TrimClipEdge, time: number, options: VoiceStudioProjectActionOptions = {}): VoiceStudioProject { return this.#execute(new TrimClipCommand(clipId, edge, time, options.groupId), options); }
