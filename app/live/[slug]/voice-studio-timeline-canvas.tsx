@@ -12,12 +12,14 @@ import type {
 } from './voice-studio-project-model';
 import VoiceStudioTimelineRuler from './voice-studio-timeline-ruler';
 import { timelineTimeToPixels, timelineTrackHeight, type TimelineViewport } from './voice-studio-timeline-engine';
+import { useVoiceStudioPlayhead } from './use-voice-studio-playhead';
 
 type EditMode = 'move' | 'trim-left' | 'trim-right';
 
 type TimelineCanvasProps = {
   project: VoiceStudioProject;
   duration: number;
+  /** Legacy recording clock. Visual playhead is sourced from Session. */
   elapsed: number;
   viewport: TimelineViewport;
   zoom: number;
@@ -52,6 +54,7 @@ export default function VoiceStudioTimelineCanvas(props: TimelineCanvasProps) {
     livePeaks = [], readOnly = true, onSeek, onBackgroundClick, onSelectClip,
     onBeginDrag, onMoveDrag, onEndDrag, lasso = null,
   } = props;
+  const { playhead: visualPlayhead } = useVoiceStudioPlayhead();
   const recording = status === 'recording' || status === 'countin';
   const interactive = !readOnly && Boolean(onSelectClip && onBeginDrag && onMoveDrag && onEndDrag);
   const trackHeight = timelineTrackHeight(verticalZoom);
@@ -61,8 +64,8 @@ export default function VoiceStudioTimelineCanvas(props: TimelineCanvasProps) {
   return <div className={`vs-pro-canvas ${interactive ? 'interactive' : 'view-only'}`}>
     <style>{CANVAS_CSS}</style>
     <div className="vs-pro-canvas-content" style={{ width: contentWidth, minHeight, '--grid-step': `${gridStep}px` } as CSSProperties} onClick={onBackgroundClick}>
-      <VoiceStudioTimelineRuler duration={duration} tempo={project.tempo} timeSignature={project.timeSignature} zoom={zoom} viewport={viewport} playhead={elapsed} loop={project.loop} onSeek={onSeek}/>
-      <div className="vs-playhead" style={{ transform: `translateX(${timelineTimeToPixels(elapsed, zoom)}px)` }}/>
+      <VoiceStudioTimelineRuler duration={duration} tempo={project.tempo} timeSignature={project.timeSignature} zoom={zoom} viewport={viewport} playhead={visualPlayhead} loop={project.loop} onSeek={onSeek}/>
+      <div className="vs-playhead" data-playhead-source="session" style={{ transform: `translateX(${timelineTimeToPixels(visualPlayhead, zoom)}px)` }}/>
       {project.tracks.map(track => <TimelineLane key={track.id} track={track} assets={project.assets} zoom={zoom} selectedIds={selectedIds} interactive={interactive} onSelectClip={onSelectClip} onBeginDrag={onBeginDrag} onMoveDrag={onMoveDrag} onEndDrag={onEndDrag} trackHeight={trackHeight}/>)}
       {recording && <div className={`vs-lane live ${armedKind}`} style={{ height: trackHeight }}>
         <div className="vs-live-clip" style={{ left: timelineTimeToPixels(recordStart, zoom), width: Math.max(16, timelineTimeToPixels(Math.max(0, elapsed - recordStart), zoom)) }}>
