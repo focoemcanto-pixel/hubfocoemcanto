@@ -2,15 +2,20 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useVoiceStudio } from './voice-studio-provider';
+import { createLegacyRecordingCaptureAdapter } from './voice-studio-legacy-recording-capture-adapter';
 import {
   observeVoiceStudioLegacyRecordingState,
-  triggerVoiceStudioLegacyRecordingIntent,
   type VoiceStudioLegacyRecordingVisualState,
 } from './voice-studio-legacy-recording-intent-bridge';
 
 export function useVoiceStudioLegacyRecordingIntent() {
   const { session, readOnly } = useVoiceStudio();
   const [state, setState] = useState<VoiceStudioLegacyRecordingVisualState>('idle');
+  const [captureState, setCaptureState] = useState(session.recordingCapture.getSnapshot());
+
+  useEffect(() => session.recordingCapture.subscribe(() => {
+    setCaptureState(session.recordingCapture.getSnapshot());
+  }), [session]);
 
   useEffect(() => observeVoiceStudioLegacyRecordingState(next => {
     setState(next);
@@ -33,14 +38,28 @@ export function useVoiceStudioLegacyRecordingIntent() {
 
   const trigger = useCallback(() => {
     if (readOnly) return false;
-    return triggerVoiceStudioLegacyRecordingIntent();
-  }, [readOnly]);
+
+    if (captureState.state === 'capturing') {
+      void session.recordingCapture.stop();
+      return true;
+    }
+
+    if (captureState.state !== 'idle' && captureState.state !== 'failed') return false;
+
+    const kind = session.project.tracks.some(track => track.kind === 'audio')
+      ? 'audio'
+      : session.project.tracks[0]?.kind ?? 'audio';
+    void session.recordingCapture.start(kind, createLegacyRecordingCaptureAdapter);
+    return true;
+  }, [captureState.state, readOnly, session]);
 
   return {
     state,
-    isRecording: state === 'recording',
-    isCountIn: state === 'countin',
-    canTrigger: !readOnly && state !== 'countin',
+    captureState: captureState.state,
+    captureError: captureState.error,
+    isRecording: captureState.state === 'capturing' || state === 'recording',
+    isCountIn: state === 'countin' || captureState.state === 'preparing',
+    canTrigger: !readOnly && captureState.state !== 'preparing' && captureState.state !== 'stopping',
     trigger,
   };
 }
