@@ -1,9 +1,10 @@
 'use client';
 
 import { useCallback, useLayoutEffect } from 'react';
-import { Pause, Play, RotateCcw, Square } from 'lucide-react';
+import { Circle, Pause, Play, RotateCcw, Square } from 'lucide-react';
 import { projectDuration } from './voice-studio-project-model';
 import { useVoiceStudio } from './voice-studio-provider';
+import { useVoiceStudioLegacyRecordingIntent } from './use-voice-studio-legacy-recording-intent';
 import { useVoiceStudioSessionTransport } from './use-voice-studio-transport';
 
 const TRANSPORT_CSS = `
@@ -12,6 +13,8 @@ const TRANSPORT_CSS = `
 .vs-session-transport button:hover:not(:disabled){border-color:#8b5cf6;color:#fff;background:#29233b}
 .vs-session-transport button:disabled{opacity:.35;cursor:not-allowed}
 .vs-session-transport button.primary{width:44px;height:44px;border-radius:50%;background:#7c3aed;border-color:#8b5cf6;color:#fff}
+.vs-session-transport button.record{color:#f87171}
+.vs-session-transport button.record.active{background:#7f1d1d;border-color:#ef4444;color:#fff;box-shadow:0 0 0 3px rgba(239,68,68,.18)}
 .vs-session-transport button.stop{color:#fca5a5}
 .vs-session-transport svg{width:17px;height:17px}
 .vs-session-transport time{min-width:88px;margin-left:8px;color:#e5e7eb;font-variant-numeric:tabular-nums;font-size:13px;font-weight:800}
@@ -25,6 +28,11 @@ function timeLabel(seconds: number): string {
   const rest = Math.floor(safe % 60);
   const tenths = Math.floor((safe % 1) * 10);
   return `${String(minutes).padStart(2, '0')}:${String(rest).padStart(2, '0')}.${tenths}`;
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (typeof HTMLElement === 'undefined' || !(target instanceof HTMLElement)) return false;
+  return target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName);
 }
 
 export function useSessionTransportRequest() {
@@ -41,20 +49,28 @@ export function useSessionTransportRequest() {
   }, [session]);
 }
 
-/** Registered before the legacy controller passive effect, so Space has one owner. */
+/** Registered before the legacy controller passive effect, so Space and R have one owner. */
 export function VoiceStudioTransportKeyboardOwner() {
   const { commands } = useVoiceStudioSessionTransport();
+  const recording = useVoiceStudioLegacyRecordingIntent();
   const createRequest = useSessionTransportRequest();
 
   useLayoutEffect(() => {
     const keydown = (event: KeyboardEvent) => {
-      if (event.code !== 'Space') return;
+      if (event.code === 'Space') {
+        event.stopImmediatePropagation();
+        void commands.handleKeyDown(event, createRequest());
+        return;
+      }
+
+      if (event.key.toLowerCase() !== 'r' || event.repeat || event.ctrlKey || event.metaKey || event.altKey || isEditableTarget(event.target)) return;
+      event.preventDefault();
       event.stopImmediatePropagation();
-      void commands.handleKeyDown(event, createRequest());
+      recording.trigger();
     };
     window.addEventListener('keydown', keydown, true);
     return () => window.removeEventListener('keydown', keydown, true);
-  }, [commands, createRequest]);
+  }, [commands, createRequest, recording]);
 
   return null;
 }
@@ -62,6 +78,7 @@ export function VoiceStudioTransportKeyboardOwner() {
 export function VoiceStudioSessionTransport() {
   const { session } = useVoiceStudio();
   const { snapshot, viewModel, commands } = useVoiceStudioSessionTransport();
+  const recording = useVoiceStudioLegacyRecordingIntent();
   const createRequest = useSessionTransportRequest();
   const duration = projectDuration(session.project);
   const hasContent = duration > 0;
@@ -75,6 +92,7 @@ export function VoiceStudioSessionTransport() {
         <button title="Voltar ao início" disabled={!viewModel.canReturnToStart} onClick={() => commands.returnToStart()}><RotateCcw /></button>
         <button className="primary" title="Reproduzir" disabled={!viewModel.canPlay || !hasContent} onClick={play}><Play fill="currentColor" /></button>
         <button title="Pausar" disabled={!viewModel.canPause} onClick={() => commands.pause()}><Pause fill="currentColor" /></button>
+        <button className={`record ${recording.isRecording ? 'active' : ''}`} title={recording.isRecording ? 'Parar gravação' : 'Gravar'} disabled={!recording.canTrigger || snapshot.state === 'PLAYING'} onClick={recording.trigger} aria-pressed={recording.isRecording}>{recording.isRecording ? <Square fill="currentColor" /> : <Circle fill="currentColor" />}</button>
         <button className="stop" title="Parar" disabled={!viewModel.canStop} onClick={() => commands.stop()}><Square fill="currentColor" /></button>
         <time>{timeLabel(snapshot.playhead)}</time>
         <span className="state">{snapshot.state.replace('_', ' ')}</span>
