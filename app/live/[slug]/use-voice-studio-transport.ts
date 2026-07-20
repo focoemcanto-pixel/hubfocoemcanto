@@ -13,19 +13,10 @@ export type VoiceStudioTransportBinding = {
   commands: VoiceStudioTransportCommands;
 };
 
-/**
- * Observes the Session-owned Transport without allowing UI components to
- * import Playback, Recording, Runtime or EventBus.
- *
- * The optional controller keeps compatibility with isolated tests and legacy
- * consumers while the workspace migrates to the Provider-owned Session.
- */
+/** Keeps the original isolated-controller API for tests and non-Provider consumers. */
 export function useVoiceStudioTransport(
-  controller?: VoiceStudioTransportController,
+  transport: VoiceStudioTransportController,
 ): VoiceStudioTransportSnapshot {
-  const { session } = useVoiceStudio();
-  const transport = controller ?? session.transport;
-
   return useSyncExternalStore(
     transport.subscribe,
     transport.getSnapshot,
@@ -33,13 +24,13 @@ export function useVoiceStudioTransport(
   );
 }
 
-export function useVoiceStudioTransportBinding(): VoiceStudioTransportBinding {
+/**
+ * Official UI boundary for the Provider-owned Session.
+ * Components observe Transport state here and send intent only through
+ * TransportCommands; Playback, Recording, Runtime and EventBus stay hidden.
+ */
+export function useVoiceStudioSessionTransport(): VoiceStudioTransportBinding {
   const { session } = useVoiceStudio();
-  const snapshot = useSyncExternalStore(
-    session.transport.subscribe,
-    session.transport.getSnapshot,
-    session.transport.getSnapshot,
-  );
-
+  const snapshot = useVoiceStudioTransport(session.transport);
   return { snapshot, commands: session.transportCommands };
 }
