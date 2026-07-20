@@ -13,14 +13,15 @@ import type {
 import VoiceStudioTimelineRuler from './voice-studio-timeline-ruler';
 import { timelineTimeToPixels, timelineTrackHeight, type TimelineViewport } from './voice-studio-timeline-engine';
 import { useVoiceStudioPlayhead } from './use-voice-studio-playhead';
+import { useVoiceStudioLegacyRecordingPlayheadBridge } from './use-voice-studio-legacy-recording-playhead-bridge';
 
 type EditMode = 'move' | 'trim-left' | 'trim-right';
 
 type TimelineCanvasProps = {
   project: VoiceStudioProject;
   duration: number;
-  /** Legacy recording clock. Visual playhead is sourced from Session. */
-  elapsed: number;
+  /** @deprecated Kept only while the legacy caller still passes this prop. */
+  elapsed?: number;
   viewport: TimelineViewport;
   zoom: number;
   contentWidth: number;
@@ -49,11 +50,12 @@ const CANVAS_CSS = `.vs-pro-canvas{position:relative;min-height:100%;overflow:hi
 
 export default function VoiceStudioTimelineCanvas(props: TimelineCanvasProps) {
   const {
-    project, duration, elapsed, viewport, zoom, contentWidth, verticalZoom,
+    project, duration, viewport, zoom, contentWidth, verticalZoom,
     selectedIds = new Set<string>(), status = 'idle', armedKind = 'audio', recordStart = 0,
     livePeaks = [], readOnly = true, onSeek, onBackgroundClick, onSelectClip,
     onBeginDrag, onMoveDrag, onEndDrag, lasso = null,
   } = props;
+  useVoiceStudioLegacyRecordingPlayheadBridge(status, recordStart);
   const { playhead: visualPlayhead } = useVoiceStudioPlayhead();
   const recording = status === 'recording' || status === 'countin';
   const interactive = !readOnly && Boolean(onSelectClip && onBeginDrag && onMoveDrag && onEndDrag);
@@ -68,7 +70,7 @@ export default function VoiceStudioTimelineCanvas(props: TimelineCanvasProps) {
       <div className="vs-playhead" data-playhead-source="session" style={{ transform: `translateX(${timelineTimeToPixels(visualPlayhead, zoom)}px)` }}/>
       {project.tracks.map(track => <TimelineLane key={track.id} track={track} assets={project.assets} zoom={zoom} selectedIds={selectedIds} interactive={interactive} onSelectClip={onSelectClip} onBeginDrag={onBeginDrag} onMoveDrag={onMoveDrag} onEndDrag={onEndDrag} trackHeight={trackHeight}/>)}
       {recording && <div className={`vs-lane live ${armedKind}`} style={{ height: trackHeight }}>
-        <div className="vs-live-clip" style={{ left: timelineTimeToPixels(recordStart, zoom), width: Math.max(16, timelineTimeToPixels(Math.max(0, elapsed - recordStart), zoom)) }}>
+        <div className="vs-live-clip" data-recording-clock-source="session" style={{ left: timelineTimeToPixels(recordStart, zoom), width: Math.max(16, timelineTimeToPixels(Math.max(0, visualPlayhead - recordStart), zoom)) }}>
           {armedKind === 'audio' ? <Wave peaks={livePeaks}/> : <div className="vs-midi-live"><KeyboardMusic/><span>Capturando MIDI…</span></div>}
         </div>
       </div>}
