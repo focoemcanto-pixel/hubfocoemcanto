@@ -2,6 +2,7 @@ import type { VoiceStudioAssetStore } from './voice-studio-asset-store';
 import type { VoiceStudioEventBus } from './voice-studio-event-bus';
 import type { VoiceStudioHistoryEngine } from './voice-studio-history-engine';
 import type { VoiceStudioPlayback } from './voice-studio-playback';
+import type { VoiceStudioPlayheadStore } from './voice-studio-playhead-store';
 import type { VoiceStudioProjectActions } from './voice-studio-project-actions';
 import type { VoiceStudioProject } from './voice-studio-project-model';
 import type { VoiceStudioRecording } from './voice-studio-recording';
@@ -20,6 +21,7 @@ export type VoiceStudioSession = {
   recording: VoiceStudioRecording;
   transport: VoiceStudioTransportController;
   transportCommands: VoiceStudioTransportCommands;
+  playhead: VoiceStudioPlayheadStore;
   assetStore: VoiceStudioAssetStore;
   runtime: VoiceStudioRuntime;
 };
