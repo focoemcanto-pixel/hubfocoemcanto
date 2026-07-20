@@ -16,12 +16,12 @@ describe('VoiceStudioTransportController', () => {
 
     await transport.play(playbackRequest());
     expect(started).toHaveBeenCalledWith({ request: playbackRequest() });
-    expect(transport.getSnapshot()).toMatchObject({ status: 'playing', playhead: 2, tempo: 120, bpm: 120 });
+    expect(transport.getSnapshot()).toMatchObject({ state: 'PLAYING', status: 'playing', playhead: 2, tempo: 120, bpm: 120 });
 
     eventBus.publish('PLAYHEAD_CHANGED', { playhead: 3.25 });
     expect(transport.getSnapshot().playhead).toBe(3.25);
     eventBus.publish('PLAY_STOPPED', { playhead: 4.5, reason: 'pause' });
-    expect(transport.getSnapshot()).toMatchObject({ status: 'idle', playhead: 4.5 });
+    expect(transport.getSnapshot()).toMatchObject({ state: 'PAUSED', status: 'idle', playhead: 4.5 });
   });
 
   it('owns seek, loop, punch, count in and BPM', () => {
@@ -35,7 +35,7 @@ describe('VoiceStudioTransportController', () => {
     transport.setCountBeat(3);
     transport.setBpm(132);
     expect(transport.getSnapshot()).toEqual({
-      status: 'countin', playhead: 8, tempo: 132, bpm: 132, countInBars: 2, countBeat: 3,
+      state: 'COUNT_IN', status: 'countin', playhead: 8, tempo: 132, bpm: 132, countInBars: 2, countBeat: 3,
       loop: { enabled: true, start: 4, end: 10 }, punch: { enabled: true, in: 5, out: 9 },
     });
   });
@@ -58,10 +58,22 @@ describe('VoiceStudioTransportController', () => {
     const transport = createVoiceStudioTransportController({ eventBus });
     transport.beginRecording();
     transport.endRecording(5);
-    expect(transport.getSnapshot()).toMatchObject({ status: 'idle', playhead: 5 });
+    expect(transport.getSnapshot()).toMatchObject({ state: 'IDLE', status: 'idle', playhead: 5 });
     eventBus.publish('PLAY_STOPPED', { playhead: 2, reason: 'loop' });
-    expect(transport.getSnapshot()).toMatchObject({ status: 'playing', playhead: 2 });
+    expect(transport.getSnapshot()).toMatchObject({ state: 'PLAYING', status: 'playing', playhead: 2 });
     eventBus.publish('PLAY_STOPPED', { playhead: 0, reason: 'ended' });
-    expect(transport.getSnapshot()).toMatchObject({ status: 'idle', playhead: 0 });
+    expect(transport.getSnapshot()).toMatchObject({ state: 'IDLE', status: 'idle', playhead: 0 });
+  });
+
+  it('separates pause, stop and return to start', async () => {
+    const eventBus = createVoiceStudioEventBus();
+    const transport = createVoiceStudioTransportController({ eventBus, playhead: 3 });
+    await transport.play(playbackRequest());
+    expect(transport.pause()).toBe(2);
+    expect(transport.state).toBe('PAUSED');
+    expect(transport.stop()).toBe(2);
+    expect(transport.state).toBe('IDLE');
+    expect(transport.returnToStart()).toBe(0);
+    expect(transport.getSnapshot().playhead).toBe(0);
   });
 });
