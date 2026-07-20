@@ -108,16 +108,6 @@ export default function VoiceStudioDaw({ readOnly }: { readOnly: boolean }) {
   const audioCaptureSlot =
     useVoiceStudioControllerAudioCaptureSlot();
 
-  const captureRef = audioCaptureSlot.captureRef;
-  const recorderRef = audioCaptureSlot.recorderRef;
-  const chunksRef = audioCaptureSlot.chunksRef;
-  const streamRef = audioCaptureSlot.streamRef;
-  const analyserRef = audioCaptureSlot.analyserRef;
-  const inputSourceRef = audioCaptureSlot.inputSourceRef;
-  const monitorGainRef = audioCaptureSlot.monitorGainRef;
-  const rafRef = audioCaptureSlot.rafRef;
-  const livePeaksRef = audioCaptureSlot.livePeaksRef;
-
   const projectRef = useRef(project);
   const blobsRef = useRef<Record<string, Blob>>({});
   const objectUrlsRef = useRef<Record<string, string>>({});
