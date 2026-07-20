@@ -30,6 +30,7 @@ import { VoiceStudioHistoryEngine, type VoiceStudioHistoryOperation } from './vo
 import { createObjectUrls, revokeObjectUrls } from './voice-studio-project-storage';
 import VoiceStudioTimelineCanvas from './voice-studio-timeline-canvas';
 import { useVoiceStudioTimeline } from './use-voice-studio-timeline';
+import { useVoiceStudioControllerAudioCaptureSlot } from './use-voice-studio-controller-audio-capture-slot';
 import { timelinePixelsToTime, timelineSnapTime } from './voice-studio-timeline-engine';
 import { VoiceStudioPlaybackEngine, playbackSelectionRange, type VoiceStudioPlaybackMode } from './voice-studio-playback-engine';
 import { buildRecordedAudioAsset, commitRecordingToProject, createAudioCapture, createRecordingSession, type VoiceStudioAudioCapture, type VoiceStudioRecordingSession } from './voice-studio-recording-engine';
@@ -103,6 +104,9 @@ export default function VoiceStudioDaw({ readOnly }: { readOnly: boolean }) {
   const [historyState, setHistoryState] = useState(() => ({ canUndo: false, canRedo: false, historyDepth: 0, futureDepth: 0 }));
   const [livePeaks, setLivePeaks] = useState<number[]>([]);
   const [verticalZoom, setVerticalZoom] = useState(1);
+
+  const audioCaptureSlot =
+    useVoiceStudioControllerAudioCaptureSlot();
 
   const projectRef = useRef(project);
   const blobsRef = useRef<Record<string, Blob>>({});
