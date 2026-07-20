@@ -13,6 +13,7 @@ export type VoiceStudioTransportEvent =
   | 'STOP'
   | 'STOPPED'
   | 'RECORD'
+  | 'COUNT_IN'
   | 'COUNT_IN_FINISHED'
   | 'RECORDING_FINISHED'
   | 'PLAYBACK_FINISHED'
@@ -28,7 +29,7 @@ export type VoiceStudioTransportTransition = {
 type StateListener = (transition: VoiceStudioTransportTransition) => void;
 
 const TRANSITIONS: Readonly<Record<VoiceStudioTransportState, Partial<Record<VoiceStudioTransportEvent, VoiceStudioTransportState>>>> = {
-  IDLE: { PLAY: 'PLAYING', RECORD: 'RECORDING', SEEK: 'SEEKING', STOP: 'STOPPING' },
+  IDLE: { PLAY: 'PLAYING', RECORD: 'RECORDING', COUNT_IN: 'COUNT_IN', SEEK: 'SEEKING', STOP: 'STOPPING' },
   PLAYING: { PAUSE: 'PAUSED', STOP: 'STOPPING', SEEK: 'SEEKING', PLAYBACK_FINISHED: 'STOPPING' },
   PAUSED: { PLAY: 'PLAYING', STOP: 'STOPPING', SEEK: 'SEEKING' },
   RECORDING: { STOP: 'STOPPING', RECORDING_FINISHED: 'STOPPING', SEEK: 'SEEKING' },
@@ -58,18 +59,16 @@ export class VoiceStudioTransportStateMachine {
     if (!to) return null;
 
     if (event === 'SEEK') this.#resumeState = from === 'SEEKING' ? this.#resumeState : from;
-    if (from === 'SEEKING' && event === 'SEEK_FINISHED') to = this.#resumeState === 'PLAYING' ? 'PLAYING' : this.#resumeState === 'PAUSED' ? 'PAUSED' : 'IDLE';
+    if (from === 'SEEKING' && event === 'SEEK_FINISHED') {
+      to = this.#resumeState === 'PLAYING'
+        ? 'PLAYING'
+        : this.#resumeState === 'PAUSED'
+          ? 'PAUSED'
+          : 'IDLE';
+    }
 
     this.#state = to;
     const transition = { from, event, to };
-    this.#listeners.forEach(listener => listener(transition));
-    return transition;
-  }
-
-  force(state: VoiceStudioTransportState): VoiceStudioTransportTransition | null {
-    if (state === this.#state) return null;
-    const transition = { from: this.#state, event: 'STOPPED' as const, to: state };
-    this.#state = state;
     this.#listeners.forEach(listener => listener(transition));
     return transition;
   }
