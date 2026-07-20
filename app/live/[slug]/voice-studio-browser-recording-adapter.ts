@@ -54,6 +54,11 @@ export async function createVoiceStudioBrowserRecordingAdapter(
     stream.getTracks().forEach(track => track.stop());
   };
 
+  const buildResult = (): VoiceStudioBrowserRecordingResult => ({
+    blob: new Blob(capture.chunks, { type: capture.mimeType || capture.recorder.mimeType || 'audio/webm' }),
+    mimeType: capture.mimeType || capture.recorder.mimeType || 'audio/webm',
+  });
+
   const waitForStop = (): Promise<VoiceStudioBrowserRecordingResult> => new Promise((resolve, reject) => {
     const recorder = capture.recorder;
 
@@ -65,16 +70,14 @@ export async function createVoiceStudioBrowserRecordingAdapter(
     const handleStop = () => {
       cleanup();
       settled = true;
-      resolve({
-        blob: new Blob(capture.chunks, { type: capture.mimeType || recorder.mimeType || 'audio/webm' }),
-        mimeType: capture.mimeType || recorder.mimeType || 'audio/webm',
-      });
+      resolve(buildResult());
     };
 
-    const handleError = () => {
+    const handleError = (event: Event) => {
       cleanup();
       settled = true;
-      reject(recorder.error ?? new Error('A gravação foi interrompida pelo navegador.'));
+      const error = event instanceof ErrorEvent ? event.error : null;
+      reject(error instanceof Error ? error : new Error('A gravação foi interrompida pelo navegador.'));
     };
 
     recorder.addEventListener('stop', handleStop, { once: true });
@@ -90,12 +93,7 @@ export async function createVoiceStudioBrowserRecordingAdapter(
     stream,
     recorder: capture.recorder,
     async stop() {
-      if (settled) {
-        return {
-          blob: new Blob(capture.chunks, { type: capture.mimeType || capture.recorder.mimeType || 'audio/webm' }),
-          mimeType: capture.mimeType || capture.recorder.mimeType || 'audio/webm',
-        };
-      }
+      if (settled) return buildResult();
       try {
         return await waitForStop();
       } finally {
