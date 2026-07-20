@@ -1,15 +1,20 @@
 'use client';
 
-import { useSyncExternalStore } from 'react';
+import { useMemo, useSyncExternalStore } from 'react';
 import { useVoiceStudio } from './voice-studio-provider';
 import type {
   VoiceStudioTransportController,
   VoiceStudioTransportSnapshot,
 } from './voice-studio-transport-controller';
 import type { VoiceStudioTransportCommands } from './voice-studio-transport-commands';
+import {
+  createVoiceStudioTransportViewModel,
+  type VoiceStudioTransportViewModel,
+} from './voice-studio-transport-view-model';
 
 export type VoiceStudioTransportBinding = {
   snapshot: VoiceStudioTransportSnapshot;
+  viewModel: VoiceStudioTransportViewModel;
   commands: VoiceStudioTransportCommands;
 };
 
@@ -32,5 +37,10 @@ export function useVoiceStudioTransport(
 export function useVoiceStudioSessionTransport(): VoiceStudioTransportBinding {
   const { session } = useVoiceStudio();
   const snapshot = useVoiceStudioTransport(session.transport);
-  return { snapshot, commands: session.transportCommands };
+  const viewModel = useMemo(
+    () => createVoiceStudioTransportViewModel(snapshot),
+    [snapshot],
+  );
+
+  return { snapshot, viewModel, commands: session.transportCommands };
 }
