@@ -25,7 +25,7 @@ describe('Voice Studio controller architecture', () => {
     expect(slot).toContain('useMemo(() => ({');
   });
 
-  it('routes controller audio capture ref access through the slot while preserving temporary aliases', () => {
+  it('routes controller audio capture ref access directly through the slot', () => {
     const controller = readVoiceStudioFile('voice-studio-daw-controller.tsx');
     const unifiedRefs = [
       'captureRef',
@@ -42,19 +42,11 @@ describe('Voice Studio controller architecture', () => {
     expect(controller).toContain('useVoiceStudioControllerAudioCaptureSlot()');
 
     for (const refName of unifiedRefs) {
-      expect(controller).toContain(`const ${refName} = audioCaptureSlot.${refName};`);
+      expect(controller).not.toContain(`const ${refName} = audioCaptureSlot.${refName};`);
       expect(controller).toContain(`audioCaptureSlot.${refName}.current`);
-      expect(controller).not.toMatch(new RegExp(`const\\s+${refName}\\s*=\\s*useRef`));
-      expect(controller).not.toMatch(new RegExp(`(?<!audioCaptureSlot\\.)${refName}\\.current`));
-    }
-
-    const controllerWithoutAliases = controller.replace(
-      /\n  const (?:captureRef|recorderRef|chunksRef|streamRef|analyserRef|inputSourceRef|monitorGainRef|rafRef|livePeaksRef) = audioCaptureSlot\.(?:captureRef|recorderRef|chunksRef|streamRef|analyserRef|inputSourceRef|monitorGainRef|rafRef|livePeaksRef);/g,
-      '',
-    );
-
-    for (const refName of unifiedRefs) {
-      expect(controllerWithoutAliases).not.toMatch(new RegExp(`(?<![.\\w])${refName}\\b`));
+      expect(controller).not.toMatch(new RegExp(String.raw`const\s+${refName}\s*=\s*useRef`));
+      expect(controller).not.toMatch(new RegExp(String.raw`(?<!audioCaptureSlot\.)${refName}\.current`));
+      expect(controller).not.toMatch(new RegExp(String.raw`(?<![.\w])${refName}\b`));
     }
   });
 });
