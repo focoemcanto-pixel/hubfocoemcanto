@@ -11,7 +11,7 @@ export type VoiceStudioTransportCommandDependencies = {
 export type VoiceStudioSpaceCommandResult = 'PLAY' | 'STOP' | 'IGNORED';
 
 function isEditableTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
+  if (typeof HTMLElement === 'undefined' || !(target instanceof HTMLElement)) return false;
   return target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName);
 }
 
