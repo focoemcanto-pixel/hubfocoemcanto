@@ -61,7 +61,9 @@ export class VoiceStudioTransportController {
       loop: { enabled: options.loop?.enabled ?? false, start: clampTime(options.loop?.start ?? 0), end: clampTime(options.loop?.end ?? 0) },
       punch: { enabled: options.punch?.enabled ?? false, in: options.punch?.in == null ? null : clampTime(options.punch.in), out: options.punch?.out == null ? null : clampTime(options.punch.out) },
     };
-    const releaseMachine = this.#machine.subscribe(({ to }) => this.#patch({ state: to, status: legacyStatus(to) }));
+    const releaseMachine = this.#machine.subscribe(({ to }) => {
+      this.#snapshot = { ...this.#snapshot, state: to, status: legacyStatus(to) };
+    });
     this.#unsubscribe = [
       releaseMachine,
       this.#eventBus.subscribe('PLAYHEAD_CHANGED', ({ playhead }) => {
@@ -69,6 +71,7 @@ export class VoiceStudioTransportController {
       }),
       this.#eventBus.subscribe('PLAY_STOPPED', ({ playhead, reason }) => {
         if (reason === 'loop') {
+          if (this.#machine.state !== 'PLAYING') this.#machine.transition('PLAY');
           this.#patch({ playhead: clampTime(playhead) });
           return;
         }
@@ -127,6 +130,7 @@ export class VoiceStudioTransportController {
     this.#patch({ playhead, countBeat: 0 });
     this.#eventBus.publish('PLAYHEAD_CHANGED', { playhead });
     if (this.#machine.state === 'SEEKING') this.#machine.transition('SEEK_FINISHED');
+    this.#snapshot = { ...this.#snapshot, state: this.#machine.state, status: legacyStatus(this.#machine.state) };
     return playhead;
   }
 
