@@ -46,7 +46,9 @@ export function useVoiceStudioLegacyRecordingIntent() {
 
     if (captureState.state !== 'idle' && captureState.state !== 'failed') return false;
 
-    const kind = session.project.tracks.find(track => track.armed)?.kind ?? 'audio';
+    const kind = session.project.tracks.some(track => track.kind === 'audio')
+      ? 'audio'
+      : session.project.tracks[0]?.kind ?? 'audio';
     void session.recordingCapture.start(kind, createLegacyRecordingCaptureAdapter);
     return true;
   }, [captureState.state, readOnly, session]);
