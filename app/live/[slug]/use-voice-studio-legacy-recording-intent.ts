@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useVoiceStudio } from './voice-studio-provider';
 import {
-  getVoiceStudioLegacyRecordingVisualState,
   observeVoiceStudioLegacyRecordingState,
   triggerVoiceStudioLegacyRecordingIntent,
   type VoiceStudioLegacyRecordingVisualState,
@@ -41,7 +40,7 @@ export function useVoiceStudioLegacyRecordingIntent() {
     state,
     isRecording: state === 'recording',
     isCountIn: state === 'countin',
-    canTrigger: !readOnly && getVoiceStudioLegacyRecordingVisualState() !== 'countin',
+    canTrigger: !readOnly && state !== 'countin',
     trigger,
   };
 }
