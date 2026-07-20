@@ -2,6 +2,7 @@
 
 import VoiceStudioDawController from './voice-studio-daw-controller';
 import { useVoiceStudio } from './voice-studio-provider';
+import { useVoiceStudioSessionTransport } from './use-voice-studio-transport';
 
 /**
  * Declarative workspace regions.
@@ -31,6 +32,12 @@ export function Inspector() {
   return null;
 }
 
+/**
+ * The visual transport remains rendered by the legacy controller for now.
+ * This region already observes the official Session boundary so the next PR
+ * can move the existing buttons without introducing a second audio runtime.
+ */
 export function BottomTransport() {
+  useVoiceStudioSessionTransport();
   return null;
 }
