@@ -2,6 +2,7 @@ import { createVoiceStudioAssetStore } from './voice-studio-asset-store';
 import { createVoiceStudioEventBus } from './voice-studio-event-bus';
 import { VoiceStudioHistoryEngine } from './voice-studio-history-engine';
 import { createVoiceStudioPlayback } from './voice-studio-playback';
+import { createVoiceStudioPlayheadStore } from './voice-studio-playhead-store';
 import { createVoiceStudioProjectActions } from './voice-studio-project-actions';
 import { createVoiceStudioProject } from './voice-studio-project-model';
 import { createVoiceStudioRecording } from './voice-studio-recording';
@@ -25,6 +26,7 @@ export function createVoiceStudioSession(options: CreateVoiceStudioSessionOption
     countInBars: project.countInBars,
     loop: project.loop,
   });
+  const playhead = createVoiceStudioPlayheadStore(eventBus, project.view.playhead);
   const playback = createVoiceStudioPlayback({ runtime, eventBus, project, assetStore });
   const recording = createVoiceStudioRecording(runtime, project, assetStore, transport, eventBus);
   const transportCommands = createVoiceStudioTransportCommands({ transport, playback, recording });
@@ -39,6 +41,7 @@ export function createVoiceStudioSession(options: CreateVoiceStudioSessionOption
     recording,
     transport,
     transportCommands,
+    playhead,
     assetStore,
     runtime,
   };
