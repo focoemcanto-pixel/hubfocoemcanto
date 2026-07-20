@@ -24,4 +24,26 @@ describe('Voice Studio controller architecture', () => {
     expect(slot).toContain('export function useVoiceStudioControllerAudioCaptureSlot()');
     expect(slot).toContain('useMemo(() => ({');
   });
+
+  it('uses the audio capture slot as the single identity for migrated controller refs', () => {
+    const controller = readVoiceStudioFile('voice-studio-daw-controller.tsx');
+    const unifiedRefs = [
+      'captureRef',
+      'recorderRef',
+      'chunksRef',
+      'streamRef',
+      'analyserRef',
+      'inputSourceRef',
+      'monitorGainRef',
+      'rafRef',
+      'livePeaksRef',
+    ];
+
+    expect(controller).toContain('useVoiceStudioControllerAudioCaptureSlot()');
+
+    for (const refName of unifiedRefs) {
+      expect(controller).toContain(`const ${refName} = audioCaptureSlot.${refName};`);
+      expect(controller).not.toMatch(new RegExp(`const\\s+${refName}\\s*=\\s*useRef`));
+    }
+  });
 });

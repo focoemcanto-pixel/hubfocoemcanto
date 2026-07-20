@@ -108,19 +108,21 @@ export default function VoiceStudioDaw({ readOnly }: { readOnly: boolean }) {
   const audioCaptureSlot =
     useVoiceStudioControllerAudioCaptureSlot();
 
+  const captureRef = audioCaptureSlot.captureRef;
+  const recorderRef = audioCaptureSlot.recorderRef;
+  const chunksRef = audioCaptureSlot.chunksRef;
+  const streamRef = audioCaptureSlot.streamRef;
+  const analyserRef = audioCaptureSlot.analyserRef;
+  const inputSourceRef = audioCaptureSlot.inputSourceRef;
+  const monitorGainRef = audioCaptureSlot.monitorGainRef;
+  const rafRef = audioCaptureSlot.rafRef;
+  const livePeaksRef = audioCaptureSlot.livePeaksRef;
+
   const projectRef = useRef(project);
   const blobsRef = useRef<Record<string, Blob>>({});
   const objectUrlsRef = useRef<Record<string, string>>({});
   const clipboardRef = useRef<VoiceStudioClipboardClip | null>(null);
-  const captureRef = useRef<VoiceStudioAudioCapture | null>(null);
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const streamRef = useRef<MediaStream | null>(null);
   const contextRef = useRef<AudioContext | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const inputSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const monitorGainRef = useRef<GainNode | null>(null);
-  const rafRef = useRef<number | null>(null);
   const timerRef = useRef<number | null>(null);
   const metroRef = useRef<number | null>(null);
   const countInTimerRef = useRef<number | null>(null);
@@ -129,7 +131,6 @@ export default function VoiceStudioDaw({ readOnly }: { readOnly: boolean }) {
   const startAtRef = useRef(0);
   const recordStartRef = useRef(0);
   const recordingSessionRef = useRef<VoiceStudioRecordingSession | null>(null);
-  const livePeaksRef = useRef<number[]>([]);
   const activeMidiRef = useRef<Map<number, { start: number; velocity: number }>>(new Map());
   const midiNotesRef = useRef<VoiceStudioMidiNote[]>([]);
   const liveOscRef = useRef<Map<number, { osc: OscillatorNode; gain: GainNode }>>(new Map());
