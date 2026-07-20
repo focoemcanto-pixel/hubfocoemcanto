@@ -6,6 +6,7 @@ import { createVoiceStudioPlayheadStore } from './voice-studio-playhead-store';
 import { createVoiceStudioProjectActions } from './voice-studio-project-actions';
 import { createVoiceStudioProject } from './voice-studio-project-model';
 import { createVoiceStudioRecording } from './voice-studio-recording';
+import { createVoiceStudioRecordingCaptureLifecycle } from './voice-studio-recording-capture-lifecycle';
 import { createVoiceStudioRuntime } from './voice-studio-runtime';
 import { createSelectionState } from './voice-studio-selection-engine';
 import { createVoiceStudioTransportCommands } from './voice-studio-transport-commands';
@@ -28,6 +29,7 @@ export function createVoiceStudioSession(options: CreateVoiceStudioSessionOption
   });
   const playhead = createVoiceStudioPlayheadStore(eventBus, project.view.playhead);
   const playback = createVoiceStudioPlayback({ runtime, eventBus, project, assetStore });
+  const recordingCapture = options.recordingCapture ?? createVoiceStudioRecordingCaptureLifecycle();
   const recording = createVoiceStudioRecording(runtime, project, assetStore, transport, eventBus);
   const transportCommands = createVoiceStudioTransportCommands({ transport, playback, recording });
 
@@ -39,6 +41,7 @@ export function createVoiceStudioSession(options: CreateVoiceStudioSessionOption
     selection: options.selection ?? createSelectionState(),
     playback,
     recording,
+    recordingCapture,
     transport,
     transportCommands,
     playhead,

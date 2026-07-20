@@ -6,6 +6,7 @@ import type { VoiceStudioPlayheadStore } from './voice-studio-playhead-store';
 import type { VoiceStudioProjectActions } from './voice-studio-project-actions';
 import type { VoiceStudioProject } from './voice-studio-project-model';
 import type { VoiceStudioRecording } from './voice-studio-recording';
+import type { VoiceStudioRecordingCaptureLifecycle } from './voice-studio-recording-capture-lifecycle';
 import type { VoiceStudioRuntime, CreateVoiceStudioRuntimeOptions } from './voice-studio-runtime';
 import type { VoiceStudioSelectionState } from './voice-studio-selection-engine';
 import type { VoiceStudioTransportCommands } from './voice-studio-transport-commands';
@@ -19,6 +20,7 @@ export type VoiceStudioSession = {
   selection: VoiceStudioSelectionState;
   playback: VoiceStudioPlayback;
   recording: VoiceStudioRecording;
+  recordingCapture: VoiceStudioRecordingCaptureLifecycle;
   transport: VoiceStudioTransportController;
   transportCommands: VoiceStudioTransportCommands;
   playhead: VoiceStudioPlayheadStore;
@@ -32,6 +34,7 @@ export type CreateVoiceStudioSessionOptions = {
   selection?: VoiceStudioSelectionState;
   eventBus?: VoiceStudioEventBus;
   transport?: VoiceStudioTransportController;
+  recordingCapture?: VoiceStudioRecordingCaptureLifecycle;
   assetStore?: VoiceStudioAssetStore;
   runtime?: VoiceStudioRuntime;
   runtimeOptions?: CreateVoiceStudioRuntimeOptions;
