@@ -1,6 +1,7 @@
 'use client';
 
 import VoiceStudioDawController from './voice-studio-daw-controller';
+import { useVoiceStudioPlayhead } from './use-voice-studio-playhead';
 import { useVoiceStudio } from './voice-studio-provider';
 import {
   VoiceStudioSessionTransport,
@@ -11,14 +12,23 @@ import {
  * Declarative workspace regions.
  *
  * The legacy controller still owns editing, recording and the visual timeline.
- * Transport intent is now owned by Session-backed components.
+ * Transport intent and the visual playhead clock are now owned by Session-backed
+ * components, preparing an atomic Timeline replacement.
  */
 export function Toolbar() {
   return <VoiceStudioTransportKeyboardOwner />;
 }
 
 export function Timeline() {
-  return null;
+  const snapshot = useVoiceStudioPlayhead();
+  return (
+    <output
+      hidden
+      aria-hidden="true"
+      data-voice-studio-playhead={snapshot.playhead}
+      data-voice-studio-playhead-revision={snapshot.revision}
+    />
+  );
 }
 
 export function TrackArea() {
