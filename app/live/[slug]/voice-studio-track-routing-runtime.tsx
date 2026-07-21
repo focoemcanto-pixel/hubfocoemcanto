@@ -192,10 +192,11 @@ export default function VoiceStudioTrackRoutingRuntime() {
     };
 
     const onPointerDown = (event: PointerEvent) => {
-      const article = (event.target as HTMLElement).closest<HTMLElement>('.vs-daw-runtime .vs-track-heads > article:not(.armed)');
-      if (!article) return;
-      if ((event.target as HTMLElement).closest('.vs-track-height-splitter')) return;
-      setSelected(article, true);
+      const target = event.target as HTMLElement;
+      const article = target.closest<HTMLElement>('.vs-daw-runtime .vs-track-heads > article:not(.armed)');
+      if (!article || target.closest('.vs-track-height-splitter')) return;
+      const interactingWithControl = Boolean(target.closest('button,input,select,label'));
+      setSelected(article, !interactingWithControl);
     };
 
     const onChange = (event: Event) => {
