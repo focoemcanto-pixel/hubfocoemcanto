@@ -5,6 +5,8 @@ import type { VoiceStudioAsset } from './voice-studio-project-model';
 import { buildRecordedAudioAsset, createAudioCapture, type VoiceStudioAudioCapture, type VoiceStudioRecordingSession } from './voice-studio-recording-engine';
 
 const MIN_CLIP = 0.08;
+const DEVICE_STORAGE_KEY = 'foco-live-microphone-device';
+const TRACK_INPUT_STYLE_ID = 'voice-studio-track-input-style';
 
 type UseVoiceStudioAudioRecordingOptions = {
   readonly getAudioContext: () => AudioContext;
@@ -44,6 +46,10 @@ function typingTarget(target: EventTarget | null) {
   return target instanceof HTMLElement && Boolean(target.closest('input,textarea,select,[contenteditable="true"]'));
 }
 
+function audioTrackArticles() {
+  return Array.from(document.querySelectorAll<HTMLElement>('.vs-track-heads article')).filter(article => !article.querySelector(':scope > span svg'));
+}
+
 export function useVoiceStudioAudioRecording({ getAudioContext, monitorInput, startAtRef, recordStartRef, recordingSessionRef, audioTrackCount, onBeginClock, onCleanupTransport, onAddRecordedAsset, onElapsedChange, onLivePeaksChange, onMeterChange, onStatusIdle }: UseVoiceStudioAudioRecordingOptions): VoiceStudioAudioRecording {
   const captureRef = useRef<VoiceStudioAudioCapture | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -55,10 +61,111 @@ export function useVoiceStudioAudioRecording({ getAudioContext, monitorInput, st
   const preparePromiseRef = useRef<Promise<void> | null>(null);
   const rafRef = useRef<number | null>(null);
   const livePeaksRef = useRef<number[]>([]);
+  const devicesRef = useRef<MediaDeviceInfo[]>([]);
+  const selectedDeviceIdRef = useRef('');
+  const meterRef = useRef(0);
+  const uiObserverRef = useRef<MutationObserver | null>(null);
 
   function resetLivePeaks() {
     livePeaksRef.current = [];
     onLivePeaksChange([]);
+  }
+
+  function installTrackInputStyle() {
+    if (document.getElementById(TRACK_INPUT_STYLE_ID)) return;
+    const style = document.createElement('style');
+    style.id = TRACK_INPUT_STYLE_ID;
+    style.textContent = `.vs-track-input-strip{grid-column:1/-1;display:grid;grid-template-columns:74px 1fr;align-items:center;gap:7px;margin:5px 8px 0;padding-top:5px;border-top:1px solid rgba(148,163,184,.15)}.vs-track-input-strip select{min-width:0;width:100%;height:22px;border:1px solid #343946;border-radius:5px;background:#11151d;color:#cbd5e1;font-size:10px;padding:0 5px}.vs-track-input-strip select:disabled{opacity:.55}.vs-track-meter{position:relative;height:7px;border-radius:999px;background:#202632;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(148,163,184,.12)}.vs-track-meter b{display:block;height:100%;width:0;border-radius:inherit;background:linear-gradient(90deg,#22c55e 0%,#84cc16 72%,#f59e0b 90%,#ef4444 100%);transition:width 55ms linear}.vs-track-input-strip:not(.active) .vs-track-meter b{width:0!important}.vs-track-input-label{font-size:9px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}`;
+    document.head.appendChild(style);
+  }
+
+  function deviceLabel(device: MediaDeviceInfo, index: number) {
+    return device.label || `Entrada ${index + 1}`;
+  }
+
+  function populateSelect(select: HTMLSelectElement) {
+    const current = selectedDeviceIdRef.current;
+    const signature = devicesRef.current.map(device => `${device.deviceId}:${device.label}`).join('|');
+    if (select.dataset.devices === signature && select.value === current) return;
+    select.dataset.devices = signature;
+    select.replaceChildren();
+    if (!devicesRef.current.length) {
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = 'Entrada padrão';
+      select.appendChild(option);
+    } else {
+      devicesRef.current.forEach((device, index) => {
+        const option = document.createElement('option');
+        option.value = device.deviceId;
+        option.textContent = deviceLabel(device, index);
+        select.appendChild(option);
+      });
+    }
+    select.value = current || devicesRef.current[0]?.deviceId || '';
+  }
+
+  function paintTrackMeters() {
+    const width = `${Math.round(Math.min(1, meterRef.current) * 100)}%`;
+    audioTrackArticles().forEach(article => {
+      const strip = article.querySelector<HTMLElement>('.vs-track-input-strip');
+      const fill = article.querySelector<HTMLElement>('.vs-track-meter b');
+      const armed = article.classList.contains('armed-track');
+      strip?.classList.toggle('active', armed);
+      if (fill) fill.style.width = armed ? width : '0%';
+    });
+  }
+
+  function syncTrackInputUi() {
+    installTrackInputStyle();
+    audioTrackArticles().forEach(article => {
+      let strip = article.querySelector<HTMLElement>('.vs-track-input-strip');
+      if (!strip) {
+        strip = document.createElement('div');
+        strip.className = 'vs-track-input-strip';
+        const label = document.createElement('span');
+        label.className = 'vs-track-input-label';
+        label.textContent = 'Entrada';
+        const select = document.createElement('select');
+        select.title = 'Selecionar microfone ou interface desta faixa';
+        select.addEventListener('pointerdown', event => event.stopPropagation());
+        select.addEventListener('click', event => event.stopPropagation());
+        select.addEventListener('change', event => {
+          event.stopPropagation();
+          const next = select.value;
+          selectedDeviceIdRef.current = next;
+          localStorage.setItem(DEVICE_STORAGE_KEY, next);
+          if (!article.classList.contains('armed-track')) {
+            const armButton = article.querySelector<HTMLButtonElement>('button[title="Armar track"]');
+            armButton?.click();
+          }
+          void restartInputPreview(next);
+        });
+        const meter = document.createElement('i');
+        meter.className = 'vs-track-meter';
+        meter.title = 'Nível de entrada ao vivo';
+        meter.appendChild(document.createElement('b'));
+        strip.append(label, select, meter);
+        article.appendChild(strip);
+      }
+      const select = strip.querySelector<HTMLSelectElement>('select');
+      if (select) {
+        populateSelect(select);
+        select.disabled = recorderRef.current?.state === 'recording';
+      }
+    });
+    paintTrackMeters();
+  }
+
+  async function refreshAudioDevices() {
+    if (!navigator.mediaDevices?.enumerateDevices) return;
+    const devices = (await navigator.mediaDevices.enumerateDevices()).filter(device => device.kind === 'audioinput');
+    devicesRef.current = devices;
+    const saved = localStorage.getItem(DEVICE_STORAGE_KEY) || '';
+    const stillAvailable = devices.some(device => device.deviceId === saved);
+    selectedDeviceIdRef.current = stillAvailable ? saved : devices[0]?.deviceId || '';
+    if (selectedDeviceIdRef.current) localStorage.setItem(DEVICE_STORAGE_KEY, selectedDeviceIdRef.current);
+    syncTrackInputUi();
   }
 
   function syncMonitor() {
@@ -77,16 +184,38 @@ export function useVoiceStudioAudioRecording({ getAudioContext, monitorInput, st
     monitorGainRef.current = gain;
   }
 
+  function releaseInputPreview() {
+    if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+    rafRef.current = null;
+    try { inputSourceRef.current?.disconnect(); } catch {}
+    try { monitorGainRef.current?.disconnect(); } catch {}
+    inputSourceRef.current = null;
+    monitorGainRef.current = null;
+    analyserRef.current = null;
+    streamRef.current?.getTracks().forEach(track => track.stop());
+    streamRef.current = null;
+    preparePromiseRef.current = null;
+    meterRef.current = 0;
+    onMeterChange(0);
+    paintTrackMeters();
+  }
+
   async function prepare() {
     if (streamRef.current?.active && analyserRef.current) {
       syncMonitor();
+      syncTrackInputUi();
       return;
     }
     if (preparePromiseRef.current) return preparePromiseRef.current;
     const pending = (async () => {
-      const deviceId = localStorage.getItem('foco-live-microphone-device');
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: deviceId ? { exact: deviceId } : undefined, echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+      const saved = selectedDeviceIdRef.current || localStorage.getItem(DEVICE_STORAGE_KEY) || '';
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: saved ? { exact: saved } : undefined, echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
       streamRef.current = stream;
+      const actualDevice = stream.getAudioTracks()[0]?.getSettings().deviceId;
+      if (actualDevice) {
+        selectedDeviceIdRef.current = actualDevice;
+        localStorage.setItem(DEVICE_STORAGE_KEY, actualDevice);
+      }
       const context = getAudioContext();
       await context.resume().catch(() => undefined);
       const source = context.createMediaStreamSource(stream);
@@ -97,6 +226,7 @@ export function useVoiceStudioAudioRecording({ getAudioContext, monitorInput, st
       analyserRef.current = analyser;
       syncMonitor();
       watchInput();
+      await refreshAudioDevices();
     })();
     preparePromiseRef.current = pending;
     try {
@@ -104,6 +234,13 @@ export function useVoiceStudioAudioRecording({ getAudioContext, monitorInput, st
     } finally {
       preparePromiseRef.current = null;
     }
+  }
+
+  async function restartInputPreview(deviceId: string) {
+    if (recorderRef.current?.state === 'recording') return;
+    selectedDeviceIdRef.current = deviceId;
+    releaseInputPreview();
+    await prepare().catch(() => undefined);
   }
 
   function begin() {
@@ -115,6 +252,7 @@ export function useVoiceStudioAudioRecording({ getAudioContext, monitorInput, st
     chunksRef.current = capture.chunks;
     capture.recorder.onstop = () => { void finish(capture); };
     capture.recorder.start(100);
+    syncTrackInputUi();
     onBeginClock();
   }
 
@@ -133,7 +271,10 @@ export function useVoiceStudioAudioRecording({ getAudioContext, monitorInput, st
         sum += normalized * normalized;
         max = Math.max(max, normalized);
       }
-      onMeterChange(Math.min(1, Math.sqrt(sum / data.length) * 3));
+      const nextMeter = Math.min(1, Math.sqrt(sum / data.length) * 3);
+      meterRef.current = nextMeter;
+      onMeterChange(nextMeter);
+      paintTrackMeters();
       if (recorderRef.current?.state === 'recording') {
         livePeaksRef.current.push(Math.max(0.03, max));
         if (livePeaksRef.current.length > 220) livePeaksRef.current.shift();
@@ -146,20 +287,10 @@ export function useVoiceStudioAudioRecording({ getAudioContext, monitorInput, st
 
   function cleanup() {
     onCleanupTransport();
-    if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
-    rafRef.current = null;
-    try { inputSourceRef.current?.disconnect(); } catch {}
-    try { monitorGainRef.current?.disconnect(); } catch {}
-    inputSourceRef.current = null;
-    monitorGainRef.current = null;
-    analyserRef.current = null;
-    streamRef.current?.getTracks().forEach(track => track.stop());
-    streamRef.current = null;
+    releaseInputPreview();
     captureRef.current = null;
     recorderRef.current = null;
     chunksRef.current = [];
-    preparePromiseRef.current = null;
-    onMeterChange(0);
   }
 
   function restartPreview() {
@@ -209,7 +340,22 @@ export function useVoiceStudioAudioRecording({ getAudioContext, monitorInput, st
   }
 
   useEffect(() => {
+    installTrackInputStyle();
+    const observer = new MutationObserver(() => syncTrackInputUi());
+    const root = document.querySelector('.vs-track-heads') || document.body;
+    observer.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+    uiObserverRef.current = observer;
+    const deviceChange = () => { void refreshAudioDevices(); };
+    navigator.mediaDevices?.addEventListener?.('devicechange', deviceChange);
     void prepare().catch(() => undefined);
+    syncTrackInputUi();
+    return () => {
+      observer.disconnect();
+      uiObserverRef.current = null;
+      navigator.mediaDevices?.removeEventListener?.('devicechange', deviceChange);
+      document.querySelectorAll('.vs-track-input-strip').forEach(node => node.remove());
+      document.getElementById(TRACK_INPUT_STYLE_ID)?.remove();
+    };
   }, []);
 
   useEffect(() => {
@@ -233,7 +379,7 @@ export function useVoiceStudioAudioRecording({ getAudioContext, monitorInput, st
       const target = event.target;
       if (!(target instanceof HTMLElement)) return;
       const trackHeads = target.closest<HTMLElement>('.vs-track-heads');
-      if (!trackHeads || target.closest('article,.vs-add-wrap,button,input,label')) return;
+      if (!trackHeads || target.closest('article,.vs-add-wrap,button,input,label,select')) return;
       const existingAudioButton = trackHeads.querySelector<HTMLButtonElement>('.vs-track-menu button:not(:disabled)');
       if (existingAudioButton) {
         event.preventDefault();
