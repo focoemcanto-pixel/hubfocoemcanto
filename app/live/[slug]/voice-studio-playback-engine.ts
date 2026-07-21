@@ -1,4 +1,5 @@
 import type { VoiceStudioAsset, VoiceStudioClip, VoiceStudioProject, VoiceStudioTrack } from './voice-studio-project-model';
+import { preloadVoiceStudioPianoNotes, scheduleVoiceStudioPianoNote } from './voice-studio-piano-engine';
 
 export type VoiceStudioPlaybackMode = 'project' | 'loop' | 'selection';
 export type VoiceStudioPlaybackEndReason = 'stop' | 'pause' | 'ended' | 'loop';
@@ -75,6 +76,11 @@ export class VoiceStudioPlaybackEngine {
     this.stop(false, 'stop');
     const context = this.callbacks.getAudioContext();
     await context.resume().catch(() => undefined);
+    const midiNotes = audibleTracks(snapshot.project).flatMap(track => track.clips.flatMap(clip => {
+      const asset = snapshot.project.assets[clip.assetId];
+      return asset?.kind === 'midi' ? asset.midiNotes.map(note => note.note) : [];
+    }));
+    if (midiNotes.length) await preloadVoiceStudioPianoNotes(context, midiNotes).catch(() => undefined);
     this.snapshot = { ...snapshot, offset: Math.max(0, snapshot.offset), end: Math.max(snapshot.offset, snapshot.end) };
     this.stopped = false;
     this.contextStartedAt = context.currentTime + START_LATENCY_SECONDS;
@@ -174,22 +180,16 @@ export class VoiceStudioPlaybackEngine {
       const globalStart = clip.start + Math.max(0, note.start - clip.sourceOffset);
       const globalEnd = clip.start + Math.min(clip.duration, noteEnd - clip.sourceOffset);
       if (globalEnd <= from || globalStart >= until) return;
-      const playStart = Math.max(globalStart, from);
-      const key = `midi:${clip.id}:${note.id}:${playStart.toFixed(3)}`;
+      const key = `midi:${clip.id}:${note.id}`;
       if (this.scheduledKeys.has(key)) return;
       this.scheduledKeys.add(key);
+      const playStart = Math.max(globalStart, from);
       const when = this.contextTimeFor(playStart);
-      const end = this.contextTimeFor(globalEnd);
-      const osc = context.createOscillator(); const gain = context.createGain();
-      osc.type = this.callbacks.instrumentWave(track.instrument ?? asset.instrument ?? 'piano');
-      osc.frequency.value = this.callbacks.midiFrequency(note.note);
       const local = Math.max(0, playStart - clip.start);
-      const baseGain = (note.velocity / 127) * 0.16 * clipBaseGain(track, clip);
-      gain.gain.setValueAtTime(0, when);
-      gain.gain.linearRampToValueAtTime(gainAtClipTime(clip, baseGain, local), when + 0.01);
-      gain.gain.setTargetAtTime(FADE_FLOOR, end, 0.035);
-      osc.connect(gain).connect(context.destination); osc.start(when); osc.stop(end + 0.12);
-      this.nodes.push(osc, gain);
+      const duration = Math.max(0.04, globalEnd - playStart);
+      const volume = gainAtClipTime(clip, clipBaseGain(track, clip), local);
+      const voice = scheduleVoiceStudioPianoNote(context, note.note, note.velocity / 127, when, duration, volume);
+      if (voice) this.nodes.push(voice.source, voice.filter, voice.gain);
     });
   }
 
