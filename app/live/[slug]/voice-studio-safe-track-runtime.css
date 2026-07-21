@@ -5,6 +5,21 @@
 
 .vs-daw-runtime .vs-track-heads > article.vs-track-selected > input { color: #f5f3ff; }
 
+.vs-daw-runtime .vs-track-heads > article.vs-multi-armed {
+  box-shadow: inset 3px 0 0 #ef4444, inset 0 0 0 1px rgba(239, 68, 68, .25);
+}
+
+.vs-daw-runtime .vs-track-heads > article.vs-track-selected.vs-multi-armed {
+  background: linear-gradient(90deg, rgba(139, 92, 246, .19), rgba(239, 68, 68, .07));
+  box-shadow: inset 3px 0 0 #ef4444, inset 0 0 0 1px rgba(167, 139, 250, .35);
+}
+
+.vs-daw-runtime .vs-track-heads > article.vs-multi-armed button[title="Armar track"] {
+  border-color: #ef4444;
+  background: #dc2626;
+  color: #fff;
+}
+
 .vs-daw-runtime .vs-options > .vs-safe-track-panel {
   display: none;
   align-items: center;
@@ -73,10 +88,18 @@
 }
 .vs-daw-runtime .vs-safe-track-panel.midi .midi-status { display: inline; }
 
+.vs-daw-runtime .vs-safe-track-panel .armed-count {
+  color: #fca5a5;
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
 @media (max-width: 1180px) {
   .vs-daw-runtime .vs-safe-track-panel > strong,
   .vs-daw-runtime .vs-safe-track-panel label > span { display: none; }
   .vs-daw-runtime .vs-safe-track-panel select { width: 104px; }
   .vs-daw-runtime .vs-safe-track-panel .audio-channel select { width: 70px; }
   .vs-daw-runtime .vs-safe-track-panel .track-meter { width: 58px; }
+  .vs-daw-runtime .vs-safe-track-panel .armed-count { display: none; }
 }
