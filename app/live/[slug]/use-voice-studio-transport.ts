@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from 'react';
+import { useCallback, useEffect, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from 'react';
 import { projectDuration, type VoiceStudioProject } from './voice-studio-project-model';
 import { playbackProjectRange, VoiceStudioPlaybackEngine, type VoiceStudioPlaybackMode } from './voice-studio-playback-engine';
 
@@ -38,6 +38,10 @@ export type VoiceStudioTransport = {
   readonly startBackingTracks: (offset: number) => void;
   readonly cleanup: () => void;
 };
+
+function typingTarget(target: EventTarget | null) {
+  return target instanceof HTMLElement && Boolean(target.closest('input,textarea,select,[contenteditable="true"]'));
+}
 
 export function useVoiceStudioTransport({ project, objectUrlsRef, selectionRange, getAudioContext, midiFrequency, instrumentWave, projectHasContent, quantize, setProject, ensureTimeVisible }: UseVoiceStudioTransportOptions): VoiceStudioTransport {
   const [status, setStatus] = useState<Status>('idle');
@@ -183,6 +187,19 @@ export function useVoiceStudioTransport({ project, objectUrlsRef, selectionRange
     setStatus('playing');
     void playbackEngine().play({ project, objectUrls: objectUrlsRef.current, offset, end: bounds.end, mode, loop: mode === 'loop' });
   }, [elapsed, objectUrlsRef, pause, playbackBounds, playbackEngine, project, projectHasContent, status]);
+
+  useEffect(() => {
+    const keydown = (event: KeyboardEvent) => {
+      if (event.code !== 'Space' || event.repeat || typingTarget(event.target)) return;
+      if (status !== 'idle' && status !== 'playing') return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (status === 'playing') pause();
+      else play();
+    };
+    window.addEventListener('keydown', keydown, true);
+    return () => window.removeEventListener('keydown', keydown, true);
+  }, [pause, play, status]);
 
   const seek = useCallback((time: number) => {
     const nextPlayhead = Math.max(0, Math.min(duration, quantize(time)));

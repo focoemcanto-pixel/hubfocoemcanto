@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, type RefObject } from 'react';
+import { useEffect, useRef, type RefObject } from 'react';
 import type { VoiceStudioAsset } from './voice-studio-project-model';
 import { buildRecordedAudioAsset, createAudioCapture, type VoiceStudioAudioCapture, type VoiceStudioRecordingSession } from './voice-studio-recording-engine';
 
@@ -38,6 +38,10 @@ function makePeaks(data: Float32Array, count = 180) {
     for (let cursor = index * step; cursor < Math.min(data.length, (index + 1) * step); cursor += 1) max = Math.max(max, Math.abs(data[cursor]));
     return Math.max(0.03, max);
   });
+}
+
+function typingTarget(target: EventTarget | null) {
+  return target instanceof HTMLElement && Boolean(target.closest('input,textarea,select,[contenteditable="true"]'));
 }
 
 export function useVoiceStudioAudioRecording({ getAudioContext, monitorInput, startAtRef, recordStartRef, recordingSessionRef, audioTrackCount, onBeginClock, onCleanupTransport, onAddRecordedAsset, onElapsedChange, onLivePeaksChange, onMeterChange, onStatusIdle }: UseVoiceStudioAudioRecordingOptions): VoiceStudioAudioRecording {
@@ -166,6 +170,18 @@ export function useVoiceStudioAudioRecording({ getAudioContext, monitorInput, st
     onElapsedChange(recordStartRef.current);
     onStatusIdle();
   }
+
+  useEffect(() => {
+    const keydown = (event: KeyboardEvent) => {
+      if (event.code !== 'Space' || event.repeat || typingTarget(event.target)) return;
+      if (recorderRef.current?.state !== 'recording') return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      stop();
+    };
+    window.addEventListener('keydown', keydown, true);
+    return () => window.removeEventListener('keydown', keydown, true);
+  }, []);
 
   return { prepare, begin, stop, cancel, cleanup, resetLivePeaks };
 }
