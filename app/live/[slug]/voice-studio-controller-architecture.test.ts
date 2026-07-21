@@ -54,4 +54,49 @@ describe('Voice Studio controller architecture', () => {
       expect(controller).not.toContain(responsibility);
     }
   });
+
+  it('exposes a dedicated transport lifecycle hook', () => {
+    const hook = readVoiceStudioFile('use-voice-studio-transport.ts');
+
+    expect(hook).toContain('export type VoiceStudioTransport');
+    expect(hook).toContain('export function useVoiceStudioTransport(');
+    expect(hook).toContain('new VoiceStudioPlaybackEngine({');
+    expect(hook).toContain('playbackEngineRef');
+    expect(hook).toContain('timerRef');
+    expect(hook).toContain('metroRef');
+    expect(hook).toContain('countInTimerRef');
+    expect(hook).toContain('performance.now()');
+  });
+
+  it('keeps detailed transport implementation out of the controller', () => {
+    const controller = readVoiceStudioFile('voice-studio-daw-controller.tsx');
+    const hook = readVoiceStudioFile('use-voice-studio-transport.ts');
+    const movedResponsibilities = [
+      'new VoiceStudioPlaybackEngine({',
+      'playbackEngineRef',
+      'timerRef',
+      'metroRef',
+      'countInTimerRef',
+      'const startMetronome',
+      'const stopMetronome',
+      'const playbackBounds',
+      'const startRecordingClock',
+      'const cleanupCapture',
+    ];
+
+    expect(controller).toContain('useVoiceStudioTransport({');
+    expect(controller).toContain('transport.play()');
+    expect(controller).toContain("transport.play('selection')");
+    expect(controller).toContain('transport.stop(true)');
+    expect(controller).toContain('transport.seek(time)');
+    expect(controller).toContain('transport.countIn()');
+    expect(controller).toContain('transport.startBackingTracks(recordStartRef.current)');
+    expect(controller).toContain('transport.startRecordingClock()');
+    expect(controller).toContain('transport.cleanup()');
+
+    for (const responsibility of movedResponsibilities) {
+      expect(hook).toContain(responsibility);
+      expect(controller).not.toContain(responsibility);
+    }
+  });
 });
