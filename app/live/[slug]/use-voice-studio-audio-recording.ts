@@ -52,6 +52,7 @@ export function useVoiceStudioAudioRecording({ getAudioContext, monitorInput, st
   const analyserRef = useRef<AnalyserNode | null>(null);
   const inputSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const monitorGainRef = useRef<GainNode | null>(null);
+  const preparePromiseRef = useRef<Promise<void> | null>(null);
   const rafRef = useRef<number | null>(null);
   const livePeaksRef = useRef<number[]>([]);
 
@@ -60,24 +61,49 @@ export function useVoiceStudioAudioRecording({ getAudioContext, monitorInput, st
     onLivePeaksChange([]);
   }
 
-  async function prepare() {
-    const deviceId = localStorage.getItem('foco-live-microphone-device');
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: deviceId ? { exact: deviceId } : undefined, echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
-    streamRef.current = stream;
-    const context = getAudioContext();
-    const source = context.createMediaStreamSource(stream);
-    const analyser = context.createAnalyser();
-    analyser.fftSize = 512;
-    source.connect(analyser);
-    inputSourceRef.current = source;
-    analyserRef.current = analyser;
-    if (monitorInput) {
-      const gain = context.createGain();
-      gain.gain.value = 0.75;
-      source.connect(gain).connect(context.destination);
-      monitorGainRef.current = gain;
+  function syncMonitor() {
+    const source = inputSourceRef.current;
+    if (!source) return;
+    if (!monitorInput) {
+      try { monitorGainRef.current?.disconnect(); } catch {}
+      monitorGainRef.current = null;
+      return;
     }
-    watchInput();
+    if (monitorGainRef.current) return;
+    const context = getAudioContext();
+    const gain = context.createGain();
+    gain.gain.value = 0.75;
+    source.connect(gain).connect(context.destination);
+    monitorGainRef.current = gain;
+  }
+
+  async function prepare() {
+    if (streamRef.current?.active && analyserRef.current) {
+      syncMonitor();
+      return;
+    }
+    if (preparePromiseRef.current) return preparePromiseRef.current;
+    const pending = (async () => {
+      const deviceId = localStorage.getItem('foco-live-microphone-device');
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: deviceId ? { exact: deviceId } : undefined, echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+      streamRef.current = stream;
+      const context = getAudioContext();
+      await context.resume().catch(() => undefined);
+      const source = context.createMediaStreamSource(stream);
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 512;
+      source.connect(analyser);
+      inputSourceRef.current = source;
+      analyserRef.current = analyser;
+      syncMonitor();
+      watchInput();
+    })();
+    preparePromiseRef.current = pending;
+    try {
+      await pending;
+    } finally {
+      preparePromiseRef.current = null;
+    }
   }
 
   function begin() {
@@ -95,8 +121,10 @@ export function useVoiceStudioAudioRecording({ getAudioContext, monitorInput, st
   function watchInput() {
     const analyser = analyserRef.current;
     if (!analyser) return;
+    if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     const data = new Uint8Array(analyser.frequencyBinCount);
     const draw = () => {
+      if (analyserRef.current !== analyser) return;
       analyser.getByteTimeDomainData(data);
       let sum = 0;
       let max = 0;
@@ -118,18 +146,24 @@ export function useVoiceStudioAudioRecording({ getAudioContext, monitorInput, st
 
   function cleanup() {
     onCleanupTransport();
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     rafRef.current = null;
     try { inputSourceRef.current?.disconnect(); } catch {}
     try { monitorGainRef.current?.disconnect(); } catch {}
     inputSourceRef.current = null;
     monitorGainRef.current = null;
+    analyserRef.current = null;
     streamRef.current?.getTracks().forEach(track => track.stop());
     streamRef.current = null;
     captureRef.current = null;
     recorderRef.current = null;
     chunksRef.current = [];
+    preparePromiseRef.current = null;
     onMeterChange(0);
+  }
+
+  function restartPreview() {
+    window.setTimeout(() => { void prepare().catch(() => undefined); }, 0);
   }
 
   function stop() {
@@ -145,6 +179,7 @@ export function useVoiceStudioAudioRecording({ getAudioContext, monitorInput, st
     chunksRef.current = [];
     cleanup();
     resetLivePeaks();
+    restartPreview();
   }
 
   async function finish(capture: VoiceStudioAudioCapture) {
@@ -152,6 +187,7 @@ export function useVoiceStudioAudioRecording({ getAudioContext, monitorInput, st
     if (!session) {
       cleanup();
       onStatusIdle();
+      restartPreview();
       return;
     }
     const clipDuration = Math.max(MIN_CLIP, (performance.now() - startAtRef.current) / 1000);
@@ -169,7 +205,16 @@ export function useVoiceStudioAudioRecording({ getAudioContext, monitorInput, st
     cleanup();
     onElapsedChange(recordStartRef.current);
     onStatusIdle();
+    restartPreview();
   }
+
+  useEffect(() => {
+    void prepare().catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    syncMonitor();
+  }, [monitorInput]);
 
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
@@ -181,6 +226,30 @@ export function useVoiceStudioAudioRecording({ getAudioContext, monitorInput, st
     };
     window.addEventListener('keydown', keydown, true);
     return () => window.removeEventListener('keydown', keydown, true);
+  }, []);
+
+  useEffect(() => {
+    const doubleClick = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      const trackHeads = target.closest<HTMLElement>('.vs-track-heads');
+      if (!trackHeads || target.closest('article,.vs-add-wrap,button,input,label')) return;
+      const existingAudioButton = trackHeads.querySelector<HTMLButtonElement>('.vs-track-menu button:not(:disabled)');
+      if (existingAudioButton) {
+        event.preventDefault();
+        existingAudioButton.click();
+        return;
+      }
+      const addButton = trackHeads.querySelector<HTMLButtonElement>('.vs-add:not(:disabled)');
+      if (!addButton) return;
+      event.preventDefault();
+      addButton.click();
+      window.setTimeout(() => {
+        trackHeads.querySelector<HTMLButtonElement>('.vs-track-menu button:not(:disabled)')?.click();
+      }, 0);
+    };
+    document.addEventListener('dblclick', doubleClick, true);
+    return () => document.removeEventListener('dblclick', doubleClick, true);
   }, []);
 
   return { prepare, begin, stop, cancel, cleanup, resetLivePeaks };
