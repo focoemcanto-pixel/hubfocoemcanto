@@ -34,7 +34,7 @@ body.vs-layout-resizing .vs-layout-splitter::before {
 .vs-track-heads > article {
   min-height: 68px;
   max-height: 220px;
-  overflow: visible;
+  overflow: hidden;
 }
 
 .vs-track-height-splitter {
@@ -104,9 +104,159 @@ body.vs-layout-resizing * {
   background-size: var(--grid-step, 56px) 100%, calc(var(--grid-step, 56px) / 4) 100% !important;
 }
 
+/* Painel lateral responsivo: reduz conteúdo antes que haja sobreposição. */
+.vs-daw-runtime.vs-panel-compact .vs-track-heads > article {
+  padding-left: 7px !important;
+  padding-right: 7px !important;
+  gap: 4px !important;
+}
+
+.vs-daw-runtime.vs-panel-compact .vs-track-input-strip {
+  grid-template-columns: minmax(0, 1fr) 70px !important;
+  gap: 4px !important;
+  margin-left: 4px !important;
+  margin-right: 4px !important;
+}
+
+.vs-daw-runtime.vs-panel-compact .vs-track-input-label {
+  display: none !important;
+}
+
+.vs-daw-runtime.vs-panel-compact .vs-track-input-strip select {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  font-size: 9px !important;
+  padding-inline: 4px !important;
+}
+
+.vs-daw-runtime.vs-panel-compact .vs-track-heads article input[type="range"] {
+  width: 54px !important;
+  min-width: 0 !important;
+}
+
+.vs-daw-runtime.vs-panel-narrow .vs-track-heads > article {
+  grid-template-columns: 26px minmax(0, 1fr) !important;
+  padding: 7px 5px !important;
+}
+
+.vs-daw-runtime.vs-panel-narrow .vs-track-heads article input[type="range"] {
+  display: none !important;
+}
+
+.vs-daw-runtime.vs-panel-narrow .vs-track-heads article button {
+  width: 25px !important;
+  min-width: 25px !important;
+  height: 25px !important;
+  padding: 0 !important;
+}
+
+.vs-daw-runtime.vs-panel-narrow .vs-track-input-strip {
+  grid-template-columns: minmax(0, 1fr) 62px !important;
+}
+
+.vs-daw-runtime.vs-panel-narrow .vs-track-input-strip select {
+  height: 21px !important;
+  font-size: 8px !important;
+}
+
+.vs-daw-runtime.vs-panel-ultra .vs-track-heads article button:nth-of-type(n+4) {
+  display: none !important;
+}
+
+.vs-daw-runtime.vs-panel-ultra .vs-track-input-strip {
+  grid-template-columns: 1fr !important;
+}
+
+.vs-daw-runtime.vs-panel-ultra .vs-track-input-strip select:last-of-type,
+.vs-daw-runtime.vs-panel-ultra .vs-track-meter {
+  display: none !important;
+}
+
+/* Área superior redimensionável e limpa por padrão. */
+.vs-manager-shell .vs-session-view {
+  grid-template-rows: var(--vs-top-meta-height, 0px) 7px minmax(0, 1fr) !important;
+}
+
+.vs-manager-shell .vs-session-meta {
+  min-height: 0 !important;
+  height: var(--vs-top-meta-height, 0px) !important;
+  max-height: var(--vs-top-meta-height, 0px) !important;
+  overflow: hidden !important;
+  padding-top: clamp(0px, calc(var(--vs-top-meta-height, 0px) / 10), 8px) !important;
+  padding-bottom: clamp(0px, calc(var(--vs-top-meta-height, 0px) / 10), 8px) !important;
+  opacity: 1;
+  transition: opacity .16s ease, padding .16s ease;
+}
+
+.vs-manager-shell.vs-top-collapsed .vs-session-meta {
+  opacity: 0;
+  padding: 0 12px !important;
+  pointer-events: none;
+}
+
+.vs-manager-shell.vs-top-compact .vs-session-meta > div:nth-child(n+3) {
+  display: none !important;
+}
+
+.vs-manager-shell.vs-top-compact .vs-session-meta > div:first-child {
+  min-width: 180px !important;
+}
+
+.vs-top-layout-splitter {
+  position: relative;
+  z-index: 55;
+  height: 7px;
+  cursor: row-resize;
+  background: #0d1016;
+  border-bottom: 1px solid #222631;
+  touch-action: none;
+}
+
+.vs-top-layout-splitter::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 2px;
+  width: 46px;
+  height: 3px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: rgba(148, 163, 184, .25);
+  transition: background .15s ease, box-shadow .15s ease;
+}
+
+.vs-top-layout-splitter:hover::before,
+body.vs-layout-resizing .vs-top-layout-splitter::before {
+  background: #8b5cf6;
+  box-shadow: 0 0 9px rgba(139, 92, 246, .55);
+}
+
+.vs-manager-shell.vs-top-collapsed .vs-manager-topbar {
+  padding-top: 7px !important;
+  padding-bottom: 7px !important;
+}
+
+.vs-manager-shell.vs-top-collapsed .vs-manager-brand span,
+.vs-manager-shell.vs-top-collapsed .vs-unsaved {
+  display: none !important;
+}
+
+.vs-manager-shell.vs-top-collapsed .vs-manager-brand {
+  min-width: 120px !important;
+}
+
 @media (max-width: 760px) {
   .vs-layout-splitter,
-  .vs-track-height-splitter {
+  .vs-track-height-splitter,
+  .vs-top-layout-splitter {
     display: none;
+  }
+
+  .vs-manager-shell .vs-session-view {
+    grid-template-rows: 0 minmax(0, 1fr) !important;
+  }
+
+  .vs-manager-shell .vs-session-meta {
+    display: none !important;
   }
 }
