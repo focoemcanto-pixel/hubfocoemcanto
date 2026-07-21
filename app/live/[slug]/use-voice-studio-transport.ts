@@ -185,7 +185,10 @@ export function useVoiceStudioTransport({ project, objectUrlsRef, selectionRange
       ? Math.max(bounds.start, elapsed >= bounds.end ? bounds.start : elapsed)
       : bounds.start;
     setStatus('playing');
-    void playbackEngine().play({ project, objectUrls: objectUrlsRef.current, offset, end: bounds.end, mode, loop: mode === 'loop' });
+    void playbackEngine()
+      .play({ project, objectUrls: objectUrlsRef.current, offset, end: bounds.end, mode, loop: mode === 'loop' })
+      .then(() => setStatus('playing'))
+      .catch(() => setStatus('idle'));
   }, [elapsed, objectUrlsRef, pause, playbackBounds, playbackEngine, project, projectHasContent, status]);
 
   useEffect(() => {
