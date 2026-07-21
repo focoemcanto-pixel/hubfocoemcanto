@@ -52,7 +52,10 @@ export default function VoiceStudioTrackRoutingRuntime() {
     const allArticles = () => Array.from(document.querySelectorAll<HTMLElement>('.vs-daw-runtime .vs-track-heads > article:not(.armed)'));
 
     const setSelected = (article: HTMLElement | null, shouldArm = true) => {
-      if (selectedArticle === article && article?.isConnected) return;
+      if (selectedArticle === article && article?.isConnected) {
+        article.classList.add('vs-track-selected');
+        return;
+      }
       selectedArticle?.classList.remove('vs-track-selected');
       selectedArticle = article;
       selectedArticle?.classList.add('vs-track-selected');
@@ -70,7 +73,10 @@ export default function VoiceStudioTrackRoutingRuntime() {
 
     const ensureSelection = () => {
       const articles = allArticles();
-      if (selectedArticle?.isConnected) return;
+      if (selectedArticle?.isConnected) {
+        selectedArticle.classList.add('vs-track-selected');
+        return;
+      }
       const armed = articles.find(article => article.classList.contains('armed-track')) || articles[0] || null;
       setSelected(armed, false);
     };
@@ -130,14 +136,15 @@ export default function VoiceStudioTrackRoutingRuntime() {
     };
 
     const stopMidiRouting = () => {
-      activeNotes.forEach(note => stopPianoLiveNote(note, 0.08));
-      activeNotes.clear();
-      stopAllPianoLiveNotes();
+      const notes = Array.from(activeNotes);
       midiAccess?.inputs.forEach(input => {
         const delegate = delegates.get(input.id);
-        if (delegate) activeNotes.forEach(note => delegate({ data: [0x80, note, 0] }));
+        notes.forEach(note => delegate?.({ data: [0x80, note, 0] }));
         input.onmidimessage = null;
       });
+      notes.forEach(note => stopPianoLiveNote(note, 0.08));
+      activeNotes.clear();
+      stopAllPianoLiveNotes();
     };
 
     const syncMidiRouting = () => {
@@ -149,7 +156,8 @@ export default function VoiceStudioTrackRoutingRuntime() {
         return;
       }
 
-      const timbre = document.querySelector<HTMLSelectElement>('.vs-daw-runtime .vs-options label select[value="piano"]');
+      const timbreLabel = Array.from(document.querySelectorAll<HTMLElement>('.vs-daw-runtime .vs-options label')).find(label => /timbre/i.test(label.textContent || ''));
+      const timbre = timbreLabel?.querySelector<HTMLSelectElement>('select');
       if (timbre && timbre.value !== 'piano') {
         timbre.value = 'piano';
         timbre.dispatchEvent(new Event('change', { bubbles: true }));
@@ -190,7 +198,7 @@ export default function VoiceStudioTrackRoutingRuntime() {
       setSelected(article, true);
     };
 
-    const onClick = (event: MouseEvent) => {
+    const onChange = (event: Event) => {
       const target = event.target as HTMLElement;
       if (target.closest('.vs-selected-track-routing select')) onProxyChange(event);
     };
@@ -202,7 +210,7 @@ export default function VoiceStudioTrackRoutingRuntime() {
     });
     observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'value', 'disabled'] });
     document.addEventListener('pointerdown', onPointerDown, true);
-    document.addEventListener('change', onClick as unknown as EventListener, true);
+    document.addEventListener('change', onChange, true);
 
     const navigatorWithMidi = navigator as Navigator & { requestMIDIAccess?: () => Promise<MidiAccessLike> };
     if (navigatorWithMidi.requestMIDIAccess) {
@@ -223,7 +231,7 @@ export default function VoiceStudioTrackRoutingRuntime() {
     return () => {
       observer.disconnect();
       document.removeEventListener('pointerdown', onPointerDown, true);
-      document.removeEventListener('change', onClick as unknown as EventListener, true);
+      document.removeEventListener('change', onChange, true);
       cancelAnimationFrame(animationFrame);
       window.clearInterval(interval);
       stopMidiRouting();
