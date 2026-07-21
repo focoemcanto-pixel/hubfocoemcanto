@@ -1,0 +1,8 @@
+.vs-daw-runtime .vs-track-heads > article.vs-track-selected {
+  background: linear-gradient(90deg, rgba(139, 92, 246, .18), rgba(139, 92, 246, .06));
+  box-shadow: inset 3px 0 0 #8b5cf6, inset 0 0 0 1px rgba(167, 139, 250, .26);
+}
+
+.vs-daw-runtime .vs-track-heads > article.vs-track-selected > input {
+  color: #f5f3ff;
+}
