@@ -1,37 +1,78 @@
-const SAMPLE_URL = 'https://raw.githubusercontent.com/focoemcanto-pixel/piano-sound-samples/master/sound_keyboard_staff/C.mp3';
-const SAMPLE_MIDI = 60;
+const SAMPLE_BASE_URL = 'https://tonejs.github.io/audio/salamander/';
 
-let loading: Promise<AudioBuffer> | null = null;
-let cached: AudioBuffer | null = null;
-const voices = new Map<number, { source: AudioBufferSourceNode; gain: GainNode; context: AudioContext }>();
+const SAMPLE_POINTS = [
+  [21, 'A0.mp3'], [24, 'C1.mp3'], [27, 'Ds1.mp3'], [30, 'Fs1.mp3'],
+  [33, 'A1.mp3'], [36, 'C2.mp3'], [39, 'Ds2.mp3'], [42, 'Fs2.mp3'],
+  [45, 'A2.mp3'], [48, 'C3.mp3'], [51, 'Ds3.mp3'], [54, 'Fs3.mp3'],
+  [57, 'A3.mp3'], [60, 'C4.mp3'], [63, 'Ds4.mp3'], [66, 'Fs4.mp3'],
+  [69, 'A4.mp3'], [72, 'C5.mp3'], [75, 'Ds5.mp3'], [78, 'Fs5.mp3'],
+  [81, 'A5.mp3'], [84, 'C6.mp3'], [87, 'Ds6.mp3'], [90, 'Fs6.mp3'],
+  [93, 'A6.mp3'], [96, 'C7.mp3'], [99, 'Ds7.mp3'], [102, 'Fs7.mp3'],
+  [105, 'A7.mp3'], [108, 'C8.mp3'],
+] as const;
 
-function frequency(midi: number) {
-  return 440 * Math.pow(2, (midi - 69) / 12);
+type SamplePoint = (typeof SAMPLE_POINTS)[number];
+type Voice = { source: AudioBufferSourceNode; gain: GainNode; context: AudioContext };
+type MasterChain = { input: GainNode; compressor: DynamicsCompressorNode };
+
+const buffers = new Map<string, AudioBuffer>();
+const loading = new Map<string, Promise<AudioBuffer>>();
+const voices = new Map<number, Voice>();
+const masters = new WeakMap<AudioContext, MasterChain>();
+
+function nearestSample(note: number): SamplePoint {
+  return SAMPLE_POINTS.reduce((best, candidate) =>
+    Math.abs(candidate[0] - note) < Math.abs(best[0] - note) ? candidate : best,
+  SAMPLE_POINTS[0]);
 }
 
-async function sample(context: AudioContext) {
+async function loadBuffer(context: AudioContext, fileName: string) {
+  const cached = buffers.get(fileName);
   if (cached) return cached;
-  if (!loading) {
-    loading = fetch(SAMPLE_URL)
-      .then(response => {
-        if (!response.ok) throw new Error('Não foi possível carregar o piano real.');
-        return response.arrayBuffer();
-      })
-      .then(data => context.decodeAudioData(data.slice(0)))
-      .then(buffer => {
-        cached = buffer;
-        return buffer;
-      })
-      .finally(() => { loading = null; });
-  }
-  return loading;
+  const pending = loading.get(fileName);
+  if (pending) return pending;
+
+  const request = fetch(`${SAMPLE_BASE_URL}${fileName}`)
+    .then(response => {
+      if (!response.ok) throw new Error(`Não foi possível carregar ${fileName}.`);
+      return response.arrayBuffer();
+    })
+    .then(data => context.decodeAudioData(data.slice(0)))
+    .then(buffer => {
+      buffers.set(fileName, buffer);
+      return buffer;
+    })
+    .finally(() => loading.delete(fileName));
+
+  loading.set(fileName, request);
+  return request;
+}
+
+function masterChain(context: AudioContext) {
+  const existing = masters.get(context);
+  if (existing) return existing;
+
+  const input = context.createGain();
+  const compressor = context.createDynamicsCompressor();
+  input.gain.value = 0.82;
+  compressor.threshold.value = -8;
+  compressor.knee.value = 12;
+  compressor.ratio.value = 1.8;
+  compressor.attack.value = 0.004;
+  compressor.release.value = 0.24;
+  input.connect(compressor).connect(context.destination);
+
+  const chain = { input, compressor };
+  masters.set(context, chain);
+  return chain;
 }
 
 export async function preloadVoiceStudioPiano(context: AudioContext) {
-  await sample(context);
+  const centralSamples = ['C3.mp3', 'Fs3.mp3', 'A3.mp3', 'C4.mp3', 'Ds4.mp3', 'Fs4.mp3', 'A4.mp3', 'C5.mp3'];
+  await Promise.all(centralSamples.map(file => loadBuffer(context, file)));
 }
 
-export function stopVoiceStudioPianoNote(note: number, release = 0.12) {
+export function stopVoiceStudioPianoNote(note: number, release = 0.16) {
   const voice = voices.get(note);
   if (!voice) return;
   voices.delete(note);
@@ -40,41 +81,39 @@ export function stopVoiceStudioPianoNote(note: number, release = 0.12) {
     voice.gain.gain.cancelScheduledValues(now);
     voice.gain.gain.setValueAtTime(Math.max(0.0001, voice.gain.gain.value), now);
     voice.gain.gain.exponentialRampToValueAtTime(0.0001, now + release);
-    voice.source.stop(now + release + 0.05);
+    voice.source.stop(now + release + 0.08);
   } catch {}
 }
 
 export function stopAllVoiceStudioPianoNotes() {
-  Array.from(voices.keys()).forEach(note => stopVoiceStudioPianoNote(note, 0.08));
+  Array.from(voices.keys()).forEach(note => stopVoiceStudioPianoNote(note, 0.1));
 }
 
 export async function startVoiceStudioPianoNote(context: AudioContext, note: number, velocity = 1) {
-  stopVoiceStudioPianoNote(note, 0.04);
+  stopVoiceStudioPianoNote(note, 0.035);
   if (context.state !== 'running') await context.resume().catch(() => undefined);
-  const buffer = await sample(context);
+
+  const [sampleMidi, fileName] = nearestSample(note);
+  const buffer = await loadBuffer(context, fileName);
   const source = context.createBufferSource();
+  const filter = context.createBiquadFilter();
   const gain = context.createGain();
-  const low = context.createBiquadFilter();
-  const compressor = context.createDynamicsCompressor();
+  const master = masterChain(context);
 
   source.buffer = buffer;
-  source.playbackRate.value = frequency(note) / frequency(SAMPLE_MIDI);
-  low.type = 'lowshelf';
-  low.frequency.value = 180;
-  low.gain.value = 1.8;
-  compressor.threshold.value = -10;
-  compressor.knee.value = 16;
-  compressor.ratio.value = 2;
-  compressor.attack.value = 0.006;
-  compressor.release.value = 0.38;
+  source.playbackRate.value = Math.pow(2, (note - sampleMidi) / 12);
+  filter.type = 'lowpass';
+  filter.frequency.value = 14500;
+  filter.Q.value = 0.25;
 
   const now = context.currentTime;
-  const level = Math.max(0.045, Math.min(0.9, velocity * 0.62));
+  const normalizedVelocity = Math.max(0, Math.min(1, velocity));
+  const level = 0.08 + Math.pow(normalizedVelocity, 1.45) * 0.72;
   gain.gain.setValueAtTime(0.0001, now);
-  gain.gain.exponentialRampToValueAtTime(level, now + 0.012);
-  gain.gain.exponentialRampToValueAtTime(level * 0.74, now + 0.22);
+  gain.gain.exponentialRampToValueAtTime(level, now + 0.008);
+  gain.gain.exponentialRampToValueAtTime(level * 0.88, now + 0.18);
 
-  source.connect(low).connect(gain).connect(compressor).connect(context.destination);
+  source.connect(filter).connect(gain).connect(master.input);
   source.onended = () => {
     if (voices.get(note)?.source === source) voices.delete(note);
   };
