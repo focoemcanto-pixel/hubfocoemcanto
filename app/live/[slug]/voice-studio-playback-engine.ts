@@ -41,6 +41,12 @@ function gainAtClipTime(clip: VoiceStudioClip, baseGain: number, localTime: numb
   return baseGain * Math.min(fadeInGain, fadeOutGain);
 }
 
+export function playbackProjectRange(project: VoiceStudioProject) {
+  const clips = project.tracks.flatMap(track => track.clips);
+  if (!clips.length) return null;
+  return { start: Math.min(...clips.map(clip => clip.start)), end: Math.max(...clips.map(clipEnd)) };
+}
+
 export function playbackSelectionRange(project: VoiceStudioProject, clipIds: Iterable<string>) {
   const selected = new Set(clipIds);
   const clips = project.tracks.flatMap(track => track.clips.filter(clip => selected.has(clip.id)));
@@ -106,7 +112,7 @@ export class VoiceStudioPlaybackEngine {
       this.callbacks.onTick(now, drift);
       if (now >= this.snapshot.end) {
         if (this.snapshot.loop) { this.callbacks.onEnded(this.snapshot.offset, 'loop'); void this.play({ ...this.snapshot, offset: this.snapshot.offset }); return; }
-        this.stop(true, 'ended'); return;
+        this.stop(false, 'ended'); return;
       }
       this.raf = requestAnimationFrame(tick);
     };
