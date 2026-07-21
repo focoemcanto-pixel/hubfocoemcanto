@@ -115,8 +115,8 @@ export function useVoiceStudioTransport({ project, objectUrlsRef, selectionRange
     timerRef.current = null;
     countInTimerRef.current = null;
     stopMetronome();
-    clearPlayback();
-  }, [clearPlayback, stopMetronome]);
+    if (status !== 'playing') clearPlayback();
+  }, [clearPlayback, status, stopMetronome]);
 
   const startRecordingClock = useCallback(() => {
     startAtRef.current = performance.now();
