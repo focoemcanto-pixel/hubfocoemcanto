@@ -1,3 +1,4 @@
+import { createVoiceStudioAssetStore } from './voice-studio-asset-store';
 import { VoiceStudioHistoryEngine } from './voice-studio-history-engine';
 import { createVoiceStudioProject } from './voice-studio-project-model';
 import {
@@ -9,6 +10,7 @@ import {
 } from './voice-studio-recording-engine';
 import { createVoiceStudioRuntime } from './voice-studio-runtime';
 import { createSelectionState } from './voice-studio-selection-engine';
+import { createVoiceStudioTransportController } from './voice-studio-transport-controller';
 import type {
   CreateVoiceStudioSessionOptions,
   VoiceStudioRecording,
@@ -26,20 +28,28 @@ const recording: VoiceStudioRecording = {
 export function createVoiceStudioSession(options: CreateVoiceStudioSessionOptions): VoiceStudioSession {
   const project = options.project ?? createVoiceStudioProject();
   const runtime = options.runtime ?? createVoiceStudioRuntime(options.runtimeOptions);
+  const assetStore = options.assetStore ?? createVoiceStudioAssetStore(runtime);
+  const transport = options.transport ?? createVoiceStudioTransportController({
+    playhead: project.view.playhead,
+    tempo: project.tempo,
+    countInBars: project.countInBars,
+    loop: project.loop,
+  });
+  const playback = runtime.createPlayback({
+    ...options.playbackCallbacks,
+    onTick: time => transport.handlePlaybackTick(time),
+    onEnded: (time, reason) => transport.handlePlaybackEnded(time, reason),
+  });
+  transport.attachPlayback(playback);
 
   return {
     project,
     history: new VoiceStudioHistoryEngine(options.historyLimit),
     selection: options.selection ?? createSelectionState(),
-    playback: runtime.createPlayback(options.playbackCallbacks),
+    playback,
     recording,
-    transport: options.transport ?? {
-      status: 'idle',
-      position: project.view.playhead,
-    },
-    assetStore: options.assetStore ?? {
-      blobs: new Map(),
-    },
+    transport,
+    assetStore,
     runtime,
   };
 }

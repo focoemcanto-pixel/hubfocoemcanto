@@ -1,15 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
+import { createVoiceStudioAssetStore, VoiceStudioAssetStore } from './voice-studio-asset-store';
 import { VoiceStudioHistoryEngine } from './voice-studio-history-engine';
 import { VoiceStudioPlaybackEngine } from './voice-studio-playback-engine';
 import { createVoiceStudioProject } from './voice-studio-project-model';
 import { createVoiceStudioRuntime } from './voice-studio-runtime';
 import { createSelectionState } from './voice-studio-selection-engine';
 import { createVoiceStudioSession } from './voice-studio-session';
+import { createVoiceStudioTransportController, VoiceStudioTransportController } from './voice-studio-transport-controller';
 
 function playbackCallbacks() {
   return {
-    onTick: vi.fn(),
-    onEnded: vi.fn(),
     midiFrequency: vi.fn(() => 440),
     instrumentWave: vi.fn(() => 'sine' as OscillatorType),
   };
@@ -30,8 +30,10 @@ describe('createVoiceStudioSession', () => {
     expect(session.selection.clipIds.size).toBe(0);
     expect(session.playback).toBeInstanceOf(VoiceStudioPlaybackEngine);
     expect(session.recording.createRecordingSession).toBeTypeOf('function');
-    expect(session.transport).toEqual({ status: 'idle', position: 0 });
-    expect(session.assetStore.blobs.size).toBe(0);
+    expect(session.transport).toBeInstanceOf(VoiceStudioTransportController);
+    expect(session.transport.getSnapshot()).toMatchObject({ status: 'idle', playhead: 0, tempo: 90, bpm: 90 });
+    expect(session.assetStore).toBeInstanceOf(VoiceStudioAssetStore);
+    expect(session.assetStore.size).toBe(0);
     expect(session.runtime.initialized).toBe(false);
     expect(session.runtime.disposed).toBe(false);
     expect(audioContextFactory).not.toHaveBeenCalled();
@@ -41,13 +43,13 @@ describe('createVoiceStudioSession', () => {
     const project = createVoiceStudioProject('Session project');
     project.view.playhead = 12;
     const selection = createSelectionState(['clip-a']);
-    const transport = { status: 'playing' as const, position: 7 };
-    const assetStore = { blobs: new Map<string, Blob>() };
+    const transport = createVoiceStudioTransportController({ playhead: 7, tempo: 120 });
     const runtime = createVoiceStudioRuntime({
       audioContextFactory: () => {
         throw new Error('AudioContext should remain lazy.');
       },
     });
+    const assetStore = createVoiceStudioAssetStore(runtime);
 
     const session = createVoiceStudioSession({
       playbackCallbacks: playbackCallbacks(),
