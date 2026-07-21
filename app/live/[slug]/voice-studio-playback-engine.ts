@@ -87,6 +87,7 @@ export class VoiceStudioPlaybackEngine {
 
   pause() { return this.stop(false, 'pause'); }
   stop(reset = false, reason: VoiceStudioPlaybackEndReason = 'stop') {
+    if (this.stopped || !this.snapshot) return this.timelineStartedAt;
     const time = reset ? 0 : this.currentTime();
     this.stopped = true;
     if (this.timer !== null) window.clearInterval(this.timer);
@@ -94,6 +95,7 @@ export class VoiceStudioPlaybackEngine {
     this.timer = null; this.raf = null;
     this.clearScheduled();
     this.snapshot = null;
+    this.timelineStartedAt = time;
     this.callbacks.onEnded(time, reason);
     return time;
   }
