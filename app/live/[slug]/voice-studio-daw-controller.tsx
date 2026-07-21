@@ -31,8 +31,9 @@ import { createObjectUrls, revokeObjectUrls } from './voice-studio-project-stora
 import VoiceStudioTimelineCanvas from './voice-studio-timeline-canvas';
 import { useVoiceStudioTimeline } from './use-voice-studio-timeline';
 import { useVoiceStudioAudioRecording } from './use-voice-studio-audio-recording';
+import { useVoiceStudioTransport } from './use-voice-studio-transport';
 import { timelinePixelsToTime, timelineSnapTime } from './voice-studio-timeline-engine';
-import { VoiceStudioPlaybackEngine, playbackSelectionRange, type VoiceStudioPlaybackMode } from './voice-studio-playback-engine';
+import { playbackSelectionRange } from './voice-studio-playback-engine';
 import { commitRecordingToProject, createRecordingSession, type VoiceStudioRecordingSession } from './voice-studio-recording-engine';
 import {
   createSelectionState,
@@ -78,9 +79,6 @@ function projectHasContent(project: VoiceStudioProject) { return project.tracks.
 
 export default function VoiceStudioDaw({ readOnly }: { readOnly: boolean }) {
   const [project, setProject] = useState<VoiceStudioProject>(() => createVoiceStudioProject());
-  const [status, setStatus] = useState<Status>('idle');
-  const [countBeat, setCountBeat] = useState(0);
-  const [elapsed, setElapsed] = useState(0);
   const [meter, setMeter] = useState(0);
   const [error, setError] = useState('');
   const [trackMenu, setTrackMenu] = useState(false);
@@ -103,13 +101,7 @@ export default function VoiceStudioDaw({ readOnly }: { readOnly: boolean }) {
   const objectUrlsRef = useRef<Record<string, string>>({});
   const clipboardRef = useRef<VoiceStudioClipboardClip | null>(null);
   const contextRef = useRef<AudioContext | null>(null);
-  const timerRef = useRef<number | null>(null);
-  const metroRef = useRef<number | null>(null);
-  const countInTimerRef = useRef<number | null>(null);
-  const playbackEngineRef = useRef<VoiceStudioPlaybackEngine | null>(null);
   const historyEngineRef = useRef(new VoiceStudioHistoryEngine(50));
-  const startAtRef = useRef(0);
-  const recordStartRef = useRef(0);
   const recordingSessionRef = useRef<VoiceStudioRecordingSession | null>(null);
   const activeMidiRef = useRef<Map<number, { start: number; velocity: number }>>(new Map());
   const midiNotesRef = useRef<VoiceStudioMidiNote[]>([]);
@@ -117,18 +109,24 @@ export default function VoiceStudioDaw({ readOnly }: { readOnly: boolean }) {
   const dragRef = useRef<DragState | null>(null);
   const suppressSnapshotRef = useRef(true);
 
+  const timelineApiRef = useRef<{ ensureTimeVisible: (time: number, force?: boolean) => void } | null>(null);
+
   projectRef.current = project;
-  const duration = Math.max(projectDuration(project), elapsed);
+  const projectOnlyDuration = projectDuration(project);
   const beatSeconds = 60 / project.tempo;
   const selectedIds = selection.clipIds;
   const updateTimelineView = useCallback((view: VoiceStudioProject['view']) => {
     setProject(current => ({ ...current, view: { ...current.view, ...view } }));
-    setElapsed(view.playhead);
+    transport.setElapsed(view.playhead);
   }, []);
   const selected = useMemo(() => selectedClipLocations(project, selection), [project, selection]);
   const selectionRange = useMemo(() => playbackSelectionRange(project, selection.clipIds), [project, selection]);
+  const transport = useVoiceStudioTransport({ project, objectUrlsRef, selectionRange, getAudioContext: audioContext, midiFrequency, instrumentWave, projectHasContent, quantize, setProject, ensureTimeVisible: (time, force) => timelineApiRef.current?.ensureTimeVisible(time, force) });
+  const { status, elapsed, countBeat, startAtRef, recordStartRef } = transport;
+  const duration = Math.max(projectOnlyDuration, elapsed);
   const timeline = useVoiceStudioTimeline({ duration, view: project.view, disabled: status !== 'idle', onViewChange: updateTimelineView });
-  const recording = useVoiceStudioAudioRecording({ getAudioContext: audioContext, monitorInput, startAtRef, recordStartRef, recordingSessionRef, audioTrackCount: project.tracks.filter(track => track.kind === 'audio').length, onBeginClock: startClock, onCleanupTransport: cleanupCapture, onAddRecordedAsset: addRecordedAsset, onElapsedChange: setElapsed, onLivePeaksChange: setLivePeaks, onMeterChange: setMeter, onStatusIdle: () => setStatus('idle') });
+  timelineApiRef.current = timeline;
+  const recording = useVoiceStudioAudioRecording({ getAudioContext: audioContext, monitorInput, startAtRef, recordStartRef, recordingSessionRef, audioTrackCount: project.tracks.filter(track => track.kind === 'audio').length, onBeginClock: transport.startRecordingClock, onCleanupTransport: transport.cleanupCapture, onAddRecordedAsset: addRecordedAsset, onElapsedChange: transport.setElapsed, onLivePeaksChange: setLivePeaks, onMeterChange: setMeter, onStatusIdle: () => transport.setStatus('idle') });
 
   useEffect(() => {
     const receiveLoad = (event: Event) => {
@@ -143,7 +141,7 @@ export default function VoiceStudioDaw({ readOnly }: { readOnly: boolean }) {
       else historyEngineRef.current.reset();
       syncHistoryState();
       setProject(next);
-      setElapsed(next.view.playhead || 0);
+      transport.setElapsed(next.view.playhead || 0);
       setSelection(deselectAllClips());
       window.setTimeout(() => { suppressSnapshotRef.current = false; }, 0);
     };
@@ -161,7 +159,7 @@ export default function VoiceStudioDaw({ readOnly }: { readOnly: boolean }) {
   useEffect(() => { if (!suppressSnapshotRef.current) dispatchSnapshot(project); }, [project]);
   useEffect(() => { setSelection(current => reconcileSelection(project, current)); }, [project]);
   useEffect(() => () => cleanup(), []);
-  useEffect(() => { if (status !== 'recording' && status !== 'countin') stopMetronome(); }, [status]);
+  useEffect(() => { if (status !== 'recording' && status !== 'countin') transport.cleanupCapture(); }, [status]);
   useEffect(() => { void connectMidi(); }, []);
   useEffect(() => { bindMidiInput(); return unbindMidiInput; }, [midiInputId, midiInputs, status, armed.kind, armed.instrument]);
 
@@ -170,7 +168,7 @@ export default function VoiceStudioDaw({ readOnly }: { readOnly: boolean }) {
       if (typingTarget(event.target)) return;
       const mod = event.ctrlKey || event.metaKey;
       const key = event.key.toLowerCase();
-      if (event.code === 'Space') { event.preventDefault(); if (status !== 'recording' && status !== 'countin') playAll(); return; }
+      if (event.code === 'Space') { event.preventDefault(); if (status !== 'recording' && status !== 'countin') transport.play(); return; }
       if (key === 'r' && !mod) { event.preventDefault(); if (status === 'recording') stopRecording(); else void beginRecord(); return; }
       if (key === 's' && !mod) { event.preventDefault(); splitSelected(); return; }
       if ((event.key === 'Delete' || event.key === 'Backspace') && selectedIds.size) { event.preventDefault(); deleteSelected(); return; }
@@ -194,15 +192,10 @@ export default function VoiceStudioDaw({ readOnly }: { readOnly: boolean }) {
   function commit(mutator: (current: VoiceStudioProject) => VoiceStudioProject, operation: VoiceStudioHistoryOperation = 'project', label?: string, groupId?: string, merge = false) { setProject(current => { const next = mutator(current); if (next === current) return current; historyEngineRef.current.commit(current, next, { operation, label, groupId, merge }); syncHistoryState(); return next; }); }
   function patchProject(patch: Partial<VoiceStudioProject>, operation: VoiceStudioHistoryOperation = 'project') { commit(current => ({ ...cloneVoiceStudioProject(current), ...patch, updatedAt: new Date().toISOString() }), operation); }
   function patchTrack(trackId: string, patch: Partial<VoiceStudioTrack>, operation: VoiceStudioHistoryOperation = 'project') { const merge = operation === 'track-rename' || operation === 'gain' || operation === 'track-color'; commit(current => { const next = cloneVoiceStudioProject(current); const track = next.tracks.find(item => item.id === trackId); if (!track) return current; Object.assign(track, patch); next.updatedAt = new Date().toISOString(); return next; }, operation, undefined, trackId, merge); }
-  function undo() { if (!historyState.canUndo || status !== 'idle') return; const previous = historyEngineRef.current.undo(project); if (!previous) return; syncHistoryState(); setProject(previous); setElapsed(previous.view.playhead); setSelection(current => reconcileSelection(previous, current)); }
-  function redo() { if (!historyState.canRedo || status !== 'idle') return; const next = historyEngineRef.current.redo(project); if (!next) return; syncHistoryState(); setProject(next); setElapsed(next.view.playhead); setSelection(current => reconcileSelection(next, current)); }
+  function undo() { if (!historyState.canUndo || status !== 'idle') return; const previous = historyEngineRef.current.undo(project); if (!previous) return; syncHistoryState(); setProject(previous); transport.setElapsed(previous.view.playhead); setSelection(current => reconcileSelection(previous, current)); }
+  function redo() { if (!historyState.canRedo || status !== 'idle') return; const next = historyEngineRef.current.redo(project); if (!next) return; syncHistoryState(); setProject(next); transport.setElapsed(next.view.playhead); setSelection(current => reconcileSelection(next, current)); }
   function audioContext() { contextRef.current ||= new AudioContext({ latencyHint: 'interactive' }); return contextRef.current; }
-  function playbackEngine() { playbackEngineRef.current ||= new VoiceStudioPlaybackEngine({ getAudioContext: audioContext, midiFrequency, instrumentWave, onTick: (time) => { setElapsed(time); setProject(current => ({ ...current, view: { ...current.view, playhead: time } })); timeline.ensureTimeVisible(time); }, onEnded: (time, reason) => { setElapsed(time); setProject(current => ({ ...current, view: { ...current.view, playhead: time } })); if (reason !== 'loop') setStatus('idle'); } }); return playbackEngineRef.current; }
-  function click(accent = false) { const context = audioContext(); const oscillator = context.createOscillator(); const gain = context.createGain(); oscillator.frequency.value = accent ? 1320 : 930; gain.gain.setValueAtTime(0.16, context.currentTime); gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.055); oscillator.connect(gain).connect(context.destination); oscillator.start(); oscillator.stop(context.currentTime + 0.06); }
-  function startMetronome() { stopMetronome(); click(true); let beat = 1; metroRef.current = window.setInterval(() => { click(beat % project.timeSignature[0] === 0); beat += 1; }, beatSeconds * 1000); }
-  function stopMetronome() { if (metroRef.current) window.clearInterval(metroRef.current); metroRef.current = null; }
-  function clearPlayback(reset = false) { playbackEngineRef.current?.stop(reset); if (reset) setElapsed(0); }
-  function cleanup() { if (timerRef.current) window.clearInterval(timerRef.current); if (metroRef.current) window.clearInterval(metroRef.current); if (countInTimerRef.current) window.clearInterval(countInTimerRef.current); recording.cleanup(); liveOscRef.current.forEach((_, note) => stopLiveNote(note)); clearPlayback(); unbindMidiInput(); revokeObjectUrls(objectUrlsRef.current); void contextRef.current?.close().catch(() => undefined); }
+  function cleanup() { recording.cleanup(); liveOscRef.current.forEach((_, note) => stopLiveNote(note)); transport.cleanup(); unbindMidiInput(); revokeObjectUrls(objectUrlsRef.current); void contextRef.current?.close().catch(() => undefined); }
 
   async function connectMidi() {
     const navigatorWithMidi = navigator as Navigator & { requestMIDIAccess?: () => Promise<MidiAccessLike> };
@@ -221,32 +214,12 @@ export default function VoiceStudioDaw({ readOnly }: { readOnly: boolean }) {
   function playLiveNote(note: number, velocity: number, instrument: string) { const context = audioContext(); void context.resume(); stopLiveNote(note); const oscillator = context.createOscillator(); const gain = context.createGain(); oscillator.type = instrumentWave(instrument); oscillator.frequency.value = midiFrequency(note); gain.gain.setValueAtTime(0, context.currentTime); gain.gain.linearRampToValueAtTime(Math.max(0.025, (velocity / 127) * 0.18), context.currentTime + 0.012); oscillator.connect(gain).connect(context.destination); oscillator.start(); liveOscRef.current.set(note, { osc: oscillator, gain }); }
   function stopLiveNote(note: number) { const voice = liveOscRef.current.get(note); if (!voice) return; const context = contextRef.current; if (context) { voice.gain.gain.cancelScheduledValues(context.currentTime); voice.gain.gain.setTargetAtTime(0.0001, context.currentTime, 0.04); voice.osc.stop(context.currentTime + 0.2); } liveOscRef.current.delete(note); }
 
-  async function countIn() { const total = project.countInBars * project.timeSignature[0]; if (total <= 0) return; setStatus('countin'); setCountBeat(1); click(true); let beat = 1; await new Promise<void>(resolve => { countInTimerRef.current = window.setInterval(() => { beat += 1; if (beat > total) { if (countInTimerRef.current) window.clearInterval(countInTimerRef.current); countInTimerRef.current = null; resolve(); return; } setCountBeat(beat); click((beat - 1) % project.timeSignature[0] === 0); }, beatSeconds * 1000); }); }
-  async function beginRecord() { if (readOnly || status !== 'idle') return; setError(''); const track = armed.trackId ? project.tracks.find(item => item.id === armed.trackId) : null; if (!track || track.kind !== armed.kind) { setError('Arme uma track compatível antes de gravar.'); return; } recordStartRef.current = punch.enabled && punch.in !== null ? punch.in : (elapsed >= duration ? 0 : elapsed); recording.resetLivePeaks(); midiNotesRef.current = []; activeMidiRef.current.clear(); recordingSessionRef.current = createRecordingSession({ trackId: track.id, kind: armed.kind, start: recordStartRef.current, latencyCompensation: latencyCompensationMs / 1000, punch }); try { await audioContext().resume(); if (armed.kind === 'audio') await recording.prepare(); else if (!selectedMidiInput()) throw new Error('Conecte e selecione um teclado MIDI.'); await countIn(); startBackingTracks(recordStartRef.current); if (armed.kind === 'audio') recording.begin(); else startClock(); } catch (reason) { recordingSessionRef.current = null; setStatus('idle'); setError(reason instanceof Error ? reason.message : 'Não foi possível iniciar a gravação.'); recording.cleanup(); } }
-  function startClock() { startAtRef.current = performance.now(); setElapsed(recordStartRef.current); setStatus('recording'); if (project.metronomeDuringRecording) startMetronome(); timerRef.current = window.setInterval(() => setElapsed(recordStartRef.current + (performance.now() - startAtRef.current) / 1000), 50); }
-  function cleanupCapture() { if (timerRef.current) window.clearInterval(timerRef.current); timerRef.current = null; stopMetronome(); clearPlayback(); }
+  async function beginRecord() { if (readOnly || status !== 'idle') return; setError(''); const track = armed.trackId ? project.tracks.find(item => item.id === armed.trackId) : null; if (!track || track.kind !== armed.kind) { setError('Arme uma track compatível antes de gravar.'); return; } recordStartRef.current = punch.enabled && punch.in !== null ? punch.in : (elapsed >= duration ? 0 : elapsed); recording.resetLivePeaks(); midiNotesRef.current = []; activeMidiRef.current.clear(); recordingSessionRef.current = createRecordingSession({ trackId: track.id, kind: armed.kind, start: recordStartRef.current, latencyCompensation: latencyCompensationMs / 1000, punch }); try { await audioContext().resume(); if (armed.kind === 'audio') await recording.prepare(); else if (!selectedMidiInput()) throw new Error('Conecte e selecione um teclado MIDI.'); await transport.countIn(); transport.startBackingTracks(recordStartRef.current); if (armed.kind === 'audio') recording.begin(); else transport.startRecordingClock(); } catch (reason) { recordingSessionRef.current = null; transport.setStatus('idle'); setError(reason instanceof Error ? reason.message : 'Não foi possível iniciar a gravação.'); recording.cleanup(); } }
   function stopRecording() { if (armed.kind === 'audio') recording.stop(); else if (armed.kind === 'midi') finishMidi(); }
-  function cancelRecording() { if (status !== 'recording' && status !== 'countin') return; if (countInTimerRef.current) window.clearInterval(countInTimerRef.current); countInTimerRef.current = null; if (armed.kind === 'audio') recording.cancel(); else cleanupCapture(); recordingSessionRef.current = null; midiNotesRef.current = []; activeMidiRef.current.clear(); setElapsed(recordStartRef.current); setStatus('idle'); }
-  function finishMidi() { const session = recordingSessionRef.current; if (!session) return; const clipDuration = Math.max(MIN_CLIP, (performance.now() - startAtRef.current) / 1000); activeMidiRef.current.forEach((active, note) => midiNotesRef.current.push({ id: crypto.randomUUID(), note, velocity: active.velocity, start: active.start, duration: Math.max(0.04, clipDuration - active.start) })); activeMidiRef.current.clear(); addRecordedAsset({ id: crypto.randomUUID(), createdAt: new Date().toISOString(), kind: 'midi', duration: clipDuration, peaks: [], midiNotes: [...midiNotesRef.current], instrument: armed.instrument }, undefined, `Teclado ${project.tracks.filter(track => track.kind === 'midi').length + 1}`, session); recordingSessionRef.current = null; recording.cleanup(); setElapsed(recordStartRef.current); setStatus('idle'); }
+  function cancelRecording() { if (status !== 'recording' && status !== 'countin') return; if (armed.kind === 'audio') recording.cancel(); else transport.cleanupCapture(); recordingSessionRef.current = null; midiNotesRef.current = []; activeMidiRef.current.clear(); transport.setElapsed(recordStartRef.current); transport.setStatus('idle'); }
+  function finishMidi() { const session = recordingSessionRef.current; if (!session) return; const clipDuration = Math.max(MIN_CLIP, (performance.now() - startAtRef.current) / 1000); activeMidiRef.current.forEach((active, note) => midiNotesRef.current.push({ id: crypto.randomUUID(), note, velocity: active.velocity, start: active.start, duration: Math.max(0.04, clipDuration - active.start) })); activeMidiRef.current.clear(); addRecordedAsset({ id: crypto.randomUUID(), createdAt: new Date().toISOString(), kind: 'midi', duration: clipDuration, peaks: [], midiNotes: [...midiNotesRef.current], instrument: armed.instrument }, undefined, `Teclado ${project.tracks.filter(track => track.kind === 'midi').length + 1}`, session); recordingSessionRef.current = null; recording.cleanup(); transport.setElapsed(recordStartRef.current); transport.setStatus('idle'); }
   function addRecordedAsset(asset: VoiceStudioAsset, blob: Blob | undefined, name: string, session: VoiceStudioRecordingSession) { if (blob) { blobsRef.current[asset.id] = blob; objectUrlsRef.current[asset.id] = URL.createObjectURL(blob); } commit(current => commitRecordingToProject({ project: current, asset, clipName: name, session }).project, 'recording', 'Recording', session.id); }
-
-  function playbackBounds(mode: VoiceStudioPlaybackMode) {
-    if (mode === 'selection' && selectionRange) return selectionRange;
-    if (mode === 'loop' && project.loop.enabled && project.loop.end > project.loop.start) return { start: project.loop.start, end: project.loop.end };
-    return { start: elapsed >= duration ? 0 : elapsed, end: duration };
-  }
-  function startBackingTracks(offset: number) { void playbackEngine().play({ project, objectUrls: objectUrlsRef.current, offset, end: duration, mode: 'project', loop: false }); }
-  function playAll(mode: VoiceStudioPlaybackMode = project.loop.enabled ? 'loop' : 'project') {
-    if (status === 'playing') { pausePlayback(); return; }
-    if (!projectHasContent(project)) return;
-    const bounds = playbackBounds(mode);
-    const offset = mode === 'project' ? (elapsed >= bounds.end ? 0 : elapsed) : bounds.start;
-    setStatus('playing');
-    void playbackEngine().play({ project, objectUrls: objectUrlsRef.current, offset, end: bounds.end, mode, loop: mode === 'loop' });
-  }
-  function pausePlayback() { playbackEngineRef.current?.pause(); setStatus('idle'); }
-  function stopPlayback(reset = false) { playbackEngineRef.current?.stop(reset); setStatus('idle'); }
-  function seekPlayhead(time: number) { const nextPlayhead = Math.max(0, Math.min(duration, quantize(time))); if (status === 'playing') stopPlayback(false); setElapsed(nextPlayhead); setProject(current => ({ ...current, view: { ...current.view, playhead: nextPlayhead } })); }
+  function seekPlayhead(time: number) { transport.seek(time); }
 
   function seekTimeline(event: React.MouseEvent<HTMLElement>) { if (status !== 'idle' || lasso || (event.target as HTMLElement).closest('.vs-clip,.vs-pro-ruler')) return; const nextPlayhead = timeline.seekAtClientX(event.clientX, quantize); seekPlayhead(nextPlayhead); setSelection(deselectAllClips()); }
   function selectClip(event: React.PointerEvent, clipId: string) { event.stopPropagation(); const mode = event.shiftKey ? 'range' : (event.ctrlKey || event.metaKey) ? 'toggle' : selectedIds.has(clipId) ? 'add' : 'replace'; setSelection(current => selectClipById(project, current, clipId, mode)); }
@@ -317,7 +290,7 @@ export default function VoiceStudioDaw({ readOnly }: { readOnly: boolean }) {
       <div className="vs-project"><strong>Voice Studio</strong><span>Project → Track → Clip → Asset</span></div>
       <div className="vs-tempo"><input disabled={readOnly || status !== 'idle'} value={project.tempo} min={40} max={220} type="number" onChange={event => patchProject({ tempo: Number(event.target.value) || 90 }, 'project')}/><span>BPM</span><b>{project.timeSignature[0]} / {project.timeSignature[1]}</b></div>
       <div className="vs-edit-tools"><button title="Desfazer" disabled={!historyState.canUndo || status !== 'idle'} onClick={undo}><Undo2/></button><button title="Refazer" disabled={!historyState.canRedo || status !== 'idle'} onClick={redo}><Redo2/></button><button title="Dividir clip no playhead (S)" disabled={!selected.length || status !== 'idle'} onClick={splitSelected}><Scissors/></button><button title="Duplicar clip" disabled={!selected.length || status !== 'idle'} onClick={duplicateSelected}><Copy/></button><button title="Fade in no clip" disabled={!selected.length || status !== 'idle'} onClick={() => setSelectedFade('in')}>FI</button><button title="Fade out no clip" disabled={!selected.length || status !== 'idle'} onClick={() => setSelectedFade('out')}>FO</button><button className={project.settings.snapping ? 'active' : ''} title="Snap" onClick={() => patchProject({ settings: { ...project.settings, snapping: !project.settings.snapping } }, 'project')}><Magnet/></button><button title="Reduzir zoom horizontal" onClick={() => timeline.setZoom(timeline.zoom - 0.25)}><ZoomOut/></button><button title="Aumentar zoom horizontal" onClick={() => timeline.setZoom(timeline.zoom + 0.25)}><ZoomIn/></button><button title="Reduzir zoom vertical" onClick={() => setVerticalZoom(value => Math.max(0.7, value - 0.15))}>V-</button><button title="Aumentar zoom vertical" onClick={() => setVerticalZoom(value => Math.min(1.8, value + 0.15))}>V+</button></div>
-      <div className="vs-main-controls"><button onClick={() => playAll()} disabled={!projectHasContent(project) || status === 'recording' || status === 'countin'}>{status === 'playing' ? <Pause/> : <Play/>}</button><button className={status === 'recording' ? 'recording' : 'record'} onClick={status === 'recording' ? stopRecording : beginRecord} disabled={readOnly || status === 'countin' || status === 'playing' || !armed.trackId}>{status === 'recording' ? <Square/> : <Circle fill="currentColor"/>}</button><button title="Cancelar gravação" onClick={cancelRecording} disabled={status !== 'recording' && status !== 'countin'}>CANCEL</button><button title="Parar" onClick={() => stopPlayback(true)} disabled={status !== 'playing'}><Square/></button><button title="Tocar seleção" onClick={() => playAll('selection')} disabled={!selectionRange || status !== 'idle'}>SEL</button><button className={project.loop.enabled ? 'active' : ''} title="Loop" onClick={() => patchProject({ loop: { ...project.loop, enabled: !project.loop.enabled, ...(selectionRange && !project.loop.enabled ? { start: selectionRange.start, end: selectionRange.end } : {}) } }, 'loop')}>LOOP</button><time>{timeLabel(elapsed)}</time></div>
+      <div className="vs-main-controls"><button onClick={() => transport.play()} disabled={!projectHasContent(project) || status === 'recording' || status === 'countin'}>{status === 'playing' ? <Pause/> : <Play/>}</button><button className={status === 'recording' ? 'recording' : 'record'} onClick={status === 'recording' ? stopRecording : beginRecord} disabled={readOnly || status === 'countin' || status === 'playing' || !armed.trackId}>{status === 'recording' ? <Square/> : <Circle fill="currentColor"/>}</button><button title="Cancelar gravação" onClick={cancelRecording} disabled={status !== 'recording' && status !== 'countin'}>CANCEL</button><button title="Parar" onClick={() => transport.stop(true)} disabled={status !== 'playing'}><Square/></button><button title="Tocar seleção" onClick={() => transport.play('selection')} disabled={!selectionRange || status !== 'idle'}>SEL</button><button className={project.loop.enabled ? 'active' : ''} title="Loop" onClick={() => patchProject({ loop: { ...project.loop, enabled: !project.loop.enabled, ...(selectionRange && !project.loop.enabled ? { start: selectionRange.start, end: selectionRange.end } : {}) } }, 'loop')}>LOOP</button><time>{timeLabel(elapsed)}</time></div>
       {!readOnly && <button className="vs-export" disabled={!projectHasContent(project)} onClick={exportAssets}><Download/> Exportar</button>}
     </header>
     <section className="vs-options"><label>Contagem<select disabled={status !== 'idle' || readOnly} value={project.countInBars} onChange={event => patchProject({ countInBars: Number(event.target.value) }, 'project')}><option value={0}>Sem contagem</option><option value={1}>1 compasso</option><option value={2}>2 compassos</option></select></label><button className={project.metronomeDuringRecording ? 'active' : ''} disabled={status !== 'idle' || readOnly} onClick={() => patchProject({ metronomeDuringRecording: !project.metronomeDuringRecording }, 'project')}>Metrônomo durante a gravação</button><button className={monitorInput ? 'active' : ''} disabled={status !== 'idle' || readOnly || armed.kind !== 'audio'} onClick={() => setMonitorInput(value => !value)}>Monitor Input</button><label>Latência<input disabled={status !== 'idle' || readOnly} type="number" min={0} max={500} step={1} value={latencyCompensationMs} onChange={event => setLatencyCompensationMs(Number(event.target.value) || 0)}/><span>ms</span></label><button className={punch.enabled ? 'active' : ''} disabled={status !== 'idle' || readOnly} onClick={() => setPunch(value => ({ ...value, enabled: !value.enabled, in: value.in ?? elapsed, out: value.out ?? Math.max(elapsed + 4, project.loop.end) }))}>Punch</button>{armed.kind === 'midi' ? <><label>Teclado<select disabled={status !== 'idle' || readOnly} value={midiInputId} onChange={event => setMidiInputId(event.target.value)}><option value="">Selecione</option>{midiInputs.map(input => <option key={input.id} value={input.id}>{input.name || 'Teclado MIDI'}</option>)}</select></label><label>Timbre<select disabled={status !== 'idle' || readOnly} value={armed.instrument} onChange={event => setArmed(value => ({ ...value, instrument: event.target.value }))}>{INSTRUMENTS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label></> : <div className="vs-input"><Mic2/><span>Nível de entrada</span><i><b style={{ width: `${meter * 100}%` }}/></i></div>}{selected.length > 0 && <strong className="vs-selection-info">{selected.length} clip{selected.length > 1 ? 's' : ''} selecionado{selected.length > 1 ? 's' : ''}</strong>}<div className="vs-fit-tools"><button onClick={fitProject} title="Ajustar projeto"><Maximize2/> Projeto</button><button onClick={fitSelection} disabled={!selected.length} title="Ajustar seleção"><Focus/> Seleção</button></div>{error && <em>{error}</em>}{!midiSupported && <em>Este navegador não oferece Web MIDI.</em>}</section>

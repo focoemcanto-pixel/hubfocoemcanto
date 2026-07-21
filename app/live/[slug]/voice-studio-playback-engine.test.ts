@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { playbackSelectionRange } from './voice-studio-playback-engine';
+import { playbackProjectRange, playbackSelectionRange } from './voice-studio-playback-engine';
 import {
   addAssetClipToProject,
   createTrackContainer,
@@ -11,6 +11,31 @@ import {
 function asset(id: string, duration: number): VoiceStudioAsset {
   return { id, kind: 'audio', duration, createdAt: '2026-01-01T00:00:00.000Z', peaks: [], midiNotes: [] };
 }
+
+describe('playbackProjectRange', () => {
+  it('returns null when the project has no clips', () => {
+    expect(playbackProjectRange(createVoiceStudioProject())).toBeNull();
+  });
+
+  it('uses the exact recorded clip bounds instead of the visual timeline minimum', () => {
+    const base = createVoiceStudioProject();
+    const track = createTrackContainer({ kind: 'audio', name: 'Lead' });
+    const project = addAssetClipToProject({ ...base, tracks: [track] }, asset('a1', 1.75), 'Short take', 0, track.id);
+
+    expect(playbackProjectRange(project)).toEqual({ start: 0, end: 1.75 });
+  });
+
+  it('spans from the earliest clip start to the latest clip end', () => {
+    const base = createVoiceStudioProject();
+    const first = createTrackContainer({ kind: 'audio', name: 'One' });
+    const second = createTrackContainer({ kind: 'audio', name: 'Two', index: 1 });
+    let project = { ...base, tracks: [first, second] };
+    project = addAssetClipToProject(project, asset('a1', 2), 'A', 5, first.id);
+    project = addAssetClipToProject(project, asset('a2', 4), 'B', 1, second.id);
+
+    expect(playbackProjectRange(project)).toEqual({ start: 1, end: 7 });
+  });
+});
 
 describe('playbackSelectionRange', () => {
   it('returns null for an empty or unknown selection', () => {

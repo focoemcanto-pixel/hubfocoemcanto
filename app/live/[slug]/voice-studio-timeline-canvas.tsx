@@ -12,6 +12,7 @@ import type {
 } from './voice-studio-project-model';
 import VoiceStudioTimelineRuler from './voice-studio-timeline-ruler';
 import {
+  timelinePixelsToTime,
   timelineTimeToPixels,
   timelineTrackHeight,
   type TimelineViewport,
@@ -43,7 +44,7 @@ type TimelineCanvasProps = {
   onBeginRecord: () => void;
 };
 
-const CANVAS_CSS = `.vs-pro-canvas{position:relative;min-height:100%;overflow:hidden}.vs-pro-canvas-content{position:relative;min-height:100%;background-image:linear-gradient(90deg,rgba(255,255,255,.04) 1px,transparent 1px);background-size:var(--grid-step,56px) 100%}.vs-pro-canvas .vs-lane{position:relative}.vs-pro-canvas .vs-clip{position:absolute;top:9px;bottom:9px;height:auto;cursor:grab;touch-action:none}.vs-pro-canvas .vs-live-clip{position:absolute;top:9px;bottom:9px;height:auto}.vs-pro-canvas .vs-playhead{position:absolute;top:0;bottom:0;z-index:7;pointer-events:none;will-change:transform}.vs-pro-canvas .vs-trim{display:none;position:absolute;top:0;bottom:0;width:10px;border:0;background:rgba(255,255,255,.88);z-index:6;cursor:ew-resize}.vs-pro-canvas .vs-clip.selected:not(.locked) .vs-trim{display:block}.vs-pro-canvas .vs-trim.left{left:0;border-radius:6px 0 0 6px}.vs-pro-canvas .vs-trim.right{right:0;border-radius:0 6px 6px 0}.vs-pro-canvas .vs-fade{position:absolute;top:0;bottom:0;pointer-events:none;opacity:.36}.vs-lasso{position:absolute;z-index:9;border:1px solid #a78bfa;background:rgba(139,92,246,.16);pointer-events:none;box-shadow:0 0 0 1px rgba(255,255,255,.08) inset}.vs-pro-canvas .vs-fade.in{left:0;background:linear-gradient(90deg,#fff,transparent)}.vs-pro-canvas .vs-fade.out{right:0;background:linear-gradient(90deg,transparent,#fff)}`;
+const CANVAS_CSS = `.vs-pro-canvas{position:relative;min-height:100%;overflow:hidden}.vs-pro-canvas-content{position:relative;min-height:100%;background-image:linear-gradient(90deg,rgba(255,255,255,.04) 1px,transparent 1px);background-size:var(--grid-step,56px) 100%}.vs-pro-canvas .vs-lane{position:relative}.vs-pro-canvas .vs-clip{position:absolute;top:9px;bottom:9px;height:auto;cursor:grab;touch-action:none}.vs-pro-canvas .vs-live-clip{position:absolute;top:9px;bottom:9px;height:auto}.vs-pro-canvas .vs-playhead{position:absolute;top:0;bottom:0;z-index:8;width:12px;margin-left:-6px;cursor:ew-resize;touch-action:none;will-change:transform}.vs-pro-canvas .vs-playhead::after{content:"";position:absolute;left:5px;top:0;bottom:0;width:2px;background:currentColor}.vs-pro-canvas .vs-trim{display:none;position:absolute;top:0;bottom:0;width:10px;border:0;background:rgba(255,255,255,.88);z-index:6;cursor:ew-resize}.vs-pro-canvas .vs-clip.selected:not(.locked) .vs-trim{display:block}.vs-pro-canvas .vs-trim.left{left:0;border-radius:6px 0 0 6px}.vs-pro-canvas .vs-trim.right{right:0;border-radius:0 6px 6px 0}.vs-pro-canvas .vs-fade{position:absolute;top:0;bottom:0;pointer-events:none;opacity:.36}.vs-lasso{position:absolute;z-index:9;border:1px solid #a78bfa;background:rgba(139,92,246,.16);pointer-events:none;box-shadow:0 0 0 1px rgba(255,255,255,.08) inset}.vs-pro-canvas .vs-fade.in{left:0;background:linear-gradient(90deg,#fff,transparent)}.vs-pro-canvas .vs-fade.out{right:0;background:linear-gradient(90deg,transparent,#fff)}`;
 
 export default function VoiceStudioTimelineCanvas({
   project,
@@ -72,6 +73,14 @@ export default function VoiceStudioTimelineCanvas({
   const minHeight = 42 + (project.tracks.length + (recording ? 1 : 0)) * trackHeight;
   const gridStep = timelineTimeToPixels(60 / Math.max(20, project.tempo), zoom);
 
+  const scrubPlayhead = (event: ReactPointerEvent<HTMLElement>) => {
+    const content = event.currentTarget.parentElement;
+    if (!content) return;
+    const bounds = content.getBoundingClientRect();
+    const next = Math.max(0, Math.min(duration, timelinePixelsToTime(event.clientX - bounds.left, zoom)));
+    onSeek(next);
+  };
+
   return <div className="vs-pro-canvas">
     <style>{CANVAS_CSS}</style>
     <div className="vs-pro-canvas-content" style={{ width: contentWidth, minHeight, '--grid-step': `${gridStep}px` } as CSSProperties} onClick={onBackgroundClick}>
@@ -85,7 +94,30 @@ export default function VoiceStudioTimelineCanvas({
         loop={project.loop}
         onSeek={onSeek}
       />
-      <div className="vs-playhead" style={{ transform: `translateX(${timelineTimeToPixels(elapsed, zoom)}px)` }}/>
+      <div
+        className="vs-playhead"
+        aria-label="Mover cursor de reprodução"
+        role="slider"
+        aria-valuemin={0}
+        aria-valuemax={duration}
+        aria-valuenow={elapsed}
+        style={{ transform: `translateX(${timelineTimeToPixels(elapsed, zoom)}px)` }}
+        onPointerDown={event => {
+          event.preventDefault();
+          event.stopPropagation();
+          event.currentTarget.setPointerCapture(event.pointerId);
+          scrubPlayhead(event);
+        }}
+        onPointerMove={event => {
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) scrubPlayhead(event);
+        }}
+        onPointerUp={event => {
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+        }}
+        onPointerCancel={event => {
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+        }}
+      />
       {project.tracks.map(track => <TimelineLane
         key={track.id}
         track={track}
