@@ -16,37 +16,42 @@ describe('Voice Studio controller architecture', () => {
     expect(facade).not.toContain('function VoiceStudioDaw(');
   });
 
-  it('exposes a typed and stable audio capture slot hook for the controller', () => {
-    const slot = readVoiceStudioFile('use-voice-studio-controller-audio-capture-slot.ts');
+  it('exposes a dedicated audio recording lifecycle hook', () => {
+    const hook = readVoiceStudioFile('use-voice-studio-audio-recording.ts');
 
-    expect(slot).toContain('export type VoiceStudioControllerAudioCaptureSlot');
-    expect(slot).toContain('VoiceStudioAudioCapture');
-    expect(slot).toContain('export function useVoiceStudioControllerAudioCaptureSlot()');
-    expect(slot).toContain('useMemo(() => ({');
+    expect(hook).toContain('export type VoiceStudioAudioRecording');
+    expect(hook).toContain('export function useVoiceStudioAudioRecording(');
+    expect(hook).toContain('createAudioCapture(stream)');
+    expect(hook).toContain('capture.recorder.onstop');
+    expect(hook).toContain('requestAnimationFrame(draw)');
+    expect(hook).toContain('buildRecordedAudioAsset');
   });
 
-  it('routes controller audio capture ref access directly through the slot', () => {
+  it('keeps audio recording lifecycle implementation out of the controller', () => {
     const controller = readVoiceStudioFile('voice-studio-daw-controller.tsx');
-    const unifiedRefs = [
-      'captureRef',
-      'recorderRef',
-      'chunksRef',
-      'streamRef',
-      'analyserRef',
-      'inputSourceRef',
+    const hook = readVoiceStudioFile('use-voice-studio-audio-recording.ts');
+    const movedResponsibilities = [
+      'MediaRecorder',
+      'createAudioCapture',
+      'capture.recorder.onstop',
+      'requestAnimationFrame(draw)',
+      'createMediaStreamSource(stream)',
+      'createAnalyser()',
       'monitorGainRef',
-      'rafRef',
       'livePeaksRef',
+      'buildRecordedAudioAsset',
     ];
 
-    expect(controller).toContain('useVoiceStudioControllerAudioCaptureSlot()');
+    expect(controller).toContain('useVoiceStudioAudioRecording({');
+    expect(controller).toContain('recording.prepare()');
+    expect(controller).toContain('recording.begin()');
+    expect(controller).toContain('recording.stop()');
+    expect(controller).toContain('recording.cancel()');
+    expect(controller).toContain('recording.cleanup()');
 
-    for (const refName of unifiedRefs) {
-      expect(controller).not.toContain(`const ${refName} = audioCaptureSlot.${refName};`);
-      expect(controller).toContain(`audioCaptureSlot.${refName}.current`);
-      expect(controller).not.toMatch(new RegExp(String.raw`const\s+${refName}\s*=\s*useRef`));
-      expect(controller).not.toMatch(new RegExp(String.raw`(?<!audioCaptureSlot\.)${refName}\.current`));
-      expect(controller).not.toMatch(new RegExp(String.raw`(?<![.\w])${refName}\b`));
+    for (const responsibility of movedResponsibilities) {
+      expect(hook).toContain(responsibility);
+      expect(controller).not.toContain(responsibility);
     }
   });
 });
