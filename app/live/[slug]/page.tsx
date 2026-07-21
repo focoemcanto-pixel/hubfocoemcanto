@@ -15,6 +15,7 @@ import LiveBoardTextFixRuntime from './live-board-text-fix-runtime';
 import LiveCameraControlsRuntime from './live-camera-controls-runtime';
 import VoiceStudioDawRuntime from './voice-studio-daw-runtime';
 import VoiceStudioAddTrackRuntime from './voice-studio-add-track-runtime';
+import VoiceStudioWorkflowRuntime from './voice-studio-workflow-runtime';
 import HandSignalRuntime from './hand-signal-runtime';
 import './room.css';
 import './host-studio.css';
@@ -32,6 +33,7 @@ import './live-studio.css';
 import './live-camera-controls.css';
 import './voice-studio-daw.css';
 import './voice-studio-midi.css';
+import './voice-studio-workflow.css';
 import './voice-studio-daw-runtime.css';
 import './voice-studio-project-manager.css';
 import './hand-signal.css';
@@ -88,6 +90,7 @@ export default async function LivePage({ params }: PageProps) {
     <LiveBoardTextFixRuntime />
     <VoiceStudioDawRuntime />
     <VoiceStudioAddTrackRuntime />
+    <VoiceStudioWorkflowRuntime />
     <LiveCameraControlsRuntime />
     <HandSignalRuntime />
     <FocoLiveRoom slug={slug} initialLive={{ ...live, offer_config: live.offer_config ? { ...live.offer_config, offer: persistedOffer } : {}, offers }} />
