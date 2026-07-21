@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from 'react';
 import { projectDuration, type VoiceStudioProject } from './voice-studio-project-model';
-import { VoiceStudioPlaybackEngine, type VoiceStudioPlaybackMode } from './voice-studio-playback-engine';
+import { playbackProjectRange, VoiceStudioPlaybackEngine, type VoiceStudioPlaybackMode } from './voice-studio-playback-engine';
 
 type Status = 'idle' | 'countin' | 'recording' | 'playing';
 
@@ -51,6 +51,8 @@ export function useVoiceStudioTransport({ project, objectUrlsRef, selectionRange
   const recordStartRef = useRef(0);
 
   const duration = Math.max(projectDuration(project), elapsed);
+  const contentRange = playbackProjectRange(project);
+  const contentEnd = contentRange?.end ?? 0;
   const beatSeconds = 60 / project.tempo;
 
   const setPlayhead = useCallback((time: number) => {
@@ -149,12 +151,13 @@ export function useVoiceStudioTransport({ project, objectUrlsRef, selectionRange
   const playbackBounds = useCallback((mode: VoiceStudioPlaybackMode) => {
     if (mode === 'selection' && selectionRange) return selectionRange;
     if (mode === 'loop' && project.loop.enabled && project.loop.end > project.loop.start) return { start: project.loop.start, end: project.loop.end };
-    return { start: elapsed >= duration ? 0 : elapsed, end: duration };
-  }, [duration, elapsed, project.loop, selectionRange]);
+    return { start: contentRange?.start ?? 0, end: contentEnd };
+  }, [contentEnd, contentRange, project.loop, selectionRange]);
 
   const startBackingTracks = useCallback((offset: number) => {
-    void playbackEngine().play({ project, objectUrls: objectUrlsRef.current, offset, end: duration, mode: 'project', loop: false });
-  }, [duration, objectUrlsRef, playbackEngine, project]);
+    if (contentEnd <= offset) return;
+    void playbackEngine().play({ project, objectUrls: objectUrlsRef.current, offset, end: contentEnd, mode: 'project', loop: false });
+  }, [contentEnd, objectUrlsRef, playbackEngine, project]);
 
   const pause = useCallback(() => {
     playbackEngineRef.current?.pause();
@@ -173,7 +176,10 @@ export function useVoiceStudioTransport({ project, objectUrlsRef, selectionRange
     }
     if (!projectHasContent(project)) return;
     const bounds = playbackBounds(mode);
-    const offset = mode === 'project' ? (elapsed >= bounds.end ? 0 : elapsed) : bounds.start;
+    if (bounds.end <= bounds.start) return;
+    const offset = mode === 'project'
+      ? Math.max(bounds.start, elapsed >= bounds.end ? bounds.start : elapsed)
+      : bounds.start;
     setStatus('playing');
     void playbackEngine().play({ project, objectUrls: objectUrlsRef.current, offset, end: bounds.end, mode, loop: mode === 'loop' });
   }, [elapsed, objectUrlsRef, pause, playbackBounds, playbackEngine, project, projectHasContent, status]);
