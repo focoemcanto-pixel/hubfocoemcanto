@@ -216,7 +216,7 @@ export default function VoiceStudioTrackRoutingRuntime() {
     const navigatorWithMidi = navigator as Navigator & { requestMIDIAccess?: () => Promise<MidiAccessLike> };
     if (navigatorWithMidi.requestMIDIAccess) {
       void navigatorWithMidi.requestMIDIAccess().then(access => {
-        midiAccess = access;
+        midiAccess = access as unknown as MidiAccessLike;
         syncMidiRouting();
       }).catch(() => undefined);
     }
