@@ -4,8 +4,9 @@ const cache = new Map<string, AudioBuffer>();
 const loading = new Map<string, Promise<AudioBuffer>>();
 const activeSources = new Set<AudioBufferSourceNode>();
 const activeGains = new Set<GainNode>();
+const liveVoices = new Map<number, { source: AudioBufferSourceNode; gain: GainNode; context: AudioContext }>();
 
-type SampleRef = { midi: number; file: string };
+ type SampleRef = { midi: number; file: string };
 
 function midiToFrequency(midi: number) {
   return 440 * Math.pow(2, (midi - 69) / 12);
@@ -64,13 +65,92 @@ async function loadSample(context: AudioContext, fileName: string) {
   return request;
 }
 
+function createPianoChain(context: AudioContext, velocity: number) {
+  const gain = context.createGain();
+  const compressor = context.createDynamicsCompressor();
+  const body = context.createBiquadFilter();
+  const presence = context.createBiquadFilter();
+  const air = context.createBiquadFilter();
+
+  body.type = 'lowshelf';
+  body.frequency.value = 170;
+  body.gain.value = 2.4;
+
+  presence.type = 'peaking';
+  presence.frequency.value = 2300;
+  presence.Q.value = 0.85;
+  presence.gain.value = 0.8;
+
+  air.type = 'highshelf';
+  air.frequency.value = 5600;
+  air.gain.value = -1.8;
+
+  compressor.threshold.value = -8;
+  compressor.knee.value = 18;
+  compressor.ratio.value = 2.1;
+  compressor.attack.value = 0.006;
+  compressor.release.value = 0.48;
+
+  gain.gain.value = Math.max(0.05, velocity);
+  body.connect(presence);
+  presence.connect(air);
+  air.connect(gain);
+  gain.connect(compressor);
+  compressor.connect(context.destination);
+
+  return { body, gain };
+}
+
 export async function preloadPianoSamples(context: AudioContext, midis?: number[]) {
   const targets = midis?.length ? midis : Array.from({ length: 37 }, (_, index) => 48 + index);
   const files = Array.from(new Set(targets.map((midi) => closestSample(midi).file)));
   await Promise.allSettled(files.map((file) => loadSample(context, file)));
 }
 
+export function stopPianoLiveNote(midiValue: number, releaseSeconds = 0.42) {
+  const voice = liveVoices.get(midiValue);
+  if (!voice) return;
+  liveVoices.delete(midiValue);
+  const now = voice.context.currentTime;
+  try {
+    voice.gain.gain.cancelScheduledValues(now);
+    voice.gain.gain.setValueAtTime(Math.max(0.0001, voice.gain.gain.value), now);
+    voice.gain.gain.exponentialRampToValueAtTime(0.0001, now + releaseSeconds);
+    voice.source.stop(now + releaseSeconds + 0.08);
+  } catch {}
+}
+
+export function stopAllPianoLiveNotes() {
+  Array.from(liveVoices.keys()).forEach((note) => stopPianoLiveNote(note, 0.12));
+}
+
+export async function startPianoLiveNote(context: AudioContext, midiValue: number, velocity = 1) {
+  stopPianoLiveNote(midiValue, 0.06);
+  const sample = closestSample(midiValue);
+  let buffer: AudioBuffer;
+  try {
+    buffer = await loadSample(context, sample.file);
+  } catch {
+    const fallback = closestSample(60);
+    buffer = await loadSample(context, fallback.file);
+  }
+
+  if (context.state !== 'running') await context.resume().catch(() => undefined);
+  const source = context.createBufferSource();
+  const { body, gain } = createPianoChain(context, Math.max(0.08, Math.min(1.2, velocity)));
+  source.buffer = buffer;
+  source.playbackRate.value = midiToFrequency(midiValue) / midiToFrequency(sample.midi);
+  source.connect(body);
+  source.onended = () => {
+    const current = liveVoices.get(midiValue);
+    if (current?.source === source) liveVoices.delete(midiValue);
+  };
+  liveVoices.set(midiValue, { source, gain, context });
+  source.start();
+}
+
 export function stopPianoSamples(context?: AudioContext) {
+  stopAllPianoLiveNotes();
   const now = context?.currentTime ?? 0;
   activeGains.forEach((gain) => {
     try {
