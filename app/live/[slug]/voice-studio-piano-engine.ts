@@ -14,6 +14,7 @@ const SAMPLE_POINTS = [
 type SamplePoint = (typeof SAMPLE_POINTS)[number];
 type Voice = { source: AudioBufferSourceNode; gain: GainNode; context: AudioContext };
 type MasterChain = { input: GainNode; compressor: DynamicsCompressorNode };
+export type ScheduledPianoVoice = { source: AudioBufferSourceNode; filter: BiquadFilterNode; gain: GainNode };
 
 const buffers = new Map<string, AudioBuffer>();
 const loading = new Map<string, Promise<AudioBuffer>>();
@@ -54,12 +55,12 @@ function masterChain(context: AudioContext) {
 
   const input = context.createGain();
   const compressor = context.createDynamicsCompressor();
-  input.gain.value = 0.82;
-  compressor.threshold.value = -8;
-  compressor.knee.value = 12;
-  compressor.ratio.value = 1.8;
-  compressor.attack.value = 0.004;
-  compressor.release.value = 0.24;
+  input.gain.value = 0.78;
+  compressor.threshold.value = -10;
+  compressor.knee.value = 10;
+  compressor.ratio.value = 1.55;
+  compressor.attack.value = 0.006;
+  compressor.release.value = 0.3;
   input.connect(compressor).connect(context.destination);
 
   const chain = { input, compressor };
@@ -70,6 +71,53 @@ function masterChain(context: AudioContext) {
 export async function preloadVoiceStudioPiano(context: AudioContext) {
   const centralSamples = ['C3.mp3', 'Fs3.mp3', 'A3.mp3', 'C4.mp3', 'Ds4.mp3', 'Fs4.mp3', 'A4.mp3', 'C5.mp3'];
   await Promise.all(centralSamples.map(file => loadBuffer(context, file)));
+}
+
+export async function preloadVoiceStudioPianoNotes(context: AudioContext, notes: Iterable<number>) {
+  const files = new Set<string>();
+  for (const note of notes) files.add(nearestSample(note)[1]);
+  await Promise.all(Array.from(files).map(file => loadBuffer(context, file)));
+}
+
+export function scheduleVoiceStudioPianoNote(
+  context: AudioContext,
+  note: number,
+  velocity: number,
+  when: number,
+  duration: number,
+  volume = 1,
+): ScheduledPianoVoice | null {
+  const [sampleMidi, fileName] = nearestSample(note);
+  const buffer = buffers.get(fileName);
+  if (!buffer) return null;
+
+  const source = context.createBufferSource();
+  const filter = context.createBiquadFilter();
+  const gain = context.createGain();
+  const master = masterChain(context);
+  const start = Math.max(context.currentTime + 0.002, when);
+  const safeDuration = Math.max(0.04, duration);
+  const release = Math.min(0.22, Math.max(0.08, safeDuration * 0.22));
+  const end = start + safeDuration;
+
+  source.buffer = buffer;
+  source.playbackRate.value = Math.pow(2, (note - sampleMidi) / 12);
+  filter.type = 'lowpass';
+  filter.frequency.value = 14500;
+  filter.Q.value = 0.25;
+
+  const normalizedVelocity = Math.max(0, Math.min(1, velocity));
+  const level = Math.max(0.0001, (0.055 + Math.pow(normalizedVelocity, 1.5) * 0.62) * Math.max(0, volume));
+  gain.gain.setValueAtTime(0.0001, start);
+  gain.gain.exponentialRampToValueAtTime(level, start + 0.008);
+  gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, level * 0.86), Math.min(end, start + 0.18));
+  gain.gain.setValueAtTime(Math.max(0.0001, level * 0.86), Math.max(start + 0.18, end - release));
+  gain.gain.exponentialRampToValueAtTime(0.0001, end + release);
+
+  source.connect(filter).connect(gain).connect(master.input);
+  source.start(start);
+  source.stop(end + release + 0.04);
+  return { source, filter, gain };
 }
 
 export function stopVoiceStudioPianoNote(note: number, release = 0.16) {
@@ -108,7 +156,7 @@ export async function startVoiceStudioPianoNote(context: AudioContext, note: num
 
   const now = context.currentTime;
   const normalizedVelocity = Math.max(0, Math.min(1, velocity));
-  const level = 0.08 + Math.pow(normalizedVelocity, 1.45) * 0.72;
+  const level = 0.07 + Math.pow(normalizedVelocity, 1.45) * 0.66;
   gain.gain.setValueAtTime(0.0001, now);
   gain.gain.exponentialRampToValueAtTime(level, now + 0.008);
   gain.gain.exponentialRampToValueAtTime(level * 0.88, now + 0.18);
