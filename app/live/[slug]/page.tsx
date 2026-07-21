@@ -13,6 +13,7 @@ import LiveToolsRuntime from './live-tools-runtime';
 import LiveStudioRuntime from './live-studio-runtime';
 import LiveBoardTextFixRuntime from './live-board-text-fix-runtime';
 import LiveCameraControlsRuntime from './live-camera-controls-runtime';
+import VoiceStudioKeyboardTransportRuntime from './voice-studio-keyboard-transport-runtime';
 import VoiceStudioDawRuntime from './voice-studio-daw-runtime';
 import VoiceStudioAddTrackRuntime from './voice-studio-add-track-runtime';
 import VoiceStudioLayoutRuntime from './voice-studio-layout-runtime';
@@ -92,6 +93,7 @@ export default async function LivePage({ params }: PageProps) {
     <LiveToolsRuntime />
     <LiveStudioRuntime />
     <LiveBoardTextFixRuntime />
+    <VoiceStudioKeyboardTransportRuntime />
     <VoiceStudioDawRuntime />
     <VoiceStudioAddTrackRuntime />
     <VoiceStudioLayoutRuntime />
