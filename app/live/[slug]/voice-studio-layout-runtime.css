@@ -1,0 +1,112 @@
+.vs-daw-runtime .vs-editor {
+  position: relative;
+  grid-template-columns: var(--vs-track-panel-width, 244px) minmax(0, 1fr) !important;
+}
+
+.vs-layout-splitter {
+  position: absolute;
+  z-index: 70;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--vs-track-panel-width, 244px) - 4px);
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.vs-layout-splitter::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 2px;
+  background: rgba(148, 163, 184, .22);
+  transition: background .15s ease, box-shadow .15s ease;
+}
+
+.vs-layout-splitter:hover::before,
+body.vs-layout-resizing .vs-layout-splitter::before {
+  background: #8b5cf6;
+  box-shadow: 0 0 10px rgba(139, 92, 246, .65);
+}
+
+.vs-track-heads > article {
+  min-height: 68px;
+  max-height: 220px;
+  overflow: visible;
+}
+
+.vs-track-height-splitter {
+  position: absolute;
+  z-index: 12;
+  left: 0;
+  right: 0;
+  bottom: -4px;
+  height: 8px;
+  cursor: row-resize;
+  touch-action: none;
+}
+
+.vs-track-height-splitter::after {
+  content: "";
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  top: 3px;
+  height: 2px;
+  border-radius: 999px;
+  background: transparent;
+  transition: background .15s ease, box-shadow .15s ease;
+}
+
+.vs-track-height-splitter:hover::after,
+body.vs-layout-resizing .vs-track-height-splitter::after {
+  background: #8b5cf6;
+  box-shadow: 0 0 8px rgba(139, 92, 246, .55);
+}
+
+body.vs-layout-resizing,
+body.vs-layout-resizing * {
+  user-select: none !important;
+}
+
+.vs-pro-canvas .vs-playhead {
+  color: #f8fafc;
+  filter: drop-shadow(0 0 4px rgba(139, 92, 246, .8));
+}
+
+.vs-pro-canvas .vs-playhead::before {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  left: 0;
+  width: 12px;
+  height: 12px;
+  border-radius: 2px 2px 7px 7px;
+  background: #f8fafc;
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, .35), 0 4px 12px rgba(0, 0, 0, .45);
+}
+
+.vs-pro-canvas .vs-playhead::after {
+  width: 2px !important;
+  left: 5px !important;
+  top: 10px !important;
+  background: linear-gradient(180deg, #fff, #c4b5fd 55%, rgba(167, 139, 250, .75)) !important;
+  box-shadow: 0 0 5px rgba(139, 92, 246, .72);
+}
+
+.vs-pro-canvas-content {
+  background-image:
+    linear-gradient(90deg, rgba(139, 92, 246, .08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, .025) 1px, transparent 1px) !important;
+  background-size: var(--grid-step, 56px) 100%, calc(var(--grid-step, 56px) / 4) 100% !important;
+}
+
+@media (max-width: 760px) {
+  .vs-layout-splitter,
+  .vs-track-height-splitter {
+    display: none;
+  }
+}
