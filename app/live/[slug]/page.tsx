@@ -16,6 +16,7 @@ import LiveCameraControlsRuntime from './live-camera-controls-runtime';
 import LiveLocalRecordingRuntime from './live-local-recording-runtime';
 import VoiceStudioKeyboardTransportRuntime from './voice-studio-keyboard-transport-runtime';
 import VoiceStudioDawRuntime from './voice-studio-daw-runtime';
+import VoiceStudioGuestDawRuntime from './voice-studio-guest-daw-runtime';
 import VoiceStudioAddTrackRuntime from './voice-studio-add-track-runtime';
 import VoiceStudioLayoutRuntime from './voice-studio-layout-runtime';
 import VoiceStudioMidiRoutingRuntime from './voice-studio-midi-routing-runtime';
@@ -98,6 +99,7 @@ export default async function LivePage({ params }: PageProps) {
     <LiveLocalRecordingRuntime />
     <VoiceStudioKeyboardTransportRuntime />
     <VoiceStudioDawRuntime />
+    <VoiceStudioGuestDawRuntime />
     <VoiceStudioAddTrackRuntime />
     <VoiceStudioLayoutRuntime />
     <VoiceStudioMidiRoutingRuntime />
