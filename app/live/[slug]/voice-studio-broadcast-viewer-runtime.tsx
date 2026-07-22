@@ -6,7 +6,8 @@ import type { VoiceStudioProject } from './voice-studio-project-model';
 const SNAPSHOT_EVENT = 'foco-voice-studio-snapshot';
 const REQUEST_EVENT = 'foco-voice-studio-request-snapshot';
 const LOAD_EVENT = 'foco-voice-studio-load-project';
-const MESSAGE_TYPE = 'foco-voice-studio-project';
+const PROJECT_MESSAGE = 'foco-voice-studio-project';
+const REQUEST_MESSAGE = 'foco-voice-studio-project-request';
 
 const CSS = `
 .vs-broadcast-viewer .vs-manager-topbar,
@@ -28,10 +29,11 @@ const CSS = `
 .vs-broadcast-viewer .vs-editor-slot{border:0!important;border-radius:0!important;overflow:hidden!important}
 .vs-broadcast-viewer .vs-editor{height:100%!important;min-height:100%!important;pointer-events:none!important}
 .vs-broadcast-viewer .vs-track-heads article input{pointer-events:none!important;border:0!important;background:transparent!important;color:#fff!important}
-.vs-broadcast-viewer .vs-manager-loading{display:none!important}
 `;
 
-type StudioMessage = { type: typeof MESSAGE_TYPE; project: VoiceStudioProject };
+type ProjectMessage = { type: typeof PROJECT_MESSAGE; project: VoiceStudioProject };
+type RequestMessage = { type: typeof REQUEST_MESSAGE };
+type StudioMessage = ProjectMessage | RequestMessage;
 type CallLike = {
   __voiceViewerAttached?: boolean;
   on?: (event: string, listener: (event: { data?: StudioMessage }) => void) => void;
@@ -46,45 +48,62 @@ export default function VoiceStudioBroadcastViewerRuntime() {
     style.textContent = CSS;
     document.head.appendChild(style);
 
+    let lastProject: VoiceStudioProject | null = null;
     let lastSerialized = '';
     let timer = 0;
 
     const room = () => document.querySelector<HTMLElement>('.fl-room');
     const voiceSceneOpen = () => Boolean(document.querySelector('.fl-studio-scene.app-voice'));
     const broadcasting = () => Boolean(room()?.classList.contains('foco-studio-broadcasting'));
+    const call = () => (window as StudioWindow).__FOCO_LIVE_CALL__;
 
     if (!isHost) room()?.classList.add('vs-broadcast-viewer');
 
-    const attachGuest = () => {
-      if (isHost) return;
-      room()?.classList.add('vs-broadcast-viewer');
-      const call = (window as StudioWindow).__FOCO_LIVE_CALL__;
-      if (!call || call.__voiceViewerAttached) return;
-      call.__voiceViewerAttached = true;
-      call.on?.('app-message', event => {
+    const sendProject = (force = false) => {
+      if (!isHost || !lastProject || !voiceSceneOpen() || !broadcasting()) return;
+      const serialized = JSON.stringify(lastProject);
+      if (!force && serialized === lastSerialized) return;
+      lastSerialized = serialized;
+      call()?.sendAppMessage?.({ type: PROJECT_MESSAGE, project: lastProject }, '*');
+    };
+
+    const attachCall = () => {
+      const current = call();
+      if (!current || current.__voiceViewerAttached) return;
+      current.__voiceViewerAttached = true;
+      current.on?.('app-message', event => {
         const data = event?.data;
-        if (data?.type !== MESSAGE_TYPE || !data.project) return;
-        window.dispatchEvent(new CustomEvent(LOAD_EVENT, { detail: { project: data.project, blobs: {} } }));
+        if (!data) return;
+        if (data.type === PROJECT_MESSAGE && !isHost && data.project) {
+          window.dispatchEvent(new CustomEvent(LOAD_EVENT, { detail: { project: data.project, blobs: {} } }));
+        }
+        if (data.type === REQUEST_MESSAGE && isHost) {
+          window.dispatchEvent(new Event(REQUEST_EVENT));
+          window.setTimeout(() => sendProject(true), 60);
+        }
       });
+      if (!isHost) {
+        current.sendAppMessage?.({ type: REQUEST_MESSAGE }, '*');
+        window.setTimeout(() => current.sendAppMessage?.({ type: REQUEST_MESSAGE }, '*'), 500);
+      }
     };
 
     const onSnapshot = (event: Event) => {
-      if (!isHost || !voiceSceneOpen() || !broadcasting()) return;
+      if (!isHost) return;
       const project = (event as CustomEvent<{ project?: VoiceStudioProject }>).detail?.project;
       if (!project) return;
-      const serialized = JSON.stringify(project);
-      if (serialized === lastSerialized) return;
-      lastSerialized = serialized;
-      (window as StudioWindow).__FOCO_LIVE_CALL__?.sendAppMessage?.({ type: MESSAGE_TYPE, project }, '*');
+      lastProject = project;
+      sendProject();
     };
 
     window.addEventListener(SNAPSHOT_EVENT, onSnapshot);
     timer = window.setInterval(() => {
-      attachGuest();
+      room()?.classList.toggle('vs-broadcast-viewer', !isHost);
+      attachCall();
       if (isHost && voiceSceneOpen() && broadcasting()) window.dispatchEvent(new Event(REQUEST_EVENT));
-    }, 700);
+    }, 500);
 
-    attachGuest();
+    attachCall();
     return () => {
       window.removeEventListener(SNAPSHOT_EVENT, onSnapshot);
       window.clearInterval(timer);
