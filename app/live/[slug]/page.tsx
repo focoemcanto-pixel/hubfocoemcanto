@@ -13,6 +13,7 @@ import LiveToolsRuntime from './live-tools-runtime';
 import LiveStudioRuntime from './live-studio-runtime';
 import LiveBoardTextFixRuntime from './live-board-text-fix-runtime';
 import LiveCameraControlsRuntime from './live-camera-controls-runtime';
+import LiveLocalRecordingRuntime from './live-local-recording-runtime';
 import VoiceStudioKeyboardTransportRuntime from './voice-studio-keyboard-transport-runtime';
 import VoiceStudioDawRuntime from './voice-studio-daw-runtime';
 import VoiceStudioAddTrackRuntime from './voice-studio-add-track-runtime';
@@ -20,6 +21,7 @@ import VoiceStudioLayoutRuntime from './voice-studio-layout-runtime';
 import VoiceStudioMidiRoutingRuntime from './voice-studio-midi-routing-runtime';
 import VoiceStudioMonitorTransportRuntime from './voice-studio-monitor-transport-runtime';
 import VoiceStudioMidiLivePreviewRuntime from './voice-studio-midi-live-preview-runtime';
+import VoiceStudioBroadcastViewerRuntime from './voice-studio-broadcast-viewer-runtime';
 import HandSignalRuntime from './hand-signal-runtime';
 import './room.css';
 import './host-studio.css';
@@ -93,6 +95,7 @@ export default async function LivePage({ params }: PageProps) {
     <LiveToolsRuntime />
     <LiveStudioRuntime />
     <LiveBoardTextFixRuntime />
+    <LiveLocalRecordingRuntime />
     <VoiceStudioKeyboardTransportRuntime />
     <VoiceStudioDawRuntime />
     <VoiceStudioAddTrackRuntime />
@@ -100,6 +103,7 @@ export default async function LivePage({ params }: PageProps) {
     <VoiceStudioMidiRoutingRuntime />
     <VoiceStudioMonitorTransportRuntime />
     <VoiceStudioMidiLivePreviewRuntime />
+    <VoiceStudioBroadcastViewerRuntime />
     <LiveCameraControlsRuntime />
     <HandSignalRuntime />
     <FocoLiveRoom slug={slug} initialLive={{ ...live, offer_config: live.offer_config ? { ...live.offer_config, offer: persistedOffer } : {}, offers }} />
