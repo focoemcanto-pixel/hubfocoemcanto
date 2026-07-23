@@ -1,3 +1,6 @@
+import type { ReactNode } from 'react';
+import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
 import './admin.css';
 import './school-admin.css';
 import './admin-redesign.css';
@@ -6,6 +9,8 @@ import './dashboard-premium.css';
 import './admin-extras.css';
 import './foco-live/foco-live.css';
 import '../app-premium.css';
+
+export const dynamic = 'force-dynamic';
 
 const navItems = [
   { href: '/admin', label: 'Dashboard', icon: 'D' },
@@ -19,7 +24,13 @@ const navItems = [
   { href: '/admin/configuracoes', label: 'Configuracoes', icon: 'G' },
 ];
 
-export default function AdminLayout(props: { children: any }) {
+export default async function AdminLayout({ children }: { children: ReactNode }) {
+  const cookieStore = await cookies();
+
+  if (!cookieStore.get('hub_access_email')?.value) {
+    redirect('/login');
+  }
+
   return (
     <div className="admin-studio-shell">
       <aside className="admin-studio-sidebar">
@@ -29,7 +40,7 @@ export default function AdminLayout(props: { children: any }) {
         </nav>
         <div className="admin-studio-plan"><small>Plano atual</small><strong>PROFESSOR</strong><p>Admin da escola.</p></div>
       </aside>
-      <section className="admin-studio-main">{props.children}</section>
+      <section className="admin-studio-main">{children}</section>
     </div>
   );
 }
