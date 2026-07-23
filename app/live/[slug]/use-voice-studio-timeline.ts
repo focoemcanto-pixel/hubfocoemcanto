@@ -29,6 +29,7 @@ export type UseVoiceStudioTimelineOptions = {
 
 const AUTO_SCROLL_EDGE = 0.78;
 const AUTO_SCROLL_ANCHOR = 0.34;
+const FOLLOW_EASING = 0.42;
 
 export function useVoiceStudioTimeline({
   duration,
@@ -99,6 +100,16 @@ export function useVoiceStudioTimeline({
     });
   }, [onViewChange, view, zoom, verticalZoom]);
 
+  const applyScrollLeft = useCallback((nextScroll: number) => {
+    const element = elementRef.current;
+    if (!element) return;
+    const maximum = Math.max(0, element.scrollWidth - element.clientWidth);
+    const clamped = Math.max(0, Math.min(maximum, nextScroll));
+    element.scrollLeft = clamped;
+    setViewport(current => ({ ...current, scrollLeft: clamped }));
+    persistScroll(clamped);
+  }, [persistScroll]);
+
   const onScroll = useCallback(() => {
     const element = elementRef.current;
     if (!element) return;
@@ -144,17 +155,26 @@ export function useVoiceStudioTimeline({
   }, [duration, onViewChange, view, viewport.width, zoom, verticalZoom]);
 
   const onWheel = useCallback((event: WheelEvent) => {
+    const element = elementRef.current;
+    if (!element) return;
     if (event.shiftKey && (event.ctrlKey || event.metaKey)) {
       event.preventDefault();
       const direction = event.deltaY > 0 ? -1 : 1;
-      onViewChange({ ...view, zoom, verticalZoom: normalizeTimelineVerticalZoom(verticalZoom + direction * 0.12), scrollLeft: elementRef.current?.scrollLeft ?? view.scrollLeft, scrollTop: elementRef.current?.scrollTop ?? view.scrollTop });
+      onViewChange({ ...view, zoom, verticalZoom: normalizeTimelineVerticalZoom(verticalZoom + direction * 0.12), scrollLeft: element.scrollLeft, scrollTop: element.scrollTop });
       return;
     }
-    if (!(event.ctrlKey || event.metaKey)) return;
-    event.preventDefault();
-    const direction = event.deltaY > 0 ? -1 : 1;
-    setZoom(zoom + direction * Math.max(0.1, zoom * 0.12), event.clientX);
-  }, [onViewChange, setZoom, verticalZoom, view, zoom]);
+    if (event.ctrlKey || event.metaKey) {
+      event.preventDefault();
+      const direction = event.deltaY > 0 ? -1 : 1;
+      setZoom(zoom + direction * Math.max(0.1, zoom * 0.12), event.clientX);
+      return;
+    }
+    if (event.shiftKey) {
+      event.preventDefault();
+      const horizontalDelta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+      applyScrollLeft(element.scrollLeft + horizontalDelta);
+    }
+  }, [applyScrollLeft, onViewChange, setZoom, verticalZoom, view, zoom]);
 
   useEffect(() => {
     const element = elementRef.current;
@@ -162,6 +182,14 @@ export function useVoiceStudioTimeline({
     element.addEventListener('wheel', onWheel, { passive: false });
     return () => element.removeEventListener('wheel', onWheel);
   }, [onWheel]);
+
+  const scrollToTime = useCallback((time: number, anchor = AUTO_SCROLL_ANCHOR, smooth = false) => {
+    const element = elementRef.current;
+    if (!element) return;
+    const target = timelineScrollForTime(Math.max(0, Math.min(duration, time)), viewport.width, zoom, anchor);
+    const next = smooth ? element.scrollLeft + (target - element.scrollLeft) * FOLLOW_EASING : target;
+    applyScrollLeft(next);
+  }, [applyScrollLeft, duration, viewport.width, zoom]);
 
   const ensureTimeVisible = useCallback((time: number, force = false) => {
     const element = elementRef.current;
@@ -171,13 +199,11 @@ export function useVoiceStudioTimeline({
     const threshold = visibleStart + viewport.width * AUTO_SCROLL_EDGE;
     if (!force && x >= visibleStart && x <= threshold) return;
     if (!force && x < visibleStart) {
-      const next = timelineScrollForTime(time, viewport.width, zoom, 0.08);
-      element.scrollLeft = next;
+      scrollToTime(time, 0.08, true);
       return;
     }
-    const next = timelineScrollForTime(time, viewport.width, zoom, AUTO_SCROLL_ANCHOR);
-    element.scrollLeft = next;
-  }, [viewport.width, zoom]);
+    scrollToTime(time, AUTO_SCROLL_ANCHOR, !force);
+  }, [scrollToTime, viewport.width, zoom]);
 
   const timeFromClientX = useCallback((clientX: number) => {
     const element = elementRef.current;
@@ -198,5 +224,6 @@ export function useVoiceStudioTimeline({
     seekAtClientX,
     timeFromClientX,
     ensureTimeVisible,
+    scrollToTime,
   };
 }
