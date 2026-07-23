@@ -11,6 +11,8 @@ import ScreenShareFocusRuntime from './screen-share-focus-runtime';
 import LivePianoRuntime from './live-piano-runtime';
 import LiveToolsRuntime from './live-tools-runtime';
 import LiveStudioRuntime from './live-studio-runtime';
+import LiveBoardBroadcastRuntime from './live-board-broadcast-runtime';
+import LiveOffersDirectionRuntime from './live-offers-direction-runtime';
 import LiveBoardTextFixRuntime from './live-board-text-fix-runtime';
 import LiveCameraControlsRuntime from './live-camera-controls-runtime';
 import LiveLocalRecordingRuntime from './live-local-recording-runtime';
@@ -95,6 +97,8 @@ export default async function LivePage({ params }: PageProps) {
     <LivePianoRuntime />
     <LiveToolsRuntime />
     <LiveStudioRuntime />
+    <LiveBoardBroadcastRuntime />
+    <LiveOffersDirectionRuntime />
     <LiveBoardTextFixRuntime />
     <LiveLocalRecordingRuntime />
     <VoiceStudioKeyboardTransportRuntime />
