@@ -22,9 +22,10 @@ type ProjectMessage = { type: typeof PROJECT_MESSAGE; project: VoiceStudioProjec
 type RequestMessage = { type: typeof REQUEST_MESSAGE };
 type VisualMessage = { type: typeof VISUAL_MESSAGE; snapshot: VisualSnapshot };
 type StudioMessage = ProjectMessage | RequestMessage | VisualMessage;
+type DailyEvent = { data?: StudioMessage; event?: string };
 type CallLike = {
   __voiceViewerAttached?: boolean;
-  on?: (event: string, listener: (event: { data?: StudioMessage }) => void) => void;
+  on?: (event: string, listener: (event: DailyEvent) => void) => void;
   sendAppMessage?: (message: StudioMessage, recipient: string) => void;
 };
 type StudioWindow = Window & { __FOCO_LIVE_CALL__?: CallLike };
@@ -147,7 +148,7 @@ export default function VoiceStudioBroadcastViewerRuntime() {
           }, 80);
         }
       });
-      current.on?.('network-connection', (event: { event?: string }) => {
+      current.on?.('network-connection', event => {
         if (!isHost && event?.event === 'connected') startRequestRetries();
       });
       startRequestRetries();
