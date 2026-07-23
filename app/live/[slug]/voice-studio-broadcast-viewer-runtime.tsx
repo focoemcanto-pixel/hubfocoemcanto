@@ -51,6 +51,7 @@ export default function VoiceStudioBroadcastViewerRuntime() {
     let lastProject: VoiceStudioProject | null = null;
     let lastSerialized = '';
     let timer = 0;
+    let retryTimer = 0;
 
     const room = () => document.querySelector<HTMLElement>('.fl-room');
     const voiceSceneOpen = () => Boolean(document.querySelector('.fl-studio-scene.app-voice'));
@@ -58,6 +59,23 @@ export default function VoiceStudioBroadcastViewerRuntime() {
     const call = () => (window as StudioWindow).__FOCO_LIVE_CALL__;
 
     if (!isHost) room()?.classList.add('vs-broadcast-viewer');
+
+    const requestProject = () => {
+      if (isHost) return;
+      call()?.sendAppMessage?.({ type: REQUEST_MESSAGE }, '*');
+    };
+
+    const startRequestRetries = () => {
+      if (isHost) return;
+      window.clearInterval(retryTimer);
+      requestProject();
+      let attempts = 0;
+      retryTimer = window.setInterval(() => {
+        requestProject();
+        attempts += 1;
+        if (attempts >= 8) window.clearInterval(retryTimer);
+      }, 750);
+    };
 
     const sendProject = (force = false) => {
       if (!isHost || !lastProject || !voiceSceneOpen() || !broadcasting()) return;
@@ -75,6 +93,7 @@ export default function VoiceStudioBroadcastViewerRuntime() {
         const data = event?.data;
         if (!data) return;
         if (data.type === PROJECT_MESSAGE && !isHost && data.project) {
+          window.clearInterval(retryTimer);
           window.dispatchEvent(new CustomEvent(LOAD_EVENT, { detail: { project: data.project, blobs: {} } }));
         }
         if (data.type === REQUEST_MESSAGE && isHost) {
@@ -82,10 +101,19 @@ export default function VoiceStudioBroadcastViewerRuntime() {
           window.setTimeout(() => sendProject(true), 60);
         }
       });
-      if (!isHost) {
-        current.sendAppMessage?.({ type: REQUEST_MESSAGE }, '*');
-        window.setTimeout(() => current.sendAppMessage?.({ type: REQUEST_MESSAGE }, '*'), 500);
-      }
+      current.on?.('joined-meeting', () => {
+        if (!isHost) startRequestRetries();
+      });
+      current.on?.('participant-joined', () => {
+        if (isHost) {
+          window.dispatchEvent(new Event(REQUEST_EVENT));
+          window.setTimeout(() => sendProject(true), 80);
+        }
+      });
+      current.on?.('network-connection', (event: { data?: StudioMessage } & { event?: string }) => {
+        if (!isHost && event?.event === 'connected') startRequestRetries();
+      });
+      startRequestRetries();
     };
 
     const onSnapshot = (event: Event) => {
@@ -107,6 +135,7 @@ export default function VoiceStudioBroadcastViewerRuntime() {
     return () => {
       window.removeEventListener(SNAPSHOT_EVENT, onSnapshot);
       window.clearInterval(timer);
+      window.clearInterval(retryTimer);
       room()?.classList.remove('vs-broadcast-viewer');
       style.remove();
     };
