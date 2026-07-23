@@ -21,18 +21,21 @@ export default function LiveToolsRuntime() {
   const [deviceError, setDeviceError] = useState('');
   const [audioProfile, setAudioProfile] = useState<'speech' | 'music'>(() => 'speech');
   const [meter, setMeter] = useState(0);
+  const [offersPanel, setOffersPanel] = useState<HTMLElement | null>(null);
   const meterCleanupRef = useRef<(() => void) | null>(null);
   const controls = roomReady ? document.querySelector('.fl-controls') : null;
   const micButton = roomReady ? document.querySelector('.fl-controls > button:nth-child(1)') : null;
   const cameraButton = roomReady ? document.querySelector('.fl-controls > button:nth-child(2)') : null;
-  const offersPanel = roomReady ? document.querySelector('.fl-director-offers') : null;
 
   useEffect(() => {
     setIsHost(new URLSearchParams(window.location.search).get('host') === '1');
     setAudioProfile(window.localStorage.getItem('foco-live-audio-mode') === 'music' ? 'music' : 'speech');
     setSelectedMic(window.localStorage.getItem('foco-live-microphone-id') || '');
     setSelectedCamera(window.localStorage.getItem('foco-live-camera-id') || '');
-    const sync = () => setRoomReady(Boolean(document.querySelector('.fl-room')));
+    const sync = () => {
+      setRoomReady(Boolean(document.querySelector('.fl-room')));
+      setOffersPanel(document.querySelector<HTMLElement>('.fl-director-offers'));
+    };
     const observer = new MutationObserver(sync);
     observer.observe(document.body, { childList: true, subtree: true });
     sync();
@@ -153,12 +156,15 @@ export default function LiveToolsRuntime() {
         {deviceError && <p className="fl-device-error">{deviceError}</p>}
       </div>}
     </section>}
-    {offersPanel && createPortal(<OfferAccordion />, offersPanel)}
+    {offersPanel && createPortal(<OfferAccordion panel={offersPanel} />, offersPanel, 'foco-offers-accordion')}
   </>;
 }
 
-function OfferAccordion() {
-  const [expanded, setExpanded] = useState(false);
-  useEffect(() => { const panel = document.querySelector('.fl-director-offers'); panel?.classList.toggle('fl-offers-expanded', expanded); return () => panel?.classList.remove('fl-offers-expanded'); }, [expanded]);
+function OfferAccordion({ panel }: { panel: HTMLElement }) {
+  const [expanded, setExpanded] = useState(() => panel.classList.contains('fl-offers-expanded'));
+  useEffect(() => {
+    panel.classList.toggle('fl-offers-expanded', expanded);
+    return () => panel.classList.remove('fl-offers-expanded');
+  }, [expanded, panel]);
   return <button type="button" className="fl-offers-toggle" onClick={() => setExpanded((current) => !current)}><span>Ofertas</span><small>{expanded ? 'Recolher opções' : 'Abrir biblioteca e CTAs'}</small><ChevronUp className={expanded ? '' : 'collapsed'} size={16} /></button>;
 }
