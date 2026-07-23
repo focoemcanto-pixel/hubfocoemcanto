@@ -1,10 +1,15 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import DailyIframe from '@daily-co/daily-js';
 import { Hand, X } from 'lucide-react';
 
 type RaisedHand = { id: string; name: string; raisedAt: number };
+type HandMessage = { type: 'hand'; raised: boolean; name?: string; sessionId?: string };
+type CallLike = {
+  on?: (event: string, listener: (event: { data?: HandMessage; fromId?: string }) => void) => void;
+  off?: (event: string, listener: (event: { data?: HandMessage; fromId?: string }) => void) => void;
+};
+type LiveWindow = Window & { __FOCO_LIVE_CALL__?: CallLike };
 
 export default function HandSignalRuntime() {
   const [isHost, setIsHost] = useState(false);
@@ -17,39 +22,67 @@ export default function HandSignalRuntime() {
 
   useEffect(() => {
     if (!isHost) return;
-    let call: any = null;
-    let attempts = 0;
-    const onMessage = (event: any) => {
+
+    let boundCall: CallLike | null = null;
+    let disposed = false;
+
+    const onMessage = (event: { data?: HandMessage; fromId?: string }) => {
       const data = event?.data;
       if (data?.type !== 'hand') return;
-      const id = data.sessionId || event?.fromId || data.name;
+
+      const id = data.sessionId || event.fromId || data.name;
       if (!id) return;
+
       setHands((current) => {
         const next = { ...current };
-        if (data.raised) next[id] = { id, name: data.name || 'Participante', raisedAt: Date.now() };
-        else delete next[id];
+        if (data.raised) {
+          next[id] = {
+            id,
+            name: data.name?.trim() || 'Participante',
+            raisedAt: current[id]?.raisedAt || Date.now(),
+          };
+        } else {
+          delete next[id];
+        }
         return next;
       });
+
       if (data.raised) setOpen(true);
     };
 
-    const bind = () => {
-      call = (DailyIframe as any).getCallInstance?.();
-      if (call?.on) {
-        call.on('app-message', onMessage);
-        return true;
-      }
-      return false;
+    const bindCurrentCall = () => {
+      const call = (window as LiveWindow).__FOCO_LIVE_CALL__;
+      if (!call?.on || call === boundCall) return;
+
+      if (boundCall?.off) boundCall.off('app-message', onMessage);
+      boundCall = call;
+      boundCall.on('app-message', onMessage);
     };
 
-    if (bind()) return () => call?.off?.('app-message', onMessage);
+    bindCurrentCall();
+
+    // The Daily call object is created after the page runtimes mount. Keep this
+    // lightweight watcher alive so reconnects and recreated call objects are rebound.
     const timer = window.setInterval(() => {
-      attempts += 1;
-      if (bind() || attempts > 60) window.clearInterval(timer);
+      if (!disposed) bindCurrentCall();
     }, 500);
+
+    const onParticipantLeft = () => {
+      // Remove stale entries whose participant is no longer present when possible.
+      const call = (window as any).__FOCO_LIVE_CALL__;
+      const participants = typeof call?.participants === 'function' ? call.participants() : null;
+      if (!participants) return;
+      const activeIds = new Set(Object.values(participants).map((participant: any) => participant?.session_id).filter(Boolean));
+      setHands((current) => Object.fromEntries(Object.entries(current).filter(([id]) => activeIds.has(id))));
+    };
+
+    const participantTimer = window.setInterval(onParticipantLeft, 5000);
+
     return () => {
+      disposed = true;
       window.clearInterval(timer);
-      call?.off?.('app-message', onMessage);
+      window.clearInterval(participantTimer);
+      boundCall?.off?.('app-message', onMessage);
     };
   }, [isHost]);
 
