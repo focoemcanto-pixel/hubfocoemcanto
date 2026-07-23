@@ -6,6 +6,8 @@ import { createPortal } from 'react-dom';
 type BoardSnapshot = {
   html: string;
   sequence: number;
+  width: number;
+  height: number;
 };
 
 type BoardMessage =
@@ -20,6 +22,9 @@ type DailyCallLike = {
 
 type LiveWindow = Window & { __FOCO_LIVE_CALL__?: DailyCallLike };
 
+const VIEWER_CLASS = 'fl-board-has-remote-snapshot';
+const STYLE_ID = 'fl-board-broadcast-style';
+
 function isHostPage() {
   return new URLSearchParams(window.location.search).get('host') === '1';
 }
@@ -32,11 +37,34 @@ function boardIsVisibleToClass() {
   );
 }
 
+function snapshotHtml(canvas: HTMLElement) {
+  const clone = canvas.cloneNode(true) as HTMLElement;
+  clone.querySelectorAll('.fl-board-empty').forEach(element => element.remove());
+  return clone.innerHTML;
+}
+
 export default function LiveBoardBroadcastRuntime() {
   const [viewerTarget, setViewerTarget] = useState<HTMLElement | null>(null);
-  const [viewerHtml, setViewerHtml] = useState('');
+  const [snapshot, setSnapshot] = useState<BoardSnapshot | null>(null);
+  const [scale, setScale] = useState(1);
   const latestSnapshotRef = useRef<BoardSnapshot | null>(null);
   const sequenceRef = useRef(0);
+
+  useEffect(() => {
+    if (document.getElementById(STYLE_ID)) return;
+    const style = document.createElement('style');
+    style.id = STYLE_ID;
+    style.textContent = `
+      .fl-board-canvas.${VIEWER_CLASS}>:not(.fl-board-broadcast-overlay){visibility:hidden!important}
+      .fl-board-canvas.${VIEWER_CLASS}{overflow:hidden!important;position:relative!important}
+      .fl-board-broadcast-overlay{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:20;background:#fff}
+      .fl-board-broadcast-stage{position:absolute;left:50%;top:50%;transform-origin:center center;overflow:hidden}
+      .fl-board-broadcast-stage>.fl-board-grid{position:absolute!important;inset:0!important}
+      .fl-board-broadcast-stage>svg{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;overflow:visible!important}
+    `;
+    document.head.appendChild(style);
+    return () => style.remove();
+  }, []);
 
   useEffect(() => {
     const isHost = isHostPage();
@@ -51,16 +79,21 @@ export default function LiveBoardBroadcastRuntime() {
       if (!isHost || !boardIsVisibleToClass()) return;
       const canvas = document.querySelector<HTMLElement>('.fl-studio-scene.app-board .fl-board-canvas');
       if (!canvas) return;
-      const html = canvas.innerHTML;
-      if (!force && latestSnapshotRef.current?.html === html) return;
-      const snapshot = { html, sequence: ++sequenceRef.current };
-      latestSnapshotRef.current = snapshot;
-      call()?.sendAppMessage?.({ type: 'foco-board-snapshot', snapshot }, '*');
+      const rect = canvas.getBoundingClientRect();
+      const next: BoardSnapshot = {
+        html: snapshotHtml(canvas),
+        sequence: ++sequenceRef.current,
+        width: Math.max(1, Math.round(rect.width)),
+        height: Math.max(1, Math.round(rect.height)),
+      };
+      if (!force && latestSnapshotRef.current?.html === next.html && latestSnapshotRef.current.width === next.width && latestSnapshotRef.current.height === next.height) return;
+      latestSnapshotRef.current = next;
+      call()?.sendAppMessage?.({ type: 'foco-board-snapshot', snapshot: next }, '*');
     };
 
     const schedulePublish = () => {
       window.clearTimeout(publishTimer);
-      publishTimer = window.setTimeout(() => publishSnapshot(), 70);
+      publishTimer = window.setTimeout(() => publishSnapshot(), 45);
     };
 
     const attachCanvas = () => {
@@ -74,12 +107,7 @@ export default function LiveBoardBroadcastRuntime() {
       observedCanvas = canvas;
       if (!canvas) return;
       canvasObserver = new MutationObserver(schedulePublish);
-      canvasObserver.observe(canvas, {
-        childList: true,
-        subtree: true,
-        attributes: true,
-        characterData: true,
-      });
+      canvasObserver.observe(canvas, { childList: true, subtree: true, attributes: true, characterData: true });
       schedulePublish();
     };
 
@@ -87,7 +115,7 @@ export default function LiveBoardBroadcastRuntime() {
       const current = call();
       if (!current || current.__focoBoardBroadcastAttached) return;
       current.__focoBoardBroadcastAttached = true;
-      current.on?.('app-message', (event) => {
+      current.on?.('app-message', event => {
         const data = event?.data;
         if (data?.type === 'foco-board-request-state' && isHost) {
           publishSnapshot(true);
@@ -97,7 +125,7 @@ export default function LiveBoardBroadcastRuntime() {
           const incoming = data.snapshot;
           if (!incoming || incoming.sequence < (latestSnapshotRef.current?.sequence || 0)) return;
           latestSnapshotRef.current = incoming;
-          setViewerHtml(incoming.html);
+          setSnapshot(incoming);
         }
       });
       current.on?.('joined-meeting', () => {
@@ -114,9 +142,8 @@ export default function LiveBoardBroadcastRuntime() {
       attachCanvas();
     };
 
-    discoveryTimer = window.setInterval(sync, 500);
+    discoveryTimer = window.setInterval(sync, 400);
     sync();
-
     return () => {
       window.clearInterval(discoveryTimer);
       window.clearTimeout(publishTimer);
@@ -124,15 +151,36 @@ export default function LiveBoardBroadcastRuntime() {
     };
   }, []);
 
-  if (!viewerTarget || isHostPage() || !viewerHtml) return null;
+  useEffect(() => {
+    if (!viewerTarget || !snapshot) return;
+    viewerTarget.classList.add(VIEWER_CLASS);
+    const resize = () => {
+      const rect = viewerTarget.getBoundingClientRect();
+      setScale(Math.min(rect.width / snapshot.width, rect.height / snapshot.height));
+    };
+    const observer = new ResizeObserver(resize);
+    observer.observe(viewerTarget);
+    resize();
+    return () => {
+      observer.disconnect();
+      viewerTarget.classList.remove(VIEWER_CLASS);
+    };
+  }, [viewerTarget, snapshot]);
+
+  if (!viewerTarget || isHostPage() || !snapshot) return null;
 
   return createPortal(
-    <div
-      className="fl-board-broadcast-overlay"
-      aria-label="Quadro do professor em tempo real"
-      style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none', zIndex: 5 }}
-      dangerouslySetInnerHTML={{ __html: viewerHtml }}
-    />,
+    <div className="fl-board-broadcast-overlay" aria-label="Quadro do professor em tempo real">
+      <div
+        className="fl-board-broadcast-stage"
+        style={{
+          width: snapshot.width,
+          height: snapshot.height,
+          transform: `translate(-50%, -50%) scale(${scale})`,
+        }}
+        dangerouslySetInnerHTML={{ __html: snapshot.html }}
+      />
+    </div>,
     viewerTarget,
   );
 }
