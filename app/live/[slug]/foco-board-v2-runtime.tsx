@@ -1,18 +1,20 @@
 'use client';
 
-import { PointerEvent as ReactPointerEvent, WheelEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { ChangeEvent, PointerEvent as ReactPointerEvent, WheelEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  ArrowRight, Brush, Circle, Diamond, Eraser, Hand, Highlighter, ImagePlus,
-  Layers3, Menu, Minus, MousePointer2, Plus, Redo2, Save, Shapes, Square,
-  StickyNote, Trash2, Type, Undo2, ZoomIn, ZoomOut,
+  ArrowDownToLine, ArrowRight, ArrowUpToLine, Brush, Circle, Copy, Diamond,
+  Eraser, Hand, Highlighter, ImagePlus, KeyboardMusic, Layers3, Menu, Minus,
+  MousePointer2, Music2, Plus, Redo2, Save, Shapes, Square, StickyNote,
+  Trash2, Type, Undo2, ZoomIn, ZoomOut,
 } from 'lucide-react';
 
 type Tool = 'select' | 'hand' | 'pen' | 'highlight' | 'text' | 'sticky' | 'line' | 'arrow' | 'rect' | 'circle' | 'diamond' | 'eraser';
+type ObjectType = Exclude<Tool, 'select' | 'hand'> | 'image' | 'staff' | 'keyboard';
 type Point = { x: number; y: number };
 type BoardObject = {
   id: string;
-  type: Exclude<Tool, 'select' | 'hand'>;
+  type: ObjectType;
   x: number;
   y: number;
   width: number;
@@ -24,8 +26,18 @@ type BoardObject = {
   points?: Point[];
   text?: string;
   fontSize?: number;
+  src?: string;
+  zIndex: number;
 };
 type Snapshot = { objects: BoardObject[]; zoom: number; pan: Point };
+type Action = {
+  kind: 'draw' | 'move' | 'pan' | 'resize';
+  id?: string;
+  start: Point;
+  origin?: Point;
+  size?: Point;
+  handle?: 'nw' | 'ne' | 'sw' | 'se';
+};
 
 const STORAGE_KEY = 'foco-board-v2-autosave';
 const COLORS = ['#18181b', '#ef4444', '#22c55e', '#2563eb', '#7c3aed', '#f59e0b'];
@@ -57,6 +69,7 @@ export default function FocoBoardV2Runtime() {
 
 function FocoBoardV2() {
   const viewportRef = useRef<HTMLDivElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const [tool, setTool] = useState<Tool>('select');
   const [objects, setObjects] = useState<BoardObject[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -67,13 +80,14 @@ function FocoBoardV2() {
   const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
   const [history, setHistory] = useState<BoardObject[][]>([]);
   const [future, setFuture] = useState<BoardObject[][]>([]);
-  const actionRef = useRef<{ kind: 'draw' | 'move' | 'pan'; id?: string; start: Point; origin?: Point } | null>(null);
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const actionRef = useRef<Action | null>(null);
 
   useEffect(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null') as Snapshot | null;
       if (saved?.objects) {
-        setObjects(saved.objects);
+        setObjects(saved.objects.map((item, index) => ({ ...item, zIndex: item.zIndex ?? index + 1 })));
         setZoom(saved.zoom || 1);
         setPan(saved.pan || { x: 0, y: 0 });
       }
@@ -87,7 +101,36 @@ function FocoBoardV2() {
     return () => window.clearTimeout(timer);
   }, [objects, zoom, pan]);
 
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.isContentEditable || target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA') return;
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
+        event.preventDefault();
+        if (event.shiftKey) redo(); else undo();
+      }
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'd') {
+        event.preventDefault();
+        duplicateSelected();
+      }
+      if (event.key === 'Delete' || event.key === 'Backspace') removeSelected();
+      if (selectedId && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
+        event.preventDefault();
+        const step = event.shiftKey ? 10 : 1;
+        checkpoint();
+        setObjects(current => current.map(item => item.id === selectedId ? {
+          ...item,
+          x: item.x + (event.key === 'ArrowRight' ? step : event.key === 'ArrowLeft' ? -step : 0),
+          y: item.y + (event.key === 'ArrowDown' ? step : event.key === 'ArrowUp' ? -step : 0),
+        } : item));
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
   const selected = useMemo(() => objects.find(item => item.id === selectedId) || null, [objects, selectedId]);
+  const nextZ = () => Math.max(0, ...objects.map(item => item.zIndex || 0)) + 1;
 
   function checkpoint() {
     setHistory(current => [...current.slice(-49), cloneObjects(objects)]);
@@ -140,14 +183,14 @@ function FocoBoardV2() {
     const id = crypto.randomUUID();
     const base: BoardObject = {
       id, type: tool as BoardObject['type'], x: point.x, y: point.y, width: 1, height: 1,
-      color, fill: tool === 'sticky' ? fill : 'transparent', strokeWidth,
+      color, fill: tool === 'sticky' ? fill : 'transparent', strokeWidth, zIndex: nextZ(),
     };
     if (tool === 'text') {
-      base.width = 240; base.height = 70; base.text = 'Digite seu texto'; base.fontSize = 24;
+      base.width = 260; base.height = 76; base.text = 'Digite seu texto'; base.fontSize = 24;
       setObjects(current => [...current, base]); setSelectedId(id); setTool('select'); return;
     }
     if (tool === 'sticky') {
-      base.width = 240; base.height = 190; base.text = 'Nova anotação'; base.fontSize = 22;
+      base.width = 250; base.height = 200; base.text = 'Nova anotação'; base.fontSize = 22;
       setObjects(current => [...current, base]); setSelectedId(id); setTool('select'); return;
     }
     if (tool === 'pen' || tool === 'highlight' || tool === 'eraser') base.points = [point];
@@ -161,6 +204,24 @@ function FocoBoardV2() {
     if (!action) return;
     if (action.kind === 'pan') {
       setPan({ x: (action.origin?.x || 0) + event.clientX - action.start.x, y: (action.origin?.y || 0) + event.clientY - action.start.y });
+      return;
+    }
+    if (action.kind === 'resize') {
+      const point = boardPoint(event);
+      setObjects(current => current.map(item => {
+        if (item.id !== action.id || !action.origin || !action.size || !action.handle) return item;
+        const dx = point.x - action.start.x;
+        const dy = point.y - action.start.y;
+        let x = action.origin.x;
+        let y = action.origin.y;
+        let width = action.size.x;
+        let height = action.size.y;
+        if (action.handle.includes('e')) width = Math.max(30, action.size.x + dx);
+        if (action.handle.includes('s')) height = Math.max(30, action.size.y + dy);
+        if (action.handle.includes('w')) { width = Math.max(30, action.size.x - dx); x = action.origin.x + action.size.x - width; }
+        if (action.handle.includes('n')) { height = Math.max(30, action.size.y - dy); y = action.origin.y + action.size.y - height; }
+        return { ...item, x, y, width, height };
+      }));
       return;
     }
     const point = boardPoint(event);
@@ -188,7 +249,7 @@ function FocoBoardV2() {
     setSelectedId(id);
     checkpoint();
     actionRef.current = { kind: 'move', id, start: boardPoint(event), origin: { x: item.x, y: item.y } };
-    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    (event.currentTarget as Element).setPointerCapture(event.pointerId);
   }
 
   function moveSelected(event: ReactPointerEvent) {
@@ -204,13 +265,39 @@ function FocoBoardV2() {
 
   function endMove(event: ReactPointerEvent) {
     if (actionRef.current?.kind === 'move') actionRef.current = null;
-    const element = event.currentTarget as HTMLElement;
+    const element = event.currentTarget as Element;
     if (element.hasPointerCapture(event.pointerId)) element.releasePointerCapture(event.pointerId);
+  }
+
+  function startResize(event: ReactPointerEvent<HTMLButtonElement>, handle: Action['handle']) {
+    if (!selected) return;
+    event.stopPropagation();
+    checkpoint();
+    actionRef.current = {
+      kind: 'resize', id: selected.id, handle,
+      start: boardPoint(event), origin: { x: selected.x, y: selected.y }, size: { x: selected.width, y: selected.height },
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
   }
 
   function updateSelected(patch: Partial<BoardObject>) {
     if (!selectedId) return;
     setObjects(current => current.map(item => item.id === selectedId ? { ...item, ...patch } : item));
+  }
+
+  function duplicateSelected() {
+    if (!selected) return;
+    checkpoint();
+    const copy: BoardObject = { ...selected, id: crypto.randomUUID(), x: selected.x + 28, y: selected.y + 28, zIndex: nextZ(), points: selected.points?.map(point => ({ x: point.x + 28, y: point.y + 28 })) };
+    setObjects(current => [...current, copy]);
+    setSelectedId(copy.id);
+  }
+
+  function layer(direction: 'front' | 'back') {
+    if (!selected) return;
+    checkpoint();
+    const value = direction === 'front' ? nextZ() : Math.min(0, ...objects.map(item => item.zIndex || 0)) - 1;
+    updateSelected({ zIndex: value });
   }
 
   function removeSelected() {
@@ -233,6 +320,46 @@ function FocoBoardV2() {
     } else {
       setPan(value => ({ x: value.x - event.deltaX, y: value.y - event.deltaY }));
     }
+  }
+
+  function importImage(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file || !file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      checkpoint();
+      const id = crypto.randomUUID();
+      const item: BoardObject = { id, type: 'image', x: 520, y: 300, width: 420, height: 280, color: '#18181b', strokeWidth: 1, src: String(reader.result), zIndex: nextZ() };
+      setObjects(current => [...current, item]);
+      setSelectedId(id);
+      setTool('select');
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function insertLibrary(type: 'staff' | 'keyboard' | 'lesson') {
+    checkpoint();
+    const baseZ = nextZ();
+    if (type === 'staff') {
+      const id = crypto.randomUUID();
+      setObjects(current => [...current, { id, type: 'staff', x: 500, y: 320, width: 650, height: 210, color: '#18181b', fill: '#ffffff', strokeWidth: 2, zIndex: baseZ }]);
+      setSelectedId(id);
+    }
+    if (type === 'keyboard') {
+      const id = crypto.randomUUID();
+      setObjects(current => [...current, { id, type: 'keyboard', x: 500, y: 320, width: 720, height: 230, color: '#18181b', fill: '#ffffff', strokeWidth: 2, zIndex: baseZ }]);
+      setSelectedId(id);
+    }
+    if (type === 'lesson') {
+      const heading: BoardObject = { id: crypto.randomUUID(), type: 'text', x: 420, y: 220, width: 560, height: 80, color: '#312e81', strokeWidth: 1, text: 'Tema da aula', fontSize: 42, zIndex: baseZ };
+      const note1: BoardObject = { id: crypto.randomUUID(), type: 'sticky', x: 420, y: 340, width: 270, height: 210, color: '#18181b', fill: '#fef3c7', strokeWidth: 1, text: 'Conceito principal', fontSize: 24, zIndex: baseZ + 1 };
+      const note2: BoardObject = { id: crypto.randomUUID(), type: 'sticky', x: 740, y: 340, width: 270, height: 210, color: '#18181b', fill: '#dbeafe', strokeWidth: 1, text: 'Exercício prático', fontSize: 24, zIndex: baseZ + 2 };
+      setObjects(current => [...current, heading, note1, note2]);
+      setSelectedId(heading.id);
+    }
+    setLibraryOpen(false);
+    setTool('select');
   }
 
   return <div className="fb2-root">
@@ -258,20 +385,27 @@ function FocoBoardV2() {
       <ToolButton value="line" label="Linha" icon={<Minus/>} tool={tool} setTool={setTool}/>
       <ToolButton value="arrow" label="Seta" icon={<ArrowRight/>} tool={tool} setTool={setTool}/>
       <span/>
-      <button title="Imagens (próxima etapa)" disabled><ImagePlus/></button>
-      <button title="Biblioteca musical (próxima etapa)" disabled><Layers3/></button>
+      <button title="Adicionar imagem" onClick={() => imageInputRef.current?.click()}><ImagePlus/></button>
+      <button className={libraryOpen ? 'active' : ''} title="Biblioteca musical" onClick={() => setLibraryOpen(value => !value)}><Layers3/></button>
+      <input ref={imageInputRef} type="file" accept="image/*" hidden onChange={importImage}/>
     </aside>
+
+    {libraryOpen && <section className="fb2-library">
+      <header><Music2 size={18}/><div><strong>Biblioteca musical</strong><span>Elementos prontos para a aula</span></div></header>
+      <button onClick={() => insertLibrary('staff')}><span className="fb2-library-preview staff"/><div><strong>Pentagrama</strong><small>5 linhas musicais ajustáveis</small></div></button>
+      <button onClick={() => insertLibrary('keyboard')}><KeyboardMusic/><div><strong>Teclado</strong><small>Diagrama de duas oitavas</small></div></button>
+      <button onClick={() => insertLibrary('lesson')}><Shapes/><div><strong>Template de aula</strong><small>Título e notas organizadas</small></div></button>
+    </section>}
 
     <div className="fb2-viewport" ref={viewportRef} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerUp} onWheel={onWheel}>
       <div className="fb2-world" style={{ transform: `translate(${pan.x}px,${pan.y}px) scale(${zoom})` }}>
         <div className="fb2-grid"/>
         <svg className="fb2-svg" width="4000" height="3000" viewBox="0 0 4000 3000">
           <defs><marker id="fb2-arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="context-stroke"/></marker></defs>
-          {objects.filter(item => ['pen','highlight','eraser','line','arrow','rect','circle','diamond'].includes(item.type)).map(item => <BoardSvgObject key={item.id} item={item} selected={selectedId === item.id} onPointerDown={event => selectObject(event, item.id)} onPointerMove={moveSelected} onPointerUp={endMove}/>)}
+          {objects.filter(item => ['pen','highlight','eraser','line','arrow','rect','circle','diamond'].includes(item.type)).sort((a,b) => a.zIndex-b.zIndex).map(item => <BoardSvgObject key={item.id} item={item} selected={selectedId === item.id} onPointerDown={event => selectObject(event, item.id)} onPointerMove={moveSelected} onPointerUp={endMove}/>)}
         </svg>
-        {objects.filter(item => item.type === 'text' || item.type === 'sticky').map(item => <div key={item.id} className={`fb2-object fb2-${item.type}${selectedId === item.id ? ' selected' : ''}`} style={{ left:item.x, top:item.y, width:item.width, minHeight:item.height, background:item.type === 'sticky' ? item.fill : 'transparent', color:item.color, fontSize:item.fontSize }} onPointerDown={event => selectObject(event,item.id)} onPointerMove={moveSelected} onPointerUp={endMove}>
-          <div contentEditable suppressContentEditableWarning onPointerDown={event => { if (tool === 'select' && selectedId === item.id) event.stopPropagation(); }} onBlur={event => updateSelected({ text:event.currentTarget.innerText })}>{item.text}</div>
-        </div>)}
+        {objects.filter(item => ['text','sticky','image','staff','keyboard'].includes(item.type)).sort((a,b) => a.zIndex-b.zIndex).map(item => <BoardHtmlObject key={item.id} item={item} selected={selectedId === item.id} tool={tool} onSelect={event => selectObject(event,item.id)} onMove={moveSelected} onEnd={endMove} onText={text => updateSelected({ text })}/>) }
+        {selected && <SelectionBox item={selected} onResize={startResize}/>} 
       </div>
     </div>
 
@@ -279,9 +413,14 @@ function FocoBoardV2() {
 
     {selected && <div className="fb2-inspector">
       <div><span>Contorno</span>{COLORS.map(value => <button key={value} className={selected.color===value?'active':''} style={{background:value}} onClick={() => updateSelected({color:value})}/>)}</div>
-      {(selected.type === 'sticky' || ['rect','circle','diamond'].includes(selected.type)) && <div><span>Fundo</span>{FILLS.map(value => <button key={value} className={selected.fill===value?'active':''} style={{background:value === 'transparent' ? 'white' : value}} onClick={() => updateSelected({fill:value})}/>)}</div>}
-      <label>Espessura<input type="range" min="1" max="12" value={selected.strokeWidth} onChange={event => updateSelected({strokeWidth:Number(event.target.value)})}/></label>
+      {(selected.type === 'sticky' || ['rect','circle','diamond','staff','keyboard'].includes(selected.type)) && <div><span>Fundo</span>{FILLS.map(value => <button key={value} className={selected.fill===value?'active':''} style={{background:value === 'transparent' ? 'white' : value}} onClick={() => updateSelected({fill:value})}/>)}</div>}
+      {!['image','staff','keyboard'].includes(selected.type) && <label>Espessura<input type="range" min="1" max="12" value={selected.strokeWidth} onChange={event => updateSelected({strokeWidth:Number(event.target.value)})}/></label>}
       {(selected.type === 'text' || selected.type === 'sticky') && <label>Tamanho<input type="range" min="14" max="64" value={selected.fontSize || 22} onChange={event => updateSelected({fontSize:Number(event.target.value)})}/></label>}
+      <div className="fb2-inspector-actions">
+        <button title="Duplicar" onClick={duplicateSelected}><Copy size={16}/></button>
+        <button title="Trazer para frente" onClick={() => layer('front')}><ArrowUpToLine size={16}/></button>
+        <button title="Enviar para trás" onClick={() => layer('back')}><ArrowDownToLine size={16}/></button>
+      </div>
       <button className="danger" onClick={removeSelected}><Trash2 size={16}/> Excluir</button>
     </div>}
 
@@ -292,6 +431,22 @@ function FocoBoardV2() {
 
 function ToolButton({ value, label, icon, tool, setTool }: { value: Tool; label: string; icon: React.ReactNode; tool: Tool; setTool: (tool: Tool) => void }) {
   return <button className={tool === value ? 'active' : ''} title={label} onClick={() => setTool(value)}>{icon}</button>;
+}
+
+function BoardHtmlObject({ item, selected, tool, onSelect, onMove, onEnd, onText }: { item: BoardObject; selected: boolean; tool: Tool; onSelect: (event: ReactPointerEvent<HTMLDivElement>) => void; onMove: (event: ReactPointerEvent<HTMLDivElement>) => void; onEnd: (event: ReactPointerEvent<HTMLDivElement>) => void; onText: (text: string) => void }) {
+  const style = { left:item.x, top:item.y, width:item.width, height:item.height, background:item.type === 'sticky' ? item.fill : 'transparent', color:item.color, fontSize:item.fontSize, zIndex:item.zIndex };
+  if (item.type === 'image') return <div className={`fb2-object fb2-image${selected?' selected':''}`} style={style} onPointerDown={onSelect} onPointerMove={onMove} onPointerUp={onEnd}><img src={item.src} alt="Imagem do quadro" draggable={false}/></div>;
+  if (item.type === 'staff') return <div className={`fb2-object fb2-music-object${selected?' selected':''}`} style={{...style, background:item.fill || '#fff'}} onPointerDown={onSelect} onPointerMove={onMove} onPointerUp={onEnd}><div className="fb2-staff">{[0,1,2,3,4].map(line => <i key={line}/>)}</div></div>;
+  if (item.type === 'keyboard') return <div className={`fb2-object fb2-music-object${selected?' selected':''}`} style={{...style, background:item.fill || '#fff'}} onPointerDown={onSelect} onPointerMove={onMove} onPointerUp={onEnd}><div className="fb2-keyboard">{Array.from({length:14},(_,index)=><i key={index}/>) }{[1,2,4,5,6,8,9,11,12,13].map(index => <b key={index} style={{left:`${index/14*100}%`}}/>)}</div></div>;
+  return <div className={`fb2-object fb2-${item.type}${selected ? ' selected' : ''}`} style={style} onPointerDown={onSelect} onPointerMove={onMove} onPointerUp={onEnd}>
+    <div contentEditable suppressContentEditableWarning onPointerDown={event => { if (tool === 'select' && selected) event.stopPropagation(); }} onBlur={event => onText(event.currentTarget.innerText)}>{item.text}</div>
+  </div>;
+}
+
+function SelectionBox({ item, onResize }: { item: BoardObject; onResize: (event: ReactPointerEvent<HTMLButtonElement>, handle: 'nw'|'ne'|'sw'|'se') => void }) {
+  return <div className="fb2-selection-box" style={{left:item.x,top:item.y,width:item.width,height:item.height,zIndex:item.zIndex+1000}}>
+    {(['nw','ne','sw','se'] as const).map(handle => <button key={handle} className={handle} onPointerDown={event => onResize(event,handle)}/>) }
+  </div>;
 }
 
 function BoardSvgObject({ item, selected, onPointerDown, onPointerMove, onPointerUp }: { item: BoardObject; selected: boolean; onPointerDown: (event: ReactPointerEvent<SVGElement>) => void; onPointerMove: (event: ReactPointerEvent<SVGElement>) => void; onPointerUp: (event: ReactPointerEvent<SVGElement>) => void }) {
