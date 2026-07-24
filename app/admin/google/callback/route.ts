@@ -3,9 +3,14 @@ import { createAdminClient } from '@/lib/supabase/admin';
 
 const REPLAY_DRIVE_REDIRECT_URI = 'https://escola.focoemcanto.com/admin/google/callback';
 
+function escapeHtml(value: string) {
+  return value.replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char] || char));
+}
+
 function popupResponse(success: boolean, message: string) {
+  const safeMessage = escapeHtml(message);
   const payload = JSON.stringify({ type: 'foco-google-drive-connected', success, message });
-  return new NextResponse(`<!doctype html><html><head><meta charset="utf-8"><title>Google Drive</title></head><body style="font-family:system-ui;background:#111827;color:white;display:grid;place-items:center;height:100vh;margin:0"><div style="text-align:center"><h2>${success ? 'Google Drive conectado!' : 'Falha na conexão'}</h2><p>${message}</p></div><script>window.opener?.postMessage(${JSON.stringify(payload)}, window.location.origin);setTimeout(()=>window.close(),700);</script></body></html>`, { headers: { 'content-type': 'text/html; charset=utf-8' } });
+  return new NextResponse(`<!doctype html><html><head><meta charset="utf-8"><title>Google Drive</title></head><body style="font-family:system-ui;background:#111827;color:white;display:grid;place-items:center;height:100vh;margin:0"><div style="text-align:center;max-width:720px;padding:32px"><h2>${success ? 'Google Drive conectado!' : 'Falha na conexão'}</h2><p style="line-height:1.6;color:#d1d5db">${safeMessage}</p></div><script>window.opener?.postMessage(${JSON.stringify(payload)}, window.location.origin);${success ? 'setTimeout(()=>window.close(),900);' : ''}</script></body></html>`, { headers: { 'content-type': 'text/html; charset=utf-8' } });
 }
 
 export async function GET(request: Request) {
@@ -32,10 +37,12 @@ export async function GET(request: Request) {
   });
 
   if (!response.ok) {
-    const details = await response.text().catch(() => '');
+    const details = await response.json().catch(() => ({} as any));
+    const codeLabel = details.error || `HTTP ${response.status}`;
+    const description = details.error_description || 'O Google recusou a troca do código de autorização pelo token.';
     console.error('Google OAuth token exchange failed', response.status, details);
-    if (popup) return popupResponse(false, 'Não foi possível concluir a autorização. Tente novamente após o deploy.');
-    return NextResponse.redirect(new URL('/admin/conteudos/google-drive?erro=oauth', request.url));
+    if (popup) return popupResponse(false, `${codeLabel}: ${description} Verifique se GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET pertencem exatamente ao mesmo cliente OAuth aberto no Google Cloud.`);
+    return NextResponse.redirect(new URL(`/admin/conteudos/google-drive?erro=${encodeURIComponent(codeLabel)}`, request.url));
   }
 
   const tokens = await response.json();
@@ -54,7 +61,7 @@ export async function GET(request: Request) {
   });
 
   if (error) {
-    if (popup) return popupResponse(false, 'O Google autorizou, mas não foi possível salvar a conexão.');
+    if (popup) return popupResponse(false, `O Google autorizou, mas a conexão não pôde ser salva no banco: ${error.message}`);
     return NextResponse.redirect(new URL('/admin/conteudos/google-drive?erro=banco', request.url));
   }
 
