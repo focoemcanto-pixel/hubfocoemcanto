@@ -19,6 +19,7 @@ import LiveHostAssistRuntime from './live-host-assist-runtime';
 import LiveVideoViewRuntime from './live-video-view-runtime';
 import LiveHelpRuntime from './live-help-runtime';
 import LivePermissionGuardRuntime from './live-permission-guard-runtime';
+import LivePipRuntime from './live-pip-runtime';
 import LiveStudioRuntime from './live-studio-runtime';
 import FocoBoardV2Runtime from './foco-board-v2-runtime';
 import LiveMeetPresentationRuntime from './live-meet-presentation-runtime';
@@ -52,6 +53,7 @@ import './live-engagement.css';
 import './live-host-assist.css';
 import './live-video-view.css';
 import './live-help.css';
+import './live-pip.css';
 import './live-studio.css';
 import './foco-board-v2.css';
 import './live-camera-controls.css';
@@ -96,7 +98,7 @@ export default async function LivePage({ params }: PageProps) {
   return <>
     <SessionEndGuard initialStatus={live.status} title={live.title} slug={slug} />
     <EndCleanupRuntime /><PrejoinRuntime /><LivePolishRuntime /><ScreenShareFocusRuntime />
-    <LivePianoRuntime /><LiveToolsRuntime /><LiveMirrorFixRuntime /><LiveVideoViewRuntime /><LiveHostAssistRuntime /><LiveHelpRuntime /><LivePermissionGuardRuntime />
+    <LivePianoRuntime /><LiveToolsRuntime /><LiveMirrorFixRuntime /><LiveVideoViewRuntime /><LiveHostAssistRuntime /><LiveHelpRuntime /><LivePermissionGuardRuntime /><LivePipRuntime />
     <LiveTimerRuntime /><LivePollRuntime /><LivePollMenuRuntime /><LiveEngagementRuntime /><LiveStudioRuntime /><FocoBoardV2Runtime />
     <LiveMeetPresentationRuntime /><LiveOffersDirectionRuntime /><LiveBoardTextFixRuntime /><LiveLocalRecordingRuntime />
     <VoiceStudioKeyboardTransportRuntime /><VoiceStudioDawRuntime /><VoiceStudioAddTrackRuntime /><VoiceStudioLayoutRuntime />
