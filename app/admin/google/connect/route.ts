@@ -9,7 +9,7 @@ export async function GET() {
   params.set('access_type', 'offline');
   params.set('prompt', 'consent');
   params.set('include_granted_scopes', 'true');
-  params.set('scope', 'https://www.googleapis.com/auth/drive.readonly');
+  params.set('scope', 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.readonly');
 
   const url = 'https://accounts.google.com/o/oauth2/v2/auth?' + params.toString();
   return NextResponse.redirect(url);
