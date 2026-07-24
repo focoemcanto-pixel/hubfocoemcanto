@@ -76,8 +76,7 @@ export async function getReplayProducts(): Promise<ReplayProduct[]> {
   const supabase = createAdminClient();
   const rich = await supabase
     .from('products')
-    .select('id,name,slug,description,cover_url,price_cents,billing_type,redirect_url,sales_page_url,sales_url,external_url,status')
-    .eq('status', 'published')
+    .select('id,name,slug,description,cover_url,price_cents,billing_type,redirect_url,sales_page_url,sales_url,external_url,status,created_at')
     .order('created_at', { ascending: true });
 
   if (!rich.error) {
@@ -95,8 +94,7 @@ export async function getReplayProducts(): Promise<ReplayProduct[]> {
 
   const fallback = await supabase
     .from('products')
-    .select('id,name,slug,description,cover_url,price_cents,billing_type,status')
-    .eq('status', 'published')
+    .select('id,name,slug,description,cover_url,price_cents,billing_type,created_at')
     .order('created_at', { ascending: true });
 
   return (fallback.data || []).map((item: any) => ({ ...item, redirect_url: `/aluno/produtos/${item.slug}` }));
