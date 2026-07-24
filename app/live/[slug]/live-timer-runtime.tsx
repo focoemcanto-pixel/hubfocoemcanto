@@ -20,7 +20,6 @@ type TimerMessage = {
   customY: number;
 };
 type LiveWindow = Window & { __FOCO_LIVE_CALL__?: any };
-
 type DragState = { pointerId: number; offsetX: number; offsetY: number };
 
 const DEFAULT_DURATION = 5 * 60 * 1000;
@@ -74,9 +73,9 @@ export default function LiveTimerRuntime() {
   }, []);
 
   useEffect(() => {
-    const openTimer = () => setOpen(true);
-    window.addEventListener('foco-timer-toggle', openTimer);
-    return () => window.removeEventListener('foco-timer-toggle', openTimer);
+    const toggleTimer = () => setOpen((current) => !current);
+    window.addEventListener('foco-timer-toggle', toggleTimer);
+    return () => window.removeEventListener('foco-timer-toggle', toggleTimer);
   }, []);
 
   useEffect(() => {
@@ -114,59 +113,37 @@ export default function LiveTimerRuntime() {
   const finished = state.mode === 'countdown' && value <= 0;
   const overlayVisible = state.visibleToClass;
 
-  function send(next: TimerMessage) {
-    callRef.current?.sendAppMessage?.(next, '*');
-  }
-
+  function send(next: TimerMessage) { callRef.current?.sendAppMessage?.(next, '*'); }
   function patch(update: Partial<TimerMessage>, broadcast = true) {
     const next = { ...state, ...update };
     setState(next);
     if (broadcast && next.visibleToClass) send(next);
   }
-
   function toggleRunning() {
-    if (state.running) {
-      patch({ running: false, elapsedMs: currentElapsed(state), startedAt: null });
-    } else {
-      patch({ running: true, elapsedMs: finished ? 0 : state.elapsedMs, startedAt: Date.now() });
-    }
+    if (state.running) patch({ running: false, elapsedMs: currentElapsed(state), startedAt: null });
+    else patch({ running: true, elapsedMs: finished ? 0 : state.elapsedMs, startedAt: Date.now() });
   }
-
-  function reset() {
-    patch({ running: false, elapsedMs: 0, startedAt: null });
-    setNow(Date.now());
-  }
-
-  function setMinutes(minutes: number) {
-    patch({ mode: 'countdown', durationMs: minutes * 60 * 1000, elapsedMs: 0, running: false, startedAt: null });
-  }
-
+  function reset() { patch({ running: false, elapsedMs: 0, startedAt: null }); setNow(Date.now()); }
+  function setMinutes(minutes: number) { patch({ mode: 'countdown', durationMs: minutes * 60 * 1000, elapsedMs: 0, running: false, startedAt: null }); }
   function toggleVisibility() {
     const visibleToClass = !state.visibleToClass;
     const next = { ...state, open: true, visibleToClass };
-    setState(next);
-    send(next);
+    setState(next); send(next);
   }
-
   function setPosition(position: TimerPosition) {
     const coordinates: Record<Exclude<TimerPosition, 'custom'>, [number, number]> = {
-      center: [50, 50], 'top-left': [12, 14], 'top-right': [88, 14],
-      'bottom-left': [12, 86], 'bottom-right': [88, 86],
+      center: [50, 50], 'top-left': [12, 14], 'top-right': [88, 14], 'bottom-left': [12, 86], 'bottom-right': [88, 86],
     };
     const [customX, customY] = position === 'custom' ? [state.customX, state.customY] : coordinates[position];
     patch({ position, customX, customY });
   }
-
   function startDrag(event: ReactPointerEvent<HTMLDivElement>) {
     if (!isHost || !stage) return;
-    const target = event.target as HTMLElement;
-    if (target.closest('button')) return;
-    const card = event.currentTarget;
-    const cardRect = card.getBoundingClientRect();
-    dragRef.current = { pointerId: event.pointerId, offsetX: event.clientX - cardRect.left, offsetY: event.clientY - cardRect.top };
-    card.setPointerCapture(event.pointerId);
+    if ((event.target as HTMLElement).closest('button')) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    dragRef.current = { pointerId: event.pointerId, offsetX: event.clientX - rect.left, offsetY: event.clientY - rect.top };
+    event.currentTarget.setPointerCapture(event.pointerId);
   }
-
   function drag(event: ReactPointerEvent<HTMLDivElement>) {
     const active = dragRef.current;
     if (!active || active.pointerId !== event.pointerId || !stage) return;
@@ -174,12 +151,8 @@ export default function LiveTimerRuntime() {
     const card = event.currentTarget.getBoundingClientRect();
     const left = Math.max(0, Math.min(rect.width - card.width, event.clientX - rect.left - active.offsetX));
     const top = Math.max(0, Math.min(rect.height - card.height, event.clientY - rect.top - active.offsetY));
-    const customX = ((left + card.width / 2) / rect.width) * 100;
-    const customY = ((top + card.height / 2) / rect.height) * 100;
-    const next = { ...state, position: 'custom' as const, customX, customY };
-    setState(next);
+    setState(current => ({ ...current, position: 'custom', customX: ((left + card.width / 2) / rect.width) * 100, customY: ((top + card.height / 2) / rect.height) * 100 }));
   }
-
   function endDrag(event: ReactPointerEvent<HTMLDivElement>) {
     if (!dragRef.current || dragRef.current.pointerId !== event.pointerId) return;
     dragRef.current = null;
@@ -187,12 +160,9 @@ export default function LiveTimerRuntime() {
     if (state.visibleToClass) send(state);
   }
 
-  function closeController() { setOpen(false); }
-
   if (!root) return null;
-
   const controller = open && isHost ? <section className={`fl-live-timer${finished ? ' finished' : ''}`}>
-    <header><div><small>FOCO LIVE</small><strong><Clock3 size={18}/> Timer da aula</strong></div><button onClick={closeController}><X size={18}/></button></header>
+    <header><div><small>FOCO LIVE</small><strong><Clock3 size={18}/> Timer da aula</strong></div><button onClick={() => setOpen(false)}><X size={18}/></button></header>
     <div className="fl-timer-mode"><button className={state.mode === 'countdown' ? 'active' : ''} onClick={() => patch({ mode:'countdown', running:false, elapsedMs:0, startedAt:null })}>Contagem regressiva</button><button className={state.mode === 'stopwatch' ? 'active' : ''} onClick={() => patch({ mode:'stopwatch', running:false, elapsedMs:0, startedAt:null })}>Cronômetro</button></div>
     <div className="fl-timer-display"><span>{finished ? 'TEMPO!' : formatTime(value)}</span><small>{state.mode === 'countdown' ? 'Tempo restante' : 'Tempo decorrido'}</small></div>
     {state.mode === 'countdown' && <div className="fl-timer-presets">{[1,3,5,10,15,20,30].map(minutes => <button key={minutes} onClick={() => setMinutes(minutes)}>{minutes} min</button>)}</div>}
@@ -200,15 +170,8 @@ export default function LiveTimerRuntime() {
     <div className="fl-timer-position"><span>Posição na apresentação</span><div>{(['top-left','top-right','center','bottom-left','bottom-right'] as TimerPosition[]).map(position => <button key={position} className={state.position === position ? `active ${position}` : position} title={position} onClick={() => setPosition(position)} />)}</div><small>Você também pode arrastar o timer diretamente na tela.</small></div>
     <button className={`fl-timer-share${state.visibleToClass ? ' active' : ''}`} onClick={toggleVisibility}>{state.visibleToClass ? <EyeOff/> : <Eye/>}{state.visibleToClass ? 'Ocultar da apresentação' : 'Exibir na apresentação'}</button>
   </section> : null;
-
-  const overlay = overlayVisible && stage ? <div
-    className={`fl-timer-overlay position-${state.position}${finished ? ' finished' : ''}${isHost ? ' draggable' : ''}`}
-    style={state.position === 'custom' ? { left: `${state.customX}%`, top: `${state.customY}%` } : undefined}
-    onPointerDown={startDrag} onPointerMove={drag} onPointerUp={endDrag} onPointerCancel={endDrag}
-  >
-    {isHost && <GripHorizontal className="fl-timer-drag-handle" size={18}/>}<span>{finished ? 'TEMPO!' : formatTime(value)}</span><small>{state.mode === 'countdown' ? 'TEMPO RESTANTE' : 'CRONÔMETRO'}</small>
-    {!isHost && <i><TimerReset size={13}/> Foco Live</i>}
+  const overlay = overlayVisible && stage ? <div className={`fl-timer-overlay position-${state.position}${finished ? ' finished' : ''}${isHost ? ' draggable' : ''}`} style={state.position === 'custom' ? { left: `${state.customX}%`, top: `${state.customY}%` } : undefined} onPointerDown={startDrag} onPointerMove={drag} onPointerUp={endDrag} onPointerCancel={endDrag}>
+    {isHost && <GripHorizontal className="fl-timer-drag-handle" size={18}/>}<span>{finished ? 'TEMPO!' : formatTime(value)}</span><small>{state.mode === 'countdown' ? 'TEMPO RESTANTE' : 'CRONÔMETRO'}</small>{!isHost && <i><TimerReset size={13}/> Foco Live</i>}
   </div> : null;
-
   return <>{controller && createPortal(controller, root)}{overlay && stage && createPortal(overlay, stage)}</>;
 }
