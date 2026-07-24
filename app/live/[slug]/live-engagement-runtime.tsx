@@ -2,11 +2,12 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AppWindow, Expand, Hand, MoreVertical, PictureInPicture2, Settings2, SmilePlus, Video } from 'lucide-react';
+import { AppWindow, Check, Expand, Grid2X2, Hand, LayoutPanelTop, Mic2, MoreVertical, PictureInPicture2, Settings2, SmilePlus, Sparkles, Video, X } from 'lucide-react';
 
 type LiveWindow = Window & { __FOCO_LIVE_CALL__?: any };
 type ReactionMessage = { type: 'foco-reaction'; emoji: string; name?: string; id?: string };
 type FloatingReaction = { id: string; emoji: string; name: string; left: number };
+type LayoutOption = 'Aula' | 'Grade' | 'Automático';
 
 const REACTIONS = ['❤️','👍','👏','🎉','😂','😮','🤔','🔥','🎵'];
 
@@ -15,6 +16,9 @@ export default function LiveEngagementRuntime() {
   const [isHost, setIsHost] = useState(false);
   const [reactionOpen, setReactionOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [viewOpen, setViewOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [activeLayout, setActiveLayout] = useState<LayoutOption>('Aula');
   const [floating, setFloating] = useState<FloatingReaction[]>([]);
   const attachedCallRef = useRef<any>(null);
 
@@ -33,9 +37,12 @@ export default function LiveEngagementRuntime() {
         const moveToMore = element.classList.contains('fl-apps-trigger') || /^Apps$/i.test(text) || /^Direção$/i.test(text) || /^Direcao$/i.test(text);
         if (moveToMore) element.style.setProperty('display', 'none', 'important');
       });
+      const active = Array.from(document.querySelectorAll<HTMLButtonElement>('.fl-native-layout-switcher button')).find((button) => button.classList.contains('active'));
+      const label = active?.textContent?.trim();
+      if (label === 'Aula' || label === 'Grade' || label === 'Automático') setActiveLayout(label);
     };
     const observer = new MutationObserver(sync);
-    observer.observe(document.body, { childList: true, subtree: true });
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
     const timer = window.setInterval(sync, 300);
     sync();
     return () => { observer.disconnect(); window.clearInterval(timer); };
@@ -45,7 +52,10 @@ export default function LiveEngagementRuntime() {
     const close = (event: PointerEvent) => {
       const target = event.target as HTMLElement;
       if (!target.closest('.fl-reaction-button') && !target.closest('.fl-reaction-picker')) setReactionOpen(false);
-      if (!target.closest('.fl-more-button') && !target.closest('.fl-more-menu')) setMoreOpen(false);
+      if (!target.closest('.fl-more-button') && !target.closest('.fl-more-menu') && !target.closest('.fl-live-settings-modal')) {
+        setMoreOpen(false);
+        setViewOpen(false);
+      }
     };
     window.addEventListener('pointerdown', close);
     return () => window.removeEventListener('pointerdown', close);
@@ -113,8 +123,10 @@ export default function LiveEngagementRuntime() {
     setMoreOpen(false);
   }
 
-  function openCameraSettings() {
-    document.querySelector<HTMLElement>('.fl-controls > button:nth-child(2) .fl-control-chevron')?.click();
+  function openDevicePanel(kind: 'mic' | 'camera') {
+    const index = kind === 'mic' ? 1 : 2;
+    document.querySelector<HTMLElement>(`.fl-controls > button:nth-child(${index}) .fl-control-chevron`)?.click();
+    setSettingsOpen(false);
     setMoreOpen(false);
   }
 
@@ -128,22 +140,46 @@ export default function LiveEngagementRuntime() {
     setMoreOpen(false);
   }
 
+  function setLayout(label: LayoutOption) {
+    const button = Array.from(document.querySelectorAll<HTMLButtonElement>('.fl-native-layout-switcher button')).find((item) => item.textContent?.trim() === label);
+    button?.click();
+    setActiveLayout(label);
+    setViewOpen(false);
+    setMoreOpen(false);
+  }
+
   if (!ready || !controls || !room) return null;
 
   return <>
-    {createPortal(<button type="button" className={`fl-reaction-button${reactionOpen ? ' active' : ''}`} onClick={(event) => { event.stopPropagation(); setReactionOpen((value) => !value); setMoreOpen(false); }}><SmilePlus/><span>Reagir</span></button>, controls, 'foco-reaction-button')}
-    {createPortal(<button type="button" className={`fl-more-button${moreOpen ? ' active' : ''}`} onClick={(event) => { event.stopPropagation(); setMoreOpen((value) => !value); setReactionOpen(false); }}><MoreVertical/><span>Mais</span></button>, controls, 'foco-more-button')}
+    {createPortal(<button type="button" className={`fl-reaction-button${reactionOpen ? ' active' : ''}`} onClick={(event) => { event.stopPropagation(); setReactionOpen((value) => !value); setMoreOpen(false); setViewOpen(false); }}><SmilePlus/><span>Reagir</span></button>, controls, 'foco-reaction-button')}
+    {createPortal(<button type="button" className={`fl-more-button${moreOpen ? ' active' : ''}`} onClick={(event) => { event.stopPropagation(); setMoreOpen((value) => !value); setReactionOpen(false); setViewOpen(false); }}><MoreVertical/><span>Mais</span></button>, controls, 'foco-more-button')}
 
     {reactionOpen && createPortal(<section className="fl-reaction-picker">{REACTIONS.map((emoji) => <button key={emoji} onClick={() => react(emoji)}>{emoji}</button>)}<button className="hand" onClick={raiseHand}><Hand size={20}/><span>Levantar mão</span></button></section>, room, 'foco-reaction-picker')}
 
     {moreOpen && createPortal(<section className="fl-more-menu">
       {isHost && <button onClick={openApps}><AppWindow/><div><b>Apps da aula</b><small>Piano, Board, Timer, Enquete e Voice Studio</small></div></button>}
       <button onClick={openPiP}><PictureInPicture2/><div><b>Picture in picture</b><small>Manter a aula em uma janela flutuante</small></div></button>
+      <button onClick={() => setViewOpen((value) => !value)}><Grid2X2/><div><b>Ajustar visualização</b><small>Atual: {activeLayout}</small></div></button>
+      {viewOpen && <div className="fl-view-options">
+        <button className={activeLayout === 'Aula' ? 'active' : ''} onClick={() => setLayout('Aula')}><LayoutPanelTop/><span>Aula</span>{activeLayout === 'Aula' && <Check/>}</button>
+        <button className={activeLayout === 'Grade' ? 'active' : ''} onClick={() => setLayout('Grade')}><Grid2X2/><span>Grade</span>{activeLayout === 'Grade' && <Check/>}</button>
+        <button className={activeLayout === 'Automático' ? 'active' : ''} onClick={() => setLayout('Automático')}><Sparkles/><span>Automático</span>{activeLayout === 'Automático' && <Check/>}</button>
+      </div>}
       <button onClick={toggleFullscreen}><Expand/><div><b>Tela cheia</b><small>Expandir o Foco Live</small></div></button>
-      <button onClick={openCameraSettings}><Video/><div><b>Ajustar câmera</b><small>Dispositivo e espelhamento</small></div></button>
+      <button onClick={() => { setSettingsOpen(true); setMoreOpen(false); }}><Settings2/><div><b>Configurações</b><small>Áudio, vídeo e preferências</small></div></button>
       {isHost && <button onClick={() => { document.querySelector<HTMLButtonElement>('.fl-recording-button')?.click(); setMoreOpen(false); }}><span className="menu-icon">●</span><div><b>Gravação</b><small>Iniciar ou encerrar gravação</small></div></button>}
       {isHost && <button onClick={openDirection}><Settings2/><div><b>Direção da aula</b><small>Transmissão, ofertas e controles</small></div></button>}
     </section>, room, 'foco-more-menu')}
+
+    {settingsOpen && createPortal(<div className="fl-live-settings-backdrop" onPointerDown={() => setSettingsOpen(false)}>
+      <section className="fl-live-settings-modal" onPointerDown={(event) => event.stopPropagation()}>
+        <header><div><small>FOCO LIVE</small><strong>Configurações</strong></div><button onClick={() => setSettingsOpen(false)}><X/></button></header>
+        <div className="fl-settings-role"><span>{isHost ? 'Dono da sala' : 'Participante'}</span><small>{isHost ? 'Controles administrativos habilitados' : 'Apenas preferências pessoais'}</small></div>
+        <button onClick={() => openDevicePanel('mic')}><Mic2/><div><b>Áudio</b><small>Microfone e perfil de processamento</small></div><i>›</i></button>
+        <button onClick={() => openDevicePanel('camera')}><Video/><div><b>Vídeo</b><small>Câmera, dispositivo e espelhamento</small></div><i>›</i></button>
+        <button onClick={() => { setSettingsOpen(false); setMoreOpen(true); setViewOpen(true); }}><Grid2X2/><div><b>Visualização</b><small>Aula, Grade ou Automático</small></div><i>›</i></button>
+      </section>
+    </div>, document.body, 'foco-live-settings')}
 
     {createPortal(<div className="fl-floating-reactions" aria-hidden="true">{floating.map((item) => <div key={item.id} style={{ left: `${item.left}%` }}><span>{item.emoji}</span><small>{item.name}</small></div>)}</div>, room, 'foco-floating-reactions')}
   </>;
