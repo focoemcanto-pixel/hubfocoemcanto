@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
-import { driveRedirectUri } from '@/lib/google/drive-utils';
+
+const REPLAY_DRIVE_REDIRECT_URI = 'https://escola.focoemcanto.com/admin/google/callback';
 
 export async function GET() {
-  const redirectUri = driveRedirectUri();
   const params = new URLSearchParams({
     client_id: process.env.GOOGLE_CLIENT_ID || '',
-    redirect_uri: redirectUri,
+    redirect_uri: REPLAY_DRIVE_REDIRECT_URI,
     response_type: 'code',
     access_type: 'offline',
     prompt: 'consent',
