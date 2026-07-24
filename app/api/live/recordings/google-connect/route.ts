@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
+import { driveRedirectUri } from '@/lib/google/drive-utils';
 
-export async function GET(request: Request) {
-  const redirectUri = new URL('/admin/google/callback', request.url).toString();
+export async function GET() {
+  const redirectUri = driveRedirectUri();
   const params = new URLSearchParams({
     client_id: process.env.GOOGLE_CLIENT_ID || '',
     redirect_uri: redirectUri,
@@ -12,5 +13,6 @@ export async function GET(request: Request) {
     scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.readonly',
     state: 'foco-live-recording',
   });
+
   return NextResponse.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`);
 }
