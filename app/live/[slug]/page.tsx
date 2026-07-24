@@ -14,6 +14,7 @@ import LiveTimerRuntime from './live-timer-runtime';
 import LivePollRuntime from './live-poll-runtime';
 import LivePollMenuRuntime from './live-poll-menu-runtime';
 import LiveEngagementRuntime from './live-engagement-runtime';
+import LiveMirrorFixRuntime from './live-mirror-fix-runtime';
 import LiveStudioRuntime from './live-studio-runtime';
 import FocoBoardV2Runtime from './foco-board-v2-runtime';
 import LiveMeetPresentationRuntime from './live-meet-presentation-runtime';
@@ -103,6 +104,7 @@ export default async function LivePage({ params }: PageProps) {
     <ScreenShareFocusRuntime />
     <LivePianoRuntime />
     <LiveToolsRuntime />
+    <LiveMirrorFixRuntime />
     <LiveTimerRuntime />
     <LivePollRuntime />
     <LivePollMenuRuntime />
