@@ -11,6 +11,8 @@ import ScreenShareFocusRuntime from './screen-share-focus-runtime';
 import LivePianoRuntime from './live-piano-runtime';
 import LiveToolsRuntime from './live-tools-runtime';
 import LiveTimerRuntime from './live-timer-runtime';
+import LivePollRuntime from './live-poll-runtime';
+import LivePollMenuRuntime from './live-poll-menu-runtime';
 import LiveStudioRuntime from './live-studio-runtime';
 import FocoBoardV2Runtime from './foco-board-v2-runtime';
 import LiveMeetPresentationRuntime from './live-meet-presentation-runtime';
@@ -39,6 +41,7 @@ import './live-piano.css';
 import './live-tools.css';
 import './live-device-selectors.css';
 import './live-timer.css';
+import './live-poll.css';
 import './live-studio.css';
 import './foco-board-v2.css';
 import './live-camera-controls.css';
@@ -99,6 +102,8 @@ export default async function LivePage({ params }: PageProps) {
     <LivePianoRuntime />
     <LiveToolsRuntime />
     <LiveTimerRuntime />
+    <LivePollRuntime />
+    <LivePollMenuRuntime />
     <LiveStudioRuntime />
     <FocoBoardV2Runtime />
     <LiveMeetPresentationRuntime />
