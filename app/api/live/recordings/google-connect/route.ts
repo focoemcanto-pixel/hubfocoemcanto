@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
-import { driveRedirectUri } from '@/lib/google/drive-utils';
 
-export async function GET() {
+export async function GET(request: Request) {
+  const redirectUri = new URL('/admin/google/callback', request.url).toString();
   const params = new URLSearchParams({
     client_id: process.env.GOOGLE_CLIENT_ID || '',
-    redirect_uri: driveRedirectUri(),
+    redirect_uri: redirectUri,
     response_type: 'code',
     access_type: 'offline',
     prompt: 'consent',
