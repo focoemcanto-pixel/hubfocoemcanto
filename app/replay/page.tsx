@@ -16,14 +16,14 @@ export default async function CurrentReplayPage() {
           <a href="/" className="replay-brand"><span>F</span><div><b>FOCO EM CANTO</b><small>Replay da semana</small></div></a>
         </header>
 
-        <section className="replay-hero replay-hero-centered replay-empty-centered">
+        <section className="replay-hero replay-hero-centered replay-empty-centered replay-consumption-first">
           <div className="replay-copy replay-copy-centered">
             <span className="replay-kicker">REPLAY DA SEMANA • ATUALIZADO SEMANALMENTE</span>
-            <h1>O replay da última aula será publicado aqui.</h1>
-            <p>Quando a gravação estiver disponível, assista com atenção, anote os pontos principais e aplique cada exercício na sua rotina vocal.</p>
+            <h1>Assista ao replay da última aula.</h1>
+            <p>Lembre-se de anotar os pontos principais, repetir os exercícios e aplicar o conteúdo na sua rotina vocal. É a prática que transforma conhecimento em evolução.</p>
             <div className="replay-availability-row">
               <span className="replay-availability-dot" />
-              <strong>O período de disponibilidade será informado nesta página.</strong>
+              <strong>O replay será publicado aqui assim que a gravação estiver disponível.</strong>
             </div>
           </div>
 
