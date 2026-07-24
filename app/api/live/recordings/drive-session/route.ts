@@ -3,7 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 
 export const runtime = 'nodejs';
 
-type Body = { fileName?: string; mimeType?: string; theme?: string; dateLabel?: string };
+type Body = { fileName?: string; mimeType?: string; theme?: string; dateLabel?: string; destinationFolderId?: string };
 
 async function accessToken() {
   const supabase = createAdminClient();
@@ -42,7 +42,8 @@ export async function POST(request: Request) {
     const now = new Date();
     const year = String(now.getFullYear());
     const month = now.toLocaleDateString('pt-BR', { month: 'long' }).replace(/^./, c => c.toUpperCase());
-    const root = await findOrCreateFolder(token, 'Foco Live — Gravações');
+    const selectedRoot = body.destinationFolderId && body.destinationFolderId !== 'root' ? body.destinationFolderId : undefined;
+    const root = await findOrCreateFolder(token, 'Foco Live — Gravações', selectedRoot);
     const yearFolder = await findOrCreateFolder(token, year, root);
     const monthFolder = await findOrCreateFolder(token, month, yearFolder);
     const lessonFolder = await findOrCreateFolder(token, `${body.theme || 'Aula'} — ${body.dateLabel || now.toLocaleDateString('pt-BR').replaceAll('/', '-')}`, monthFolder);
