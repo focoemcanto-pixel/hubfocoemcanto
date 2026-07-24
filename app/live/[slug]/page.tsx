@@ -15,6 +15,8 @@ import LivePollRuntime from './live-poll-runtime';
 import LivePollMenuRuntime from './live-poll-menu-runtime';
 import LiveEngagementRuntime from './live-engagement-runtime';
 import LiveMirrorFixRuntime from './live-mirror-fix-runtime';
+import LiveHostAssistRuntime from './live-host-assist-runtime';
+import LiveVideoViewRuntime from './live-video-view-runtime';
 import LiveStudioRuntime from './live-studio-runtime';
 import FocoBoardV2Runtime from './foco-board-v2-runtime';
 import LiveMeetPresentationRuntime from './live-meet-presentation-runtime';
@@ -45,6 +47,8 @@ import './live-device-selectors.css';
 import './live-timer.css';
 import './live-poll.css';
 import './live-engagement.css';
+import './live-host-assist.css';
+import './live-video-view.css';
 import './live-studio.css';
 import './foco-board-v2.css';
 import './live-camera-controls.css';
@@ -105,6 +109,8 @@ export default async function LivePage({ params }: PageProps) {
     <LivePianoRuntime />
     <LiveToolsRuntime />
     <LiveMirrorFixRuntime />
+    <LiveVideoViewRuntime />
+    <LiveHostAssistRuntime />
     <LiveTimerRuntime />
     <LivePollRuntime />
     <LivePollMenuRuntime />
