@@ -12,9 +12,7 @@ export async function GET(request: Request) {
   const code = url.searchParams.get('code');
   const state = url.searchParams.get('state');
   const popup = state === 'foco-live-recording';
-  const redirectUri = popup
-    ? new URL('/admin/google/callback', request.url).toString()
-    : driveRedirectUri();
+  const redirectUri = driveRedirectUri();
 
   if (!code) {
     if (popup) return popupResponse(false, 'A autorização foi cancelada.');
@@ -34,7 +32,7 @@ export async function GET(request: Request) {
   });
 
   if (!response.ok) {
-    if (popup) return popupResponse(false, 'Não foi possível concluir a autorização.');
+    if (popup) return popupResponse(false, 'Não foi possível concluir a autorização. Confira o URI de redirecionamento no Google Cloud.');
     return NextResponse.redirect(new URL('/admin/conteudos/google-drive?erro=oauth', request.url));
   }
 
@@ -43,7 +41,7 @@ export async function GET(request: Request) {
   const supabase = createAdminClient();
   const { data: existing } = await supabase.from('google_drive_connections').select('refresh_token').eq('id', 'default').maybeSingle();
 
-  await supabase.from('google_drive_connections').upsert({
+  const { error } = await supabase.from('google_drive_connections').upsert({
     id: 'default',
     access_token: tokens.access_token,
     refresh_token: tokens.refresh_token || existing?.refresh_token,
@@ -52,6 +50,11 @@ export async function GET(request: Request) {
     expires_at: expiresAt,
     updated_at: new Date().toISOString(),
   });
+
+  if (error) {
+    if (popup) return popupResponse(false, 'O Google autorizou, mas não foi possível salvar a conexão.');
+    return NextResponse.redirect(new URL('/admin/conteudos/google-drive?erro=banco', request.url));
+  }
 
   if (popup) return popupResponse(true, 'Você já pode escolher a pasta da gravação.');
   return NextResponse.redirect(new URL('/admin/conteudos/google-drive?sucesso=conectado', request.url));
