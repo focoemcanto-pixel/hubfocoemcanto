@@ -110,19 +110,16 @@ export default function LiveRecordingCenterRuntime() {
       const displayStream=await navigator.mediaDevices.getDisplayMedia({video:{frameRate:{ideal:30,max:30}},audio:true,preferCurrentTab:true,selfBrowserSurface:'include',systemAudio:'include'} as DisplayMediaStreamOptions);
       let micStream:MediaStream|null=null;
       try{micStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false});}catch{}
-
       const audioContext=new AudioContext();
       const destination=audioContext.createMediaStreamDestination();
       const displayAudio=displayStream.getAudioTracks();
       if(displayAudio.length){audioContext.createMediaStreamSource(new MediaStream(displayAudio)).connect(destination)}
       if(micStream?.getAudioTracks().length){audioContext.createMediaStreamSource(micStream).connect(destination)}
       await audioContext.resume().catch(()=>{});
-
       const combined=new MediaStream();
       displayStream.getVideoTracks().forEach(track=>combined.addTrack(track));
       destination.stream.getAudioTracks().forEach(track=>combined.addTrack(track));
       if(!combined.getAudioTracks().length)throw new Error('Nenhuma fonte de áudio foi liberada. Ative “Compartilhar áudio da guia” e permita o microfone.');
-
       const mimeType=bestMimeType();
       const recorder=new MediaRecorder(combined,mimeType?{mimeType,videoBitsPerSecond:4_500_000,audioBitsPerSecond:192_000}:undefined);
       streamRef.current=displayStream;micStreamRef.current=micStream;audioContextRef.current=audioContext;recorderRef.current=recorder;chunksRef.current=[];
@@ -139,7 +136,7 @@ export default function LiveRecordingCenterRuntime() {
       };
       displayStream.getVideoTracks()[0]?.addEventListener('ended',()=>recorder.state!=='inactive'&&recorder.stop(),{once:true});
       recorder.start(1000);startedRef.current=Date.now();setElapsed(0);setRecording(true);setOpen(false);
-      const sources=displayAudio.length&&micStream?.getAudioTracks().length?'áudio da aula e microfone':displayAudio.length?'áudio da aula': 'microfone';
+      const sources=displayAudio.length&&micStream?.getAudioTracks().length?'áudio da aula e microfone':displayAudio.length?'áudio da aula':'microfone';
       setStatus(`Gravando vídeo com ${sources}. Ao encerrar a transmissão, o replay será salvo automaticamente.`);
     }catch(error){
       streamRef.current?.getTracks().forEach(t=>t.stop());micStreamRef.current?.getTracks().forEach(t=>t.stop());void audioContextRef.current?.close().catch(()=>{});
@@ -153,6 +150,7 @@ export default function LiveRecordingCenterRuntime() {
   async function goBack(){if(folderStack.length<=1)return;const next=folderStack.slice(0,-1);setFolderStack(next);const current=next.at(-1)!;setSelectedFolder(current);await loadDrive(current.id)}
   function chooseCurrent(){const current=folderStack.at(-1)!;setSelectedFolder(current);selectedFolderRef.current=current;localStorage.setItem(SAVED_FOLDER_KEY,JSON.stringify(current));setStatus(`Pasta padrão salva: ${current.name}. As próximas gravações serão enviadas automaticamente para ela.`)}
   async function copyLink(path:string){await navigator.clipboard.writeText(`${location.origin}${path}`);setStatus('Link do replay copiado.')}
+
   async function uploadDrive(source?:Blob|null,automatic=false){
     const current=source||blobRef.current;
     if(!current)return;
@@ -162,17 +160,27 @@ export default function LiveRecordingCenterRuntime() {
     try{
       const dateLabel=new Date().toLocaleDateString('pt-BR').replaceAll('/','-');
       const fileName=`${safe(themeRef.current)} — ${dateLabel} — ${new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}).replace(':','h')}.webm`;
-      const session=await fetch('/api/live/recordings/drive-session',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({fileName,mimeType:current.type||'video/webm',theme:safe(themeRef.current),dateLabel,destinationFolderId:selectedFolderRef.current.id})});
-      const data=await session.json();if(!session.ok)throw new Error(data.error||'Falha ao conectar ao Drive');
+      const session=await fetch('/api/live/recordings/drive-session',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({fileName,mimeType:current.type||'video/webm',sizeBytes:current.size,theme:safe(themeRef.current),dateLabel,destinationFolderId:selectedFolderRef.current.id})});
+      const sessionText=await session.text();
+      let data:any={};try{data=JSON.parse(sessionText)}catch{}
+      if(!session.ok)throw new Error(data.error||`Falha ao preparar o Drive (${session.status}): ${sessionText.slice(0,220)}`);
+      if(!data.uploadUrl)throw new Error('O Google Drive não retornou a URL de upload.');
       setStatus('Enviando gravação ao Google Drive… Não feche esta página.');
-      const upload=await fetch(data.uploadUrl,{method:'PUT',headers:{'content-type':current.type||'video/webm'},body:current});
-      if(!upload.ok)throw new Error(`O envio ao Google Drive falhou (${upload.status}).`);
-      const uploaded=await upload.json().catch(()=>({}));
+      let upload:Response;
+      try{
+        upload=await fetch(data.uploadUrl,{method:'PUT',headers:{'content-type':current.type||'video/webm'},body:current});
+      }catch(error){
+        throw new Error(`Falha de rede/CORS ao enviar para o Google Drive: ${error instanceof Error?error.message:'Failed to fetch'}`);
+      }
+      const uploadText=await upload.text();
+      if(!upload.ok)throw new Error(`O envio ao Google Drive falhou (${upload.status}): ${uploadText.slice(0,260)}`);
+      let uploaded:any={};try{uploaded=JSON.parse(uploadText)}catch{}
       const driveFileId=uploaded.id;
-      if(!driveFileId)throw new Error('O Drive recebeu o vídeo, mas não retornou o identificador do arquivo.');
+      if(!driveFileId)throw new Error(`O Drive recebeu o vídeo, mas não retornou o identificador do arquivo. Resposta: ${uploadText.slice(0,220)}`);
       setStatus('Publicando página personalizada de replay…');
       const publish=await fetch('/api/live/recordings/publish-replay',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({title:safe(themeRef.current),driveFileId,driveFolderId:data.folderId,fileName,mimeType:current.type||'video/webm'})});
-      const published=await publish.json();if(!publish.ok)throw new Error(published.error||'O vídeo foi salvo, mas o replay não pôde ser publicado.');
+      const publishText=await publish.text();let published:any={};try{published=JSON.parse(publishText)}catch{}
+      if(!publish.ok)throw new Error(published.error||`O vídeo foi salvo, mas o replay não pôde ser publicado (${publish.status}): ${publishText.slice(0,220)}`);
       setReplayLinks({currentUrl:published.currentUrl,permanentUrl:published.permanentUrl});
       setStatus('Replay salvo e publicado automaticamente. Você já pode sair.');setBlob(null);blobRef.current=null;
     }catch(error){setStatus(`${automatic?'O salvamento automático falhou. ':''}${error instanceof Error?error.message:'Erro ao enviar ao Google Drive.'} O arquivo continua disponível para tentar novamente.`)}finally{uploadingRef.current=false;setUploading(false)}
