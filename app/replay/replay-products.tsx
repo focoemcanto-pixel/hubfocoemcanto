@@ -17,7 +17,8 @@ function groupProducts(products: ReplayProduct[]) {
   const mentoring = clean.filter((product) => /mentoria/i.test(keyOf(product)));
   const division = clean.filter((product) => /(harmonia|grupo vip|escola foco em canto|escola-foco-em-canto)/i.test(keyOf(product)) && !/mentoria/i.test(keyOf(product)));
   const harmomus = clean.filter((product) => /harmomus/i.test(keyOf(product)));
-  return { division, mentoring, harmomus };
+  const mentorshipFallback = mentoring[0] || clean.find((product) => /^foco em canto$/i.test(product.name.trim())) || clean.find((product) => /foco em canto/i.test(keyOf(product)) && !/escola/i.test(keyOf(product)));
+  return { division, mentoring, harmomus, mentorshipFallback };
 }
 
 function ProductCard({ product }: { product: ReplayProduct }) {
@@ -56,27 +57,27 @@ function ProductRail({ title, description, products }: { title: string; descript
   );
 }
 
-function MentorshipFeature({ products }: { products: ReplayProduct[] }) {
-  const product = products[0];
-  if (!product) return null;
-
+function MentorshipFeature({ product }: { product?: ReplayProduct }) {
+  const href = product?.redirect_url || '#cursos';
   return (
     <section className="replay-mentorship-feature" id="mentoria">
       <div className="replay-mentorship-copy">
-        <span>ACOMPANHAMENTO COMPLETO</span>
-        <h2>Transforme sua voz com direção, feedback e acompanhamento de verdade.</h2>
-        <p>Quer evoluir em técnica vocal, respiração, afinação, extensão, agudos, divisão vocal e percepção musical sem caminhar sozinho? Na Mentoria Foco em Canto, você recebe instrução prática, correções e um direcionamento pensado para a sua voz e para a realidade do seu ministério.</p>
+        <span>MENTORIA FOCO EM CANTO</span>
+        <h2>Desenvolva sua voz por completo com acompanhamento próximo e direcionamento individual.</h2>
+        <p>Para quem deseja evoluir em técnica vocal, respiração, afinação, extensão, agudos, divisão vocal e percepção musical com um professor por perto. Na Mentoria Foco em Canto, você recebe feedbacks, correções, instrução direcionada ao seu momento e aplicação prática para o ministério de louvor.</p>
         <div className="replay-mentorship-benefits">
           <span>Feedbacks e correções individuais</span>
           <span>Aulas ao vivo e direcionamento contínuo</span>
           <span>Grupo exclusivo de acompanhamento</span>
-          <span>Aplicação prática ao ministério de louvor</span>
+          <span>Sala de correções e aplicação prática</span>
+          <span>Técnica, respiração, afinação e agudos</span>
+          <span>Direcionamento para o ministério de louvor</span>
         </div>
-        <a href={product.redirect_url || '#'} target="_blank" rel="noreferrer">Conhecer a Mentoria Foco em Canto</a>
+        <a href={href} target={href.startsWith('http') ? '_blank' : undefined} rel={href.startsWith('http') ? 'noreferrer' : undefined}>Conhecer a Mentoria Foco em Canto</a>
       </div>
       <div className="replay-mentorship-visual">
-        {product.cover_url ? <img src={product.cover_url} alt={product.name} /> : <div className="replay-mentorship-placeholder">FOCO EM CANTO</div>}
-        <div><small>MENTORIA PREMIUM</small><strong>{product.name}</strong></div>
+        {product?.cover_url ? <img src={product.cover_url} alt="Mentoria Foco em Canto" /> : <div className="replay-mentorship-placeholder">MENTORIA FOCO EM CANTO</div>}
+        <div><small>ACOMPANHAMENTO PREMIUM</small><strong>{product?.name || 'Mentoria Foco em Canto'}</strong></div>
       </div>
     </section>
   );
@@ -84,15 +85,15 @@ function MentorshipFeature({ products }: { products: ReplayProduct[] }) {
 
 export default function ReplayProducts({ products }: { products: ReplayProduct[] }) {
   const groups = useMemo(() => groupProducts(products), [products]);
-  const hasProducts = groups.division.length + groups.mentoring.length + groups.harmomus.length > 0;
+  const hasCourses = groups.division.length + groups.harmomus.length > 0;
 
   return (
     <section className="replay-products" id="cursos">
-      <MentorshipFeature products={groups.mentoring} />
+      <MentorshipFeature product={groups.mentorshipFallback} />
 
       <div className="replay-section-title replay-courses-heading"><span>CURSOS E FERRAMENTAS</span><h2>Escolha o próximo passo para o seu objetivo.</h2><p>Depois do replay, aprofunde a habilidade que mais precisa desenvolver agora.</p></div>
 
-      {!hasProducts ? <div className="replay-products-empty"><span>FOCO EM CANTO</span><h3>Os cursos serão exibidos aqui.</h3><p>Cadastre os produtos no painel da escola para apresentá-los nesta página.</p></div> : <div className="replay-objectives">
+      {!hasCourses ? <div className="replay-products-empty"><span>FOCO EM CANTO</span><h3>Os cursos serão exibidos aqui.</h3><p>Cadastre os produtos no painel da escola para apresentá-los nesta página.</p></div> : <div className="replay-objectives">
         <ProductRail title="Divisão vocal" description="Desenvolva independência auditiva, afinação e segurança para criar e sustentar segunda e terceira voz com Foco em Harmonia, Grupo VIP e Escola Foco em Canto." products={groups.division} />
         <ProductRail title="Harmomus" description="Acesse kits vocais organizados para estudar cada voz, preparar repertórios e acelerar os ensaios da sua equipe ou ministério." products={groups.harmomus} />
       </div>}
