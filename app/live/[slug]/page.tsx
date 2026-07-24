@@ -17,6 +17,7 @@ import LiveEngagementRuntime from './live-engagement-runtime';
 import LiveMirrorFixRuntime from './live-mirror-fix-runtime';
 import LiveHostAssistRuntime from './live-host-assist-runtime';
 import LiveVideoViewRuntime from './live-video-view-runtime';
+import LiveHelpRuntime from './live-help-runtime';
 import LiveStudioRuntime from './live-studio-runtime';
 import FocoBoardV2Runtime from './foco-board-v2-runtime';
 import LiveMeetPresentationRuntime from './live-meet-presentation-runtime';
@@ -49,6 +50,7 @@ import './live-poll.css';
 import './live-engagement.css';
 import './live-host-assist.css';
 import './live-video-view.css';
+import './live-help.css';
 import './live-studio.css';
 import './foco-board-v2.css';
 import './live-camera-controls.css';
@@ -88,48 +90,17 @@ export default async function LivePage({ params }: PageProps) {
     supabase.from('live_offers').select('id,name,headline,description,price,old_price,checkout_url,cta_label,image_url,badge').eq('is_active', true).order('created_at', { ascending: false }),
   ]);
   if (!live) notFound();
-
-  const offers = (offerLibrary || []).map((offer: any) => ({
-    ...offer,
-    direct_checkout_url: offer.checkout_url,
-    checkout_url: `/api/live/${slug}/offer-click/${offer.id}`,
-  }));
-  const persistedOffer = live.offer_config?.offer ? {
-    ...live.offer_config.offer,
-    direct_checkout_url: live.offer_config.offer.direct_checkout_url || live.offer_config.offer.checkout_url,
-    checkout_url: `/api/live/${slug}/offer-click/${live.offer_config.offer.id}`,
-  } : null;
-
+  const offers = (offerLibrary || []).map((offer: any) => ({ ...offer, direct_checkout_url: offer.checkout_url, checkout_url: `/api/live/${slug}/offer-click/${offer.id}` }));
+  const persistedOffer = live.offer_config?.offer ? { ...live.offer_config.offer, direct_checkout_url: live.offer_config.offer.direct_checkout_url || live.offer_config.offer.checkout_url, checkout_url: `/api/live/${slug}/offer-click/${live.offer_config.offer.id}` } : null;
   return <>
     <SessionEndGuard initialStatus={live.status} title={live.title} slug={slug} />
-    <EndCleanupRuntime />
-    <PrejoinRuntime />
-    <LivePolishRuntime />
-    <ScreenShareFocusRuntime />
-    <LivePianoRuntime />
-    <LiveToolsRuntime />
-    <LiveMirrorFixRuntime />
-    <LiveVideoViewRuntime />
-    <LiveHostAssistRuntime />
-    <LiveTimerRuntime />
-    <LivePollRuntime />
-    <LivePollMenuRuntime />
-    <LiveEngagementRuntime />
-    <LiveStudioRuntime />
-    <FocoBoardV2Runtime />
-    <LiveMeetPresentationRuntime />
-    <LiveOffersDirectionRuntime />
-    <LiveBoardTextFixRuntime />
-    <LiveLocalRecordingRuntime />
-    <VoiceStudioKeyboardTransportRuntime />
-    <VoiceStudioDawRuntime />
-    <VoiceStudioAddTrackRuntime />
-    <VoiceStudioLayoutRuntime />
-    <VoiceStudioMidiRoutingRuntime />
-    <VoiceStudioMonitorTransportRuntime />
-    <VoiceStudioMidiLivePreviewRuntime />
-    <LiveCameraControlsRuntime />
-    <HandSignalRuntime />
+    <EndCleanupRuntime /><PrejoinRuntime /><LivePolishRuntime /><ScreenShareFocusRuntime />
+    <LivePianoRuntime /><LiveToolsRuntime /><LiveMirrorFixRuntime /><LiveVideoViewRuntime /><LiveHostAssistRuntime /><LiveHelpRuntime />
+    <LiveTimerRuntime /><LivePollRuntime /><LivePollMenuRuntime /><LiveEngagementRuntime /><LiveStudioRuntime /><FocoBoardV2Runtime />
+    <LiveMeetPresentationRuntime /><LiveOffersDirectionRuntime /><LiveBoardTextFixRuntime /><LiveLocalRecordingRuntime />
+    <VoiceStudioKeyboardTransportRuntime /><VoiceStudioDawRuntime /><VoiceStudioAddTrackRuntime /><VoiceStudioLayoutRuntime />
+    <VoiceStudioMidiRoutingRuntime /><VoiceStudioMonitorTransportRuntime /><VoiceStudioMidiLivePreviewRuntime />
+    <LiveCameraControlsRuntime /><HandSignalRuntime />
     <FocoLiveRoom slug={slug} initialLive={{ ...live, offer_config: live.offer_config ? { ...live.offer_config, offer: persistedOffer } : {}, offers }} />
   </>;
 }
