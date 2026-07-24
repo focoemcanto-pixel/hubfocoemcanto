@@ -5,9 +5,10 @@ import { Hand, X } from 'lucide-react';
 
 type RaisedHand = { id: string; name: string; raisedAt: number };
 type HandMessage = { type: 'hand'; raised: boolean; name?: string; sessionId?: string };
+type HandEvent = { data?: HandMessage; fromId?: string };
 type CallLike = {
-  on?: (event: string, listener: (event: { data?: HandMessage; fromId?: string }) => void) => void;
-  off?: (event: string, listener: (event: { data?: HandMessage; fromId?: string }) => void) => void;
+  on?: (event: string, listener: (event: HandEvent) => void) => void;
+  off?: (event: string, listener: (event: HandEvent) => void) => void;
 };
 type LiveWindow = Window & { __FOCO_LIVE_CALL__?: CallLike };
 
@@ -26,7 +27,7 @@ export default function HandSignalRuntime() {
     let boundCall: CallLike | null = null;
     let disposed = false;
 
-    const onMessage = (event: { data?: HandMessage; fromId?: string }) => {
+    const onMessage = (event: HandEvent) => {
       const data = event?.data;
       if (data?.type !== 'hand') return;
 
@@ -52,11 +53,12 @@ export default function HandSignalRuntime() {
 
     const bindCurrentCall = () => {
       const call = (window as LiveWindow).__FOCO_LIVE_CALL__;
-      if (!call?.on || call === boundCall) return;
+      const subscribe = call?.on;
+      if (!call || !subscribe || call === boundCall) return;
 
-      if (boundCall?.off) boundCall.off('app-message', onMessage);
+      boundCall?.off?.('app-message', onMessage);
+      subscribe.call(call, 'app-message', onMessage);
       boundCall = call;
-      boundCall.on('app-message', onMessage);
     };
 
     bindCurrentCall();
