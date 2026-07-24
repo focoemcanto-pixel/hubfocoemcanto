@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Expand, Hand, MoreVertical, PictureInPicture2, Settings2, SmilePlus, Video } from 'lucide-react';
+import { AppWindow, Expand, Hand, MoreVertical, PictureInPicture2, Settings2, SmilePlus, Video } from 'lucide-react';
 
 type LiveWindow = Window & { __FOCO_LIVE_CALL__?: any };
 type ReactionMessage = { type: 'foco-reaction'; emoji: string; name?: string; id?: string };
@@ -23,10 +23,20 @@ export default function LiveEngagementRuntime() {
 
   useEffect(() => {
     setIsHost(new URLSearchParams(window.location.search).get('host') === '1');
-    const sync = () => setReady(Boolean(document.querySelector('.fl-room .fl-controls')));
+    const sync = () => {
+      const currentControls = document.querySelector<HTMLElement>('.fl-room .fl-controls');
+      setReady(Boolean(currentControls));
+      if (!currentControls) return;
+      Array.from(currentControls.children).forEach((child) => {
+        const element = child as HTMLElement;
+        const text = (element.textContent || '').trim();
+        const moveToMore = element.classList.contains('fl-apps-trigger') || /^Apps$/i.test(text) || /^Direção$/i.test(text) || /^Direcao$/i.test(text);
+        if (moveToMore) element.style.setProperty('display', 'none', 'important');
+      });
+    };
     const observer = new MutationObserver(sync);
     observer.observe(document.body, { childList: true, subtree: true });
-    const timer = window.setInterval(sync, 500);
+    const timer = window.setInterval(sync, 300);
     sync();
     return () => { observer.disconnect(); window.clearInterval(timer); };
   }, []);
@@ -104,8 +114,17 @@ export default function LiveEngagementRuntime() {
   }
 
   function openCameraSettings() {
-    const cameraControl = document.querySelector<HTMLElement>('.fl-controls > button:nth-child(2) .fl-control-chevron');
-    cameraControl?.click();
+    document.querySelector<HTMLElement>('.fl-controls > button:nth-child(2) .fl-control-chevron')?.click();
+    setMoreOpen(false);
+  }
+
+  function openApps() {
+    document.querySelector<HTMLButtonElement>('.fl-apps-trigger')?.click();
+    setMoreOpen(false);
+  }
+
+  function openDirection() {
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.fl-controls button')).find((item) => /direção|direcao/i.test(item.textContent || ''))?.click();
     setMoreOpen(false);
   }
 
@@ -118,11 +137,12 @@ export default function LiveEngagementRuntime() {
     {reactionOpen && createPortal(<section className="fl-reaction-picker">{REACTIONS.map((emoji) => <button key={emoji} onClick={() => react(emoji)}>{emoji}</button>)}<button className="hand" onClick={raiseHand}><Hand size={20}/><span>Levantar mão</span></button></section>, room, 'foco-reaction-picker')}
 
     {moreOpen && createPortal(<section className="fl-more-menu">
+      {isHost && <button onClick={openApps}><AppWindow/><div><b>Apps da aula</b><small>Piano, Board, Timer, Enquete e Voice Studio</small></div></button>}
       <button onClick={openPiP}><PictureInPicture2/><div><b>Picture in picture</b><small>Manter a aula em uma janela flutuante</small></div></button>
       <button onClick={toggleFullscreen}><Expand/><div><b>Tela cheia</b><small>Expandir o Foco Live</small></div></button>
       <button onClick={openCameraSettings}><Video/><div><b>Ajustar câmera</b><small>Dispositivo e espelhamento</small></div></button>
       {isHost && <button onClick={() => { document.querySelector<HTMLButtonElement>('.fl-recording-button')?.click(); setMoreOpen(false); }}><span className="menu-icon">●</span><div><b>Gravação</b><small>Iniciar ou encerrar gravação</small></div></button>}
-      {isHost && <button onClick={() => { const direction = Array.from(document.querySelectorAll<HTMLButtonElement>('.fl-controls button')).find((item) => /direção/i.test(item.textContent || '')); direction?.click(); setMoreOpen(false); }}><Settings2/><div><b>Direção da aula</b><small>Transmissão, ofertas e controles</small></div></button>}
+      {isHost && <button onClick={openDirection}><Settings2/><div><b>Direção da aula</b><small>Transmissão, ofertas e controles</small></div></button>}
     </section>, room, 'foco-more-menu')}
 
     {createPortal(<div className="fl-floating-reactions" aria-hidden="true">{floating.map((item) => <div key={item.id} style={{ left: `${item.left}%` }}><span>{item.emoji}</span><small>{item.name}</small></div>)}</div>, room, 'foco-floating-reactions')}
