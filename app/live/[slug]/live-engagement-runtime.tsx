@@ -18,23 +18,24 @@ export default function LiveEngagementRuntime() {
   const [floating, setFloating] = useState<FloatingReaction[]>([]);
   const attachedCallRef = useRef<any>(null);
 
-  const controls = ready ? document.querySelector<HTMLElement>('.fl-controls') : null;
+  const controls = ready ? document.querySelector<HTMLElement>('.fl-room .fl-controls') : null;
   const room = ready ? document.querySelector<HTMLElement>('.fl-room') : null;
 
   useEffect(() => {
     setIsHost(new URLSearchParams(window.location.search).get('host') === '1');
-    const sync = () => setReady(Boolean(document.querySelector('.fl-room') && document.querySelector('.fl-controls')));
+    const sync = () => setReady(Boolean(document.querySelector('.fl-room .fl-controls')));
     const observer = new MutationObserver(sync);
     observer.observe(document.body, { childList: true, subtree: true });
+    const timer = window.setInterval(sync, 500);
     sync();
-    return () => observer.disconnect();
+    return () => { observer.disconnect(); window.clearInterval(timer); };
   }, []);
 
   useEffect(() => {
     const close = (event: PointerEvent) => {
       const target = event.target as HTMLElement;
-      if (!target.closest('.fl-reaction-control')) setReactionOpen(false);
-      if (!target.closest('.fl-more-control')) setMoreOpen(false);
+      if (!target.closest('.fl-reaction-button') && !target.closest('.fl-reaction-picker')) setReactionOpen(false);
+      if (!target.closest('.fl-more-button') && !target.closest('.fl-more-menu')) setMoreOpen(false);
     };
     window.addEventListener('pointerdown', close);
     return () => window.removeEventListener('pointerdown', close);
@@ -72,7 +73,7 @@ export default function LiveEngagementRuntime() {
     const name = local?.user_name || (isHost ? 'Professor' : 'Participante');
     const id = crypto.randomUUID();
     showReaction(emoji, name, id);
-    call?.sendAppMessage?.({ type: 'foco-reaction', emoji, name, id } satisfies ReactionMessage, '*');
+    call?.sendAppMessage?.({ type: 'foco-reaction', emoji, name, id }, '*');
     setReactionOpen(false);
   }
 
@@ -93,9 +94,11 @@ export default function LiveEngagementRuntime() {
   async function openPiP() {
     try {
       const video = room?.querySelector<HTMLVideoElement>('.fl-stage-video-area video');
+      const pipDocument = document as Document & { pictureInPictureElement?: Element | null; exitPictureInPicture?: () => Promise<void> };
+      const pipVideo = video as HTMLVideoElement & { requestPictureInPicture?: () => Promise<unknown> };
       if (!video) return;
-      if (document.pictureInPictureElement) await document.exitPictureInPicture();
-      else if (video.requestPictureInPicture) await video.requestPictureInPicture();
+      if (pipDocument.pictureInPictureElement && pipDocument.exitPictureInPicture) await pipDocument.exitPictureInPicture();
+      else if (pipVideo.requestPictureInPicture) await pipVideo.requestPictureInPicture();
     } catch {}
     setMoreOpen(false);
   }
@@ -109,22 +112,19 @@ export default function LiveEngagementRuntime() {
   if (!ready || !controls || !room) return null;
 
   return <>
-    {createPortal(<div className="fl-reaction-control">
-      <button type="button" className={reactionOpen ? 'active' : ''} onClick={(event) => { event.stopPropagation(); setReactionOpen((value) => !value); setMoreOpen(false); }}><SmilePlus/><span>Reagir</span></button>
-      {reactionOpen && <section className="fl-reaction-picker">{REACTIONS.map((emoji) => <button key={emoji} onClick={() => react(emoji)}>{emoji}</button>)}<button className="hand" onClick={raiseHand}><Hand size={20}/><span>Levantar mão</span></button></section>}
-    </div>, controls)}
+    {createPortal(<button type="button" className={`fl-reaction-button${reactionOpen ? ' active' : ''}`} onClick={(event) => { event.stopPropagation(); setReactionOpen((value) => !value); setMoreOpen(false); }}><SmilePlus/><span>Reagir</span></button>, controls, 'foco-reaction-button')}
+    {createPortal(<button type="button" className={`fl-more-button${moreOpen ? ' active' : ''}`} onClick={(event) => { event.stopPropagation(); setMoreOpen((value) => !value); setReactionOpen(false); }}><MoreVertical/><span>Mais</span></button>, controls, 'foco-more-button')}
 
-    {createPortal(<div className="fl-more-control">
-      <button type="button" className={moreOpen ? 'active' : ''} onClick={(event) => { event.stopPropagation(); setMoreOpen((value) => !value); setReactionOpen(false); }}><MoreVertical/><span>Mais</span></button>
-      {moreOpen && <section className="fl-more-menu">
-        <button onClick={openPiP}><PictureInPicture2/><div><b>Picture in picture</b><small>Manter a aula em uma janela flutuante</small></div></button>
-        <button onClick={toggleFullscreen}><Expand/><div><b>Tela cheia</b><small>Expandir o Foco Live</small></div></button>
-        <button onClick={openCameraSettings}><Video/><div><b>Ajustar câmera</b><small>Dispositivo, espelhamento e enquadramento</small></div></button>
-        {isHost && <button onClick={() => { document.querySelector<HTMLButtonElement>('.fl-recording-button')?.click(); setMoreOpen(false); }}><span className="menu-icon">●</span><div><b>Gravação</b><small>Iniciar ou encerrar gravação</small></div></button>}
-        {isHost && <button onClick={() => { const direction = Array.from(document.querySelectorAll<HTMLButtonElement>('.fl-controls button')).find((item) => /direção/i.test(item.textContent || '')); direction?.click(); setMoreOpen(false); }}><Settings2/><div><b>Direção da aula</b><small>Transmissão, ofertas e controles</small></div></button>}
-      </section>}
-    </div>, controls)}
+    {reactionOpen && createPortal(<section className="fl-reaction-picker">{REACTIONS.map((emoji) => <button key={emoji} onClick={() => react(emoji)}>{emoji}</button>)}<button className="hand" onClick={raiseHand}><Hand size={20}/><span>Levantar mão</span></button></section>, room, 'foco-reaction-picker')}
 
-    {createPortal(<div className="fl-floating-reactions" aria-hidden="true">{floating.map((item) => <div key={item.id} style={{ left: `${item.left}%` }}><span>{item.emoji}</span><small>{item.name}</small></div>)}</div>, room)}
+    {moreOpen && createPortal(<section className="fl-more-menu">
+      <button onClick={openPiP}><PictureInPicture2/><div><b>Picture in picture</b><small>Manter a aula em uma janela flutuante</small></div></button>
+      <button onClick={toggleFullscreen}><Expand/><div><b>Tela cheia</b><small>Expandir o Foco Live</small></div></button>
+      <button onClick={openCameraSettings}><Video/><div><b>Ajustar câmera</b><small>Dispositivo e espelhamento</small></div></button>
+      {isHost && <button onClick={() => { document.querySelector<HTMLButtonElement>('.fl-recording-button')?.click(); setMoreOpen(false); }}><span className="menu-icon">●</span><div><b>Gravação</b><small>Iniciar ou encerrar gravação</small></div></button>}
+      {isHost && <button onClick={() => { const direction = Array.from(document.querySelectorAll<HTMLButtonElement>('.fl-controls button')).find((item) => /direção/i.test(item.textContent || '')); direction?.click(); setMoreOpen(false); }}><Settings2/><div><b>Direção da aula</b><small>Transmissão, ofertas e controles</small></div></button>}
+    </section>, room, 'foco-more-menu')}
+
+    {createPortal(<div className="fl-floating-reactions" aria-hidden="true">{floating.map((item) => <div key={item.id} style={{ left: `${item.left}%` }}><span>{item.emoji}</span><small>{item.name}</small></div>)}</div>, room, 'foco-floating-reactions')}
   </>;
 }
