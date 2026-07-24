@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { driveRedirectUri } from '@/lib/google/drive-utils';
+
+const REPLAY_DRIVE_REDIRECT_URI = 'https://escola.focoemcanto.com/admin/google/callback';
 
 function popupResponse(success: boolean, message: string) {
   const payload = JSON.stringify({ type: 'foco-google-drive-connected', success, message });
@@ -12,7 +13,6 @@ export async function GET(request: Request) {
   const code = url.searchParams.get('code');
   const state = url.searchParams.get('state');
   const popup = state === 'foco-live-recording';
-  const redirectUri = driveRedirectUri();
 
   if (!code) {
     if (popup) return popupResponse(false, 'A autorização foi cancelada.');
@@ -26,13 +26,15 @@ export async function GET(request: Request) {
       code,
       client_id: process.env.GOOGLE_CLIENT_ID || '',
       client_secret: process.env.GOOGLE_CLIENT_SECRET || '',
-      redirect_uri: redirectUri,
+      redirect_uri: REPLAY_DRIVE_REDIRECT_URI,
       grant_type: 'authorization_code',
     }),
   });
 
   if (!response.ok) {
-    if (popup) return popupResponse(false, 'Não foi possível concluir a autorização. Confira o URI de redirecionamento no Google Cloud.');
+    const details = await response.text().catch(() => '');
+    console.error('Google OAuth token exchange failed', response.status, details);
+    if (popup) return popupResponse(false, 'Não foi possível concluir a autorização. Tente novamente após o deploy.');
     return NextResponse.redirect(new URL('/admin/conteudos/google-drive?erro=oauth', request.url));
   }
 
