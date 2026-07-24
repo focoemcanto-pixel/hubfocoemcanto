@@ -20,13 +20,13 @@ import LiveVideoViewRuntime from './live-video-view-runtime';
 import LiveHelpRuntime from './live-help-runtime';
 import LivePermissionGuardRuntime from './live-permission-guard-runtime';
 import LivePipRuntime from './live-pip-runtime';
+import LiveRecordingCenterRuntime from './live-recording-center-runtime';
 import LiveStudioRuntime from './live-studio-runtime';
 import FocoBoardV2Runtime from './foco-board-v2-runtime';
 import LiveMeetPresentationRuntime from './live-meet-presentation-runtime';
 import LiveOffersDirectionRuntime from './live-offers-direction-runtime';
 import LiveBoardTextFixRuntime from './live-board-text-fix-runtime';
 import LiveCameraControlsRuntime from './live-camera-controls-runtime';
-import LiveLocalRecordingRuntime from './live-local-recording-runtime';
 import VoiceStudioKeyboardTransportRuntime from './voice-studio-keyboard-transport-runtime';
 import VoiceStudioDawRuntime from './voice-studio-daw-runtime';
 import VoiceStudioAddTrackRuntime from './voice-studio-add-track-runtime';
@@ -54,6 +54,7 @@ import './live-host-assist.css';
 import './live-video-view.css';
 import './live-help.css';
 import './live-pip.css';
+import './live-recording-center.css';
 import './live-studio.css';
 import './foco-board-v2.css';
 import './live-camera-controls.css';
@@ -98,9 +99,9 @@ export default async function LivePage({ params }: PageProps) {
   return <>
     <SessionEndGuard initialStatus={live.status} title={live.title} slug={slug} />
     <EndCleanupRuntime /><PrejoinRuntime /><LivePolishRuntime /><ScreenShareFocusRuntime />
-    <LivePianoRuntime /><LiveToolsRuntime /><LiveMirrorFixRuntime /><LiveVideoViewRuntime /><LiveHostAssistRuntime /><LiveHelpRuntime /><LivePermissionGuardRuntime /><LivePipRuntime />
+    <LivePianoRuntime /><LiveToolsRuntime /><LiveMirrorFixRuntime /><LiveVideoViewRuntime /><LiveHostAssistRuntime /><LiveHelpRuntime /><LivePermissionGuardRuntime /><LivePipRuntime /><LiveRecordingCenterRuntime />
     <LiveTimerRuntime /><LivePollRuntime /><LivePollMenuRuntime /><LiveEngagementRuntime /><LiveStudioRuntime /><FocoBoardV2Runtime />
-    <LiveMeetPresentationRuntime /><LiveOffersDirectionRuntime /><LiveBoardTextFixRuntime /><LiveLocalRecordingRuntime />
+    <LiveMeetPresentationRuntime /><LiveOffersDirectionRuntime /><LiveBoardTextFixRuntime />
     <VoiceStudioKeyboardTransportRuntime /><VoiceStudioDawRuntime /><VoiceStudioAddTrackRuntime /><VoiceStudioLayoutRuntime />
     <VoiceStudioMidiRoutingRuntime /><VoiceStudioMonitorTransportRuntime /><VoiceStudioMidiLivePreviewRuntime />
     <LiveCameraControlsRuntime /><HandSignalRuntime />
