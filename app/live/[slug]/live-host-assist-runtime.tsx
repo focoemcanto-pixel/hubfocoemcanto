@@ -1,20 +1,30 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { BarChart3, Bell, BellOff, KeyboardMusic, PenTool, Settings2, TimerReset, X } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { BarChart3, Bell, BellOff, ChevronDown, ChevronUp, KeyboardMusic, PenTool, Settings2, TimerReset, X } from 'lucide-react';
 
 type LiveWindow = Window & { __FOCO_LIVE_CALL__?: any };
 type Toast = { id: string; text: string; icon: string };
 type Preferences = { joins: boolean; leaves: boolean; hands: boolean; reactions: boolean };
 type ReactionMessage = { type: 'foco-reaction'; emoji?: string; name?: string };
 type HandMessage = { type: 'hand'; raised?: boolean; name?: string };
+type QuickTool = 'piano' | 'board' | 'timer' | 'poll';
 
 const PREF_KEY = 'foco-live-host-notification-preferences';
 const DEFAULT_PREFS: Preferences = { joins: true, leaves: true, hands: true, reactions: true };
+const TOOL_EVENTS: Record<QuickTool, string> = {
+  piano: 'foco-piano-toggle',
+  board: 'foco-board-toggle',
+  timer: 'foco-timer-toggle',
+  poll: 'foco-poll-toggle',
+};
 
 export default function LiveHostAssistRuntime() {
   const [isHost, setIsHost] = useState(false);
   const [ready, setReady] = useState(false);
+  const [dockOpen, setDockOpen] = useState(false);
+  const [activeTool, setActiveTool] = useState<QuickTool | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [reactionCounts, setReactionCounts] = useState<Record<string, number>>({});
@@ -22,6 +32,7 @@ export default function LiveHostAssistRuntime() {
   const attachedCallRef = useRef<any>(null);
 
   const stage = ready ? document.querySelector<HTMLElement>('.fl-room') : null;
+  const controls = ready ? document.querySelector<HTMLElement>('.fl-room .fl-controls') : null;
   const reactionTotal = useMemo(() => Object.values(reactionCounts).reduce((sum, value) => sum + value, 0), [reactionCounts]);
 
   useEffect(() => {
@@ -30,7 +41,7 @@ export default function LiveHostAssistRuntime() {
       const saved = window.localStorage.getItem(PREF_KEY);
       if (saved) setPreferences({ ...DEFAULT_PREFS, ...JSON.parse(saved) });
     } catch {}
-    const sync = () => setReady(Boolean(document.querySelector('.fl-room')));
+    const sync = () => setReady(Boolean(document.querySelector('.fl-room') && document.querySelector('.fl-room .fl-controls')));
     const observer = new MutationObserver(sync);
     observer.observe(document.body, { childList: true, subtree: true });
     sync();
@@ -87,23 +98,48 @@ export default function LiveHostAssistRuntime() {
     };
   }, [isHost, preferences]);
 
-  if (!isHost || !ready || !stage) return null;
+  if (!isHost || !ready || !stage || !controls) return null;
 
-  const open = (eventName: string) => window.dispatchEvent(new Event(eventName));
+  const toggleTool = (tool: QuickTool) => {
+    if (activeTool === tool) {
+      window.dispatchEvent(new Event(TOOL_EVENTS[tool]));
+      setActiveTool(null);
+      return;
+    }
+    if (activeTool) window.dispatchEvent(new Event(TOOL_EVENTS[activeTool]));
+    window.dispatchEvent(new Event(TOOL_EVENTS[tool]));
+    setActiveTool(tool);
+  };
+
   const togglePreference = (key: keyof Preferences) => setPreferences((current) => ({ ...current, [key]: !current[key] }));
 
   return <>
-    <aside className="fl-host-quick-dock" aria-label="Atalhos rápidos da aula">
-      <button onClick={() => open('foco-piano-toggle')} title="Foco Keys"><KeyboardMusic/><span>Piano</span></button>
-      <button onClick={() => open('foco-board-toggle')} title="Foco Board"><PenTool/><span>Board</span></button>
-      <button onClick={() => open('foco-timer-toggle')} title="Timer"><TimerReset/><span>Timer</span></button>
-      <button onClick={() => open('foco-poll-toggle')} title="Enquete"><BarChart3/><span>Enquete</span></button>
+    {createPortal(
+      <button
+        type="button"
+        className={`fl-host-dock-trigger${dockOpen ? ' active' : ''}`}
+        onClick={() => { setDockOpen((value) => !value); setSettingsOpen(false); }}
+        aria-label={dockOpen ? 'Esconder atalhos da aula' : 'Mostrar atalhos da aula'}
+        title={dockOpen ? 'Esconder atalhos' : 'Mostrar atalhos'}
+      >
+        {dockOpen ? <ChevronDown /> : <ChevronUp />}
+        <span>Atalhos</span>
+      </button>,
+      controls,
+      'foco-host-dock-trigger',
+    )}
+
+    <aside className={`fl-host-quick-dock${dockOpen ? ' open' : ''}`} aria-label="Atalhos rápidos da aula" aria-hidden={!dockOpen}>
+      <button className={activeTool === 'piano' ? 'active' : ''} onClick={() => toggleTool('piano')} title="Foco Keys"><KeyboardMusic/><span>Piano</span></button>
+      <button className={activeTool === 'board' ? 'active' : ''} onClick={() => toggleTool('board')} title="Foco Board"><PenTool/><span>Board</span></button>
+      <button className={activeTool === 'timer' ? 'active' : ''} onClick={() => toggleTool('timer')} title="Timer"><TimerReset/><span>Timer</span></button>
+      <button className={activeTool === 'poll' ? 'active' : ''} onClick={() => toggleTool('poll')} title="Enquete"><BarChart3/><span>Enquete</span></button>
       <i />
       <button className="summary" title={`${reactionTotal} reações`}><span className="emoji">✨</span><b>{reactionTotal}</b></button>
       <button className={settingsOpen ? 'active' : ''} onClick={() => setSettingsOpen((value) => !value)} title="Notificações"><Settings2/><span>Avisos</span></button>
     </aside>
 
-    {settingsOpen && <section className="fl-host-notification-settings">
+    {settingsOpen && dockOpen && <section className="fl-host-notification-settings">
       <header><div><small>FOCO LIVE</small><strong>Notificações da aula</strong></div><button onClick={() => setSettingsOpen(false)}><X/></button></header>
       {([
         ['joins','Mostrar quem entrou'],
