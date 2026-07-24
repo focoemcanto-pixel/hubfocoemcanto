@@ -35,7 +35,7 @@ export default function LivePollRuntime() {
     return()=>{observer.disconnect();window.clearInterval(timer)};
   },[]);
 
-  useEffect(()=>{ const fn=()=>setOpen(true); window.addEventListener('foco-poll-toggle',fn); return()=>window.removeEventListener('foco-poll-toggle',fn); },[]);
+  useEffect(()=>{ const fn=()=>setOpen(current=>!current); window.addEventListener('foco-poll-toggle',fn); return()=>window.removeEventListener('foco-poll-toggle',fn); },[]);
 
   useEffect(()=>{
     let attached:any=null;
@@ -76,11 +76,10 @@ export default function LivePollRuntime() {
     setMyVote(index); call?.sendAppMessage?.({type:'foco-live-poll',action:'vote',pollId:poll.id,option:index,voterId,name},'*');
   }
   function newPoll(){setPoll(null);setVotes({});setQuestion('');setOptions(emptyOptions);setCorrectIndex(null);setOpen(true)}
-  function close(){setOpen(false)}
 
   if(!root||!open)return null;
   return createPortal(<section className={`fl-live-poll${!isHost?' viewer':''}`}>
-    <header><div><small>FOCO LIVE</small><strong><BarChart3 size={18}/> Enquete da aula</strong></div><button onClick={close}><X size={18}/></button></header>
+    <header><div><small>FOCO LIVE</small><strong><BarChart3 size={18}/> Enquete da aula</strong></div><button onClick={()=>setOpen(false)}><X size={18}/></button></header>
     {isHost&&!poll&&<div className="fl-poll-builder">
       <div className="fl-poll-inspiration"><Sparkles size={17}/><span>Crie perguntas de percepção, técnica vocal, repertório ou opinião.</span></div>
       <label>Pergunta<input value={question} maxLength={180} onChange={e=>setQuestion(e.target.value)} placeholder="Ex.: Qual voz está fazendo a terça?"/></label>
