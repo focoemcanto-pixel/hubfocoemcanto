@@ -101,7 +101,8 @@ export default function LiveEngagementRuntime() {
   }
 
   function openCameraSettings() {
-    window.dispatchEvent(new Event('foco-camera-settings-open'));
+    const cameraControl = document.querySelector<HTMLElement>('.fl-controls > button:nth-child(2) .fl-control-chevron');
+    cameraControl?.click();
     setMoreOpen(false);
   }
 
