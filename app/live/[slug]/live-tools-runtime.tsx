@@ -2,13 +2,14 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AudioLines, Check, ChevronUp, KeyboardMusic, Mic2, PenTool, Settings2, SlidersHorizontal, TimerReset, Video } from 'lucide-react';
+import { AudioLines, Check, ChevronUp, FlipHorizontal2, KeyboardMusic, Mic2, PenTool, Settings2, SlidersHorizontal, TimerReset, Video } from 'lucide-react';
 
 type Panel = 'apps' | 'mic' | 'camera' | null;
 type DeviceSummary = { microphones: MediaDeviceInfo[]; cameras: MediaDeviceInfo[] };
 type DeviceKind = 'audio' | 'video';
 
 type LiveWindow = Window & { __FOCO_LIVE_CALL__?: any };
+const MIRROR_PREVIEW_KEY = 'foco-live-mirror-preview';
 
 export default function LiveToolsRuntime() {
   const [roomReady, setRoomReady] = useState(false);
@@ -20,6 +21,7 @@ export default function LiveToolsRuntime() {
   const [switchingDevice, setSwitchingDevice] = useState('');
   const [deviceError, setDeviceError] = useState('');
   const [audioProfile, setAudioProfile] = useState<'speech' | 'music'>(() => 'speech');
+  const [mirrorPreview, setMirrorPreview] = useState(false);
   const [meter, setMeter] = useState(0);
   const [offersPanel, setOffersPanel] = useState<HTMLElement | null>(null);
   const meterCleanupRef = useRef<(() => void) | null>(null);
@@ -32,6 +34,7 @@ export default function LiveToolsRuntime() {
     setAudioProfile(window.localStorage.getItem('foco-live-audio-mode') === 'music' ? 'music' : 'speech');
     setSelectedMic(window.localStorage.getItem('foco-live-microphone-id') || '');
     setSelectedCamera(window.localStorage.getItem('foco-live-camera-id') || '');
+    setMirrorPreview(window.localStorage.getItem(MIRROR_PREVIEW_KEY) === 'true');
     const sync = () => {
       setRoomReady(Boolean(document.querySelector('.fl-room')));
       setOffersPanel(document.querySelector<HTMLElement>('.fl-director-offers'));
@@ -41,6 +44,22 @@ export default function LiveToolsRuntime() {
     sync();
     return () => observer.disconnect();
   }, []);
+
+  useEffect(() => {
+    if (!roomReady) return;
+    const applyMirror = () => {
+      document.querySelectorAll<HTMLVideoElement>('.fl-video-frame video[muted]').forEach((video) => {
+        video.style.setProperty('transform', mirrorPreview ? 'scaleX(-1)' : 'scaleX(1)', 'important');
+      });
+      document.querySelector<HTMLElement>('.fl-room')?.classList.toggle('fl-local-preview-mirrored', mirrorPreview);
+    };
+    applyMirror();
+    const observer = new MutationObserver(applyMirror);
+    observer.observe(document.body, { childList: true, subtree: true });
+    const timer = window.setInterval(applyMirror, 500);
+    window.localStorage.setItem(MIRROR_PREVIEW_KEY, String(mirrorPreview));
+    return () => { observer.disconnect(); window.clearInterval(timer); };
+  }, [mirrorPreview, roomReady]);
 
   useEffect(() => {
     if (!roomReady || !navigator.mediaDevices?.enumerateDevices) return;
@@ -150,6 +169,8 @@ export default function LiveToolsRuntime() {
       </div>}
       {panel === 'camera' && <div className="fl-tools-list fl-device-selector-list">
         <div className="fl-device-card"><Video /><div><small>DISPOSITIVO ATUAL</small><b>{currentCamera?.label || 'Câmera padrão do navegador'}</b></div></div>
+        <small className="fl-device-section-label">VISUALIZAÇÃO</small>
+        <button className={mirrorPreview ? 'selected device-option' : 'device-option'} onClick={() => setMirrorPreview((current) => !current)}><FlipHorizontal2 /><div><b>Espelhar minha câmera</b><small>{mirrorPreview ? 'Ligado — imagem como espelho' : 'Desligado — igual ao que a turma vê'}</small></div>{mirrorPreview && <Check size={17} />}</button>
         <small className="fl-device-section-label">ESCOLHER CÂMERA</small>
         {devices.cameras.map((device, index) => <button key={device.deviceId || index} className={selectedCamera === device.deviceId ? 'selected device-option' : 'device-option'} disabled={switchingDevice === device.deviceId} onClick={() => selectDevice('video', device.deviceId)}><Video /><div><b>{device.label || `Câmera ${index + 1}`}</b><small>{selectedCamera === device.deviceId ? 'Em uso agora' : 'Clique para usar'}</small></div>{selectedCamera === device.deviceId && <Check size={17} />}</button>)}
         {!devices.cameras.length && <p className="fl-tools-hint">Nenhuma câmera disponível. Verifique as permissões do navegador.</p>}
