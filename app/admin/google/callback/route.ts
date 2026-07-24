@@ -12,6 +12,9 @@ export async function GET(request: Request) {
   const code = url.searchParams.get('code');
   const state = url.searchParams.get('state');
   const popup = state === 'foco-live-recording';
+  const redirectUri = popup
+    ? new URL('/admin/google/callback', request.url).toString()
+    : driveRedirectUri();
 
   if (!code) {
     if (popup) return popupResponse(false, 'A autorização foi cancelada.');
@@ -25,7 +28,7 @@ export async function GET(request: Request) {
       code,
       client_id: process.env.GOOGLE_CLIENT_ID || '',
       client_secret: process.env.GOOGLE_CLIENT_SECRET || '',
-      redirect_uri: driveRedirectUri(),
+      redirect_uri: redirectUri,
       grant_type: 'authorization_code',
     }),
   });
