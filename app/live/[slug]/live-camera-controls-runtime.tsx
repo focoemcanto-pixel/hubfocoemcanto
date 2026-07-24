@@ -5,14 +5,41 @@ import { createPortal } from 'react-dom';
 import { Circle, FlipHorizontal2, RectangleHorizontal, Settings2, Square, X } from 'lucide-react';
 
 type CameraShape = 'round' | 'square' | 'wide';
-type CameraTransform = { x: number; y: number; width: number; height: number; shape: CameraShape; radius: number; mirrored: boolean };
+type CameraTransform = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  shape: CameraShape;
+  radius: number;
+  previewMirrored: boolean;
+  audienceMirrored: boolean;
+};
 type CameraMessage = { type: 'foco-camera-transform'; transform: CameraTransform };
 type DragMode = 'move' | 'resize-se' | 'resize-sw' | 'resize-ne' | 'resize-nw';
 type StudioWindow = Window & { __FOCO_LIVE_CALL__?: any };
 
-const DEFAULT_TRANSFORM: CameraTransform = { x: 76, y: 57, width: 20, height: 34, shape: 'round', radius: 50, mirrored: true };
-const STORAGE_KEY = 'foco-live-camera-transform-v2';
+const DEFAULT_TRANSFORM: CameraTransform = {
+  x: 76,
+  y: 57,
+  width: 20,
+  height: 34,
+  shape: 'round',
+  radius: 50,
+  previewMirrored: false,
+  audienceMirrored: false,
+};
+const STORAGE_KEY = 'foco-live-camera-transform-v3';
 function clamp(value: number, min: number, max: number) { return Math.min(max, Math.max(min, value)); }
+
+function normalizeTransform(value: any): CameraTransform {
+  return {
+    ...DEFAULT_TRANSFORM,
+    ...value,
+    previewMirrored: typeof value?.previewMirrored === 'boolean' ? value.previewMirrored : Boolean(value?.mirrored),
+    audienceMirrored: typeof value?.audienceMirrored === 'boolean' ? value.audienceMirrored : false,
+  };
+}
 
 export default function LiveCameraControlsRuntime() {
   const [ready, setReady] = useState(false);
@@ -36,7 +63,10 @@ export default function LiveCameraControlsRuntime() {
 
   useEffect(() => {
     setIsHost(new URLSearchParams(window.location.search).get('host') === '1');
-    try { const saved = window.localStorage.getItem(STORAGE_KEY); if (saved) setTransform({ ...DEFAULT_TRANSFORM, ...JSON.parse(saved) }); } catch {}
+    try {
+      const saved = window.localStorage.getItem(STORAGE_KEY) || window.localStorage.getItem('foco-live-camera-transform-v2');
+      if (saved) setTransform(normalizeTransform(JSON.parse(saved)));
+    } catch {}
     const sync = () => {
       const currentRoom = document.querySelector<HTMLElement>('.fl-room');
       const currentStage = document.querySelector('.fl-stage-video-area');
@@ -60,7 +90,7 @@ export default function LiveCameraControlsRuntime() {
     camera.style.setProperty('--camera-height', `${transform.height}%`);
     camera.style.setProperty('--camera-radius', transform.shape === 'round' ? '50%' : transform.shape === 'square' ? `${Math.min(transform.radius, 24)}px` : `${transform.radius}px`);
     camera.dataset.cameraShape = transform.shape;
-    camera.dataset.cameraMirrored = transform.mirrored ? 'true' : 'false';
+    camera.dataset.cameraMirrored = (isHost ? transform.previewMirrored : transform.audienceMirrored) ? 'true' : 'false';
     camera.classList.toggle('fl-camera-selected', isHost && selected);
     return () => camera.classList.remove('fl-camera-selected');
   }, [camera, isHost, pipActive, sceneActive, selected, transform]);
@@ -73,7 +103,7 @@ export default function LiveCameraControlsRuntime() {
       attachedCallRef.current = call;
       call.on?.('app-message', (event: any) => {
         const data = event?.data as CameraMessage | undefined;
-        if (data?.type === 'foco-camera-transform' && !isHost && data.transform) setTransform(data.transform);
+        if (data?.type === 'foco-camera-transform' && !isHost && data.transform) setTransform(normalizeTransform(data.transform));
       });
       call.on?.('participant-joined', () => {
         if (isHost && document.querySelector('.fl-room.foco-studio-broadcasting')) call.sendAppMessage?.({ type: 'foco-camera-transform', transform: transformRef.current }, '*');
@@ -148,8 +178,9 @@ export default function LiveCameraControlsRuntime() {
       <header><div><small>FOCO LIVE</small><strong>Ajustes da câmera</strong></div><button onClick={() => setSettingsOpen(false)}><X size={16} /></button></header>
       <div className="fl-camera-shapes"><button className={transform.shape === 'round' ? 'active' : ''} onClick={() => setShape('round')}><Circle size={20} /><span>Redonda</span></button><button className={transform.shape === 'square' ? 'active' : ''} onClick={() => setShape('square')}><Square size={20} /><span>Quadrada</span></button><button className={transform.shape === 'wide' ? 'active' : ''} onClick={() => setShape('wide')}><RectangleHorizontal size={20} /><span>Retangular</span></button></div>
       {transform.shape !== 'round' && <label>Arredondamento <span>{transform.radius}px</span><input type="range" min="0" max="48" value={transform.radius} onChange={(event) => setTransform((current) => ({ ...current, radius: Number(event.target.value) }))} /></label>}
-      <button className={transform.mirrored ? 'toggle active' : 'toggle'} onClick={() => setTransform((current) => ({ ...current, mirrored: !current.mirrored }))}><FlipHorizontal2 size={17} /><div><b>Espelhar imagem</b><small>Mostra a câmera como um espelho</small></div><i /></button>
-      <button className="reset" onClick={() => setTransform(DEFAULT_TRANSFORM)}>Restaurar tamanho e posição</button>
+      <button className={transform.previewMirrored ? 'toggle active' : 'toggle'} onClick={() => setTransform((current) => ({ ...current, previewMirrored: !current.previewMirrored }))}><FlipHorizontal2 size={17} /><div><b>Espelhar minha visualização</b><small>Altera somente o que você vê no estúdio</small></div><i /></button>
+      <button className={transform.audienceMirrored ? 'toggle active warning' : 'toggle warning'} onClick={() => setTransform((current) => ({ ...current, audienceMirrored: !current.audienceMirrored }))}><FlipHorizontal2 size={17} /><div><b>Inverter para os alunos</b><small>Altera a imagem exibida na transmissão</small></div><i /></button>
+      <button className="reset" onClick={() => setTransform(DEFAULT_TRANSFORM)}>Restaurar tamanho, posição e orientação</button>
     </section>, stage)}
   </>;
 }
